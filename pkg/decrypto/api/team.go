@@ -10,7 +10,7 @@ type Team struct {
 
 func newTeam(players []*Player) (*Team, error) {
 	if 2 < len(players) && len(players) > 4 {
-		return nil, fmt.Errorf("%s", "A Team Can Only Be Take 2 - 4 Player")
+		return nil, fmt.Errorf("%s", "A Team Can Only Take 2 - 4 Player")
 	}
 
 	return &Team{Players: players}, nil
