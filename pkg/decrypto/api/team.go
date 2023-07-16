@@ -5,7 +5,18 @@ import (
 )
 
 type Team struct {
-	Players []*Player // 一般来说一支队伍的Player的数量应该控制在 2 - 4 人
+	Players            []*Player // 一般来说一支队伍的 Player 的数量应该控制在 2 - 4 人
+	InspectedCounts    uint8     // 队伍破解正确次数
+	DecryptWrongCounts uint8     // 队伍猜错自己的次数
+	Words              [4]string // 队伍抽到的词语
+}
+
+func (t *Team) InspectedSuccess() {
+	t.InspectedCounts++
+}
+
+func (t *Team) DecryptFailed() {
+	t.DecryptWrongCounts++
 }
 
 func newTeam(players []*Player) (*Team, error) {
@@ -13,5 +24,5 @@ func newTeam(players []*Player) (*Team, error) {
 		return nil, fmt.Errorf("%s", "A Team Can Only Take 2 - 4 Player")
 	}
 
-	return &Team{Players: players}, nil
+	return &Team{Players: players, Words: wordProvider.Provide()}, nil
 }
