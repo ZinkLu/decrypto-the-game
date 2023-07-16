@@ -81,8 +81,27 @@ func NewWithTeams(sessionId uint64, teamAPlayers []*Player, teamBPlayers []*Play
 // 第二个参数表示创建轮次是否成功
 // 如果当前对局为最后一场则为 False
 func StartRound(gameSession *Session) (*Round, bool) {
+	isOver, _ := gameSession.IsGameOver()
+	if isOver {
+		return nil, false
+	}
 	if gameSession.CurrentRound != nil && gameSession.CurrentRound.isFinalRound() {
 		return nil, false
 	}
 	return createNewRound(gameSession), true
+}
+
+// 如果游戏结束，则返回 true 和 胜利的队伍;
+// 否则返回 false 和 nil
+func (s *Session) IsGameOver() (bool, *Team) {
+	for idx, t := range s.Teams {
+		if t.InspectedCounts >= 2 {
+			return true, t
+		}
+
+		if t.DecryptWrongCounts >= 2 {
+			return true, s.Teams[1-idx]
+		}
+	}
+	return false, nil
 }
