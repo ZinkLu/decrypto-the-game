@@ -26,6 +26,9 @@ func handle(api openapi.OpenAPI, event *dto.WSPayload, data *dto.WSATMessageData
 		exists[host] = true
 
 		for _, u := range data.Mentions {
+			if u.Bot {
+				continue
+			}
 			_, ok := exists[u.ID]
 			if !ok {
 				userIds = append(userIds, u.ID)
