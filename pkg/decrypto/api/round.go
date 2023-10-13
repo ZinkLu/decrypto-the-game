@@ -65,7 +65,7 @@ func (round *Round) Next() (*RoundedTeam, TeamState) {
 }
 
 // 在注册 handler 后进行这个方法的注册
-func (round *Round) AutoForward(c *context.Context) {
+func (round *Round) AutoForward(c context.Context) {
 	for team, state := round.Next(); state < DONE; team, state = round.Next() {
 		switch state {
 		case INIT:

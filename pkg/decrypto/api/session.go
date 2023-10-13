@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 )
@@ -37,12 +38,12 @@ type Session struct {
 	Teams        [2]*Team // decrypto 一共只有两支队伍
 	CurrentRound *Round   // 当前轮数
 	Rounds       []*Round // 轮次记录
-	sessionId    uint64   // 游戏 id，一般来说可以使用 Bot 收到的 messageId 来填写
+	sessionId    string   // 游戏 id，一般来说可以使用 Bot 收到的 messageId 来填写
 	maxRounds    uint8    // 最大轮数，一般来说是 8 轮游戏
 }
 
 // 自动组队并开始一场对局
-func NewWithAutoTeamUp(sessionId uint64, players []*Player) (*Session, error) {
+func NewWithAutoTeamUp(sessionId string, players []*Player) (*Session, error) {
 	if len(players) < 4 {
 		return nil, fmt.Errorf("必须要 4 人才能开始游戏")
 	}
@@ -60,7 +61,7 @@ func NewWithAutoTeamUp(sessionId uint64, players []*Player) (*Session, error) {
 }
 
 // 自选队伍并开始一场对局
-func NewWithTeams(sessionId uint64, teamAPlayers []*Player, teamBPlayers []*Player) (*Session, error) {
+func NewWithTeams(sessionId string, teamAPlayers []*Player, teamBPlayers []*Player) (*Session, error) {
 	if len(teamAPlayers) < 2 || len(teamBPlayers) < 2 {
 		return nil, fmt.Errorf("每一队人数不得少于 2 人")
 	}
@@ -80,9 +81,12 @@ func NewWithTeams(sessionId uint64, teamAPlayers []*Player, teamBPlayers []*Play
 // 开始新的轮次
 // 第二个参数表示创建轮次是否成功
 // 如果当前对局为最后一场则为 False
-func StartRound(gameSession *Session) (*Round, bool) {
-	isOver, _ := gameSession.IsGameOver()
+func StartRound(ctx context.Context, gameSession *Session) (*Round, bool) {
+	isOver, t := gameSession.IsGameOver()
 	if isOver {
+		if gamerOverHandler != nil {
+			gamerOverHandler(ctx, gameSession, t)
+		}
 		return nil, false
 	}
 	if gameSession.CurrentRound != nil && gameSession.CurrentRound.isFinalRound() {

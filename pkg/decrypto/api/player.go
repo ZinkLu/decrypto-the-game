@@ -1,3 +1,5 @@
 package api
 
-type Player struct{}
+type Player struct {
+	Uid string
+}
