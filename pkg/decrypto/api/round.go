@@ -121,8 +121,8 @@ func createNewRound(session *Session) *Round {
 		previousT1, previousT2 := session.CurrentRound.teams[0], session.CurrentRound.teams[1]
 
 		// 交换两只队伍
-		teams[0], teams[1] = previousT2.team, previousT1.team
-		teamsEncryptPlayerIndex[0], teamsEncryptPlayerIndex[1] = previousT2.encryptPlayerIndex%uint8(len(previousT2.team.Players)), (previousT1.encryptPlayerIndex+1)%uint8(len(previousT2.team.Players))
+		teams[0], teams[1] = previousT2.Team, previousT1.Team
+		teamsEncryptPlayerIndex[0], teamsEncryptPlayerIndex[1] = previousT2.encryptPlayerIndex%uint8(len(previousT2.Team.Players)), (previousT1.encryptPlayerIndex+1)%uint8(len(previousT2.Team.Players))
 	}
 
 	round := &Round{}
@@ -130,7 +130,7 @@ func createNewRound(session *Session) *Round {
 	for idx, t := range teams {
 		epi := teamsEncryptPlayerIndex[idx]
 		roundTeam[idx] = &RoundedTeam{
-			team:               t,
+			Team:               t,
 			round:              round,
 			secret:             secret_codes[rand.Intn(len(secret_codes))],
 			encryptPlayerIndex: epi,

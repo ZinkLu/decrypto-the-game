@@ -2,7 +2,7 @@ package api
 
 // 作为 Team 的子类，添加上了本局的一些对战信息
 type RoundedTeam struct {
-	team               *Team
+	*Team
 	round              *Round
 	secret             [3]int
 	encryptedMessage   [3]string
@@ -19,7 +19,7 @@ func (rt *RoundedTeam) SetInspectSecret(inspectedSecret [3]int) bool {
 	rt.inspectedSecret = inspectedSecret
 	result := rt.IsInspected()
 	if result {
-		rt.team.InspectedSuccess()
+		rt.Team.InspectedSuccess()
 	}
 	return result
 }
@@ -36,7 +36,7 @@ func (rt *RoundedTeam) SetDecryptedSecret(secret [3]int) bool {
 	rt.decryptSecret = secret
 	result := rt.IsDecryptedCorrect()
 	if !result {
-		rt.team.DecryptFailed()
+		rt.Team.DecryptFailed()
 	}
 	return result
 }
