@@ -5,6 +5,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/handlers"
 	"github.com/tencent-connect/botgo"
 	"github.com/tencent-connect/botgo/openapi"
 	"github.com/tencent-connect/botgo/token"
@@ -36,12 +37,17 @@ func (bot *QQBot) Start() {
 
 // 注册所有机器人行为
 func initHandlers(api openapi.OpenAPI) []interface{} {
-	return []interface{}{getAtMessageHandler(api)}
+	return []interface{}{handlers.GetAtMessageHandler(api)}
 }
 
-func CreateBot(botId uint64, botSecret string) *QQBot {
+func CreateBot(botId uint64, botSecret string, debug bool) *QQBot {
+	var api openapi.OpenAPI
 	token := token.BotToken(botId, botSecret)
-	api := botgo.NewOpenAPI(token).WithTimeout(3 * time.Second)
+	if debug {
+		api = botgo.NewSandboxOpenAPI(token).WithTimeout(3 * time.Second)
+	} else {
+		api = botgo.NewOpenAPI(token).WithTimeout(3 * time.Second)
+	}
 
 	return &QQBot{
 		botId:     botId,

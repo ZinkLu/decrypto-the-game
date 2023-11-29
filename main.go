@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot"
 )
@@ -14,5 +15,6 @@ func main() {
 	qq_bot.CreateBot(
 		botId,
 		os.Getenv("BOT_SECRET"),
+		strings.ToLower(os.Getenv("DEBUG")) == "true",
 	).Start()
 }

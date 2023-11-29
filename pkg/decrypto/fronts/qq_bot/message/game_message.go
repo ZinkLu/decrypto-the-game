@@ -1,4 +1,4 @@
-package qq_bot
+package message
 
 import (
 	"crypto/rand"
@@ -10,13 +10,14 @@ import (
 )
 
 // some command
-const game_start_command = "开始游戏"
-const game_status_command = "游戏状态"
-const game_end_command = "结束游戏"
+const GAME_START_CMD = "开始游戏"
+const GAME_STATUS_CMD = "游戏状态"
+const GAME_END_CMD = "结束游戏"
+const CLOSE_ROOM_CMD = "关闭房间"
 
 // some message
 
-const help_msg = `如果要开始游戏，请 @ 四个以上的玩家后再 @ 我并说 “开始游戏”，比如
+const HELP_MSG = `如果要开始游戏，请 @ 四个以上的玩家后再 @ 我并说 “开始游戏”，比如
 
 '@小红 @小明 @%s /开始游戏'
 
@@ -24,7 +25,7 @@ const help_msg = `如果要开始游戏，请 @ 四个以上的玩家后再 @ �
 参与的人数必须是大于 4 人 且小于 8 人的偶数哦！
 `
 
-const game_name = "%s <%s> 的对决"
+const GAME_NAME = "%s <%s> 的对决"
 
 var game_logo = [13]string{
 	"🖲️",
@@ -42,19 +43,19 @@ var game_logo = [13]string{
 	"📣",
 }
 
-func randomEmoji() string {
+func RandomEmoji() string {
 	randomIndex, _ := rand.Int(rand.Reader, big.NewInt(int64(len(game_logo))))
 	return game_logo[randomIndex.Int64()]
 }
 
-const game_start_msg = `%s 游戏开始！
+const GAME_START_MSG = `%s 游戏开始！
 当前队伍
 队伍 A: %s
 队伍 B: %s
 当前 A 队伍正在行动 🥷
 `
 
-func getGameStartMessage(session *api.Session) string {
+func GetGameStartMessage(session *api.Session) string {
 	var teamANames = make([]string, 0, len(session.Teams[0].Players))
 	var teamBNames = make([]string, 0, len(session.Teams[1].Players))
 	for _, player := range session.Teams[0].Players {
@@ -64,5 +65,8 @@ func getGameStartMessage(session *api.Session) string {
 		teamBNames = append(teamBNames, player.NickName)
 	}
 
-	return fmt.Sprintf(game_start_msg, randomEmoji(), strings.Join(teamANames, ","), strings.Join(teamBNames, ","))
+	return fmt.Sprintf(GAME_START_MSG, RandomEmoji(), strings.Join(teamANames, ","), strings.Join(teamBNames, ","))
 }
+
+const GAME_END_MSG = `你主动结束了游戏，下次再见喽~`
+const CLOSE_ROOM_MSG = `房间将在 10 秒后自动关闭，下次见~`

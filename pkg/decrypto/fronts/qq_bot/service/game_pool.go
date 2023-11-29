@@ -1,4 +1,4 @@
-package qq_bot
+package service
 
 import (
 	"sync"
@@ -25,7 +25,7 @@ type GamePool struct {
 }
 
 // 将某个 Key 关联到某场 session
-func (p *GamePool) put(key string, session *api.Session) error {
+func (p *GamePool) Put(key string, session *api.Session) {
 	p.pool[key] = session
 
 	if _, ok := p.reserved[session]; !ok {
@@ -42,16 +42,15 @@ func (p *GamePool) put(key string, session *api.Session) error {
 	}
 
 	p.reserved[session] = append(p.reserved[session], key)
-	return nil
 }
 
 // 获取某个 key 对应的 Session
-func (p *GamePool) get(key string) *api.Session {
+func (p *GamePool) Get(key string) *api.Session {
 	return p.pool[key]
 }
 
 // 表示结束一场 session，清空 key 相关的 session 以及 session 关联的其他 key
-func (p *GamePool) gameOver(key string) {
+func (p *GamePool) GameOver(key string) {
 	value, ok := p.pool[key]
 	if !ok {
 		return
@@ -63,10 +62,30 @@ func (p *GamePool) gameOver(key string) {
 	delete(p.reserved, value)
 }
 
-// 所有的session应该都有一个独立的房间
-// CHAT_GAME_POOL 以子频道的 id 为 Key，gameSession 为value
-var CHAT_GAME_POOL = GamePool{make(map[string]*api.Session), make(map[*api.Session][]string)}
+// GAME_POOL
+// 为了能让 bot 更快判断需要处理哪场session，因此设置 GAME_POOL 对象
+//
+// GAME_POOL 的key可以是是一切字符串
+//
+// 比如 ChannelID ，bot 能够快速通过频道号判断是否有有效的 session
+// 有比如 UserId，bot 能够快速判断
+var GAME_POOL = GamePool{make(map[string]*api.Session), make(map[*api.Session][]string)}
 
-// 以 userid 为 key, gameSession 做为 value 的 map
-// 保存了所有的正在进行游戏的用户，方便快速进行查询
-var USER_GAME_POOL = GamePool{make(map[string]*api.Session), make(map[*api.Session][]string)}
+const (
+	CHANNEL = "C"
+	USER    = "U"
+	OTHER   = "O"
+)
+
+// 正确获取 GAME_POOL 中 key 值
+// 自动添加前缀
+func GetPoolKey(way string, key string) string {
+	switch way {
+	case CHANNEL:
+		return "C-" + key
+	case USER:
+		return "U-" + key
+	default:
+		return "O-" + key
+	}
+}
