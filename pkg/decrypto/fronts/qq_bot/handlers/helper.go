@@ -2,9 +2,13 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
+	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/message"
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
 	"github.com/tencent-connect/botgo/dto"
 	"github.com/tencent-connect/botgo/openapi"
 )
@@ -19,6 +23,9 @@ func SendMessage(api openapi.OpenAPI, channelId string, originMessage *dto.WSATM
 	})
 }
 
+// 用来维护
+var roomMap = make(map[string]bool)
+
 // 创建游戏房间
 func createPrivateGameRoom(api openapi.OpenAPI, atMessage *dto.WSATMessageData, users []*dto.User, host *dto.User) (*dto.Channel, error) {
 	userIds := make([]string, 0, len(users))
@@ -27,7 +34,7 @@ func createPrivateGameRoom(api openapi.OpenAPI, atMessage *dto.WSATMessageData, 
 		userIds = append(userIds, user.ID)
 	}
 
-	return api.PostChannel(context.Background(), atMessage.GuildID, &dto.ChannelValueObject{
+	c, err := api.PostChannel(context.Background(), atMessage.GuildID, &dto.ChannelValueObject{
 		Name:           fmt.Sprintf(message.GAME_NAME, message.RandomEmoji(), host.Username),
 		Type:           dto.ChannelTypeText,
 		ParentID:       atMessage.ChannelID,
@@ -35,7 +42,45 @@ func createPrivateGameRoom(api openapi.OpenAPI, atMessage *dto.WSATMessageData, 
 		PrivateUserIDs: userIds,
 		OwnerID:        host.ID,
 	})
+	if err == nil {
+		roomMap[c.ID] = false
+	}
+	return c, err
 
+}
+
+func closeRoom(api openapi.OpenAPI, data *dto.WSATMessageData) error {
+	channelId := data.ChannelID
+	closed, ok := roomMap[channelId]
+
+	if !ok {
+		SendMessage(api, channelId, data, message.NOT_A_GAME_ROOM)
+		return errors.New(message.NOT_A_GAME_ROOM)
+	}
+
+	if closed {
+		SendMessage(api, channelId, data, message.ROOM_IN_DELETING)
+		return errors.New(message.ROOM_IN_DELETING)
+	}
+
+	if session := service.GetGameSessionByChannel(channelId); session != nil {
+		SendMessage(api, channelId, data, message.HAS_GAME_IN_ROOM)
+		return errors.New(message.HAS_GAME_IN_ROOM)
+	} else {
+		// 删除房间（需要延时 10 秒）
+		roomMap[channelId] = true
+		defer func() {
+			time.Sleep(time.Second * 10)
+			err := api.DeleteChannel(context.Background(), channelId)
+			if err != nil {
+				log.Printf("删除房间失败, error is %s", err)
+			}
+			delete(roomMap, channelId)
+		}()
+
+		SendMessage(api, data.ChannelID, data, message.CLOSE_ROOM_MSG)
+		return nil
+	}
 }
 
 // 发送帮助信息

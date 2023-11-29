@@ -6,7 +6,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/message"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
@@ -109,25 +108,5 @@ func gameOver(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 	} else {
 		SendMessage(api, data.ChannelID, data, message.CANT_FOUNT_GAME_IN_THREAD)
 		return errors.New(message.CANT_FOUNT_GAME_IN_THREAD)
-	}
-}
-
-func closeRoom(api openapi.OpenAPI, data *dto.WSATMessageData) error {
-	channelId := data.ChannelID
-	if session := service.GetGameSessionByChannel(channelId); session != nil {
-		SendMessage(api, channelId, data, message.HAS_GAME_IN_ROOM)
-		return errors.New(message.HAS_GAME_IN_ROOM)
-	} else {
-		// 删除房间（需要延时 10 秒）
-		defer func() {
-			time.Sleep(time.Second * 10)
-			err := api.DeleteChannel(context.Background(), channelId)
-			if err != nil {
-				log.Printf("删除房间失败, error is %s", err)
-			}
-		}()
-
-		SendMessage(api, data.ChannelID, data, message.CLOSE_ROOM_MSG)
-		return nil
 	}
 }
