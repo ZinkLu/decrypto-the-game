@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -78,6 +79,8 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 	} else {
 		if gameChannel, err := createPrivateGameRoom(api, data, users, users[0]); err == nil {
 			if session, err := service.StartGameSession(users, gameChannel.ID); err == nil {
+				// 发送跳转信息
+				SendMessage(api, data.ChannelID, data, fmt.Sprintf(message.GAME_ROOMS_LINK_MSG, gameChannel.ID))
 				// 发送开始信息
 				SendMessage(api, gameChannel.ID, data, message.GetGameStartMessage(session))
 			} else {
