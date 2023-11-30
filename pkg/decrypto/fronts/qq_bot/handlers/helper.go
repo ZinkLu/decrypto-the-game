@@ -49,6 +49,12 @@ func createPrivateGameRoom(api openapi.OpenAPI, atMessage *dto.WSATMessageData, 
 
 }
 
+func isGameRoomMessage(data *dto.WSATMessageData) bool {
+	channelId := data.ChannelID
+	_, ok := roomMap[channelId]
+	return ok
+}
+
 func closeRoom(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 	channelId := data.ChannelID
 	closed, ok := roomMap[channelId]

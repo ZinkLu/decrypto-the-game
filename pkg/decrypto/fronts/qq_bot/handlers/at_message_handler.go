@@ -18,10 +18,9 @@ var BOT_NAME string
 var LOCK = sync.Mutex{}
 
 func GetAtMessageHandler(api openapi.OpenAPI) event.ATMessageEventHandler {
-	var atMessageHandler event.ATMessageEventHandler = func(event *dto.WSPayload, data *dto.WSATMessageData) error {
+	return func(event *dto.WSPayload, data *dto.WSATMessageData) error {
 		return handle(api, data)
 	}
-	return atMessageHandler
 }
 
 func handle(api openapi.OpenAPI, data *dto.WSATMessageData) error {
@@ -42,7 +41,10 @@ func handle(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 
 // 开始游戏
 func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
-	// TODO: 限制只能在游戏大厅开始游戏?
+	if isGameRoomMessage(data) {
+		SendMessage(api, data.ChannelID, data, message.CANT_CREATE_GAME_SESSION_IN_GAME_ROOM)
+		return errors.New(message.CANT_CREATE_GAME_SESSION_IN_GAME_ROOM)
+	}
 	host := data.Author.ID
 	users := []*dto.User{data.Author}
 	exists := map[string]bool{}
