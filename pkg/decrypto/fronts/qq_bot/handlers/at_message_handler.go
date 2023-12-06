@@ -34,7 +34,7 @@ func handle(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 	} else if strings.Contains(data.Content, message.CLOSE_ROOM_CMD) {
 		return closeRoom(api, data)
 	} else {
-		help(api, data)
+		inGame(api, data)
 	}
 
 	return nil
@@ -100,6 +100,7 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 	return nil
 }
 
+// 游戏结束
 func gameOver(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 	channelId := data.ChannelID
 	if session := service.GetGameSessionByChannel(channelId); session != nil {
@@ -114,4 +115,24 @@ func gameOver(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 		SendMessage(api, data.ChannelID, data, message.CANT_FOUNT_GAME_IN_THREAD)
 		return errors.New(message.CANT_FOUNT_GAME_IN_THREAD)
 	}
+}
+
+// 在游戏中?
+func inGame(api openapi.OpenAPI, data *dto.WSATMessageData) error {
+	// 不是游戏房间内的信息返回帮助信息
+	if !isGameRoomMessage(data) {
+		help(api, data)
+		return nil
+	}
+
+	// 虽然在游戏房间内，但是是飞对局玩家发送的信息，给出不要捣乱的提示；
+	session := service.GetGameSessionByChannel(data.ChannelID)
+	if session != service.GetGameSessionByUser(data.Author.ID) {
+		SendMessage(api, data.ChannelID, data, "")
+		return nil
+	}
+
+	// 处理对局
+
+	return nil
 }

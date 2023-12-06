@@ -28,8 +28,7 @@ func (bot *QQBot) Start() {
 	// log.Printf("%+v, err:%v", me, err)
 	// 监听哪类事件就需要实现哪类的 handler，定义：websocket/event_handler.go
 	handlers := initHandlers(api)
-	// var handlers []interface{}
-
+	initRoundHandler(api)
 	intent := websocket.RegisterHandlers(handlers...)
 	// 启动 session manager 进行 ws 连接的管理，如果接口返回需要启动多个 shard 的连接，这里也会自动启动多个
 	botgo.NewSessionManager().Start(ws, bot.token, &intent)
@@ -38,6 +37,10 @@ func (bot *QQBot) Start() {
 // 注册所有机器人行为
 func initHandlers(api openapi.OpenAPI) []interface{} {
 	return []interface{}{handlers.GetAtMessageHandler(api)}
+}
+
+func initRoundHandler(api openapi.OpenAPI) {
+	handlers.InitRoundHandler(api)
 }
 
 func CreateBot(botId uint64, botSecret string, debug bool) *QQBot {

@@ -6,7 +6,7 @@ import (
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
 )
 
-var POOL_LOCK = sync.Mutex{}
+var pool_lock = sync.Mutex{}
 
 // GamePool
 //
@@ -25,13 +25,13 @@ type GamePool struct {
 }
 
 // 将某个 Key 关联到某场 session
-func (p *GamePool) Put(key string, session *api.Session) {
+func (p *GamePool) put(key string, session *api.Session) {
 	p.pool[key] = session
 
 	if _, ok := p.reserved[session]; !ok {
-		if POOL_LOCK.TryLock() {
+		if pool_lock.TryLock() {
 			p.reserved[session] = make([]string, 0)
-			POOL_LOCK.Unlock()
+			pool_lock.Unlock()
 		} else {
 			for {
 				if _, ok := p.reserved[session]; ok {
@@ -45,12 +45,12 @@ func (p *GamePool) Put(key string, session *api.Session) {
 }
 
 // 获取某个 key 对应的 Session
-func (p *GamePool) Get(key string) *api.Session {
+func (p *GamePool) get(key string) *api.Session {
 	return p.pool[key]
 }
 
 // 表示结束一场 session，清空 key 相关的 session 以及 session 关联的其他 key
-func (p *GamePool) GameOver(key string) {
+func (p *GamePool) gameOver(key string) {
 	value, ok := p.pool[key]
 	if !ok {
 		return
@@ -62,30 +62,42 @@ func (p *GamePool) GameOver(key string) {
 	delete(p.reserved, value)
 }
 
-// GAME_POOL
-// 为了能让 bot 更快判断需要处理哪场session，因此设置 GAME_POOL 对象
+// 通过 Session 来获取关联到该 Session 的 keys
+func (p *GamePool) getKeys(session *api.Session) []string {
+	value, _ := p.reserved[session]
+	return value
+}
+
+// game_pool
+// 为了能让 bot 更快判断需要处理哪场session，因此设置 game_pool 对象
 //
-// GAME_POOL 的key可以是是一切字符串
+// game_pool 的key可以是是一切字符串
 //
 // 比如 ChannelID ，bot 能够快速通过频道号判断是否有有效的 session
 // 有比如 UserId，bot 能够快速判断
-var GAME_POOL = GamePool{make(map[string]*api.Session), make(map[*api.Session][]string)}
+var game_pool = GamePool{make(map[string]*api.Session), make(map[*api.Session][]string)}
+
+type key_type = int
 
 const (
-	CHANNEL = "C"
-	USER    = "U"
-	OTHER   = "O"
+	CHANNEL key_type = iota
+	USER
+	OTHER
 )
 
 // 正确获取 GAME_POOL 中 key 值
 // 自动添加前缀
-func GetPoolKey(way string, key string) string {
+func getPoolKey(way key_type, key string) string {
+	return getPoolKeyPrefix(way) + key
+}
+
+func getPoolKeyPrefix(way key_type) string {
 	switch way {
 	case CHANNEL:
-		return "C-" + key
+		return "C-"
 	case USER:
-		return "U-" + key
+		return "U-"
 	default:
-		return "O-" + key
+		return "O-"
 	}
 }

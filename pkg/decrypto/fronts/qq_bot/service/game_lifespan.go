@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
 	"github.com/tencent-connect/botgo/dto"
@@ -29,7 +30,7 @@ func StartGameSession(players []*dto.User, channelId string) (*api.Session, erro
 
 	// 判断所有的用户都在游戏中，如果有任何一名玩家在游戏中则无法开始游戏
 	for _, u := range players {
-		value := GAME_POOL.Get(GetPoolKey(USER, u.ID))
+		value := game_pool.get(getPoolKey(USER, u.ID))
 		if value != nil {
 			msg := fmt.Sprintf("玩家 %s 已经处在一场游戏中", u.Username)
 			err = errors.New(msg)
@@ -49,9 +50,9 @@ func StartGameSession(players []*dto.User, channelId string) (*api.Session, erro
 		goto ERROR
 	}
 
-	GAME_POOL.Put(GetPoolKey(CHANNEL, channelId), session)
+	game_pool.put(getPoolKey(CHANNEL, channelId), session)
 	for _, u := range userIds {
-		GAME_POOL.Put(GetPoolKey(USER, u), session)
+		game_pool.put(getPoolKey(USER, u), session)
 	}
 
 	return session, nil
@@ -61,10 +62,45 @@ ERROR:
 }
 
 func EndGameSessionByChannel(channelId string) string {
-	GAME_POOL.GameOver(GetPoolKey(CHANNEL, channelId))
+	game_pool.gameOver(getPoolKey(CHANNEL, channelId))
 	return channelId
 }
 
 func GetGameSessionByChannel(channelId string) *api.Session {
-	return GAME_POOL.Get(GetPoolKey(CHANNEL, channelId))
+	return game_pool.get(getPoolKey(CHANNEL, channelId))
+}
+
+func GetGameSessionByUser(userId string) *api.Session {
+	return game_pool.get(getPoolKey(USER, userId))
+}
+
+func GetChannelIDByGameSession(session *api.Session) (string, error) {
+	keys := game_pool.getKeys(session)
+	if keys == nil {
+		return "", errors.New("session is not in game_pool")
+	}
+
+	for _, v := range keys {
+		if strings.HasPrefix(v, getPoolKeyPrefix(CHANNEL)) {
+			return strings.TrimPrefix(v, getPoolKeyPrefix(CHANNEL)), nil
+		}
+	}
+
+	return "", errors.New("session is not related to a channel")
+
+}
+func GetUserIdsByGameSession(session *api.Session) ([]string, error) {
+	keys := game_pool.getKeys(session)
+	if keys == nil {
+		return nil, errors.New("session is not in game_pool")
+	}
+
+	result := make([]string, 0, len(keys))
+	for _, v := range keys {
+		if strings.HasPrefix(v, getPoolKeyPrefix(USER)) {
+			result = append(result, strings.TrimPrefix(v, getPoolKeyPrefix(USER)))
+		}
+	}
+
+	return result, nil
 }

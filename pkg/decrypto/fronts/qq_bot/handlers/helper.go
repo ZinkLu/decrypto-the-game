@@ -23,7 +23,7 @@ func SendMessage(api openapi.OpenAPI, channelId string, originMessage *dto.WSATM
 	})
 }
 
-// 用来维护
+// 用来维护所有由机器人开过的房间
 var roomMap = make(map[string]bool)
 
 // 创建游戏房间

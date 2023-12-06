@@ -21,7 +21,7 @@ type TeamState uint
 
 4. 我方进行解密
 
-因此有 8 个
+因此有 8(4*2) 个阶段
 */
 const (
 	INIT       TeamState = iota // 准备状态
