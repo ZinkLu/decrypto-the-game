@@ -13,6 +13,7 @@ func InitRoundHandler(client openapi.OpenAPI) {
 	})
 }
 
+// listens to channel for events
 func initState(client openapi.OpenAPI, ctx context.Context, r *api.Round, ts api.TeamState) {
 
 }
