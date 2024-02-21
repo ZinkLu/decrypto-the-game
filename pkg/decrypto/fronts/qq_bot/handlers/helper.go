@@ -23,6 +23,23 @@ func SendMessage(api openapi.OpenAPI, channelId string, originMessage *dto.WSATM
 	})
 }
 
+// 发送私信消息
+// 注意，由于 qq 限制了 qq 机器的主动消息，因此这里所有的消息应该是被动消息
+// 所以需要传入 originMessage 参数来确定需要恢复的消息
+func SendDirectMessage(api openapi.OpenAPI, userId string, originMessage *dto.WSDirectMessageData, msg string) {
+	api.PostDirectMessage(
+		context.Background(),
+		&dto.DirectMessage{
+			GuildID:    originMessage.GuildID,
+			ChannelID:  originMessage.ChannelID,
+			CreateTime: time.Now().Format("2006-01-02 15:04:05"),
+		},
+		&dto.MessageToCreate{
+			Content: msg,
+			MsgID:   originMessage.ID,
+		})
+}
+
 // 用来维护所有由机器人开过的房间
 var roomMap = make(map[string]bool)
 

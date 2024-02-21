@@ -56,3 +56,8 @@ func (rt *RoundedTeam) Opponent() *RoundedTeam {
 	}
 	return opponent
 }
+
+// 本轮中加密的人
+func (rt *RoundedTeam) EncryptPlayer() *Player {
+	return rt.encryptPlayer
+}

@@ -83,6 +83,9 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 				SendMessage(api, data.ChannelID, data, fmt.Sprintf(message.GAME_ROOMS_LINK_MSG, gameChannel.ID))
 				// 发送开始信息
 				SendMessage(api, gameChannel.ID, data, message.GetGameStartMessage(session))
+
+				session.GetBrokerForWrite() <- data
+				go session.AutoForward()
 			} else {
 				log.Printf("创建对局失败, error is %s", err)
 				SendMessage(api, data.ChannelID, data, message.CANT_CREATE_GAME_SESSION)
@@ -125,14 +128,16 @@ func inGame(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 		return nil
 	}
 
-	// 虽然在游戏房间内，但是是飞对局玩家发送的信息，给出不要捣乱的提示；
+	// 虽然在游戏房间内，但是非对局玩家发送的信息，给出不要捣乱的提示（目前不发送任何信息）；
 	session := service.GetGameSessionByChannel(data.ChannelID)
 	if session != service.GetGameSessionByUser(data.Author.ID) {
-		SendMessage(api, data.ChannelID, data, "")
+		// SendMessage(api, data.ChannelID, data, message.GAME_END_MSG)
 		return nil
 	}
 
 	// 处理对局
+	// 将消息放入 session 对应的 channel 中
+	session.GetBrokerForWrite() <- data
 
 	return nil
 }

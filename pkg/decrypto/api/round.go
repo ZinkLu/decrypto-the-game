@@ -11,7 +11,7 @@ import (
 Round 代表一个大轮次，包含了两队的小轮次，当两队小轮次进行完毕，则认为本轮结束，计算分数
 */
 type Round struct {
-	gameSession   *Session        // 本局游戏信息
+	GameSession   *Session        // 本局游戏信息
 	PreviousRound *Round          // 上轮轮次对象
 	teams         [2]*RoundedTeam // 参加本局对战的队伍
 	State         TeamState       // 当前的队伍的回合阶段
@@ -21,7 +21,7 @@ type Round struct {
 
 // 判断是否是最后一轮游戏
 func (round *Round) isFinalRound() bool {
-	return round.RoundN == round.gameSession.maxRounds
+	return round.RoundN == round.GameSession.maxRounds
 }
 
 // 进行当前的队伍，当前阶段的操作;
@@ -137,7 +137,7 @@ func createNewRound(session *Session) *Round {
 			encryptPlayer:      t.Players[epi],
 		}
 	}
-	round.gameSession = session
+	round.GameSession = session
 	round.PreviousRound = session.CurrentRound
 	round.teams = roundTeam
 	round.CurrentTeam = roundTeam[0]

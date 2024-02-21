@@ -17,7 +17,7 @@ const CLOSE_ROOM_CMD = "关闭房间"
 
 // some message
 
-const HELP_MSG = `如果要开始游戏，请 @ 四个以上的玩家后再 @ 我并说 “开始游戏”，比如
+const HELP_MSG = `如果要开始游戏，请在游戏大厅 @ 四个以上的玩家后再 @ 我并说 “开始游戏”，比如
 
 '@小红 @小明 @%s /开始游戏'
 
@@ -53,6 +53,8 @@ const GAME_START_MSG = `%s 游戏开始！
 队伍 A: %s
 队伍 B: %s
 当前 A 队伍正在行动 🥷
+
+（请 **私信** 我来获取各个队伍的密文）
 `
 
 func GetGameStartMessage(session *api.Session) string {

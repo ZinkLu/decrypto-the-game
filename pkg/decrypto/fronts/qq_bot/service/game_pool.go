@@ -22,6 +22,7 @@ var pool_lock = sync.Mutex{}
 type GamePool struct {
 	pool     map[string]*api.Session
 	reserved map[*api.Session][]string
+	// ch       chan string
 }
 
 // 将某个 Key 关联到某场 session
@@ -64,7 +65,7 @@ func (p *GamePool) gameOver(key string) {
 
 // 通过 Session 来获取关联到该 Session 的 keys
 func (p *GamePool) getKeys(session *api.Session) []string {
-	value, _ := p.reserved[session]
+	value := p.reserved[session]
 	return value
 }
 
