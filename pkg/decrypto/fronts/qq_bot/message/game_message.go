@@ -54,7 +54,7 @@ const GAME_START_MSG = `%s 游戏开始！
 队伍 B: %s
 当前 A 队伍正在行动 🥷
 
-（请 **私信** 我来获取各个队伍的密文）
+（请私信我并发送 <密文> 来获取各个队伍的密文）
 `
 
 func GetGameStartMessage(session *api.Session) string {

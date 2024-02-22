@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -19,13 +20,15 @@ import (
 // 如果创建成功返回 session 对象，否则 err 不为 nil
 //
 // err 中的错误信息是用户友好的，可以直接被返回到客户端
-func StartGameSession(players []*dto.User, channelId string) (*api.Session, error) {
+func StartGameSession(players []*dto.User, channelId string) (*api.Session, context.Context, error) {
 	// 约定第一名为房主
 	var (
 		err         error
 		session     *api.Session
 		gamePlayers []*api.Player
 	)
+	c, f := context.WithCancel(context.Background())
+
 	var userIds = make([]string, 0, len(players))
 
 	// 判断所有的用户都在游戏中，如果有任何一名玩家在游戏中则无法开始游戏
@@ -51,14 +54,18 @@ func StartGameSession(players []*dto.User, channelId string) (*api.Session, erro
 	}
 
 	game_pool.put(getPoolKey(CHANNEL, channelId), session)
+	game_pool.killer[getPoolKey(CHANNEL, channelId)] = f
+	game_pool.broker[getPoolKey(CHANNEL, channelId)] = make(chan interface{})
+
 	for _, u := range userIds {
 		game_pool.put(getPoolKey(USER, u), session)
 	}
 
-	return session, nil
+	return session, c, nil
 
 ERROR:
-	return nil, err
+	f()
+	return nil, nil, err
 }
 
 func EndGameSessionByChannel(channelId string) string {
@@ -103,4 +110,13 @@ func GetUserIdsByGameSession(session *api.Session) ([]string, error) {
 	}
 
 	return result, nil
+}
+func GetGameBrokerBySession(session *api.Session) (chan interface{}, error) {
+	channelId, err := GetChannelIDByGameSession(session)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return game_pool.getSessionBroker(getPoolKey(CHANNEL, channelId)), nil
 }

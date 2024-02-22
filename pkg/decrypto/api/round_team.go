@@ -61,3 +61,17 @@ func (rt *RoundedTeam) Opponent() *RoundedTeam {
 func (rt *RoundedTeam) EncryptPlayer() *Player {
 	return rt.encryptPlayer
 }
+
+// 获取本局的加密数字
+func (rt *RoundedTeam) GetSecretDigits() [3]int {
+	return rt.secret
+}
+
+// 获取本局的加密词语
+func (rt *RoundedTeam) GetSecretWords() [3]string {
+	return [3]string{
+		rt.Words[rt.secret[0]],
+		rt.Words[rt.secret[1]],
+		rt.Words[rt.secret[2]],
+	}
+}

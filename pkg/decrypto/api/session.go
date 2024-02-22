@@ -40,7 +40,6 @@ type Session struct {
 	Rounds       []*Round // 轮次记录
 	sessionId    string   // 游戏 id，一般来说可以使用 Bot 收到的 messageId 来填写
 	maxRounds    uint8    // 最大轮数，一般来说是 8 轮游戏
-	broker       chan interface{}
 }
 
 // 自动组队并开始一场对局
@@ -76,7 +75,7 @@ func NewWithTeams(sessionId string, teamAPlayers []*Player, teamBPlayers []*Play
 	if err != nil {
 		return nil, err
 	}
-	return &Session{sessionId: sessionId, maxRounds: 8, Teams: [2]*Team{teamA, teamB}, broker: make(chan interface{})}, nil
+	return &Session{sessionId: sessionId, maxRounds: 8, Teams: [2]*Team{teamA, teamB}}, nil
 }
 
 // 开始新的轮次
@@ -111,16 +110,11 @@ func (s *Session) IsGameOver() (bool, *Team) {
 	return false, nil
 }
 
-func (s *Session) GetBrokerForRead() <-chan interface{} {
-	return s.broker
-}
-
-func (s *Session) GetBrokerForWrite() chan<- interface{} {
-	return s.broker
-}
-
-func (s *Session) AutoForward() {
-	for round, over := s.StartRound(context.Background()); over; {
-		round.AutoForward(context.Background())
+func (s *Session) AutoForward(ctx context.Context) {
+	for round, canContinue := s.StartRound(ctx); canContinue; {
+		isCanceled := round.AutoForward(ctx)
+		if isCanceled {
+			return
+		}
 	}
 }

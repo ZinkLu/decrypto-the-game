@@ -78,14 +78,21 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 		help(api, data)
 	} else {
 		if gameChannel, err := createPrivateGameRoom(api, data, users, users[0]); err == nil {
-			if session, err := service.StartGameSession(users, gameChannel.ID); err == nil {
+			if session, ctx, err := service.StartGameSession(users, gameChannel.ID); err == nil {
 				// 发送跳转信息
 				SendMessage(api, data.ChannelID, data, fmt.Sprintf(message.GAME_ROOMS_LINK_MSG, gameChannel.ID))
 				// 发送开始信息
 				SendMessage(api, gameChannel.ID, data, message.GetGameStartMessage(session))
+				go session.AutoForward(ctx)
 
-				session.GetBrokerForWrite() <- data
-				go session.AutoForward()
+				// 触发对局
+				broker, err := service.GetGameBrokerBySession(session)
+				if err != nil {
+					return nil
+				}
+
+				broker <- data
+
 			} else {
 				log.Printf("创建对局失败, error is %s", err)
 				SendMessage(api, data.ChannelID, data, message.CANT_CREATE_GAME_SESSION)
@@ -137,7 +144,12 @@ func inGame(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 
 	// 处理对局
 	// 将消息放入 session 对应的 channel 中
-	session.GetBrokerForWrite() <- data
+	broker, err := service.GetGameBrokerBySession(session)
+	if err != nil {
+		return nil
+	}
+
+	broker <- data
 
 	return nil
 }

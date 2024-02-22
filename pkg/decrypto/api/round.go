@@ -46,6 +46,8 @@ func (round *Round) Next() (*RoundedTeam, TeamState) {
 	var nextStep TeamState
 	var nextTeam *RoundedTeam = round.CurrentTeam
 	switch round.State {
+	case NEW:
+		nextStep = INIT
 	case INIT:
 		nextStep = ENCRYPTING
 	case ENCRYPTING:
@@ -65,44 +67,68 @@ func (round *Round) Next() (*RoundedTeam, TeamState) {
 }
 
 // 在注册 handler 后进行这个方法的注册
-func (round *Round) AutoForward(c context.Context) {
+// 如果手动结束了对局则会返回 true
+func (round *Round) AutoForward(c context.Context) bool {
 	for team, state := round.Next(); state < DONE; team, state = round.Next() {
 		switch state {
 		case INIT:
-			initHandler(c, round, INIT)
+			isCancelled := initHandler(c, round, INIT)
+			if isCancelled {
+				return isCancelled
+			}
 		case ENCRYPTING:
-			eString := encryptHandler(c, round, team, team.encryptPlayer, ENCRYPTING)
+			eString, isCancelled := encryptHandler(c, round, team, team.encryptPlayer, ENCRYPTING)
+			if isCancelled {
+				return isCancelled
+			}
 			team.encryptedMessage = eString
 		case INTERCEPT:
 			opponent := team.Opponent()
-			inspectedSecret := interceptHandler(c, round, opponent, INTERCEPT)
+			inspectedSecret, isCancelled := interceptHandler(c, round, opponent, INTERCEPT)
+			if isCancelled {
+				return isCancelled
+			}
 			inspected := opponent.SetInspectSecret(inspectedSecret)
 
 			if inspected && interceptSuccessHandler != nil {
-				interceptSuccessHandler(c, round, opponent, INTERCEPT)
+				if interceptSuccessHandler(c, round, opponent, INTERCEPT) {
+					return true
+				}
 			} else if !inspected && interceptFailHandler != nil {
-				interceptFailHandler(c, round, opponent, INTERCEPT)
+				if interceptFailHandler(c, round, opponent, INTERCEPT) {
+					return true
+				}
 			}
 
 		case DECRYPT:
 			if team.Opponent().IsInspected() {
-				return // 拦截成功的话直接跳过
+				return false // 拦截成功的话直接跳过
 			}
 
-			decryptedSecret := decryptHandler(c, round, team, DECRYPT)
+			decryptedSecret, isCancelled := decryptHandler(c, round, team, DECRYPT)
+			if isCancelled {
+				return isCancelled
+			}
 
 			success := team.SetDecryptedSecret(decryptedSecret)
 
 			if success && decryptSuccessHandler != nil {
-				decryptSuccessHandler(c, round, team, DECRYPT)
+				if decryptSuccessHandler(c, round, team, DECRYPT) {
+					return true
+				}
 			} else if !success && decryptFailHandler != nil {
-				decryptFailHandler(c, round, team, DECRYPT)
+				if decryptFailHandler(c, round, team, DECRYPT) {
+					return true
+				}
 			}
 
 		case DONE:
-			doneHandler(c, round, DONE)
+			if doneHandler(c, round, DONE) {
+				return true
+			}
 		}
 	}
+	return false
 }
 
 // 开始一轮新游戏
@@ -141,7 +167,7 @@ func createNewRound(session *Session) *Round {
 	round.PreviousRound = session.CurrentRound
 	round.teams = roundTeam
 	round.CurrentTeam = roundTeam[0]
-	round.State = INIT
+	round.State = NEW
 	round.RoundN = roundN
 
 	session.CurrentRound = round

@@ -8,7 +8,7 @@ import (
 	"github.com/tencent-connect/botgo/openapi"
 )
 
-// dm 信息，只处理处于游戏之中的玩家，回复对决状态信息
+// dm 信息，只处理处于游戏之中的玩家，回复状态信息
 func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandler {
 	return func(event *dto.WSPayload, data *dto.WSDirectMessageData) error {
 		session := service.GetGameSessionByUser(data.Author.ID)

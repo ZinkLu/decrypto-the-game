@@ -22,7 +22,8 @@ var pool_lock = sync.Mutex{}
 type GamePool struct {
 	pool     map[string]*api.Session
 	reserved map[*api.Session][]string
-	// ch       chan string
+	killer   map[string]func()
+	broker   map[string]chan interface{}
 }
 
 // 将某个 Key 关联到某场 session
@@ -56,11 +57,29 @@ func (p *GamePool) gameOver(key string) {
 	if !ok {
 		return
 	}
+
 	keys := p.reserved[value]
 	for _, v := range keys {
 		delete(p.pool, v)
 	}
 	delete(p.reserved, value)
+
+	f, ok := p.killer[key]
+	if ok {
+		f()
+		delete(p.killer, key)
+	}
+
+	c, ok := p.broker[key]
+	if ok {
+		close(c)
+		delete(p.broker, key)
+	}
+}
+
+// 获取当前对局的通讯通道
+func (p *GamePool) getSessionBroker(key string) chan interface{} {
+	return p.broker[key]
 }
 
 // 通过 Session 来获取关联到该 Session 的 keys
@@ -76,7 +95,7 @@ func (p *GamePool) getKeys(session *api.Session) []string {
 //
 // 比如 ChannelID ，bot 能够快速通过频道号判断是否有有效的 session
 // 有比如 UserId，bot 能够快速判断
-var game_pool = GamePool{make(map[string]*api.Session), make(map[*api.Session][]string)}
+var game_pool = GamePool{make(map[string]*api.Session), make(map[*api.Session][]string), make(map[string]func()), make(map[string]chan interface{})}
 
 type key_type = int
 
