@@ -4,12 +4,12 @@ package api
 type RoundedTeam struct {
 	*Team
 	round              *Round
-	secret             [3]int
-	encryptedMessage   [3]string
-	encryptPlayerIndex uint8
-	encryptPlayer      *Player
-	inspectedSecret    [3]int
-	decryptSecret      [3]int
+	secret             [3]int    // 本局中，需要传递的密码
+	encryptedMessage   [3]string // 本局中，负责加密的人给出的密文
+	encryptPlayerIndex uint8     // 本局中，负责加密的人的索引位置
+	encryptPlayer      *Player   // 本局中，负责加密的人
+	inspectedSecret    [3]int    // 本局中，对手给出的拦截密码
+	decryptSecret      [3]int    // 本局中，队友给出的破译密码
 }
 
 // 设置当前队伍的拦截密码
@@ -27,6 +27,14 @@ func (rt *RoundedTeam) SetInspectSecret(inspectedSecret [3]int) bool {
 // 当前队伍有没有破解成功
 func (rt *RoundedTeam) IsInspected() bool {
 	return rt.inspectedSecret == rt.Opponent().secret
+}
+
+func (rt *RoundedTeam) GetInspectSecret() [3]int {
+	return rt.inspectedSecret
+}
+
+func (rt *RoundedTeam) GetDecryptSecret() [3]int {
+	return rt.decryptSecret
 }
 
 // 设置当前队伍解密的密码
@@ -70,8 +78,8 @@ func (rt *RoundedTeam) GetSecretDigits() [3]int {
 // 获取本局的加密词语
 func (rt *RoundedTeam) GetSecretWords() [3]string {
 	return [3]string{
-		rt.Words[rt.secret[0]],
-		rt.Words[rt.secret[1]],
-		rt.Words[rt.secret[2]],
+		rt.Words[rt.secret[0]-1],
+		rt.Words[rt.secret[1]-1],
+		rt.Words[rt.secret[2]-1],
 	}
 }

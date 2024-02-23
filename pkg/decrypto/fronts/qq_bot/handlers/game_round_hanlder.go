@@ -20,22 +20,11 @@ func InitRoundHandler(client openapi.OpenAPI) {
 		// 发送开始本轮信息
 		// 将密码私信发送给当前的加密者
 		func(ctx context.Context, r *api.Round, ts api.TeamState) bool {
-
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
 					cId, _ := service.GetChannelIDByGameSession(r.GameSession)
 					SendMessage(client, cId, msg, fmt.Sprintf(message.START_ENCRYPT_MESSAGE, r.CurrentTeam.EncryptPlayer().NickName))
 					return false
-				} else if msg, ok := reply.(*dto.WSDirectMessageData); ok {
-					// 如果是当前的 encrypter 的回复，发送密文
-					if msg.Author.ID == r.CurrentTeam.EncryptPlayer().Uid {
-						SendDirectMessage(
-							client,
-							msg.ChannelID,
-							msg,
-							fmt.Sprintf(message.ENCRYPT_FAILED_MESSAGE, r.CurrentTeam.GetSecretDigits(), r.CurrentTeam.GetSecretWords()))
-						return false
-					}
 				}
 			}
 			return true

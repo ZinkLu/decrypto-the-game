@@ -118,3 +118,20 @@ func (s *Session) AutoForward(ctx context.Context) {
 		}
 	}
 }
+
+// 获取某玩家的队伍
+func (s *Session) GetUserTeam(uid string) *Team {
+	var target *Team
+	for _, p := range s.Teams[0].Players {
+		if p.Uid == uid {
+			target = s.Teams[0]
+			break
+		}
+	}
+
+	if target != nil {
+		return target
+	}
+
+	return s.Teams[1]
+}

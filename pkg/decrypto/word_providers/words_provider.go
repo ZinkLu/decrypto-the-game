@@ -5,5 +5,5 @@ type Provider interface {
 }
 
 func GetDefaultProvider() Provider {
-	return &LocalProvider{}
+	return NewLocalProvider()
 }

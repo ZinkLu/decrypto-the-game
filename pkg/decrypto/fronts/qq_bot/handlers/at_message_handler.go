@@ -142,14 +142,7 @@ func inGame(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 		return nil
 	}
 
-	// 处理对局
-	// 将消息放入 session 对应的 channel 中
-	broker, err := service.GetGameBrokerBySession(session)
-	if err != nil {
-		return nil
-	}
-
-	broker <- data
+	sendInGameMessageToBroker(session, data)
 
 	return nil
 }

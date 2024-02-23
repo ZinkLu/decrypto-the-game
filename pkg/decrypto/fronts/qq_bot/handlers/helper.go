@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/message"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
 	"github.com/tencent-connect/botgo/dto"
@@ -119,4 +120,15 @@ func help(api openapi.OpenAPI, data *dto.WSATMessageData) {
 		}
 	}
 	SendMessage(api, data.ChannelID, data, fmt.Sprintf(message.HELP_MSG, BOT_NAME))
+}
+
+// 所有由对局玩家发送的任何消息都会被放入到 broker 中被进一步处理（或者被抛弃）
+func sendInGameMessageToBroker(session *api.Session, data interface{}) error {
+	broker, err := service.GetGameBrokerBySession(session)
+	if err != nil {
+		return err
+	}
+
+	broker <- data
+	return nil
 }

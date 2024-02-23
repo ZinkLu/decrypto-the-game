@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/message"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
 	"github.com/tencent-connect/botgo/dto"
@@ -14,11 +17,33 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 		session := service.GetGameSessionByUser(data.Author.ID)
 		if session != nil {
 			// 处理信息
-			switch data.Content {
-			default:
+			if strings.Contains(data.Content, message.CHECK_SECRET_WORDS) {
+				team := session.GetUserTeam(data.Author.ID)
+				SendDirectMessage(api, data.Author.ID, data, message.GetTeamStatusMessage(team))
+			} else if strings.Contains(data.Content, message.CHECK_GAME_PROCESS) {
+				SendDirectMessage(api, data.Author.ID, data, message.GetGameStatusMessage(session))
+			} else if strings.Contains(data.Content, message.CHECK_SECRET_DIGITS) {
+				if session.CurrentRound.CurrentTeam.EncryptPlayer().Uid == data.Author.ID {
+					SendDirectMessage(
+						api,
+						data.ChannelID,
+						data,
+						fmt.Sprintf(message.READY_TO_ENCRYPT_MESSAGE, session.CurrentRound.CurrentTeam.GetSecretDigits(), session.CurrentRound.CurrentTeam.GetSecretWords()))
+				} else {
+					SendDirectMessage(
+						api,
+						data.ChannelID,
+						data,
+						message.NO_ENCRYPTING_MESSAGE,
+					)
+				}
+
+			} else {
 				SendDirectMessage(api, data.Author.ID, data, message.STATUS_HELP_MESSAGE)
 			}
 
+			sendInGameMessageToBroker(session, data)
+			return nil
 		}
 
 		SendDirectMessage(api, data.Author.ID, data, message.HELP_MSG)
