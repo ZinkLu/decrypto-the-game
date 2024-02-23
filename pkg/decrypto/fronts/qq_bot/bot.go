@@ -24,15 +24,18 @@ func (bot *QQBot) Start() {
 	api := bot.api
 	ws, err := api.WS(ctx, nil, "")
 	log.Printf("%+v, err:%v", ws, err)
-	// me, err := api.Me(ctx)
-	// log.Printf("%+v, err:%v", me, err)
+
+	if me, err := api.Me(context.Background()); err == nil {
+		handlers.BOT_INFO = me
+	}
 	// 监听哪类事件就需要实现哪类的 handler，定义：websocket/event_handler.go
-	handlers := initMessageHandlers(api)
-	intent := websocket.RegisterHandlers(handlers...)
+	hs := initMessageHandlers(api)
+	intent := websocket.RegisterHandlers(hs...)
 
 	initRoundHandler(api)
 	// 启动 session manager 进行 ws 连接的管理，如果接口返回需要启动多个 shard 的连接，这里也会自动启动多个
 	botgo.NewSessionManager().Start(ws, bot.token, &intent)
+
 }
 
 // 注册所有机器人行为

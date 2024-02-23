@@ -63,6 +63,7 @@ func (round *Round) Next() (*RoundedTeam, TeamState) {
 			nextTeam, nextStep = nil, DONE
 		}
 	}
+	round.State = nextStep
 	return nextTeam, nextStep
 }
 

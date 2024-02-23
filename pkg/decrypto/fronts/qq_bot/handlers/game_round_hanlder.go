@@ -40,14 +40,21 @@ func InitRoundHandler(client openapi.OpenAPI) {
 			// 解析加密者给出的密文是否满足特定需求，否则给出提示
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
+					atMessage := `<@!` + BOT_INFO.ID + `>`
+					content := strings.ReplaceAll(msg.Content, atMessage, "")
+					content = strings.TrimSpace(content)
 
-					encryptoMessage := strings.Split(msg.Content, message.SPLITTER)
+					encryptoMessage := strings.Split(content, message.SPLITTER)
 					if len(encryptoMessage) != 3 {
 						SendMessage(client, msg.ChannelID, msg, message.REPLY_FORMAT_MESSAGE)
 						continue
 					}
 
-					SendMessage(client, msg.ChannelID, msg, fmt.Sprintf(message.ENCRYPT_SUCCESS_MESSAGE, strings.Join(encryptoMessage, "")))
+					SendMessage(
+						client,
+						msg.ChannelID,
+						msg,
+						fmt.Sprintf(message.ENCRYPT_SUCCESS_MESSAGE, encryptoMessage[0], encryptoMessage[1], encryptoMessage[2]))
 					result = [3]string(encryptoMessage)
 					break
 				}

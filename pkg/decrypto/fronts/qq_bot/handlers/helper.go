@@ -14,6 +14,8 @@ import (
 	"github.com/tencent-connect/botgo/openapi"
 )
 
+var BOT_INFO *dto.User
+
 // 发送消息
 // 注意，由于 qq 限制了 qq 机器的主动消息，因此这里所有的消息应该是被动消息
 // 所以需要传入 originMessage 参数来确定需要恢复的消息
@@ -109,17 +111,7 @@ func closeRoom(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 
 // 发送帮助信息
 func help(api openapi.OpenAPI, data *dto.WSATMessageData) {
-
-	if BOT_NAME == "" {
-		LOCK.Lock()
-		if BOT_NAME == "" {
-			if me, err := api.Me(context.Background()); err == nil {
-				BOT_NAME = me.Username
-			}
-			LOCK.Unlock()
-		}
-	}
-	SendMessage(api, data.ChannelID, data, fmt.Sprintf(message.HELP_MSG, BOT_NAME))
+	SendMessage(api, data.ChannelID, data, fmt.Sprintf(message.HELP_MSG, BOT_INFO.Username))
 }
 
 // 所有由对局玩家发送的任何消息都会被放入到 broker 中被进一步处理（或者被抛弃）

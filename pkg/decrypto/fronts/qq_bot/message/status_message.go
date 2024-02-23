@@ -7,30 +7,27 @@ import (
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
 )
 
-const CHECK_SECRET_WORDS = "密文"
-const CHECK_GAME_PROCESS = "进度"
-const CHECK_SECRET_DIGITS = "密码"
+const PLAIN_WORDS = "词组"
+const GAME_PROCESS = "进度"
+const SECRET_CODES = "密码"
 
 const STATUS_HELP_MESSAGE = `您当前正在对局中，请回复
-	` + CHECK_SECRET_WORDS + `: 查看您队伍的密文信息
-	` + CHECK_GAME_PROCESS + `: 查看游戏进度与历史
+	` + PLAIN_WORDS + `: 查看您队伍的词组信息
+	` + GAME_PROCESS + `: 查看游戏进度与历史
 如果您是当前加密者，请回复
-	` + CHECK_SECRET_DIGITS + `: 来查看您本局需要加密的密码
+	` + SECRET_CODES + `: 来查看您本局需要加密的密码
 `
 
-const TEAM_STATUS_MESSAGE_TEMPLATE = `🍎 
-您的明文词为: %v
-您的队伍已经成功拦截了 %d 次
-您的队伍已经失败解密了 %d 次
+const TEAM_STATUS_MESSAGE_TEMPLATE = `🍎 您的` + PLAIN_WORDS + `为: %v
+⭕️您的队伍已经成功拦截了 %d 次
+❌您的队伍已经失败解密了 %d 次
 `
 
 func GetTeamStatusMessage(team *api.Team) string {
 	return fmt.Sprintf(TEAM_STATUS_MESSAGE_TEMPLATE, team.Words, team.InspectedCounts, team.DecryptWrongCounts)
 }
 
-const GAME_STATUS_MESSAGE_TEMPLATE = `
-当前轮次 %d
-
+const GAME_STATUS_MESSAGE_TEMPLATE = `当前第 %d 轮次
 %s
 `
 
@@ -43,8 +40,11 @@ func GetGameStatusMessage(session *api.Session) string {
 		}
 		sb.WriteString(getRoundInfo(previous))
 	}
-	return fmt.Sprintf(GAME_STATUS_MESSAGE_TEMPLATE, session.CurrentRound.RoundN, sb.String())
-
+	roundMsg := sb.String()
+	if roundMsg == "" {
+		roundMsg = "还没有轮次信息"
+	}
+	return fmt.Sprintf(GAME_STATUS_MESSAGE_TEMPLATE, session.CurrentRound.RoundN, roundMsg)
 }
 
 func getRoundInfo(r *api.Round) string {

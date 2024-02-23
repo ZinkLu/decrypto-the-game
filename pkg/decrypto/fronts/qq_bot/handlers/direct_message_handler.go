@@ -17,12 +17,12 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 		session := service.GetGameSessionByUser(data.Author.ID)
 		if session != nil {
 			// 处理信息
-			if strings.Contains(data.Content, message.CHECK_SECRET_WORDS) {
+			if strings.Contains(data.Content, message.PLAIN_WORDS) {
 				team := session.GetUserTeam(data.Author.ID)
 				SendDirectMessage(api, data.Author.ID, data, message.GetTeamStatusMessage(team))
-			} else if strings.Contains(data.Content, message.CHECK_GAME_PROCESS) {
+			} else if strings.Contains(data.Content, message.GAME_PROCESS) {
 				SendDirectMessage(api, data.Author.ID, data, message.GetGameStatusMessage(session))
-			} else if strings.Contains(data.Content, message.CHECK_SECRET_DIGITS) {
+			} else if strings.Contains(data.Content, message.SECRET_CODES) {
 				if session.CurrentRound.CurrentTeam.EncryptPlayer().Uid == data.Author.ID {
 					SendDirectMessage(
 						api,

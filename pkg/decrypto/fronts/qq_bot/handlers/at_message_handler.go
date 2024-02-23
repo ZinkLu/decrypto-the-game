@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/message"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
@@ -14,9 +13,6 @@ import (
 	"github.com/tencent-connect/botgo/event"
 	"github.com/tencent-connect/botgo/openapi"
 )
-
-var BOT_NAME string
-var LOCK = sync.Mutex{}
 
 func GetAtMessageHandler(api openapi.OpenAPI) event.ATMessageEventHandler {
 	return func(event *dto.WSPayload, data *dto.WSATMessageData) error {
@@ -95,7 +91,7 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 
 			} else {
 				log.Printf("创建对局失败, error is %s", err)
-				SendMessage(api, data.ChannelID, data, message.CANT_CREATE_GAME_SESSION)
+				SendMessage(api, data.ChannelID, data, err.Error())
 				// 删除房间
 				api.DeleteChannel(context.Background(), gameChannel.ID)
 				return err
