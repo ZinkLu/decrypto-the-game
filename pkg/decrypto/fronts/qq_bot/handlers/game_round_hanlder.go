@@ -16,7 +16,12 @@ import (
 )
 
 func InitRoundHandler(client openapi.OpenAPI) {
+	registerInitHandlers(client)
+	registerEncryptHandlers(client)
+	registerInterceptHandlers(client)
+}
 
+func registerInitHandlers(client openapi.OpenAPI) {
 	api.RegisterInitHandler(
 
 		// 发送开始本轮信息
@@ -32,10 +37,12 @@ func InitRoundHandler(client openapi.OpenAPI) {
 			return true
 		},
 	)
+}
 
+func registerEncryptHandlers(client openapi.OpenAPI) {
+	// 发送密码给当前加密者并且等待加密者进行加密
 	api.RegisterEncryptHandler(
 
-		// 发送密码给当前加密者并且等待加密者进行加密
 		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, p *api.Player, ts api.TeamState) ([3]string, bool) {
 			result := [3]string{"", "", ""}
 
@@ -80,7 +87,9 @@ func InitRoundHandler(client openapi.OpenAPI) {
 			return result, true
 		},
 	)
+}
 
+func registerInterceptHandlers(client openapi.OpenAPI) {
 	api.RegisterInterceptHandler(
 		// 拦截方进行拦截
 		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) ([3]int, bool) {
@@ -197,7 +206,6 @@ func InitRoundHandler(client openapi.OpenAPI) {
 			return true
 		},
 	)
-
 }
 
 // 获取用户当前的输入或者获取对决被手动结束的消息
