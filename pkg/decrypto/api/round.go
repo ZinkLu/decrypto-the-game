@@ -89,6 +89,9 @@ func (round *Round) AutoForward(c context.Context) bool {
 			if isCancelled {
 				return isCancelled
 			}
+			if round.RoundN == 1 {
+				return false
+			}
 			inspected := opponent.SetInspectSecret(inspectedSecret)
 
 			if inspected && interceptSuccessHandler != nil {
