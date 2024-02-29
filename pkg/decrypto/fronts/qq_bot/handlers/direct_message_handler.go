@@ -24,11 +24,21 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 				SendDirectMessage(api, data.Author.ID, data, message.GetGameStatusMessage(session))
 			} else if strings.Contains(data.Content, message.SECRET_CODES) {
 				if session.CurrentRound.CurrentTeam.EncryptPlayer().Uid == data.Author.ID {
+					words := session.CurrentRound.CurrentTeam.GetSecretWords()
+					secretString := make([]string, 3)
+					for d := range session.CurrentRound.CurrentTeam.GetSecretDigits() {
+						secretString = append(secretString, message.GetEmojiDigits(d))
+					}
+
 					SendDirectMessage(
 						api,
 						data.ChannelID,
 						data,
-						fmt.Sprintf(message.READY_TO_ENCRYPT_MESSAGE, session.CurrentRound.CurrentTeam.GetSecretDigits(), session.CurrentRound.CurrentTeam.GetSecretWords()))
+						fmt.Sprintf(
+							message.READY_TO_ENCRYPT_MESSAGE,
+							strings.Join(secretString, " "),
+							strings.Join(words[:], ","),
+						))
 				} else {
 					SendDirectMessage(
 						api,

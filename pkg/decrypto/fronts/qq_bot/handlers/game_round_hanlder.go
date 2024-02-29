@@ -3,6 +3,8 @@ package handlers
 import (
 	"context"
 	"fmt"
+
+	"strconv"
 	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
@@ -40,13 +42,24 @@ func InitRoundHandler(client openapi.OpenAPI) {
 			// 解析加密者给出的密文是否满足特定需求，否则给出提示
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
+
+					if msg.Author.ID != rt.EncryptPlayer().Uid {
+						SendMessage(
+							client,
+							msg.ChannelID,
+							msg,
+							fmt.Sprintf(message.GENERAL_WRONG_PLAYER_MESSAGE, rt.EncryptPlayer().NickName),
+						)
+						continue
+					}
+
 					atMessage := `<@!` + BOT_INFO.ID + `>`
 					content := strings.ReplaceAll(msg.Content, atMessage, "")
 					content = strings.TrimSpace(content)
 
 					encryptoMessage := strings.Split(content, message.SPLITTER)
 					if len(encryptoMessage) != 3 {
-						SendMessage(client, msg.ChannelID, msg, message.REPLY_FORMAT_MESSAGE)
+						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_WORDS_FORMAT_MESSAGE)
 						continue
 					}
 
@@ -55,12 +68,133 @@ func InitRoundHandler(client openapi.OpenAPI) {
 						msg.ChannelID,
 						msg,
 						fmt.Sprintf(message.ENCRYPT_SUCCESS_MESSAGE, encryptoMessage[0], encryptoMessage[1], encryptoMessage[2]))
+
+					// 重新将信息丢回去给下一个 handler 处理
+					bk, _ := service.GetGameBrokerBySession(r.GameSession)
+					bk <- reply
 					result = [3]string(encryptoMessage)
-					break
+					return result, false
 				}
 			}
 
 			return result, true
+		},
+	)
+
+	api.RegisterInterceptHandler(
+		// 拦截方进行拦截
+		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) ([3]int, bool) {
+			result := [3]int{0, 0, 0}
+
+			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
+				if msg, ok := reply.(*dto.WSATMessageData); ok {
+
+					ok := true
+					for _, player := range rt.Opponent().Players {
+						if player.Uid == msg.Author.ID {
+							break
+						}
+						ok = false
+					}
+					if !ok {
+						SendMessage(
+							client,
+							msg.ChannelID,
+							msg,
+							fmt.Sprintf(
+								message.GENERAL_WRONG_PLAYER_MESSAGE,
+								strings.Join(func() []string {
+									result := make([]string, len(rt.Opponent().Players))
+									for _, player := range rt.Opponent().Players {
+										result = append(result, player.NickName)
+									}
+									return result
+								}(),
+									",")))
+						continue
+					}
+
+					atMessage := `<@!` + BOT_INFO.ID + `>`
+					content := strings.ReplaceAll(msg.Content, atMessage, "")
+					content = strings.TrimSpace(content)
+
+					encryptoMessage := strings.Split(content, message.SPLITTER)
+					if len(encryptoMessage) != 3 {
+						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_DIGITS_FORMAT_MESSAGE)
+						continue
+					}
+
+					success := true
+					for idx, em := range encryptoMessage {
+						if dig, err := strconv.ParseInt(em, 10, 32); err == nil && dig < 4 && dig > 0 {
+							result[idx] = int(dig)
+						} else {
+							success = false
+							break
+						}
+					}
+
+					if !success {
+						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_DIGITS_FORMAT_MESSAGE)
+						continue
+					}
+
+					SendMessage(
+						client,
+						msg.ChannelID,
+						msg,
+						fmt.Sprintf(
+							message.ENCRYPT_SUCCESS_MESSAGE,
+							message.GetEmojiDigits(result[0]),
+							message.GetEmojiDigits(result[1]),
+							message.GetEmojiDigits(result[2]),
+						))
+
+					// 重新将信息丢回去给下一个 handler 处理
+					bk, _ := service.GetGameBrokerBySession(r.GameSession)
+					bk <- reply
+					return result, false
+				}
+			}
+			return result, true
+		},
+	)
+
+	api.RegisterInterceptSuccessHandler(
+		// 拦截方拦截成功
+		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) bool {
+
+			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
+				if msg, ok := reply.(*dto.WSATMessageData); ok {
+					SendMessage(
+						client,
+						msg.ChannelID,
+						msg,
+						fmt.Sprintf(message.INSPECT_SUCCESS_MESSAGE))
+
+					return false
+				}
+			}
+			return true
+		},
+	)
+
+	api.RegisterInterceptFailHandler(
+		// 拦截方拦截失败
+		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) bool {
+
+			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
+				if msg, ok := reply.(*dto.WSATMessageData); ok {
+					SendMessage(
+						client,
+						msg.ChannelID,
+						msg,
+						fmt.Sprintf(message.INSPECT_FAIL_MESSAGE))
+
+					return false
+				}
+			}
+			return true
 		},
 	)
 
