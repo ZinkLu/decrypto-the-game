@@ -25,8 +25,8 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 			} else if strings.Contains(data.Content, message.SECRET_CODES) {
 				if session.CurrentRound.CurrentTeam.EncryptPlayer().Uid == data.Author.ID {
 					words := session.CurrentRound.CurrentTeam.GetSecretWords()
-					secretString := make([]string, 3)
-					for d := range session.CurrentRound.CurrentTeam.GetSecretDigits() {
+					secretString := make([]string, 0, 3)
+					for _, d := range session.CurrentRound.CurrentTeam.GetSecretDigits() {
 						secretString = append(secretString, message.GetEmojiDigits(d))
 					}
 

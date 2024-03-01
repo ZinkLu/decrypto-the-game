@@ -2,35 +2,35 @@ package api
 
 // 作为 Team 的子类，添加上了本局的一些对战信息
 type RoundedTeam struct {
-	*Team
+	*Team              // 目前处理加密的队伍
 	round              *Round
 	secret             [3]int    // 本局中，需要传递的密码
 	encryptedMessage   [3]string // 本局中，负责加密的人给出的密文
 	encryptPlayerIndex uint8     // 本局中，负责加密的人的索引位置
 	encryptPlayer      *Player   // 本局中，负责加密的人
-	inspectedSecret    [3]int    // 本局中，对手给出的拦截密码
+	interceptedSecret  [3]int    // 本局中，对手给出的拦截密码
 	decryptSecret      [3]int    // 本局中，队友给出的破译密码
 }
 
 // 设置当前队伍的拦截密码
 //
 // 自动增加拦截正确计数, 返回是否拦截成功
-func (rt *RoundedTeam) SetInspectSecret(inspectedSecret [3]int) bool {
-	rt.inspectedSecret = inspectedSecret
-	result := rt.IsInspected()
+func (rt *RoundedTeam) SetInterceptSecret(interceptedSecret [3]int) bool {
+	rt.interceptedSecret = interceptedSecret
+	result := rt.IsIntercepted()
 	if result {
-		rt.Team.InspectedSuccess()
+		rt.Team.InterceptedSuccess()
 	}
 	return result
 }
 
 // 当前队伍有没有破解成功
-func (rt *RoundedTeam) IsInspected() bool {
-	return rt.inspectedSecret == rt.Opponent().secret
+func (rt *RoundedTeam) IsIntercepted() bool {
+	return rt.interceptedSecret == rt.Opponent().secret
 }
 
-func (rt *RoundedTeam) GetInspectSecret() [3]int {
-	return rt.inspectedSecret
+func (rt *RoundedTeam) GetInterceptSecret() [3]int {
+	return rt.interceptedSecret
 }
 
 func (rt *RoundedTeam) GetDecryptSecret() [3]int {

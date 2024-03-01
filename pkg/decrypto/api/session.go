@@ -99,7 +99,7 @@ func (gameSession *Session) StartRound(ctx context.Context) (*Round, bool) {
 // 否则返回 false 和 nil
 func (s *Session) IsGameOver() (bool, *Team) {
 	for idx, t := range s.Teams {
-		if t.InspectedCounts >= 2 {
+		if t.InterceptedCounts >= 2 {
 			return true, t
 		}
 
@@ -111,7 +111,7 @@ func (s *Session) IsGameOver() (bool, *Team) {
 }
 
 func (s *Session) AutoForward(ctx context.Context) {
-	for round, canContinue := s.StartRound(ctx); canContinue; {
+	for round, canContinue := s.StartRound(ctx); canContinue; round, canContinue = s.StartRound(ctx) {
 		isCanceled := round.AutoForward(ctx)
 		if isCanceled {
 			return

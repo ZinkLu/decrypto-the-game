@@ -12,6 +12,9 @@ const REPLY_WRONG_DIGITS_FORMAT_MESSAGE = `请输入三个数字作为拦截的�
 const START_ENCRYPT_MESSAGE = `🔒 开始加密，请 %s 玩家开始进行加密~
 （加密者私信我并回复 ` + SECRET_CODES + ` 来获取本轮要加密的数字）
 （其他人可以回复  ` + PLAIN_WORDS + ` 来查看本局的词语`
+const START_INTERCEPT_MESSAGE = `🛑 开始拦截，请 %v 中的任意玩家 @ 我并给出拦截的密码，以空格分割`
+const START_DECRYPT_MESSAGE = `🔐 开始解密，请 %v 中的任意玩家 @ 我并给出解密的密码，以空格分割`
+const SKIP_INTERCEPT_MESSAGE = `第一轮跳过拦截阶段`
 
 const READY_TO_ENCRYPT_MESSAGE = `📞 本轮中:
 	🔢 你需要加密的数字为 %v
@@ -23,16 +26,25 @@ const NO_ENCRYPTING_MESSAGE = `您本轮不负责加密`
 
 const ENCRYPT_SUCCESS_MESSAGE = `🔐 加密成功
 当前的密文为:
-	1️⃣: %s 
-	2️⃣: %s
-	3️⃣: %s
+	%s 
+	%s
+	%s
 `
 
-const INSPECT_DONE_MESSAGE = `🛑 收到拦截密码
+const INTERCEPT_DONE_MESSAGE = `🛑 收到拦截密码
 拦截的密码为: %s %s %s`
 
-const INSPECT_SUCCESS_MESSAGE = `🔍 密码破解成功！！跳过解密环节！`
-const INSPECT_FAIL_MESSAGE = `🔐 密码破解失败！请进行解密！`
+const DECRYPT_DONE_MESSAGE = `🔑 收到解密密码
+解密的密码为: %s %s %s`
+
+const INTERCEPT_SUCCESS_MESSAGE = `🔍 密码破解成功！！跳过解密环节！`
+const INTERCEPT_FAIL_MESSAGE = `🔐 密码破解失败！请进行解密！`
+
+const DECRYPT_SUCCESS_MESSAGE = `🔓 解密成功！！`
+const DECRYPT_FAIL_MESSAGE = `❌ 解密失败！！`
+
+const ROUND_OVER_MESSAGE = `本轮结束`
+const GAME_OVER_MESSAGE = `本局结束，恭喜 %v 获得了胜利`
 
 const SPLITTER = " "
 

@@ -24,7 +24,7 @@ const TEAM_STATUS_MESSAGE_TEMPLATE = `🍎 您的` + PLAIN_WORDS + `为: %v
 `
 
 func GetTeamStatusMessage(team *api.Team) string {
-	return fmt.Sprintf(TEAM_STATUS_MESSAGE_TEMPLATE, team.Words, team.InspectedCounts, team.DecryptWrongCounts)
+	return fmt.Sprintf(TEAM_STATUS_MESSAGE_TEMPLATE, team.Words, team.InterceptedCounts, team.DecryptWrongCounts)
 }
 
 const GAME_STATUS_MESSAGE_TEMPLATE = `当前第 %d 轮次
@@ -38,7 +38,7 @@ func GetGameStatusMessage(session *api.Session) string {
 		if previous == nil {
 			break
 		}
-		sb.WriteString(getRoundInfo(previous))
+		sb.WriteString(GetRoundInfo(previous))
 	}
 	roundMsg := sb.String()
 	if roundMsg == "" {
@@ -47,17 +47,25 @@ func GetGameStatusMessage(session *api.Session) string {
 	return fmt.Sprintf(GAME_STATUS_MESSAGE_TEMPLATE, session.CurrentRound.RoundN, roundMsg)
 }
 
-func getRoundInfo(r *api.Round) string {
+func GetRoundInfo(r *api.Round) string {
 	var conclusion string
 
-	if r.CurrentTeam.IsInspected() {
+	if r.CurrentTeam.IsIntercepted() {
 		conclusion = "😎 破译成功"
 	} else if !r.CurrentTeam.IsDecryptedCorrect() {
 		conclusion = "🙃 解密失败"
+	} else {
+		conclusion = "😗 解密成功"
 	}
 
 	return fmt.Sprintf(
-		`第%d轮	加密者:%s	加密词:%v	正确密码:%v	拦截密码:%v	破译密码:%v %s`,
+		`第%d轮
+	加密者:%s
+	加密词:%v
+	正确密码:%v
+	拦截密码:%v
+	破译密码:%v
+	%s`,
 		r.RoundN,
 		r.CurrentTeam.EncryptPlayer().NickName,
 		r.CurrentTeam.GetSecretWords(),

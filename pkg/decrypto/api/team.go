@@ -6,13 +6,13 @@ import (
 
 type Team struct {
 	Players            []*Player // 一般来说一支队伍的 Player 的数量应该控制在 2 - 4 人
-	InspectedCounts    uint8     // 队伍破解正确次数
+	InterceptedCounts  uint8     // 队伍破解正确次数
 	DecryptWrongCounts uint8     // 队伍猜错自己的次数
 	Words              [4]string // 队伍抽到的词语
 }
 
-func (t *Team) InspectedSuccess() {
-	t.InspectedCounts++
+func (t *Team) InterceptedSuccess() {
+	t.InterceptedCounts++
 }
 
 func (t *Team) DecryptFailed() {

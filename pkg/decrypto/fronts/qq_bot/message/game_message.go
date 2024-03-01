@@ -70,6 +70,6 @@ func GetGameStartMessage(session *api.Session) string {
 	return fmt.Sprintf(GAME_START_MSG, RandomEmoji(), strings.Join(teamANames, ","), strings.Join(teamBNames, ","))
 }
 
-const GAME_END_MSG = `你主动结束了游戏，下次再见喽~`
+const GAME_END_MSG = `游戏已结束，下次再见喽~`
 const CLOSE_ROOM_MSG = `房间将在 10 秒后自动关闭，下次见~`
 const GAME_ROOMS_LINK_MSG = `房间已经为你们准备好了哦，速速进：👇 <#%s>`

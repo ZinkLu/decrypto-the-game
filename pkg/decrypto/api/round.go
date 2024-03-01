@@ -13,9 +13,9 @@ Round 代表一个大轮次，包含了两队的小轮次，当两队小轮次�
 type Round struct {
 	GameSession   *Session        // 本局游戏信息
 	PreviousRound *Round          // 上轮轮次对象
-	teams         [2]*RoundedTeam // 参加本局对战的队伍
+	teams         [2]*RoundedTeam // 参加本局对战的队伍，第一只队伍表示本轮优先行动的队伍
 	State         TeamState       // 当前的队伍的回合阶段
-	CurrentTeam   *RoundedTeam    // 当前正在进行加密的队伍
+	CurrentTeam   *RoundedTeam    // 当前正在进行加密的队伍，注意这个属性会随着流程的进行而改变
 	RoundN        uint8           // 第几轮
 }
 
@@ -70,7 +70,7 @@ func (round *Round) Next() (*RoundedTeam, TeamState) {
 // 在注册 handler 后进行这个方法的注册
 // 如果手动结束了对局则会返回 true
 func (round *Round) AutoForward(c context.Context) bool {
-	for team, state := round.Next(); state < DONE; team, state = round.Next() {
+	for team, state := round.Next(); state <= DONE; team, state = round.Next() {
 		switch state {
 		case INIT:
 			isCancelled := initHandler(c, round, INIT)
@@ -84,29 +84,29 @@ func (round *Round) AutoForward(c context.Context) bool {
 			}
 			team.encryptedMessage = eString
 		case INTERCEPT:
+			if round.RoundN == 1 {
+				continue
+			}
 			opponent := team.Opponent()
-			inspectedSecret, isCancelled := interceptHandler(c, round, opponent, INTERCEPT)
+			interceptedSecret, isCancelled := interceptHandler(c, round, opponent, INTERCEPT)
 			if isCancelled {
 				return isCancelled
 			}
-			if round.RoundN == 1 {
-				return false
-			}
-			inspected := opponent.SetInspectSecret(inspectedSecret)
+			intercepted := opponent.SetInterceptSecret(interceptedSecret)
 
-			if inspected && interceptSuccessHandler != nil {
+			if intercepted && interceptSuccessHandler != nil {
 				if interceptSuccessHandler(c, round, opponent, INTERCEPT) {
 					return true
 				}
-			} else if !inspected && interceptFailHandler != nil {
+			} else if !intercepted && interceptFailHandler != nil {
 				if interceptFailHandler(c, round, opponent, INTERCEPT) {
 					return true
 				}
 			}
 
 		case DECRYPT:
-			if team.Opponent().IsInspected() {
-				return false // 拦截成功的话直接跳过
+			if team.Opponent().IsIntercepted() {
+				continue
 			}
 
 			decryptedSecret, isCancelled := decryptHandler(c, round, team, DECRYPT)
@@ -130,6 +130,7 @@ func (round *Round) AutoForward(c context.Context) bool {
 			if doneHandler(c, round, DONE) {
 				return true
 			}
+			return false
 		}
 	}
 	return false
