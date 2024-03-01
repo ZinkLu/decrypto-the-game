@@ -13,7 +13,7 @@ Round 代表一个大轮次，包含了两队的小轮次，当两队小轮次�
 type Round struct {
 	GameSession   *Session        // 本局游戏信息
 	PreviousRound *Round          // 上轮轮次对象
-	teams         [2]*RoundedTeam // 参加本局对战的队伍，第一只队伍表示本轮优先行动的队伍
+	Teams         [2]*RoundedTeam // 参加本局对战的队伍，第一只队伍表示本轮优先行动的队伍
 	State         TeamState       // 当前的队伍的回合阶段
 	CurrentTeam   *RoundedTeam    // 当前正在进行加密的队伍，注意这个属性会随着流程的进行而改变
 	RoundN        uint8           // 第几轮
@@ -55,10 +55,10 @@ func (round *Round) Next() (*RoundedTeam, TeamState) {
 	case INTERCEPT:
 		nextStep = DECRYPT
 	case DECRYPT:
-		if round.CurrentTeam == round.teams[0] {
+		if round.CurrentTeam == round.Teams[0] {
 			nextStep = INIT
-			nextTeam = round.teams[1]
-			round.CurrentTeam = round.teams[1]
+			nextTeam = round.Teams[1]
+			round.CurrentTeam = round.Teams[1]
 		} else {
 			nextTeam, nextStep = nil, DONE
 		}
@@ -149,7 +149,7 @@ func createNewRound(session *Session) *Round {
 
 	if session.CurrentRound != nil {
 		roundN = session.CurrentRound.RoundN + 1
-		previousT1, previousT2 := session.CurrentRound.teams[0], session.CurrentRound.teams[1]
+		previousT1, previousT2 := session.CurrentRound.Teams[0], session.CurrentRound.Teams[1]
 
 		// 交换两只队伍
 		teams[0], teams[1] = previousT2.Team, previousT1.Team
@@ -170,7 +170,7 @@ func createNewRound(session *Session) *Round {
 	}
 	round.GameSession = session
 	round.PreviousRound = session.CurrentRound
-	round.teams = roundTeam
+	round.Teams = roundTeam
 	round.CurrentTeam = roundTeam[0]
 	round.State = NEW
 	round.RoundN = roundN

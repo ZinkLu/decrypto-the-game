@@ -58,20 +58,25 @@ func GetRoundInfo(r *api.Round) string {
 		conclusion = "😗 解密成功"
 	}
 
-	return fmt.Sprintf(
-		`第%d轮
+	result := []string{}
+	for idx, t := range r.Teams {
+		result = append(result, fmt.Sprintf(`第%d-%d轮
 	加密者:%s
 	加密词:%v
 	正确密码:%v
 	拦截密码:%v
 	破译密码:%v
 	%s`,
-		r.RoundN,
-		r.CurrentTeam.EncryptPlayer().NickName,
-		r.CurrentTeam.GetSecretWords(),
-		r.CurrentTeam.GetSecretDigits(),
-		r.CurrentTeam.GetDecryptSecret(),
-		r.CurrentTeam.GetSecretWords(),
-		conclusion,
-	)
+			r.RoundN,
+			idx,
+			t.EncryptPlayer().NickName,
+			t.GetEncryptedMessage(),
+			t.GetSecretDigits(),
+			t.GetInterceptSecret(),
+			t.GetDecryptSecret(),
+			conclusion,
+		))
+	}
+
+	return strings.Join(result, "\n")
 }

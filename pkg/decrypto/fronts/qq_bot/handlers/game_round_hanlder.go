@@ -89,7 +89,6 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 	api.RegisterInterceptHandler(
 		// 拦截方进行拦截
 		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) ([3]int, bool) {
-			result := [3]int{0, 0, 0}
 			first := true
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
@@ -116,23 +115,13 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 					}
 
 					content := trimBotInfoInMessageContent(msg.Content)
-
 					encryptoMessage := strings.Split(content, message.SPLITTER)
 					if len(encryptoMessage) != 3 {
 						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_DIGITS_FORMAT_MESSAGE)
 						continue
 					}
 
-					success := true
-					for idx, em := range encryptoMessage {
-						if dig, err := strconv.ParseInt(em, 10, 32); err == nil && dig < 4 && dig > 0 {
-							result[idx] = int(dig)
-						} else {
-							success = false
-							break
-						}
-					}
-
+					result, success := isValidSecrets([3]string(encryptoMessage))
 					if !success {
 						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_DIGITS_FORMAT_MESSAGE)
 						continue
@@ -154,7 +143,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 					return result, false
 				}
 			}
-			return result, true
+			return [3]int{}, true
 		},
 	)
 
@@ -202,7 +191,6 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 	api.RegisterDecryptHandler(
 		// 己方进行解密
 		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) ([3]int, bool) {
-			result := [3]int{0, 0, 0}
 			first := true
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
@@ -244,15 +232,7 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 						continue
 					}
 
-					success := true
-					for idx, em := range encryptoMessage {
-						if dig, err := strconv.ParseInt(em, 10, 32); err == nil && dig < 4 && dig > 0 {
-							result[idx] = int(dig)
-						} else {
-							success = false
-							break
-						}
-					}
+					result, success := isValidSecrets([3]string(encryptoMessage))
 
 					if !success {
 						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_DIGITS_FORMAT_MESSAGE)
@@ -275,7 +255,7 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 					return result, false
 				}
 			}
-			return result, true
+			return [3]int{}, true
 		},
 	)
 
@@ -457,4 +437,19 @@ func isCorrectPlayer(target string, players []*api.Player, excludes ...*api.Play
 	}
 	return true
 
+}
+
+// 判断是否信息中只包含 3 个 1-4 的数字
+func isValidSecrets(encryptoMessage [3]string) ([3]int, bool) {
+	result := [3]int{0, 0, 0}
+	isSuccess := true
+	for idx, em := range encryptoMessage {
+		if dig, err := strconv.ParseInt(em, 10, 32); err == nil && dig < 4 && dig > 0 {
+			result[idx] = int(dig)
+		} else {
+			isSuccess = false
+			break
+		}
+	}
+	return result, isSuccess
 }

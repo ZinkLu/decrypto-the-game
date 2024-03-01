@@ -57,10 +57,10 @@ func (rt *RoundedTeam) IsDecryptedCorrect() bool {
 // 本轮当前对手
 func (rt *RoundedTeam) Opponent() *RoundedTeam {
 	var opponent *RoundedTeam
-	if rt.round.teams[0] == rt {
-		opponent = rt.round.teams[1]
+	if rt.round.Teams[0] == rt {
+		opponent = rt.round.Teams[1]
 	} else {
-		opponent = rt.round.teams[0]
+		opponent = rt.round.Teams[0]
 	}
 	return opponent
 }
@@ -82,4 +82,8 @@ func (rt *RoundedTeam) GetSecretWords() [3]string {
 		rt.Words[rt.secret[1]-1],
 		rt.Words[rt.secret[2]-1],
 	}
+}
+
+func (rt *RoundedTeam) GetEncryptedMessage() [3]string {
+	return rt.encryptedMessage
 }
