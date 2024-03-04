@@ -45,18 +45,18 @@ func RegisterInitHandler(f func(context.Context, *Round, TeamState) bool) {
 // 参数为(本轮游戏, 加密队伍, 加密者, 当前状态-ENCRYPTING)
 //
 // 返回加密者给的三个字符
-var encryptHandler func(context.Context, *Round, *RoundedTeam, *Player, TeamState) ([3]string, bool)
+var encryptHandler func(context.Context, *Round, *Team, *Player, TeamState) ([3]string, bool)
 
-func RegisterEncryptHandler(f func(context.Context, *Round, *RoundedTeam, *Player, TeamState) ([3]string, bool)) {
+func RegisterEncryptHandler(f func(context.Context, *Round, *Team, *Player, TeamState) ([3]string, bool)) {
 	encryptHandler = f
 }
 
 // --------------------------- 对方拦截 ---------------------------
 // 参数为(本轮游戏, 当前加密队伍的**对手**, 当前状态-INTERCEPT)
 // 返回解密的三个数字
-var interceptHandler func(context.Context, *Round, *RoundedTeam, TeamState) ([3]int, bool)
+var interceptHandler func(context.Context, *Round, *Team, TeamState) ([3]int, bool)
 
-func RegisterInterceptHandler(f func(context.Context, *Round, *RoundedTeam, TeamState) ([3]int, bool)) {
+func RegisterInterceptHandler(f func(context.Context, *Round, *Team, TeamState) ([3]int, bool)) {
 	interceptHandler = f
 }
 
@@ -65,18 +65,18 @@ func RegisterInterceptHandler(f func(context.Context, *Round, *RoundedTeam, Team
 // (拦截成功后会自动为队伍添加添加成功标记)
 //
 // 参数为(本轮游戏, 当前加密队伍的**对手**, 当前状态-INTERCEPT)
-var interceptSuccessHandler func(context.Context, *Round, *RoundedTeam, TeamState) bool
+var interceptSuccessHandler func(context.Context, *Round, *Team, TeamState) bool
 
-func RegisterInterceptSuccessHandler(f func(context.Context, *Round, *RoundedTeam, TeamState) bool) {
+func RegisterInterceptSuccessHandler(f func(context.Context, *Round, *Team, TeamState) bool) {
 	interceptSuccessHandler = f
 }
 
 // 这个方法将会在对方拦截失败后执行，可以不设置
 //
 // 参数为(本轮游戏, 当前加密队伍的**对手**, 当前状态-INTERCEPT)
-var interceptFailHandler func(context.Context, *Round, *RoundedTeam, TeamState) bool
+var interceptFailHandler func(context.Context, *Round, *Team, TeamState) bool
 
-func RegisterInterceptFailHandler(f func(context.Context, *Round, *RoundedTeam, TeamState) bool) {
+func RegisterInterceptFailHandler(f func(context.Context, *Round, *Team, TeamState) bool) {
 	interceptFailHandler = f
 }
 
@@ -87,9 +87,9 @@ func RegisterInterceptFailHandler(f func(context.Context, *Round, *RoundedTeam, 
 // 如果对方拦截成功则会跳过
 //
 // 返回解密的三个数字
-var decryptHandler func(context.Context, *Round, *RoundedTeam, TeamState) ([3]int, bool)
+var decryptHandler func(context.Context, *Round, *Team, TeamState) ([3]int, bool)
 
-func RegisterDecryptHandler(f func(context.Context, *Round, *RoundedTeam, TeamState) ([3]int, bool)) {
+func RegisterDecryptHandler(f func(context.Context, *Round, *Team, TeamState) ([3]int, bool)) {
 	decryptHandler = f
 }
 
@@ -98,9 +98,9 @@ func RegisterDecryptHandler(f func(context.Context, *Round, *RoundedTeam, TeamSt
 // 参数为(本轮游戏, 加密队伍, 加密者, 当前状态-DECRYPT)
 //
 // 如果对方拦截成功则会跳过
-var decryptSuccessHandler func(context.Context, *Round, *RoundedTeam, TeamState) bool
+var decryptSuccessHandler func(context.Context, *Round, *Team, TeamState) bool
 
-func RegisterDecryptSuccessHandler(f func(context.Context, *Round, *RoundedTeam, TeamState) bool) {
+func RegisterDecryptSuccessHandler(f func(context.Context, *Round, *Team, TeamState) bool) {
 	decryptSuccessHandler = f
 }
 
@@ -111,9 +111,9 @@ func RegisterDecryptSuccessHandler(f func(context.Context, *Round, *RoundedTeam,
 // 参数为(本轮游戏, 加密队伍, 加密者, 当前状态-DECRYPT)
 //
 // 如果对方拦截成功则会跳过
-var decryptFailHandler func(context.Context, *Round, *RoundedTeam, TeamState) bool
+var decryptFailHandler func(context.Context, *Round, *Team, TeamState) bool
 
-func RegisterDecryptFailHandler(f func(context.Context, *Round, *RoundedTeam, TeamState) bool) {
+func RegisterDecryptFailHandler(f func(context.Context, *Round, *Team, TeamState) bool) {
 	decryptFailHandler = f
 }
 

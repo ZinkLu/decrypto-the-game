@@ -2,8 +2,7 @@ package api
 
 import (
 	"context"
-	"crypto/rand"
-	"math/big"
+	"math/rand"
 
 	"fmt"
 	"testing"
@@ -13,68 +12,63 @@ import (
 
 // var r = rand.New(rand.NewSource(time.Now().UnixMicro()))
 
-func getRandomDig() int {
-	n, _ := rand.Int(rand.Reader, big.NewInt(4))
-	return int(n.Int64()) + 1
+func getRandomSecrets() [3]int {
+	return secret_codes[rand.Intn(len(secret_codes))]
 }
 
 func i() {
 	RegisterInitHandler(func(ctx context.Context, r *Round, ts TeamState) bool {
-		fmt.Printf("第%d局开始，密码为 %v", r.RoundN, r.CurrentTeam.secret)
+		fmt.Printf("第%d局开始，密码为 %v", r.GetNumberOfRounds(), r.secret)
 		fmt.Println()
 		return false
 	})
-	RegisterEncryptHandler(func(ctx context.Context, r *Round, rt *RoundedTeam, p *Player, ts TeamState) ([3]string, bool) {
+	RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, ts TeamState) ([3]string, bool) {
 		return [3]string{}, false
 	})
-	RegisterInterceptHandler(func(ctx context.Context, r *Round, rt *RoundedTeam, ts TeamState) ([3]int, bool) {
-		result := [3]int{getRandomDig(), getRandomDig(), getRandomDig()}
+	RegisterInterceptHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) ([3]int, bool) {
+		result := getRandomSecrets()
 		fmt.Printf("给出的拦截密码为 %v \n", result)
 		return result, false
 	})
-	RegisterInterceptSuccessHandler(func(ctx context.Context, r *Round, rt *RoundedTeam, ts TeamState) bool {
+	RegisterInterceptSuccessHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) bool {
 		fmt.Println("拦截成功")
 		return false
 	})
-	RegisterInterceptFailHandler(func(ctx context.Context, r *Round, rt *RoundedTeam, ts TeamState) bool {
+	RegisterInterceptFailHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) bool {
 		fmt.Println("拦截失败")
 		return false
 	})
-	RegisterDecryptHandler(func(ctx context.Context, r *Round, rt *RoundedTeam, ts TeamState) ([3]int, bool) {
-		result := rt.secret
+	RegisterDecryptHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) ([3]int, bool) {
+		result := r.secret
 		fmt.Printf("给出的解密密码为 %v \n", result)
 		return result, false
 	})
-	RegisterDecryptSuccessHandler(func(ctx context.Context, r *Round, rt *RoundedTeam, ts TeamState) bool {
+	RegisterDecryptSuccessHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) bool {
 		fmt.Println("解密成功")
 		return false
 	})
-	RegisterDecryptFailHandler(func(ctx context.Context, r *Round, rt *RoundedTeam, ts TeamState) bool {
+	RegisterDecryptFailHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) bool {
 		fmt.Println("解密失败")
 		return false
 	})
 	RegisterDoneHandler(func(ctx context.Context, r *Round, ts TeamState) bool {
 		fmt.Println("对局结束")
-
-		for _, t := range r.Teams {
-
-			fmt.Printf(`	单词为: %v
+		fmt.Printf(`单词为: %v
 	密码为: %v
 	拦截: %v
 	解密: %v
 	isIntercepted: %v
 	isDecrypted: %v
 `,
-				t.Words,
-				t.secret,
-				t.interceptedSecret,
-				t.decryptSecret,
-				t.IsInterceptSuccess(),
-				t.IsDecryptedCorrect(),
-			)
+			r.currentTeam.Words,
+			r.secret,
+			r.interceptedSecret,
+			r.decryptSecret,
+			r.IsInterceptSuccess(),
+			r.IsDecryptedCorrect(),
+		)
 
-			fmt.Println()
-		}
+		fmt.Println()
 
 		return false
 	})
@@ -134,7 +128,7 @@ func TestSession_AutoForward(t *testing.T) {
 
 func Test_Test(t *testing.T) {
 	for i := 0; i < 10; i++ {
-		fmt.Println(getRandomDig())
+		fmt.Println(getRandomSecrets())
 	}
 
 }

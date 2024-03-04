@@ -1,181 +1,22 @@
 package api
 
-import (
-	"context"
-	"math/rand"
-)
-
 /*
 用来表示当前的轮次；
 
-Round 代表一个大轮次，包含了两队的小轮次，当两队小轮次进行完毕，则认为本轮结束，计算分数
+Round 表示一个轮次，它的是一只队伍从加密->拦截->解密的过程。
+理论上来说，下一个 Round 应该与上一个 Round 的 CurrentTeam 相互对调
 */
 type Round struct {
-	GameSession   *Session        // 本局游戏信息
-	PreviousRound *Round          // 上轮轮次对象
-	Teams         [2]*RoundedTeam // 参加本局对战的队伍，第一只队伍表示本轮优先行动的队伍
-	State         TeamState       // 当前的队伍的回合阶段
-	CurrentTeam   *RoundedTeam    // 当前正在进行加密的队伍，注意这个属性会随着流程的进行而改变
-	RoundN        uint8           // 第几轮
-}
-
-// 判断是否是最后一轮游戏
-func (round *Round) isFinalRound() bool {
-	return round.RoundN == round.GameSession.maxRounds
-}
-
-// 进行当前的队伍，当前阶段的操作;
-// 如果这么做了，会将 Round 中的状态自动进行迁移至下一个状态，
-// 同时返回下一个状态时正在操作的队伍和新的状态
-//
-// 如果为 Done 则表示本轮结束
-//
-// 作为调用方，应该关注每一状态的处理，比如:
-//
-//	for team, state := round.Next(); state != DONE; team, state = round.Next() {
-//		switch state {
-//		case INIT:
-//		case ENCRYPTING:
-//			...
-//		}
-//	}
-//
-// 或者使用 RegisterXXXHandler 方法，将 handler 进行注册，此时只需要调用
-// AutoForward 的方法既可以进行完成对局
-func (round *Round) Next() (*RoundedTeam, TeamState) {
-	var nextStep TeamState
-	var nextTeam *RoundedTeam = round.CurrentTeam
-	switch round.State {
-	case NEW:
-		nextStep = INIT
-	case INIT:
-		nextStep = ENCRYPTING
-	case ENCRYPTING:
-		nextStep = INTERCEPT
-	case INTERCEPT:
-		nextStep = DECRYPT
-	case DECRYPT:
-		if round.CurrentTeam == round.Teams[0] {
-			nextStep = INIT
-			nextTeam = round.Teams[1]
-			round.CurrentTeam = round.Teams[1]
-		} else {
-			nextTeam, nextStep = nil, DONE
-		}
-	}
-	round.State = nextStep
-	return nextTeam, nextStep
-}
-
-// 在注册 handler 后进行这个方法的注册
-// 如果手动结束了对局则会返回 true
-func (round *Round) AutoForward(c context.Context) bool {
-	for team, state := round.Next(); state <= DONE; team, state = round.Next() {
-		switch state {
-		case INIT:
-			isCancelled := initHandler(c, round, INIT)
-			if isCancelled {
-				return isCancelled
-			}
-		case ENCRYPTING:
-			eString, isCancelled := encryptHandler(c, round, team, team.encryptPlayer, ENCRYPTING)
-			if isCancelled {
-				return isCancelled
-			}
-			team.encryptedMessage = eString
-		case INTERCEPT:
-			if round.RoundN == 1 {
-				continue
-			}
-			opponent := team.Opponent()
-			interceptedSecret, isCancelled := interceptHandler(c, round, opponent, INTERCEPT)
-			if isCancelled {
-				return isCancelled
-			}
-			intercepted := opponent.SetInterceptSecret(interceptedSecret)
-
-			if intercepted && interceptSuccessHandler != nil {
-				if interceptSuccessHandler(c, round, opponent, INTERCEPT) {
-					return true
-				}
-			} else if !intercepted && interceptFailHandler != nil {
-				if interceptFailHandler(c, round, opponent, INTERCEPT) {
-					return true
-				}
-			}
-
-		case DECRYPT:
-			if team.Opponent().IsInterceptSuccess() {
-				continue
-			}
-
-			decryptedSecret, isCancelled := decryptHandler(c, round, team, DECRYPT)
-			if isCancelled {
-				return isCancelled
-			}
-
-			success := team.SetDecryptedSecret(decryptedSecret)
-
-			if success && decryptSuccessHandler != nil {
-				if decryptSuccessHandler(c, round, team, DECRYPT) {
-					return true
-				}
-			} else if !success && decryptFailHandler != nil {
-				if decryptFailHandler(c, round, team, DECRYPT) {
-					return true
-				}
-			}
-
-		case DONE:
-			if doneHandler(c, round, DONE) {
-				return true
-			}
-			return false
-		}
-	}
-	return false
-}
-
-// 开始一轮新游戏
-// 请调用 Session 对象的 StartRound 方法来
-// 获取一个 Round 的对象
-func createNewRound(session *Session) *Round {
-	var roundN uint8 = 1
-	var teams [2]*Team = [2]*Team{}
-	var roundTeam [2]*RoundedTeam = [2]*RoundedTeam{}
-	var teamsEncryptPlayerIndex [2]uint8 = [2]uint8{}
-
-	copy(teams[:], session.Teams[:])
-
-	if session.CurrentRound != nil {
-		roundN = session.CurrentRound.RoundN + 1
-		previousT1, previousT2 := session.CurrentRound.Teams[0], session.CurrentRound.Teams[1]
-
-		// 交换两只队伍
-		teams[0], teams[1] = previousT2.Team, previousT1.Team
-		teamsEncryptPlayerIndex[0], teamsEncryptPlayerIndex[1] = previousT2.encryptPlayerIndex%uint8(len(previousT2.Team.Players)), (previousT1.encryptPlayerIndex+1)%uint8(len(previousT2.Team.Players))
-	}
-
-	round := &Round{}
-
-	for idx, t := range teams {
-		epi := teamsEncryptPlayerIndex[idx]
-		roundTeam[idx] = &RoundedTeam{
-			Team:               t,
-			round:              round,
-			secret:             secret_codes[rand.Intn(len(secret_codes))],
-			encryptPlayerIndex: epi,
-			encryptPlayer:      t.Players[epi],
-		}
-	}
-	round.GameSession = session
-	round.PreviousRound = session.CurrentRound
-	round.Teams = roundTeam
-	round.CurrentTeam = roundTeam[0]
-	round.State = NEW
-	round.RoundN = roundN
-
-	session.CurrentRound = round
-	session.Rounds = append(session.Rounds, round)
-	return round
+	gameSession        *Session  // 本局游戏信息
+	previousRound      *Round    // 上轮轮次对象
+	opponent           *Team     // 对手队伍
+	currentTeam        *Team     // 当前正在进行加密的队伍
+	state              TeamState // 当前的队伍的回合阶段
+	roundN             uint8     // 第几轮
+	secret             [3]int    // 本局中，需要传递的密码
+	encryptedMessage   [3]string // 本局中，负责加密的人给出的密文
+	encryptPlayerIndex uint8     // 本局中，负责加密的人的索引位置
+	encryptPlayer      *Player   // 本局中，负责加密的人
+	interceptedSecret  [3]int    // 本局中，对手给出的拦截密码
+	decryptSecret      [3]int    // 本局中，队友给出的破译密码
 }
