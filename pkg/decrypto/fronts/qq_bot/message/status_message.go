@@ -34,46 +34,43 @@ const GAME_STATUS_MESSAGE_TEMPLATE = `当前第 %d 轮次
 func GetGameStatusMessage(session *api.Session) string {
 	var sb strings.Builder
 
-	for previous := session.CurrentRound.PreviousRound; previous != nil; previous = previous.PreviousRound {
+	for previous := session.GetCurrentRound().GetPreviousRound(); previous != nil; previous = previous.GetPreviousRound() {
 		sb.WriteString(GetRoundInfo(previous))
+		sb.WriteString("\n")
 	}
 	roundMsg := sb.String()
 	if roundMsg == "" {
 		roundMsg = "还没有轮次信息"
 	}
-	return fmt.Sprintf(GAME_STATUS_MESSAGE_TEMPLATE, session.CurrentRound.RoundN, roundMsg)
+	return fmt.Sprintf(GAME_STATUS_MESSAGE_TEMPLATE, session.GetCurrentRound().GetNumberOfRounds(), strings.TrimSpace(roundMsg))
 }
 
 func GetRoundInfo(r *api.Round) string {
 	var conclusion string
 
-	if r.CurrentTeam.IsInterceptSuccess() {
+	if r.IsInterceptSuccess() {
 		conclusion = "😎 破译成功"
-	} else if !r.CurrentTeam.IsDecryptedCorrect() {
+	} else if !r.IsDecryptedCorrect() {
 		conclusion = "🙃 解密失败"
 	} else {
 		conclusion = "😗 解密成功"
 	}
 
-	result := []string{}
-	for idx, t := range r.Teams {
-		result = append(result, fmt.Sprintf(`第%d-%d轮
+	result := fmt.Sprintf(`第%d轮
 	加密者:%s
 	加密词:%v
 	正确密码:%v
 	拦截密码:%v
 	破译密码:%v
 	%s`,
-			r.RoundN,
-			idx,
-			t.EncryptPlayer().NickName,
-			t.GetEncryptedMessage(),
-			t.GetSecretDigits(),
-			t.GetInterceptSecret(),
-			t.GetDecryptSecret(),
-			conclusion,
-		))
-	}
+		r.GetNumberOfRounds(),
+		r.EncryptPlayer().NickName,
+		r.GetEncryptedMessage(),
+		r.GetSecretDigits(),
+		r.GetInterceptSecret(),
+		r.GetDecryptSecret(),
+		conclusion,
+	)
 
-	return strings.Join(result, "\n")
+	return result
 }

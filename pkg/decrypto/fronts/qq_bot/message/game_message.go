@@ -58,12 +58,13 @@ const GAME_START_MSG = `%s 游戏开始！
 `
 
 func GetGameStartMessage(session *api.Session) string {
-	var teamANames = make([]string, 0, len(session.Teams[0].Players))
-	var teamBNames = make([]string, 0, len(session.Teams[1].Players))
-	for _, player := range session.Teams[0].Players {
+	teams := session.GetTeams()
+	var teamANames = make([]string, 0, len(teams[0].Players))
+	var teamBNames = make([]string, 0, len(teams[1].Players))
+	for _, player := range teams[0].Players {
 		teamANames = append(teamANames, player.NickName)
 	}
-	for _, player := range session.Teams[1].Players {
+	for _, player := range teams[1].Players {
 		teamBNames = append(teamBNames, player.NickName)
 	}
 

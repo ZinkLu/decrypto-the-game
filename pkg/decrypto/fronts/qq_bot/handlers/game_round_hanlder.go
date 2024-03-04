@@ -30,8 +30,8 @@ func registerInitHandlers(client openapi.OpenAPI) {
 		func(ctx context.Context, r *api.Round, ts api.TeamState) bool {
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
-					cId, _ := service.GetChannelIDByGameSession(r.GameSession)
-					SendMessage(client, cId, msg, fmt.Sprintf(message.START_ENCRYPT_MESSAGE, r.CurrentTeam.EncryptPlayer().NickName))
+					cId, _ := service.GetChannelIDByGameSession(r.GetGameSession())
+					SendMessage(client, cId, msg, fmt.Sprintf(message.START_ENCRYPT_MESSAGE, r.EncryptPlayer().NickName))
 					return false
 				}
 			}
@@ -44,19 +44,19 @@ func registerEncryptHandlers(client openapi.OpenAPI) {
 	// 发送密码给当前加密者并且等待加密者进行加密
 	api.RegisterEncryptHandler(
 
-		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, p *api.Player, ts api.TeamState) ([3]string, bool) {
+		func(ctx context.Context, r *api.Round, rt *api.Team, p *api.Player, ts api.TeamState) ([3]string, bool) {
 			result := [3]string{"", "", ""}
 
 			// 解析加密者给出的密文是否满足特定需求，否则给出提示
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
 
-					if !isCorrectPlayer(msg.Author.ID, []*api.Player{rt.EncryptPlayer()}) {
+					if !isCorrectPlayer(msg.Author.ID, []*api.Player{r.EncryptPlayer()}) {
 						SendMessage(
 							client,
 							msg.ChannelID,
 							msg,
-							fmt.Sprintf(message.GENERAL_WRONG_PLAYER_MESSAGE, rt.EncryptPlayer().NickName),
+							fmt.Sprintf(message.GENERAL_WRONG_PLAYER_MESSAGE, r.EncryptPlayer().NickName),
 						)
 						continue
 					}
@@ -88,7 +88,7 @@ func registerEncryptHandlers(client openapi.OpenAPI) {
 func registerInterceptHandlers(client openapi.OpenAPI) {
 	api.RegisterInterceptHandler(
 		// 拦截方进行拦截
-		func(ctx context.Context, r *api.Round, opponent *api.RoundedTeam, ts api.TeamState) ([3]int, bool) {
+		func(ctx context.Context, r *api.Round, opponent *api.Team, ts api.TeamState) ([3]int, bool) {
 			first := true
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
@@ -149,7 +149,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 
 	api.RegisterInterceptSuccessHandler(
 		// 拦截方拦截成功
-		func(ctx context.Context, r *api.Round, opponent *api.RoundedTeam, ts api.TeamState) bool {
+		func(ctx context.Context, r *api.Round, opponent *api.Team, ts api.TeamState) bool {
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
@@ -169,7 +169,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 
 	api.RegisterInterceptFailHandler(
 		// 拦截方拦截失败
-		func(ctx context.Context, r *api.Round, opponent *api.RoundedTeam, ts api.TeamState) bool {
+		func(ctx context.Context, r *api.Round, opponent *api.Team, ts api.TeamState) bool {
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
 					SendMessage(
@@ -190,13 +190,13 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 func registerDecryptHandlers(client openapi.OpenAPI) {
 	api.RegisterDecryptHandler(
 		// 己方进行解密
-		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) ([3]int, bool) {
+		func(ctx context.Context, r *api.Round, rt *api.Team, ts api.TeamState) ([3]int, bool) {
 			first := true
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
 					if first {
-						if r.RoundN == 1 {
+						if r.GetNumberOfRounds() <= 2 {
 							SendMessage(
 								client,
 								msg.ChannelID,
@@ -208,19 +208,19 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							fmt.Sprintf(message.START_DECRYPT_MESSAGE, getPlayersNamesString(rt.Players, message.SPLITTER, rt.EncryptPlayer())))
+							fmt.Sprintf(message.START_DECRYPT_MESSAGE, getPlayersNamesString(rt.Players, message.SPLITTER, r.EncryptPlayer())))
 						first = false
 						continue
 					}
 
-					if !isCorrectPlayer(msg.Author.ID, rt.Players, rt.EncryptPlayer()) {
+					if !isCorrectPlayer(msg.Author.ID, rt.Players, r.EncryptPlayer()) {
 						SendMessage(
 							client,
 							msg.ChannelID,
 							msg,
 							fmt.Sprintf(
 								message.GENERAL_WRONG_PLAYER_MESSAGE,
-								getPlayersNamesString(rt.Players, message.SPLITTER, rt.EncryptPlayer())))
+								getPlayersNamesString(rt.Players, message.SPLITTER, r.EncryptPlayer())))
 						continue
 					}
 
@@ -261,7 +261,7 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 
 	api.RegisterDecryptSuccessHandler(
 		// 己方解密成功
-		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) bool {
+		func(ctx context.Context, r *api.Round, rt *api.Team, ts api.TeamState) bool {
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
@@ -281,7 +281,7 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 
 	api.RegisterDecryptFailHandler(
 		// 己方解密失败
-		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) bool {
+		func(ctx context.Context, r *api.Round, rt *api.Team, ts api.TeamState) bool {
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
@@ -331,7 +331,7 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 	api.RegisterGameOverHandler(
 		// 游戏结束，主动关闭游戏
 		func(ctx context.Context, s *api.Session, t *api.Team) bool {
-			for reply, isCancelled := getMessageOrDone(s.CurrentRound, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(s.CurrentRound, ctx) {
+			for reply, isCancelled := getMessageOrDone(s.GetCurrentRound(), ctx); !isCancelled; reply, isCancelled = getMessageOrDone(s.GetCurrentRound(), ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
 					SendMessage(
 						client,
@@ -353,7 +353,7 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 // 获取用户当前的输入或者获取对决被手动结束的消息
 // 返回当前的消息，是否已经结束
 func getMessageOrDone(r *api.Round, ctx context.Context) (any, bool) {
-	c, e := service.GetGameBrokerBySession(r.GameSession)
+	c, e := service.GetGameBrokerBySession(r.GetGameSession())
 
 	if e != nil {
 		log.Warnf("get game broker error: %v", e)
@@ -376,7 +376,7 @@ func getMessageOrDone(r *api.Round, ctx context.Context) (any, bool) {
 // 因此当前阶段的 handler 如果想主动发送一条信息，则需要上一个handler处理的结果
 // 这个方法可以在上一个 handler 处理完后将消息传递给下一个 handler
 func throwBackMessage(r *api.Round, msg any) error {
-	c, e := service.GetGameBrokerBySession(r.GameSession)
+	c, e := service.GetGameBrokerBySession(r.GetGameSession())
 
 	if e != nil {
 		log.Warnf("get game broker error: %v", e)
@@ -439,17 +439,24 @@ func isCorrectPlayer(target string, players []*api.Player, excludes ...*api.Play
 
 }
 
-// 判断是否信息中只包含 3 个 1-4 的数字
+// 判断是否信息中只包含 3 个 1-4 的数字，并且每个数字只能出现一次
 func isValidSecrets(encryptoMessage [3]string) ([3]int, bool) {
 	result := [3]int{0, 0, 0}
 	isSuccess := true
+	x := 0
 	for idx, em := range encryptoMessage {
-		if dig, err := strconv.ParseInt(em, 10, 32); err == nil && dig < 4 && dig > 0 {
+		if dig, err := strconv.ParseInt(em, 10, 32); err == nil && dig < 5 && dig > 0 {
 			result[idx] = int(dig)
+			x ^= result[idx]
 		} else {
 			isSuccess = false
 			break
 		}
+	}
+
+	// x 如果落在 1-4 之间说明有重复的数字
+	if x >= 1 && x <= 4 {
+		isSuccess = false
 	}
 	return result, isSuccess
 }
