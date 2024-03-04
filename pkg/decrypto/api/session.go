@@ -97,6 +97,7 @@ func (gameSession *Session) StartRound(ctx context.Context) (*Round, bool) {
 
 // 如果游戏结束，则返回 true 和 胜利的队伍;
 // 否则返回 false 和 nil
+// FIXME：在一轮结束后，存在一同胜利（或者失败）的情况，需要处理
 func (s *Session) IsGameOver() (bool, *Team) {
 	for idx, t := range s.Teams {
 		if t.InterceptedCounts >= 2 {
