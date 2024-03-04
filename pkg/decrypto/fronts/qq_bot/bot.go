@@ -39,8 +39,8 @@ func (bot *QQBot) Start() {
 }
 
 // 注册所有机器人行为
-func initMessageHandlers(api openapi.OpenAPI) []interface{} {
-	return []interface{}{handlers.GetAtMessageHandler(api), handlers.GetDirectMessageHandler(api)}
+func initMessageHandlers(api openapi.OpenAPI) []any {
+	return []any{handlers.GetAtMessageHandler(api), handlers.GetDirectMessageHandler(api)}
 }
 
 func initRoundHandler(api openapi.OpenAPI) {

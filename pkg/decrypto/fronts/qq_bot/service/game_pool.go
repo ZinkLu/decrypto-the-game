@@ -23,7 +23,7 @@ type GamePool struct {
 	pool     map[string]*api.Session
 	reserved map[*api.Session][]string
 	killer   map[string]func()
-	broker   map[string]chan interface{}
+	broker   map[string]chan any
 }
 
 // 将某个 Key 关联到某场 session
@@ -78,7 +78,7 @@ func (p *GamePool) gameOver(key string) {
 }
 
 // 获取当前对局的通讯通道
-func (p *GamePool) getSessionBroker(key string) chan interface{} {
+func (p *GamePool) getSessionBroker(key string) chan any {
 	return p.broker[key]
 }
 
@@ -95,7 +95,7 @@ func (p *GamePool) getKeys(session *api.Session) []string {
 //
 // 比如 ChannelID ，bot 能够快速通过频道号判断是否有有效的 session
 // 有比如 UserId，bot 能够快速判断
-var game_pool = GamePool{make(map[string]*api.Session), make(map[*api.Session][]string), make(map[string]func()), make(map[string]chan interface{})}
+var game_pool = GamePool{make(map[string]*api.Session), make(map[*api.Session][]string), make(map[string]func()), make(map[string]chan any)}
 
 type key_type = int
 

@@ -55,7 +55,7 @@ func StartGameSession(players []*dto.User, channelId string) (*api.Session, cont
 
 	game_pool.put(getPoolKey(CHANNEL, channelId), session)
 	game_pool.killer[getPoolKey(CHANNEL, channelId)] = f
-	game_pool.broker[getPoolKey(CHANNEL, channelId)] = make(chan interface{})
+	game_pool.broker[getPoolKey(CHANNEL, channelId)] = make(chan any)
 
 	for _, u := range userIds {
 		game_pool.put(getPoolKey(USER, u), session)
@@ -111,7 +111,7 @@ func GetUserIdsByGameSession(session *api.Session) ([]string, error) {
 
 	return result, nil
 }
-func GetGameBrokerBySession(session *api.Session) (chan interface{}, error) {
+func GetGameBrokerBySession(session *api.Session) (chan any, error) {
 	channelId, err := GetChannelIDByGameSession(session)
 
 	if err != nil {

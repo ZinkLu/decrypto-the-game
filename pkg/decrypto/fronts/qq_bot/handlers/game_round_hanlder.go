@@ -352,7 +352,7 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 
 // 获取用户当前的输入或者获取对决被手动结束的消息
 // 返回当前的消息，是否已经结束
-func getMessageOrDone(r *api.Round, ctx context.Context) (interface{}, bool) {
+func getMessageOrDone(r *api.Round, ctx context.Context) (any, bool) {
 	c, e := service.GetGameBrokerBySession(r.GameSession)
 
 	if e != nil {
@@ -375,7 +375,7 @@ func getMessageOrDone(r *api.Round, ctx context.Context) (interface{}, bool) {
 // 由于机器人的限制，它必须回复被动消息（主动消息会有频率限制）
 // 因此当前阶段的 handler 如果想主动发送一条信息，则需要上一个handler处理的结果
 // 这个方法可以在上一个 handler 处理完后将消息传递给下一个 handler
-func throwBackMessage(r *api.Round, msg interface{}) error {
+func throwBackMessage(r *api.Round, msg any) error {
 	c, e := service.GetGameBrokerBySession(r.GameSession)
 
 	if e != nil {

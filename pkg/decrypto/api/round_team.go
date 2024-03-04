@@ -1,5 +1,7 @@
 package api
 
+import "reflect"
+
 // 作为 Team 的子类，添加上了本局的一些对战信息
 type RoundedTeam struct {
 	*Team              // 目前处理加密的队伍
@@ -26,7 +28,7 @@ func (rt *RoundedTeam) SetInterceptSecret(interceptedSecret [3]int) bool {
 
 // 当前队伍有没有破解成功
 func (rt *RoundedTeam) IsIntercepted() bool {
-	return rt.interceptedSecret == rt.Opponent().secret
+	return reflect.DeepEqual(rt.interceptedSecret, rt.Opponent().secret)
 }
 
 func (rt *RoundedTeam) GetInterceptSecret() [3]int {
@@ -51,7 +53,7 @@ func (rt *RoundedTeam) SetDecryptedSecret(secret [3]int) bool {
 
 // 当前队伍有没有猜中自己的密码
 func (rt *RoundedTeam) IsDecryptedCorrect() bool {
-	return rt.secret == rt.decryptSecret
+	return reflect.DeepEqual(rt.secret, rt.decryptSecret)
 }
 
 // 本轮当前对手

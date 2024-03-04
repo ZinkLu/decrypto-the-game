@@ -115,7 +115,7 @@ func help(api openapi.OpenAPI, data *dto.WSATMessageData) {
 }
 
 // 所有由对局玩家发送的任何消息都会被放入到 broker 中被进一步处理（或者被抛弃）
-func sendInGameMessageToBroker(session *api.Session, data interface{}) error {
+func sendInGameMessageToBroker(session *api.Session, data any) error {
 	broker, err := service.GetGameBrokerBySession(session)
 	if err != nil {
 		return err
