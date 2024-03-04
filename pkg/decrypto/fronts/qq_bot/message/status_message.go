@@ -33,11 +33,8 @@ const GAME_STATUS_MESSAGE_TEMPLATE = `当前第 %d 轮次
 
 func GetGameStatusMessage(session *api.Session) string {
 	var sb strings.Builder
-	for {
-		previous := session.CurrentRound.PreviousRound
-		if previous == nil {
-			break
-		}
+
+	for previous := session.CurrentRound.PreviousRound; previous != nil; previous = previous.PreviousRound {
 		sb.WriteString(GetRoundInfo(previous))
 	}
 	roundMsg := sb.String()
