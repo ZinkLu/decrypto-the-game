@@ -47,7 +47,7 @@ func GetGameStatusMessage(session *api.Session) string {
 func GetRoundInfo(r *api.Round) string {
 	var conclusion string
 
-	if r.CurrentTeam.IsIntercepted() {
+	if r.CurrentTeam.IsInterceptSuccess() {
 		conclusion = "😎 破译成功"
 	} else if !r.CurrentTeam.IsDecryptedCorrect() {
 		conclusion = "🙃 解密失败"

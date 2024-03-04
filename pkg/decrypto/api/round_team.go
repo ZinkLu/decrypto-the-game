@@ -19,7 +19,7 @@ type RoundedTeam struct {
 // 自动增加拦截正确计数, 返回是否拦截成功
 func (rt *RoundedTeam) SetInterceptSecret(interceptedSecret [3]int) bool {
 	rt.interceptedSecret = interceptedSecret
-	result := rt.IsIntercepted()
+	result := rt.IsInterceptSuccess()
 	if result {
 		rt.Team.InterceptedSuccess()
 	}
@@ -27,7 +27,7 @@ func (rt *RoundedTeam) SetInterceptSecret(interceptedSecret [3]int) bool {
 }
 
 // 当前队伍有没有破解成功
-func (rt *RoundedTeam) IsIntercepted() bool {
+func (rt *RoundedTeam) IsInterceptSuccess() bool {
 	return reflect.DeepEqual(rt.interceptedSecret, rt.Opponent().secret)
 }
 

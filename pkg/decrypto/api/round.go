@@ -105,7 +105,7 @@ func (round *Round) AutoForward(c context.Context) bool {
 			}
 
 		case DECRYPT:
-			if team.Opponent().IsIntercepted() {
+			if team.Opponent().IsInterceptSuccess() {
 				continue
 			}
 

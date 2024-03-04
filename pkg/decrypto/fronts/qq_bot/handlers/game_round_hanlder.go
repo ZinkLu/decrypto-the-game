@@ -88,7 +88,7 @@ func registerEncryptHandlers(client openapi.OpenAPI) {
 func registerInterceptHandlers(client openapi.OpenAPI) {
 	api.RegisterInterceptHandler(
 		// 拦截方进行拦截
-		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) ([3]int, bool) {
+		func(ctx context.Context, r *api.Round, opponent *api.RoundedTeam, ts api.TeamState) ([3]int, bool) {
 			first := true
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
@@ -98,19 +98,19 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							fmt.Sprintf(message.START_INTERCEPT_MESSAGE, getPlayersNamesString(rt.Opponent().Players, message.SPLITTER)))
+							fmt.Sprintf(message.START_INTERCEPT_MESSAGE, getPlayersNamesString(opponent.Players, message.SPLITTER)))
 						first = false
 						continue
 					}
 
-					if !isCorrectPlayer(msg.Author.ID, rt.Opponent().Players) {
+					if !isCorrectPlayer(msg.Author.ID, opponent.Players) {
 						SendMessage(
 							client,
 							msg.ChannelID,
 							msg,
 							fmt.Sprintf(
 								message.GENERAL_WRONG_PLAYER_MESSAGE,
-								getPlayersNamesString(rt.Opponent().Players, message.SPLITTER)))
+								getPlayersNamesString(opponent.Players, message.SPLITTER)))
 						continue
 					}
 
@@ -149,7 +149,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 
 	api.RegisterInterceptSuccessHandler(
 		// 拦截方拦截成功
-		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) bool {
+		func(ctx context.Context, r *api.Round, opponent *api.RoundedTeam, ts api.TeamState) bool {
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
@@ -169,7 +169,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 
 	api.RegisterInterceptFailHandler(
 		// 拦截方拦截失败
-		func(ctx context.Context, r *api.Round, rt *api.RoundedTeam, ts api.TeamState) bool {
+		func(ctx context.Context, r *api.Round, opponent *api.RoundedTeam, ts api.TeamState) bool {
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
 					SendMessage(
