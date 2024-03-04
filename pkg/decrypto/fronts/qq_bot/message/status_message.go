@@ -10,17 +10,22 @@ import (
 const PLAIN_WORDS = "词组"
 const GAME_PROCESS = "进度"
 const SECRET_CODES = "密码"
+const SELF_ENCRYPTION_HISTORY = "我方"
+const OPPONENT_ENCRYPTION_HISTORY = "对方"
 
 const STATUS_HELP_MESSAGE = `您当前正在对局中，请回复
-	` + PLAIN_WORDS + `: 查看您队伍的词组信息
-	` + GAME_PROCESS + `: 查看游戏进度与历史
+	<` + PLAIN_WORDS + `>: 查看您队伍的词组信息
+	<` + GAME_PROCESS + `>: 查看游戏进度与历史
+	<` + SELF_ENCRYPTION_HISTORY + `>: 查看我方已使用的加密词
+	<` + OPPONENT_ENCRYPTION_HISTORY + `>: 查看对方已使用的加密词
 如果您是当前加密者，请回复
-	` + SECRET_CODES + `: 来查看您本局需要加密的密码
+	<` + SECRET_CODES + `>: 来查看您本局需要加密的密码
 `
 
-const TEAM_STATUS_MESSAGE_TEMPLATE = `🍎 您的` + PLAIN_WORDS + `为: %v
-⭕️您的队伍已经成功拦截了 %d 次
-❌您的队伍已经失败解密了 %d 次
+const TEAM_STATUS_MESSAGE_TEMPLATE = `🍎 
+	您的` + PLAIN_WORDS + `为: %v
+⭕️	您的队伍已经成功拦截了 %d 次
+❌	您的队伍已经失败解密了 %d 次
 `
 
 func GetTeamStatusMessage(team *api.Team) string {
@@ -73,4 +78,12 @@ func GetRoundInfo(r *api.Round) string {
 	)
 
 	return result
+}
+
+// 获取我方加密历史，比如
+// 红色: 血,温暖
+// 蓝色: 海洋,天空
+func GetSelfEncryptionHistory(session *api.Session, p *api.Player) string {
+	// team := session.GetUserTeam(p.Uid)
+
 }

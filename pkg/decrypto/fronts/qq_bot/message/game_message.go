@@ -50,11 +50,8 @@ func RandomEmoji() string {
 
 const GAME_START_MSG = `%s 游戏开始！
 当前队伍
-队伍 A: %s
-队伍 B: %s
-当前 A 队伍正在行动 🥷
-
-（请私信我并发送 <密文> 来获取各个队伍的密文）
+队伍: %s
+队伍: %s
 `
 
 func GetGameStartMessage(session *api.Session) string {
@@ -62,10 +59,10 @@ func GetGameStartMessage(session *api.Session) string {
 	var teamANames = make([]string, 0, len(teams[0].Players))
 	var teamBNames = make([]string, 0, len(teams[1].Players))
 	for _, player := range teams[0].Players {
-		teamANames = append(teamANames, player.NickName)
+		teamANames = append(teamANames, GetAtPlayerString(player))
 	}
 	for _, player := range teams[1].Players {
-		teamBNames = append(teamBNames, player.NickName)
+		teamBNames = append(teamBNames, GetAtPlayerString(player))
 	}
 
 	return fmt.Sprintf(GAME_START_MSG, RandomEmoji(), strings.Join(teamANames, ","), strings.Join(teamBNames, ","))
@@ -73,4 +70,10 @@ func GetGameStartMessage(session *api.Session) string {
 
 const GAME_END_MSG = `游戏已结束，下次再见喽~`
 const CLOSE_ROOM_MSG = `房间将在 10 秒后自动关闭，下次见~`
-const GAME_ROOMS_LINK_MSG = `房间已经为你们准备好了哦，速速进：👇 <#%s>`
+const GAME_ROOMS_LINK_MSG = `房间已经为你们准备好了哦，速速进：👇
+<#%s>`
+
+// 获取 qq 允许的 @ 字符串，这些字符串会在聊天栏中被高亮
+func GetAtPlayerString(p *api.Player) string {
+	return "<@!" + p.Uid + ">"
+}

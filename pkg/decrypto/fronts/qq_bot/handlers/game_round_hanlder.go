@@ -31,7 +31,7 @@ func registerInitHandlers(client openapi.OpenAPI) {
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
 					cId, _ := service.GetChannelIDByGameSession(r.GetGameSession())
-					SendMessage(client, cId, msg, fmt.Sprintf(message.START_ENCRYPT_MESSAGE, r.EncryptPlayer().NickName))
+					SendMessage(client, cId, msg, fmt.Sprintf(message.START_ENCRYPT_MESSAGE, message.GetAtPlayerString(r.EncryptPlayer())))
 					return false
 				}
 			}
@@ -340,6 +340,12 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 						fmt.Sprintf(
 							message.GAME_OVER_MESSAGE,
 							getPlayersNamesString(t.Players, message.SPLITTER)))
+
+					SendMessage(
+						client,
+						msg.ChannelID,
+						msg,
+						message.GetGameStatusMessage(s))
 
 					gameOver(client, msg)
 					return true
