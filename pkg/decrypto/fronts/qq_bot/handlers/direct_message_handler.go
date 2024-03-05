@@ -47,7 +47,10 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 						message.NO_ENCRYPTING_MESSAGE,
 					)
 				}
-
+			} else if strings.Contains(data.Content, message.SELF_ENCRYPTION_HISTORY) {
+				SendDirectMessage(api, data.Author.ID, data, message.GetSelfEncryptionHistory(session, data.Author.ID))
+			} else if strings.Contains(data.Content, message.OPPONENT_ENCRYPTION_HISTORY) {
+				SendDirectMessage(api, data.Author.ID, data, message.GetOpponentEncryptionHistory(session, data.Author.ID))
 			} else {
 				SendDirectMessage(api, data.Author.ID, data, message.STATUS_HELP_MESSAGE)
 			}

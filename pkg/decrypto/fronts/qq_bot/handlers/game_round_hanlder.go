@@ -332,22 +332,43 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 		// 游戏结束，主动关闭游戏
 		func(ctx context.Context, s *api.Session, t *api.Team) bool {
 			for reply, isCancelled := getMessageOrDone(s.GetCurrentRound(), ctx); !isCancelled; reply, isCancelled = getMessageOrDone(s.GetCurrentRound(), ctx) {
+				first := true
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
-					SendMessage(
-						client,
-						msg.ChannelID,
-						msg,
-						fmt.Sprintf(
-							message.GAME_OVER_MESSAGE,
-							getPlayersNamesString(t.Players, message.SPLITTER)))
+					if first {
+						if t != nil {
+							SendMessage(
+								client,
+								msg.ChannelID,
+								msg,
+								fmt.Sprintf(
+									message.GAME_OVER_MESSAGE,
+									getPlayersNamesString(t.Players, message.SPLITTER)))
+						} else {
+							SendMessage(
+								client,
+								msg.ChannelID,
+								msg,
+								fmt.Sprintf(message.GAME_OVER_WITH_MAX_ROUND))
+						}
+						SendMessage(
+							client,
+							msg.ChannelID,
+							msg,
+							message.GetGameStatusMessage(s))
 
-					SendMessage(
-						client,
-						msg.ChannelID,
-						msg,
-						message.GetGameStatusMessage(s))
+						SendMessage(client,
+							msg.ChannelID,
+							msg,
+							message.CLOSE_GAME_SESSION_MANUALLY)
 
-					gameOver(client, msg)
+						first = false
+					} else {
+						SendMessage(client,
+							msg.ChannelID,
+							msg,
+							message.CLOSE_GAME_SESSION_MANUALLY)
+					}
+
 					return true
 				}
 			}

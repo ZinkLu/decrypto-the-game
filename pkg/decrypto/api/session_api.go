@@ -17,6 +17,9 @@ func (gameSession *Session) StartRound(ctx context.Context) (*Round, bool) {
 		return nil, false
 	}
 	if gameSession.currentRound != nil && gameSession.currentRound.isFinalRound() {
+		if gamerOverHandler != nil {
+			gamerOverHandler(ctx, gameSession, nil)
+		}
 		return nil, false
 	}
 	return gameSession.createNewRound(), true
@@ -101,6 +104,23 @@ func (s *Session) GetUserTeam(uid string) *Team {
 	return s.teams[1]
 }
 
+// 获取某玩家的对手队伍
+func (s *Session) GetUserOpponent(uid string) *Team {
+	var target *Team
+	for _, p := range s.teams[0].Players {
+		if p.Uid == uid {
+			target = s.teams[0]
+			break
+		}
+	}
+
+	if target != nil {
+		return s.teams[1]
+	}
+
+	return s.teams[0]
+}
+
 /*
 	========================== read-only properties ============================
 */
@@ -109,3 +129,4 @@ func (session *Session) GetCurrentRound() *Round { return session.currentRound }
 func (session *Session) GetTeams() [2]*Team      { return session.teams }
 func (session *Session) GetMaxRounds() uint8     { return session.maxRounds }
 func (session *Session) GetSessionId() string    { return session.sessionId }
+func (session *Session) GetRounds() []*Round     { return session.rounds }

@@ -23,13 +23,21 @@ const STATUS_HELP_MESSAGE = `您当前正在对局中，请回复
 `
 
 const TEAM_STATUS_MESSAGE_TEMPLATE = `🍎 
-	您的` + PLAIN_WORDS + `为: %v
+您的` + PLAIN_WORDS + `为:
+	%s
+
 ⭕️	您的队伍已经成功拦截了 %d 次
 ❌	您的队伍已经失败解密了 %d 次
 `
 
 func GetTeamStatusMessage(team *api.Team) string {
-	return fmt.Sprintf(TEAM_STATUS_MESSAGE_TEMPLATE, team.Words, team.InterceptedCounts, team.DecryptWrongCounts)
+	var sb = strings.Builder{}
+	for idx, w := range team.Words {
+		sb.WriteString(GetEmojiDigits(idx+1) + ": " + w)
+		sb.WriteString("\n\t")
+	}
+
+	return fmt.Sprintf(TEAM_STATUS_MESSAGE_TEMPLATE, sb.String(), team.InterceptedCounts, team.DecryptWrongCounts)
 }
 
 const GAME_STATUS_MESSAGE_TEMPLATE = `当前第 %d 轮次
@@ -83,7 +91,61 @@ func GetRoundInfo(r *api.Round) string {
 // 获取我方加密历史，比如
 // 红色: 血,温暖
 // 蓝色: 海洋,天空
-func GetSelfEncryptionHistory(session *api.Session, p *api.Player) string {
-	// team := session.GetUserTeam(p.Uid)
+func GetSelfEncryptionHistory(session *api.Session, uid string) string {
+	t := session.GetUserTeam(uid)
+	history := [4][]string{
+		make([]string, 0),
+		make([]string, 0),
+		make([]string, 0),
+		make([]string, 0),
+	}
 
+	for round := session.GetCurrentRound().GetPreviousRound(); round != nil; round = round.GetPreviousRound() {
+		if round.GetCurrentTeam() == t {
+			for idx, d := range round.GetSecretDigits() {
+				history[d-1] = append(history[d-1], round.GetEncryptedMessage()[idx])
+			}
+		}
+	}
+
+	var sb = strings.Builder{}
+
+	for idx, h := range history {
+		sb.WriteString(t.Words[idx] + ":")
+		sb.WriteString("\n\t")
+		sb.WriteString(strings.Join(h, ","))
+		sb.WriteString("\n")
+	}
+	return strings.TrimSpace(sb.String())
+}
+
+// 获取对方加密历史，比如
+// 1: 血,温暖
+// 2: 海洋,天空
+func GetOpponentEncryptionHistory(session *api.Session, uid string) string {
+	t := session.GetUserTeam(uid)
+	history := [4][]string{
+		make([]string, 0),
+		make([]string, 0),
+		make([]string, 0),
+		make([]string, 0),
+	}
+
+	for round := session.GetCurrentRound().GetPreviousRound(); round != nil; round = round.GetPreviousRound() {
+		if round.GetCurrentTeam() != t {
+			for idx, d := range round.GetSecretDigits() {
+				history[d-1] = append(history[d-1], round.GetEncryptedMessage()[idx])
+			}
+		}
+	}
+
+	var sb = strings.Builder{}
+
+	for idx, h := range history {
+		sb.WriteString(fmt.Sprintf("%d:", idx+1))
+		sb.WriteString("\n\t")
+		sb.WriteString(strings.Join(h, ","))
+		sb.WriteString("\n")
+	}
+	return strings.TrimSpace(sb.String())
 }

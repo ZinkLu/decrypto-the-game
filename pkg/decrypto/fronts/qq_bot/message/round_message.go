@@ -27,7 +27,9 @@ const NO_ENCRYPTING_MESSAGE = `您本轮不负责加密`
 
 const ENCRYPT_SUCCESS_MESSAGE = `🔒 加密成功
 当前的密文为:
-	%s %s %s
+	%s 
+	%s
+	%s
 `
 
 const INTERCEPT_DONE_MESSAGE = `🛑 收到拦截密码
@@ -45,6 +47,8 @@ const DECRYPT_FAIL_MESSAGE = `❌ 解密失败！！`
 const ROUND_OVER_MESSAGE = `本轮结束！本轮数据如下：`
 const GAME_OVER_MESSAGE = `本局结束，恭喜 %s 获得了胜利
 对局详情如下：`
+const GAME_OVER_WITH_MAX_ROUND = `达到游戏最大轮数，没有队伍胜利，现在参考历史消息来猜测对手的词组，祝你们好运🍀`
+const CLOSE_GAME_SESSION_MANUALLY = `游戏已经结束，你可以随时@我来<结束游戏>并且<关闭房间>，在此之前，你可以私信我查看历史记录`
 
 const SPLITTER = " "
 

@@ -126,7 +126,8 @@ func RegisterDoneHandler(f func(context.Context, *Round, TeamState) bool) {
 }
 
 // --------------------------- 当某只队伍赢得比赛时的触发动作  ---------------------------
-// 参数为(本局游戏, 获胜队伍)
+// 参数为(ctx, 本局游戏, 获胜队伍)
+// 当达到最大局数但仍然没有胜利的队伍出现，team 则为 nil
 var gamerOverHandler func(context.Context, *Session, *Team) bool
 
 func RegisterGameOverHandler(f func(context.Context, *Session, *Team) bool) {
