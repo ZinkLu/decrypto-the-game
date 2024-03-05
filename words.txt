@@ -708,7 +708,7 @@
 乌龟[turtle]
 殡仪馆[undertaker]
 独角兽[unicorn]
-大学[univerity]
+大学[university]
 真空[vacuum]
 情人节[valentine]
 吸血鬼[vampire]
