@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/message"
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/message"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
 	"github.com/tencent-connect/botgo/dto"
 	"github.com/tencent-connect/botgo/event"
