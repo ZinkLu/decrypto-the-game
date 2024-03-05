@@ -60,13 +60,13 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 	}
 
 	// TODO: DEBUG 模式，将同一个用户添加四次作为玩家
-	user := users[0]
-	users = []*dto.User{
-		user,
-		user,
-		user,
-		user,
-	}
+	// user := users[0]
+	// users = []*dto.User{
+	// 	user,
+	// 	user,
+	// 	user,
+	// 	user,
+	// }
 
 	if len(users)%2 != 0 ||
 		len(users) < 4 ||
