@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -10,7 +9,6 @@ import (
 )
 
 func main() {
-	fmt.Print(3 % 2)
 	botId, _ := strconv.ParseUint(os.Getenv("BOT_ID"), 10, 64)
 	qq_bot.CreateBot(
 		botId,
