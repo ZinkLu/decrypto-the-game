@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/message"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/utils"
 	"github.com/tencent-connect/botgo/dto"
 	"github.com/tencent-connect/botgo/openapi"
 )
@@ -99,7 +99,7 @@ func closeRoom(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 			time.Sleep(time.Second * 10)
 			err := api.DeleteChannel(context.Background(), channelId)
 			if err != nil {
-				log.Printf("删除房间失败, error is %s", err)
+				utils.Log.Errorf("删除房间失败, error is %s", err)
 			}
 			delete(roomMap, channelId)
 		}()

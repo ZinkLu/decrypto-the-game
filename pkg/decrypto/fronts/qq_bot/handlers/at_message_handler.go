@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/message"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/utils"
 	"github.com/tencent-connect/botgo/dto"
 	"github.com/tencent-connect/botgo/event"
 	"github.com/tencent-connect/botgo/openapi"
@@ -90,7 +90,7 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 				broker <- data
 
 			} else {
-				log.Printf("创建对局失败, error is %s", err)
+				utils.Log.Errorf("创建对局失败, error is %s", err)
 				SendMessage(api, data.ChannelID, data, err.Error())
 				// 删除房间
 				api.DeleteChannel(context.Background(), gameChannel.ID)
@@ -98,7 +98,7 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 			}
 		} else {
 			// 发送错误信息
-			log.Printf("房间创建失败, error is %s", err)
+			utils.Log.Errorf("房间创建失败, error is %s", err)
 			SendMessage(api, data.ChannelID, data, message.CANT_CREATE_PRIVATE_ROOM)
 			return err
 		}

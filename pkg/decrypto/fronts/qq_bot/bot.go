@@ -2,10 +2,11 @@ package qq_bot
 
 import (
 	"context"
-	"log"
 	"time"
 
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/compact"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/handlers"
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/utils"
 	"github.com/tencent-connect/botgo"
 	"github.com/tencent-connect/botgo/openapi"
 	"github.com/tencent-connect/botgo/token"
@@ -20,10 +21,11 @@ type QQBot struct {
 }
 
 func (bot *QQBot) Start() {
+	botgo.SetLogger(compact.New(utils.Log))
 	ctx := context.Background()
 	api := bot.api
 	ws, err := api.WS(ctx, nil, "")
-	log.Printf("%+v, err:%v", ws, err)
+	utils.Log.Errorf("%+v, err:%v", ws, err)
 
 	if me, err := api.Me(context.Background()); err == nil {
 		handlers.BOT_INFO = me
