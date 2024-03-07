@@ -23,8 +23,6 @@ func GetAtMessageHandler(api openapi.OpenAPI) event.ATMessageEventHandler {
 func handle(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 	if strings.Contains(data.Content, message.GAME_START_CMD) {
 		return gameStart(api, data)
-	} else if strings.Contains(data.Content, message.GAME_STATUS_CMD) {
-		// help(api, event, data)
 	} else if strings.Contains(data.Content, message.GAME_END_CMD) {
 		return gameOver(api, data)
 	} else if strings.Contains(data.Content, message.CLOSE_ROOM_CMD) {
