@@ -22,7 +22,7 @@ const HELP_MSG = `如果要开始游戏，请在游戏大厅 @ 三个以上的�
 '@小红 @小明 @%s /开始游戏'
 
 🚨注意！
-参与的人数必须是大于 4 人 且小于 8 人的偶数哦！（包括发送消息的人）
+参与的人数必须是 4个，6个 或者 8 个人哦！（包括发送消息的人）
 `
 
 const GAME_NAME = "%s <%s> 的对决"
@@ -50,8 +50,8 @@ func RandomEmoji() string {
 
 const GAME_START_MSG = `%s 游戏开始！
 当前队伍
-队伍: %s
-队伍: %s
+队伍A: %s
+队伍B: %s
 `
 
 func GetGameStartMessage(session *api.Session) string {

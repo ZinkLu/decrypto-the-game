@@ -22,11 +22,11 @@ const STATUS_HELP_MESSAGE = `您当前正在对局中，请回复
 	<` + SECRET_CODES + `>: 来查看您本局需要加密的密码
 `
 
-const TEAM_STATUS_MESSAGE_TEMPLATE = `🍎 
+const TEAM_STATUS_MESSAGE_TEMPLATE = `📖
 您的` + PLAIN_WORDS + `为:
 	%s
 
-⭕️	您的队伍已经成功拦截了 %d 次
+⭕️	 您的队伍已经成功拦截了 %d 次
 ❌	您的队伍已经失败解密了 %d 次
 `
 
