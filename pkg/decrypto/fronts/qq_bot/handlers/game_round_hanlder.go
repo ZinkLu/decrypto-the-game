@@ -462,7 +462,7 @@ func isCorrectPlayer(target string, players []*api.Player, excludes ...*api.Play
 		}
 
 	}
-	return true
+	return false
 
 }
 
