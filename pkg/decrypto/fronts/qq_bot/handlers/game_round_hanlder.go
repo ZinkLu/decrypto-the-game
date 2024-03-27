@@ -331,8 +331,8 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 	api.RegisterGameOverHandler(
 		// 游戏结束，主动关闭游戏
 		func(ctx context.Context, s *api.Session, t *api.Team) bool {
+			first := true
 			for reply, isCancelled := getMessageOrDone(s.GetCurrentRound(), ctx); !isCancelled; reply, isCancelled = getMessageOrDone(s.GetCurrentRound(), ctx) {
-				first := true
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
 					if first {
 						if t != nil {
@@ -360,8 +360,6 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 							msg.ChannelID,
 							msg,
 							message.CLOSE_GAME_SESSION_MANUALLY)
-
-						first = false
 					} else {
 						SendMessage(client,
 							msg.ChannelID,
@@ -371,6 +369,7 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 
 					return true
 				}
+				first = false
 			}
 			return true
 		},
