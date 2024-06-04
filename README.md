@@ -6,6 +6,8 @@
 
 > 目前只支持 QQ 频道机器人。
 
+**QQ 机器人最近进行了更新，目前机器人已经无法使用，等待使用其他 QQ 机器人的 API 或者替换成其他的机器人平台**
+
 ![intro](docs/intro.gif)
 
 游戏规则与流程可以查看[B站桌游怪讲解视频](https://www.bilibili.com/video/BV1Pt411K7ro/)。
