@@ -127,8 +127,10 @@
 
 ## TODO & PR
 
+紧急: 添加其他平台 bot，现在 QQ 频道进行了更新，不分功能已经不可用，准备迁移至 dodo, kook 或者 discord
+
 1. 去除将 messages 包中所有的常量，使用 Function Call 作为获取信息的手段；
-2. 优化 message 的输出，如果能申请到 Markdown Template 是最好的；
-3. 添加其他平台 bot;
-4. 添加基于 LLM 的 word provider；
-5. 添加基于 LLM 的陪玩机器人（需要额外开辟一个仓库）；
+2. 优化 message 的输出，如果能申请到 Markdown Template 是最好的（如果不是 QQ 平台的话就）；
+3. 添加基于 LLM 的 word provider；
+4. 添加基于 LLM 的陪玩机器人（需要额外开辟一个仓库）；
+5. 添加基于 LLM 的更加人性化的游戏流程回复？
