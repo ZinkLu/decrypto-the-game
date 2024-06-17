@@ -4,6 +4,7 @@ go 1.20
 
 require (
 	github.com/dodo-open/dodo-open-go v0.0.0-20230111040848-41468e1d571e
+	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
 	github.com/google/uuid v1.4.0
 	github.com/sirupsen/logrus v1.9.3
 	github.com/tencent-connect/botgo v0.1.6
