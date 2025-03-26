@@ -7,40 +7,37 @@ import (
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
 )
 
-const PLAIN_WORDS = "词组"
+const PLAIN_WORDS = "机密"
 const GAME_PROCESS = "进度"
 const SECRET_CODES = "密码"
 const SELF_ENCRYPTION_HISTORY = "我方"
 const OPPONENT_ENCRYPTION_HISTORY = "对方"
+const SPLITTER = " "
 
-const STATUS_HELP_MESSAGE = `您当前正在对局中，请回复
-	<` + PLAIN_WORDS + `>: 查看您队伍的词组信息
-	<` + GAME_PROCESS + `>: 查看游戏进度与历史
-	<` + SELF_ENCRYPTION_HISTORY + `>: 查看我方已使用的加密词
-	<` + OPPONENT_ENCRYPTION_HISTORY + `>: 查看对方已使用的加密词
-如果您是当前加密者，请回复
-	<` + SECRET_CODES + `>: 来查看您本局需要加密的密码
-`
+const STATUS_HELP_MESSAGE = `🎮 游戏进行中~ 回复以下关键词:
+	💫 [` + PLAIN_WORDS + `]: 查看你队伍的机密
+	🔄 [` + GAME_PROCESS + `]: 查看游戏进度+历史
+	🤙 [` + SELF_ENCRYPTION_HISTORY + `]: 我方已用加密词
+	👀 [` + OPPONENT_ENCRYPTION_HISTORY + `]: 偷窥对方已用加密词
 
-const TEAM_STATUS_MESSAGE_TEMPLATE = `📖
-您的` + PLAIN_WORDS + `为:
-	%s
-
-⭕️	 您的队伍已经成功拦截了 %d 次
-❌	您的队伍已经失败解密了 %d 次
+当前轮到你来当加密官？回复:
+	🔐 [` + SECRET_CODES + `]: 查看本局的密码
 `
 
 func GetTeamStatusMessage(team *api.Team) string {
-	var sb = strings.Builder{}
-	for idx, w := range team.Words {
-		sb.WriteString(GetEmojiDigits(idx+1) + ": " + w)
-		sb.WriteString("\n\t")
-	}
 
-	return fmt.Sprintf(TEAM_STATUS_MESSAGE_TEMPLATE, sb.String(), team.InterceptedCounts, team.DecryptWrongCounts)
+	return TeamStatusTemplate.FormatTemplate(
+		map[string]any{
+			"Words":              team.Words,
+			"InterceptedCounts":  team.InterceptedCounts,
+			"DecryptWrongCounts": team.DecryptWrongCounts,
+		},
+	)
+
 }
 
-const GAME_STATUS_MESSAGE_TEMPLATE = `当前第 %d 轮次
+// TODO: 调研一下能否使用折叠 msg
+const GAME_STATUS_MESSAGE_TEMPLATE = `当前第 %d 轮次，以下是对战历史:
 %s
 `
 
@@ -59,33 +56,7 @@ func GetGameStatusMessage(session *api.Session) string {
 }
 
 func GetRoundInfo(r *api.Round) string {
-	var conclusion string
-
-	if r.IsInterceptSuccess() {
-		conclusion = "😎 破译成功"
-	} else if !r.IsDecryptedCorrect() {
-		conclusion = "🙃 解密失败"
-	} else {
-		conclusion = "😗 解密成功"
-	}
-
-	result := fmt.Sprintf(`第%d轮
-	加密者:%s
-	加密词:%v
-	正确密码:%v
-	拦截密码:%v
-	破译密码:%v
-	%s`,
-		r.GetNumberOfRounds(),
-		r.EncryptPlayer().NickName,
-		r.GetEncryptedMessage(),
-		r.GetSecretDigits(),
-		r.GetInterceptSecret(),
-		r.GetDecryptSecret(),
-		conclusion,
-	)
-
-	return result
+	return GameRoundInfoTempalte.FormatTemplate(r)
 }
 
 // 获取我方加密历史，比如

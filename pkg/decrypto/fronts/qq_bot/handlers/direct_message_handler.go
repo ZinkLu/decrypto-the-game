@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"fmt"
+	"context"
 	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/message"
@@ -34,17 +34,19 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 						api,
 						data.ChannelID,
 						data,
-						fmt.Sprintf(
-							message.READY_TO_ENCRYPT_MESSAGE,
-							strings.Join(secretString, " "),
-							strings.Join(words[:], ","),
+						message.ReadyToEncryptMessageTemplate.FormatTemplate(
+							map[string]interface{}{
+								"Digits": strings.Join(secretString, " "),
+								"Words":  strings.Join(words[:], ","),
+							},
 						))
 				} else {
+
 					SendDirectMessage(
 						api,
 						data.ChannelID,
 						data,
-						message.NO_ENCRYPTING_MESSAGE,
+						message.NoEncryptingMessageTemplate.FormatTemplate(nil),
 					)
 				}
 			} else if strings.Contains(data.Content, message.SELF_ENCRYPTION_HISTORY) {
@@ -59,7 +61,13 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 			return nil
 		}
 
-		SendDirectMessage(api, data.Author.ID, data, message.HELP_MSG)
+		bot, _ := api.Me(context.Background())
+
+		SendDirectMessage(api, data.Author.ID, data, message.HelpTemplate.FormatTemplate(
+			map[string]interface{}{
+				"BotName": bot.Username,
+			},
+		))
 
 		return nil
 	}

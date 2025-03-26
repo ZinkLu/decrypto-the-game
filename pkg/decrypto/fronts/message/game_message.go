@@ -2,7 +2,6 @@ package message
 
 import (
 	"crypto/rand"
-	"fmt"
 	"math/big"
 	"strings"
 
@@ -16,16 +15,6 @@ const GAME_END_CMD = "结束游戏"
 const CLOSE_ROOM_CMD = "关闭房间"
 
 // some message
-
-const HELP_MSG = `如果要开始游戏，请在游戏大厅 @ 三个以上的玩家后再 @ 我并说 “开始游戏”，比如
-
-'@小红 @小明 @%s /开始游戏'
-
-🚨注意！
-参与的人数必须是 4个，6个 或者 8 个人哦！（包括发送消息的人）
-`
-
-const GAME_NAME = "%s <%s> 的对决"
 
 var game_logo = [13]string{
 	"🖲️",
@@ -48,12 +37,6 @@ func RandomEmoji() string {
 	return game_logo[randomIndex.Int64()]
 }
 
-const GAME_START_MSG = `%s 游戏开始！
-当前队伍
-队伍A: %s
-队伍B: %s
-`
-
 func GetGameStartMessage(session *api.Session) string {
 	teams := session.GetTeams()
 	var teamANames = make([]string, 0, len(teams[0].Players))
@@ -65,13 +48,13 @@ func GetGameStartMessage(session *api.Session) string {
 		teamBNames = append(teamBNames, GetAtPlayerString(player))
 	}
 
-	return fmt.Sprintf(GAME_START_MSG, RandomEmoji(), strings.Join(teamANames, ","), strings.Join(teamBNames, ","))
+	return GameStartTemplate.FormatTemplate(
+		map[string]string{
+			"BlueTeam": strings.Join(teamANames, ","),
+			"RedTeam":  strings.Join(teamBNames, ","),
+		},
+	)
 }
-
-const GAME_END_MSG = `游戏已结束，下次再见喽~`
-const CLOSE_ROOM_MSG = `房间将在 10 秒后自动关闭，下次见~`
-const GAME_ROOMS_LINK_MSG = `房间已经为你们准备好了哦，速速进：👇
-<#%s>`
 
 // 获取 qq 允许的 @ 字符串，这些字符串会在聊天栏中被高亮
 func GetAtPlayerString(p *api.Player) string {

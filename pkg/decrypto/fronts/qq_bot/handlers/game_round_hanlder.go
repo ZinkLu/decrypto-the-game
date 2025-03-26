@@ -31,7 +31,19 @@ func registerInitHandlers(client openapi.OpenAPI) {
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
 					cId, _ := service.GetChannelIDByGameSession(r.GetGameSession())
-					SendMessage(client, cId, msg, fmt.Sprintf(message.START_ENCRYPT_MESSAGE, message.GetAtPlayerString(r.EncryptPlayer())))
+
+					SendMessage(
+						client,
+						cId,
+						msg,
+						message.StartEncrypt.FormatTemplate(
+							map[string]string{
+								"Player":     message.GetAtPlayerString(r.EncryptPlayer()),
+								"SecretCode": message.SECRET_CODES,
+								"PlainWords": message.PLAIN_WORDS,
+							},
+						),
+					)
 					return false
 				}
 			}
@@ -56,14 +68,23 @@ func registerEncryptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							fmt.Sprintf(message.GENERAL_WRONG_PLAYER_MESSAGE, r.EncryptPlayer().NickName),
+							message.GeneralWrongPlayer.FormatTemplate(
+								map[string]string{
+									"Player": r.EncryptPlayer().NickName,
+								},
+							),
 						)
 						continue
 					}
 					content := trimBotInfoInMessageContent(msg.Content)
 					encryptoMessage := strings.Split(content, message.SPLITTER)
 					if len(encryptoMessage) != 3 {
-						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_WORDS_FORMAT_MESSAGE)
+						SendMessage(
+							client,
+							msg.ChannelID,
+							msg,
+							message.ReplyWrongWordsFormat.FormatTemplate(nil),
+						)
 						continue
 					}
 
@@ -71,7 +92,14 @@ func registerEncryptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						fmt.Sprintf(message.ENCRYPT_SUCCESS_MESSAGE, encryptoMessage[0], encryptoMessage[1], encryptoMessage[2]))
+						message.EncryptSuccess.FormatTemplate(
+							map[string]string{
+								"Word1": encryptoMessage[0],
+								"Word2": encryptoMessage[1],
+								"Word3": encryptoMessage[2],
+							},
+						),
+					)
 
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
@@ -90,6 +118,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 		// 拦截方进行拦截
 		func(ctx context.Context, r *api.Round, opponent *api.Team, ts api.TeamState) ([3]int, bool) {
 			first := true
+			bot, _ := client.Me(context.Background())
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
@@ -98,7 +127,13 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							fmt.Sprintf(message.START_INTERCEPT_MESSAGE, getPlayersNamesString(opponent.Players, message.SPLITTER)))
+							message.StartIntercept.FormatTemplate(
+								map[string]string{
+									"Team":    getPlayersNamesString(opponent.Players, message.SPLITTER),
+									"BotName": bot.Username,
+								},
+							),
+						)
 						first = false
 						continue
 					}
@@ -108,22 +143,34 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							fmt.Sprintf(
-								message.GENERAL_WRONG_PLAYER_MESSAGE,
-								getPlayersNamesString(opponent.Players, message.SPLITTER)))
+							message.GeneralWrongPlayer.FormatTemplate(
+								map[string]string{
+									"Player": getPlayersNamesString(opponent.Players, message.SPLITTER),
+								},
+							))
 						continue
 					}
 
 					content := trimBotInfoInMessageContent(msg.Content)
 					encryptoMessage := strings.Split(content, message.SPLITTER)
 					if len(encryptoMessage) != 3 {
-						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_DIGITS_FORMAT_MESSAGE)
+						SendMessage(
+							client,
+							msg.ChannelID,
+							msg,
+							message.ReplyWrongDigitsFormat.FormatTemplate(nil),
+						)
 						continue
 					}
 
 					result, success := isValidSecrets([3]string(encryptoMessage))
 					if !success {
-						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_DIGITS_FORMAT_MESSAGE)
+						SendMessage(
+							client,
+							msg.ChannelID,
+							msg,
+							message.ReplyWrongDigitsFormat.FormatTemplate(nil),
+						)
 						continue
 					}
 
@@ -157,7 +204,8 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						fmt.Sprintf(message.INTERCEPT_SUCCESS_MESSAGE))
+						fmt.Sprintf(message.INTERCEPT_SUCCESS_MESSAGE),
+					)
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
 					return false
@@ -176,7 +224,8 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						fmt.Sprintf(message.INTERCEPT_FAIL_MESSAGE))
+						fmt.Sprintf(message.INTERCEPT_FAIL_MESSAGE),
+					)
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
 					return false
@@ -317,7 +366,8 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						message.GetRoundInfo(r))
+						message.GetRoundInfo(r),
+					)
 
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)

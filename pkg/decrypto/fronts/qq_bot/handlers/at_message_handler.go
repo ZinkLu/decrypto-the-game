@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/message"
@@ -74,7 +73,11 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 		if gameChannel, err := createPrivateGameRoom(api, data, users, users[0]); err == nil {
 			if session, ctx, err := service.StartGameSession(users, gameChannel.ID); err == nil {
 				// 发送跳转信息
-				SendMessage(api, data.ChannelID, data, fmt.Sprintf(message.GAME_ROOMS_LINK_MSG, gameChannel.ID))
+				SendMessage(api, data.ChannelID, data, message.GameRoomsLinkTemplate.FormatTemplate(
+					map[string]string{
+						"RoomID": gameChannel.ID,
+					},
+				))
 				// 发送开始信息
 				SendMessage(api, gameChannel.ID, data, message.GetGameStartMessage(session))
 				go session.AutoForward(ctx)
@@ -112,7 +115,7 @@ func gameOver(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 		service.EndGameSessionByChannel(channelId)
 
 		// 发送游戏结束信息
-		SendMessage(api, channelId, data, message.GAME_END_MSG)
+		SendMessage(api, channelId, data, message.GameEndTemplate.FormatTemplate(nil))
 
 		return nil
 	} else {
