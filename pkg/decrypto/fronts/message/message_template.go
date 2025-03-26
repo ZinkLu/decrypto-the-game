@@ -35,6 +35,9 @@ var ReadyToEncrypt = loadTemplate("readyToEncrypt", readyToEncryptTemplate)
 var EncryptSuccess = loadTemplate("encryptSuccess", encryptSuccessTemplate)
 var StartIntercept = loadTemplate("startIntercept", startInterceptTemplate)
 var StartDecrypt = loadTemplate("startDecrypt", startDecryptTemplate)
+var DecryptDoneMessage = loadTemplate("decryptDoneMessage", decryptDoneMessage)
+var DecryptFailMessage = loadTemplate("decryptFailMessage", decryptFailMessage)
+var DecryptSuccessMessage = loadTemplate("decryptSuccessMessage", decryptSuccessMessage)
 var GameOver = loadTemplate("gameOver", gameOverTemplate)
 var MaxRoundReached = loadTemplate("maxRoundReached", maxRoundReachedTemplate)
 var HelpTemplate = loadTemplate("help", helpTemplate)
@@ -47,6 +50,10 @@ var ReadyToEncryptMessageTemplate = loadTemplate("readyToEncryptMessage", readyT
 var NoEncryptingMessageTemplate = loadTemplate("noEncryptingMessage", noEncryptingMessageTemplate)
 var TeamStatusTemplate = loadTemplate("teamStatus", teamStatusTemplate)
 var GameRoundInfoTempalte = loadTemplate("gameRoundInfo", gameRoundInfoTempalte)
+var SkipInterceptTemplate = loadTemplate("skipInterceptTemplate", skipInterceptTemplate)
+var InterceptSuccessMessage = loadTemplate("interceptSuccessMessage", interceptSuccessMessage)
+var InterceptFailMessage = loadTemplate("interceptFailMessage", interceptFailMessage)
+var InterceptDoneMessage = loadTemplate("interceptDoneMessage", interceptDoneMessage)
 
 // GetEmojiDigits 保持不变
 func GetEmojiDigits(dig int) string {

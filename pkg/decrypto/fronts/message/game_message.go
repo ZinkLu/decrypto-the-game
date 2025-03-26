@@ -13,6 +13,7 @@ const GAME_START_CMD = "开始游戏"
 const GAME_STATUS_CMD = "游戏状态"
 const GAME_END_CMD = "结束游戏"
 const CLOSE_ROOM_CMD = "关闭房间"
+const ROUND_OVER_MESSAGE = `本轮结束！本轮数据如下：`
 
 // some message
 

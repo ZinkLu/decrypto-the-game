@@ -163,7 +163,7 @@ const (
 	startDecryptTemplate = `
 🔓 解密时间到! 破解敌方密码! 🔓
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
- 🎯 {{.Team}} 请出手:        
+ 🎯 {{.Player}} 请出手:        
 	@{{.BotName}} + 你猜的密码
 							 
  ✅ 例: @{{.BotName}} 4 1 3   
@@ -220,4 +220,27 @@ const (
 {{else}}
 👍😄 正常发挥! 💪🌟
 {{end}}`
+
+	// skip intercept message
+	skipInterceptTemplate = `💨 第一轮跳过拦截阶段`
+
+	// INTERCEPT_SUCCESS_MESSAGE
+	interceptSuccessMessage = `🫡 密码已被成功拦截！跳过友方解密！🔥`
+
+	// INTERCEPT_FAIL_MESSAGE
+	interceptFailMessage = `✈ 拦截失败！友方开始解密！🧐`
+
+	// INTERCEPT_DONE_MESSAGE
+	interceptDoneMessage = `🛑 拦截破译中！
+👉 拦截密码：{{.Word1}} {{.Word2}} {{.Word3}}`
+
+	// DECRYPT_DONE_MESSAGE
+	decryptDoneMessage = `🔑 消息解密中！
+✨ 解密密码：{{.Word1}} {{.Word2}} {{.Word3}}`
+
+	// DECRYPT_FAIL_MESSAGE
+	decryptFailMessage = `❌ 密码错误！！解密失败了！😵‍💫 `
+
+	// DECRYPT_SUCCESS_MESSAGE
+	decryptSuccessMessage = `🔓 解密成功！有惊无险！🎉`
 )

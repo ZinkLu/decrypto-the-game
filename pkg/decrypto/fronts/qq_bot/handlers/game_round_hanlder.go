@@ -118,7 +118,6 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 		// 拦截方进行拦截
 		func(ctx context.Context, r *api.Round, opponent *api.Team, ts api.TeamState) ([3]int, bool) {
 			first := true
-			bot, _ := client.Me(context.Background())
 
 			for reply, isCancelled := getMessageOrDone(r, ctx); !isCancelled; reply, isCancelled = getMessageOrDone(r, ctx) {
 				if msg, ok := reply.(*dto.WSATMessageData); ok {
@@ -130,7 +129,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 							message.StartIntercept.FormatTemplate(
 								map[string]string{
 									"Team":    getPlayersNamesString(opponent.Players, message.SPLITTER),
-									"BotName": bot.Username,
+									"BotName": BOT_INFO.Username,
 								},
 							),
 						)
@@ -178,12 +177,14 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						fmt.Sprintf(
-							message.INTERCEPT_DONE_MESSAGE,
-							message.GetEmojiDigits(result[0]),
-							message.GetEmojiDigits(result[1]),
-							message.GetEmojiDigits(result[2]),
-						))
+						message.InterceptDoneMessage.FormatTemplate(
+							map[string]string{
+								"Word1": message.GetEmojiDigits(result[0]),
+								"Word2": message.GetEmojiDigits(result[1]),
+								"Word3": message.GetEmojiDigits(result[2]),
+							},
+						),
+					)
 
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
@@ -204,7 +205,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						fmt.Sprintf(message.INTERCEPT_SUCCESS_MESSAGE),
+						message.CANT_CREATE_GAME_SESSION_IN_GAME_ROOM,
 					)
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
@@ -224,7 +225,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						fmt.Sprintf(message.INTERCEPT_FAIL_MESSAGE),
+						message.InterceptFailMessage.FormatTemplate(nil),
 					)
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
@@ -250,14 +251,20 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 								client,
 								msg.ChannelID,
 								msg,
-								message.SKIP_INTERCEPT_MESSAGE,
+								message.SkipInterceptTemplate.FormatTemplate(nil),
 							)
 						}
 						SendMessage(
 							client,
 							msg.ChannelID,
 							msg,
-							fmt.Sprintf(message.START_DECRYPT_MESSAGE, getPlayersNamesString(rt.Players, message.SPLITTER, r.EncryptPlayer())))
+							message.StartDecrypt.FormatTemplate(
+								map[string]string{
+									"Player":  getPlayersNamesString(rt.Players, message.SPLITTER, r.EncryptPlayer()),
+									"BotName": BOT_INFO.Username,
+								},
+							),
+						)
 						first = false
 						continue
 					}
@@ -267,9 +274,11 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							fmt.Sprintf(
-								message.GENERAL_WRONG_PLAYER_MESSAGE,
-								getPlayersNamesString(rt.Players, message.SPLITTER, r.EncryptPlayer())))
+							message.GeneralWrongPlayer.FormatTemplate(
+								map[string]string{
+									"Player": getPlayersNamesString(rt.Players, message.SPLITTER, r.EncryptPlayer()),
+								},
+							))
 						continue
 					}
 
@@ -277,14 +286,14 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 
 					encryptoMessage := strings.Split(content, message.SPLITTER)
 					if len(encryptoMessage) != 3 {
-						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_DIGITS_FORMAT_MESSAGE)
+						SendMessage(client, msg.ChannelID, msg, message.ReplyWrongDigitsFormat.FormatTemplate(nil))
 						continue
 					}
 
 					result, success := isValidSecrets([3]string(encryptoMessage))
 
 					if !success {
-						SendMessage(client, msg.ChannelID, msg, message.REPLY_WRONG_DIGITS_FORMAT_MESSAGE)
+						SendMessage(client, msg.ChannelID, msg, message.ReplyWrongDigitsFormat.FormatTemplate(nil))
 						continue
 					}
 
@@ -292,11 +301,15 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
+
 						fmt.Sprintf(
-							message.DECRYPT_DONE_MESSAGE,
-							message.GetEmojiDigits(result[0]),
-							message.GetEmojiDigits(result[1]),
-							message.GetEmojiDigits(result[2]),
+							message.DecryptDoneMessage.FormatTemplate(
+								map[string]string{
+									"Word1": message.GetEmojiDigits(result[0]),
+									"Word2": message.GetEmojiDigits(result[1]),
+									"Word3": message.GetEmojiDigits(result[2]),
+								},
+							),
 						))
 
 					// 重新将信息丢回去给下一个 handler 处理
@@ -318,7 +331,8 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						fmt.Sprintf(message.INTERCEPT_SUCCESS_MESSAGE))
+						message.InterceptSuccessMessage.FormatTemplate(nil),
+					)
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
 					return false
@@ -338,7 +352,8 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						fmt.Sprintf(message.DECRYPT_FAIL_MESSAGE))
+						message.DecryptFailMessage.FormatTemplate(nil),
+					)
 
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
@@ -360,7 +375,8 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						fmt.Sprintf(message.ROUND_OVER_MESSAGE))
+						message.ROUND_OVER_MESSAGE,
+					)
 
 					SendMessage(
 						client,
@@ -390,15 +406,19 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 								client,
 								msg.ChannelID,
 								msg,
-								fmt.Sprintf(
-									message.GAME_OVER_MESSAGE,
-									getPlayersNamesString(t.Players, message.SPLITTER)))
+								message.GameOver.FormatTemplate(
+									map[string]string{
+										"Winner": getPlayersNamesString(t.Players, message.SPLITTER),
+									},
+								),
+							)
 						} else {
 							SendMessage(
 								client,
 								msg.ChannelID,
 								msg,
-								fmt.Sprintf(message.GAME_OVER_WITH_MAX_ROUND))
+								message.MaxRoundReached.FormatTemplate(nil),
+							)
 						}
 						SendMessage(
 							client,
@@ -409,12 +429,13 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 						SendMessage(client,
 							msg.ChannelID,
 							msg,
-							message.CLOSE_GAME_SESSION_MANUALLY)
+							message.GameEndTemplate.FormatTemplate(nil))
 					} else {
 						SendMessage(client,
 							msg.ChannelID,
 							msg,
-							message.CLOSE_GAME_SESSION_MANUALLY)
+							message.CloseRoomTemplate.FormatTemplate(nil),
+						)
 					}
 
 					return true

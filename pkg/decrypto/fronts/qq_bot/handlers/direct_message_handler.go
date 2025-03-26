@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/message"
@@ -61,11 +60,9 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 			return nil
 		}
 
-		bot, _ := api.Me(context.Background())
-
 		SendDirectMessage(api, data.Author.ID, data, message.HelpTemplate.FormatTemplate(
 			map[string]interface{}{
-				"BotName": bot.Username,
+				"BotName": BOT_INFO.Username,
 			},
 		))
 
