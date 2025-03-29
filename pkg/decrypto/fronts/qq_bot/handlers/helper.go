@@ -54,12 +54,7 @@ func createPrivateGameRoom(api openapi.OpenAPI, atMessage *dto.WSATMessageData, 
 	}
 
 	c, err := api.PostChannel(context.Background(), atMessage.GuildID, &dto.ChannelValueObject{
-		Name: message.GameNameTemplate.FormatTemplate(
-			map[string]string{
-				"Emoji":    message.RandomEmoji(),
-				"hostName": host.Username,
-			},
-		),
+		Name:           message.GetGameTitle(message.RandomEmoji(), host.Username),
 		Type:           dto.ChannelTypeText,
 		ParentID:       atMessage.ChannelID,
 		PrivateType:    dto.ChannelPrivateTypeAdminAndMember,
@@ -108,18 +103,14 @@ func closeRoom(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 			delete(roomMap, channelId)
 		}()
 
-		SendMessage(api, data.ChannelID, data, message.CloseRoomTemplate.FormatTemplate(nil))
+		SendMessage(api, data.ChannelID, data, message.GetCloseRoomMessage())
 		return nil
 	}
 }
 
 // 发送帮助信息
 func help(api openapi.OpenAPI, data *dto.WSATMessageData) {
-	SendMessage(api, data.ChannelID, data, message.HelpTemplate.FormatTemplate(
-		map[string]string{
-			"BotName": BOT_INFO.Username,
-		},
-	))
+	SendMessage(api, data.ChannelID, data, message.GetHelpMessage(BOT_INFO.Username))
 }
 
 // 所有由对局玩家发送的任何消息都会被放入到 broker 中被进一步处理（或者被抛弃）

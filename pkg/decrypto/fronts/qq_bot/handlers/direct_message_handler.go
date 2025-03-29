@@ -18,34 +18,32 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 			// 处理信息
 			if strings.Contains(data.Content, message.PLAIN_WORDS) {
 				team := session.GetUserTeam(data.Author.ID)
-				SendDirectMessage(api, data.Author.ID, data, message.GetTeamStatusMessage(team))
+				SendDirectMessage(api, data.Author.ID, data,
+					message.GetTeamStatusMessage(team.Words, team.InterceptedCounts, team.DecryptWrongCounts),
+				)
+
 			} else if strings.Contains(data.Content, message.GAME_PROCESS) {
 				SendDirectMessage(api, data.Author.ID, data, message.GetGameStatusMessage(session))
 			} else if strings.Contains(data.Content, message.SECRET_CODES) {
 				if session.GetCurrentRound().EncryptPlayer().Uid == data.Author.ID {
 					words := session.GetCurrentRound().GetSecretWords()
-					secretString := make([]string, 0, 3)
-					for _, d := range session.GetCurrentRound().GetSecretDigits() {
-						secretString = append(secretString, message.GetEmojiDigits(d))
-					}
-
 					SendDirectMessage(
 						api,
 						data.ChannelID,
 						data,
-						message.ReadyToEncryptMessageTemplate.FormatTemplate(
-							map[string]interface{}{
-								"Digits": strings.Join(secretString, " "),
-								"Words":  strings.Join(words[:], ","),
-							},
-						))
+						message.GetReadyToEncryptMeesage(
+							session.GetCurrentRound().GetSecretDigits(),
+							words,
+							BOT_INFO.Username,
+						),
+					)
 				} else {
 
 					SendDirectMessage(
 						api,
 						data.ChannelID,
 						data,
-						message.NoEncryptingMessageTemplate.FormatTemplate(nil),
+						message.GetNoEncryptingMessage(),
 					)
 				}
 			} else if strings.Contains(data.Content, message.SELF_ENCRYPTION_HISTORY) {
@@ -60,11 +58,12 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 			return nil
 		}
 
-		SendDirectMessage(api, data.Author.ID, data, message.HelpTemplate.FormatTemplate(
-			map[string]interface{}{
-				"BotName": BOT_INFO.Username,
-			},
-		))
+		SendDirectMessage(
+			api,
+			data.Author.ID,
+			data,
+			message.GetHelpMessage(BOT_INFO.Username),
+		)
 
 		return nil
 	}

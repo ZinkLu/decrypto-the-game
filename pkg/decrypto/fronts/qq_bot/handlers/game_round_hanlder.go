@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 
 	"strconv"
 	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/message"
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/helper"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
 	"github.com/tencent-connect/botgo/dto"
 	"github.com/tencent-connect/botgo/log"
@@ -36,13 +36,7 @@ func registerInitHandlers(client openapi.OpenAPI) {
 						client,
 						cId,
 						msg,
-						message.StartEncrypt.FormatTemplate(
-							map[string]string{
-								"Player":     message.GetAtPlayerString(r.EncryptPlayer()),
-								"SecretCode": message.SECRET_CODES,
-								"PlainWords": message.PLAIN_WORDS,
-							},
-						),
+						message.GetStartEncryptMessage(helper.GetAtPlayerString(r.EncryptPlayer())),
 					)
 					return false
 				}
@@ -68,22 +62,20 @@ func registerEncryptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							message.GeneralWrongPlayer.FormatTemplate(
-								map[string]string{
-									"Player": r.EncryptPlayer().NickName,
-								},
+							message.GetGeneralWrongPlayerMessage(
+								r.EncryptPlayer().NickName,
 							),
 						)
 						continue
 					}
-					content := trimBotInfoInMessageContent(msg.Content)
+					content := helper.TrimBotInfoInMessageContent(msg.Content, BOT_INFO.ID)
 					encryptoMessage := strings.Split(content, message.SPLITTER)
 					if len(encryptoMessage) != 3 {
 						SendMessage(
 							client,
 							msg.ChannelID,
 							msg,
-							message.ReplyWrongWordsFormat.FormatTemplate(nil),
+							message.GetReplyWrongWordsFormatMessage(),
 						)
 						continue
 					}
@@ -92,13 +84,7 @@ func registerEncryptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						message.EncryptSuccess.FormatTemplate(
-							map[string]string{
-								"Word1": encryptoMessage[0],
-								"Word2": encryptoMessage[1],
-								"Word3": encryptoMessage[2],
-							},
-						),
+						message.GetEncryptSuccessMessage([3]string(encryptoMessage)),
 					)
 
 					// 重新将信息丢回去给下一个 handler 处理
@@ -126,11 +112,9 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							message.StartIntercept.FormatTemplate(
-								map[string]string{
-									"Team":    getPlayersNamesString(opponent.Players, message.SPLITTER),
-									"BotName": BOT_INFO.Username,
-								},
+							message.GetStartIterceptMessage(
+								getPlayersNamesString(opponent.Players, true, message.SPLITTER),
+								BOT_INFO.Username,
 							),
 						)
 						first = false
@@ -142,22 +126,19 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							message.GeneralWrongPlayer.FormatTemplate(
-								map[string]string{
-									"Player": getPlayersNamesString(opponent.Players, message.SPLITTER),
-								},
-							))
+							message.GetGeneralWrongPlayerMessage(getPlayersNamesString(opponent.Players, false, message.SPLITTER)),
+						)
 						continue
 					}
 
-					content := trimBotInfoInMessageContent(msg.Content)
+					content := helper.TrimBotInfoInMessageContent(msg.Content, BOT_INFO.ID)
 					encryptoMessage := strings.Split(content, message.SPLITTER)
 					if len(encryptoMessage) != 3 {
 						SendMessage(
 							client,
 							msg.ChannelID,
 							msg,
-							message.ReplyWrongDigitsFormat.FormatTemplate(nil),
+							message.GetReplyWrongDigitsFormatMessage(),
 						)
 						continue
 					}
@@ -168,7 +149,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							message.ReplyWrongDigitsFormat.FormatTemplate(nil),
+							message.GetReplyWrongDigitsFormatMessage(),
 						)
 						continue
 					}
@@ -177,13 +158,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						message.InterceptDoneMessage.FormatTemplate(
-							map[string]string{
-								"Word1": message.GetEmojiDigits(result[0]),
-								"Word2": message.GetEmojiDigits(result[1]),
-								"Word3": message.GetEmojiDigits(result[2]),
-							},
-						),
+						message.GetInterceptDoneMessage(result),
 					)
 
 					// 重新将信息丢回去给下一个 handler 处理
@@ -225,7 +200,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						message.InterceptFailMessage.FormatTemplate(nil),
+						message.GetInterceptFailMessage(),
 					)
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
@@ -251,18 +226,16 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 								client,
 								msg.ChannelID,
 								msg,
-								message.SkipInterceptTemplate.FormatTemplate(nil),
+								message.GetSkipInterceptMessage(),
 							)
 						}
 						SendMessage(
 							client,
 							msg.ChannelID,
 							msg,
-							message.StartDecrypt.FormatTemplate(
-								map[string]string{
-									"Player":  getPlayersNamesString(rt.Players, message.SPLITTER, r.EncryptPlayer()),
-									"BotName": BOT_INFO.Username,
-								},
+							message.GetStartDecryptMessage(
+								getPlayersNamesString(rt.Players, true, message.SPLITTER, r.EncryptPlayer()),
+								BOT_INFO.Username,
 							),
 						)
 						first = false
@@ -274,26 +247,23 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							message.GeneralWrongPlayer.FormatTemplate(
-								map[string]string{
-									"Player": getPlayersNamesString(rt.Players, message.SPLITTER, r.EncryptPlayer()),
-								},
-							))
+							message.GetGeneralWrongPlayerMessage(getPlayersNamesString(rt.Players, false, message.SPLITTER, r.EncryptPlayer())),
+						)
 						continue
 					}
 
-					content := trimBotInfoInMessageContent(msg.Content)
+					content := helper.TrimBotInfoInMessageContent(msg.Content, BOT_INFO.ID)
 
 					encryptoMessage := strings.Split(content, message.SPLITTER)
 					if len(encryptoMessage) != 3 {
-						SendMessage(client, msg.ChannelID, msg, message.ReplyWrongDigitsFormat.FormatTemplate(nil))
+						SendMessage(client, msg.ChannelID, msg, message.GetReplyWrongDigitsFormatMessage())
 						continue
 					}
 
 					result, success := isValidSecrets([3]string(encryptoMessage))
 
 					if !success {
-						SendMessage(client, msg.ChannelID, msg, message.ReplyWrongDigitsFormat.FormatTemplate(nil))
+						SendMessage(client, msg.ChannelID, msg, message.GetReplyWrongDigitsFormatMessage())
 						continue
 					}
 
@@ -301,16 +271,8 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-
-						fmt.Sprintf(
-							message.DecryptDoneMessage.FormatTemplate(
-								map[string]string{
-									"Word1": message.GetEmojiDigits(result[0]),
-									"Word2": message.GetEmojiDigits(result[1]),
-									"Word3": message.GetEmojiDigits(result[2]),
-								},
-							),
-						))
+						message.GetDecryptDoneMessage(result),
+					)
 
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
@@ -331,7 +293,7 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						message.InterceptSuccessMessage.FormatTemplate(nil),
+						message.GetInterceptSuccessMessage(),
 					)
 					// 重新将信息丢回去给下一个 handler 处理
 					go throwBackMessage(r, reply)
@@ -352,7 +314,7 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						message.DecryptFailMessage.FormatTemplate(nil),
+						message.GetDecryptFailMessage(),
 					)
 
 					// 重新将信息丢回去给下一个 handler 处理
@@ -382,7 +344,16 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						message.GetRoundInfo(r),
+						message.GetGameRoundInfoMessage(
+							r.GetNumberOfRounds(),
+							r.EncryptPlayer().NickName,
+							r.GetEncryptedMessage(),
+							r.GetSecretDigits(),
+							r.GetInterceptSecret(),
+							r.GetDecryptSecret(),
+							r.IsInterceptSuccess(),
+							r.IsDecryptedCorrect(),
+						),
 					)
 
 					// 重新将信息丢回去给下一个 handler 处理
@@ -406,18 +377,14 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 								client,
 								msg.ChannelID,
 								msg,
-								message.GameOver.FormatTemplate(
-									map[string]string{
-										"Winner": getPlayersNamesString(t.Players, message.SPLITTER),
-									},
-								),
+								message.GetGameOverMessage(getPlayersNamesString(t.Players, true, message.SPLITTER)),
 							)
 						} else {
 							SendMessage(
 								client,
 								msg.ChannelID,
 								msg,
-								message.MaxRoundReached.FormatTemplate(nil),
+								message.GetMaxRoundReachedMessage(),
 							)
 						}
 						SendMessage(
@@ -429,12 +396,13 @@ func registerStateSwitchHandler(client openapi.OpenAPI) {
 						SendMessage(client,
 							msg.ChannelID,
 							msg,
-							message.GameEndTemplate.FormatTemplate(nil))
+							message.GetGameEndMessage(),
+						)
 					} else {
 						SendMessage(client,
 							msg.ChannelID,
 							msg,
-							message.CloseRoomTemplate.FormatTemplate(nil),
+							message.GetCloseRoomMessage(),
 						)
 					}
 
@@ -485,30 +453,30 @@ func throwBackMessage(r *api.Round, msg any) error {
 
 // 合并玩家的 nickname
 // excludes 可以在 players 中额外再排除一些玩家
-func getPlayersNamesString(players []*api.Player, sep string, excludes ...*api.Player) string {
+// as_at_msg 可以将返回的玩家使用 QQ 的 @ 消息来返回，否则只返回玩家的 nickname
+func getPlayersNamesString(players []*api.Player, as_at_msg bool, sep string, excludes ...*api.Player) string {
 	playNames := make([]string, 0, len(players))
 	excludeNames := make(map[string]bool, len(excludes))
 
 	for _, e := range excludes {
-		excludeNames[e.NickName] = true
+		excludeNames[e.Uid] = true
 	}
 
 	for _, p := range players {
 
-		if _, ok := excludeNames[p.NickName]; ok {
+		if _, ok := excludeNames[p.Uid]; ok {
 			continue
 		}
 
-		playNames = append(playNames, p.NickName)
+		if as_at_msg {
+			playNames = append(playNames, helper.GetAtPlayerString(p))
+		} else {
+			playNames = append(playNames, p.NickName)
+		}
+
 	}
 
 	return strings.Join(playNames, sep)
-}
-
-// 去除消息中的 `<@ BOT_ID>` 的部分 以及 信息前后多余的空格
-func trimBotInfoInMessageContent(content string) string {
-	atMessage := `<@!` + BOT_INFO.ID + `>`
-	return strings.TrimSpace(strings.ReplaceAll(content, atMessage, ""))
 }
 
 // 判断目前的回话是否由特定的人发起

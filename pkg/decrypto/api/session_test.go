@@ -13,7 +13,7 @@ import (
 // var r = rand.New(rand.NewSource(time.Now().UnixMicro()))
 
 func getRandomSecrets() [3]int {
-	return secret_codes[rand.Intn(len(secret_codes))]
+	return SECRET_CODES[rand.Intn(len(SECRET_CODES))]
 }
 
 func i() {

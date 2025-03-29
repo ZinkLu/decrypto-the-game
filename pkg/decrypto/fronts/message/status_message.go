@@ -24,39 +24,32 @@ const STATUS_HELP_MESSAGE = `🎮 游戏进行中~ 回复以下关键词:
 	🔐 [` + SECRET_CODES + `]: 查看本局的密码
 `
 
-func GetTeamStatusMessage(team *api.Team) string {
-
-	return TeamStatusTemplate.FormatTemplate(
-		map[string]any{
-			"Words":              team.Words,
-			"InterceptedCounts":  team.InterceptedCounts,
-			"DecryptWrongCounts": team.DecryptWrongCounts,
-		},
-	)
-
-}
-
-// TODO: 调研一下能否使用折叠 msg
-const GAME_STATUS_MESSAGE_TEMPLATE = `当前第 %d 轮次，以下是对战历史:
-%s
-`
-
 func GetGameStatusMessage(session *api.Session) string {
 	var sb strings.Builder
 
 	for previous := session.GetCurrentRound().GetPreviousRound(); previous != nil; previous = previous.GetPreviousRound() {
-		sb.WriteString(GetRoundInfo(previous))
-		sb.WriteString("\n")
+		sb.WriteString(fmt.Sprintf("====== %d 轮 ======", previous.GetNumberOfRounds()))
+		sb.WriteString(
+			GetGameRoundInfoMessage(
+				previous.GetNumberOfRounds(),
+				previous.EncryptPlayer().NickName,
+				previous.GetEncryptedMessage(),
+				previous.GetSecretDigits(),
+				previous.GetInterceptSecret(),
+				previous.GetDecryptSecret(),
+				previous.IsInterceptSuccess(),
+				previous.IsDecryptedCorrect(),
+			),
+		)
 	}
 	roundMsg := sb.String()
 	if roundMsg == "" {
 		roundMsg = "还没有轮次信息"
 	}
-	return fmt.Sprintf(GAME_STATUS_MESSAGE_TEMPLATE, session.GetCurrentRound().GetNumberOfRounds(), strings.TrimSpace(roundMsg))
-}
 
-func GetRoundInfo(r *api.Round) string {
-	return GameRoundInfoTempalte.FormatTemplate(r)
+	sb.WriteString(fmt.Sprintf(`当前第 %d 轮次，以下是对战历史:\n`, session.GetCurrentRound().GetNumberOfRounds()))
+	sb.WriteString(strings.TrimSpace(roundMsg))
+	return sb.String()
 }
 
 // 获取我方加密历史，比如

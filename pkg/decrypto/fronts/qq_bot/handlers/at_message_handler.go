@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/message"
+	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/helper"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/qq_bot/service"
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/fronts/utils"
 	"github.com/tencent-connect/botgo/dto"
@@ -73,13 +74,25 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 		if gameChannel, err := createPrivateGameRoom(api, data, users, users[0]); err == nil {
 			if session, ctx, err := service.StartGameSession(users, gameChannel.ID); err == nil {
 				// 发送跳转信息
-				SendMessage(api, data.ChannelID, data, message.GameRoomsLinkTemplate.FormatTemplate(
-					map[string]string{
-						"RoomID": gameChannel.ID,
-					},
-				))
+				SendMessage(api, data.ChannelID, data,
+					message.GetGameRoomsLinkMessage(gameChannel.ID),
+				)
 				// 发送开始信息
-				SendMessage(api, gameChannel.ID, data, message.GetGameStartMessage(session))
+				teams := session.GetTeams()
+				var teamANames = make([]string, 0, len(teams[0].Players))
+				var teamBNames = make([]string, 0, len(teams[1].Players))
+				for _, player := range teams[0].Players {
+					teamANames = append(teamANames, helper.GetAtPlayerString(player))
+				}
+				for _, player := range teams[1].Players {
+					teamBNames = append(teamBNames, helper.GetAtPlayerString(player))
+				}
+
+				SendMessage(api, gameChannel.ID, data, message.GetGameStartMessage(
+					strings.Join(teamANames, ","),
+					strings.Join(teamBNames, ","),
+				))
+
 				go session.AutoForward(ctx)
 
 				// 触发对局
@@ -115,7 +128,7 @@ func gameOver(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 		service.EndGameSessionByChannel(channelId)
 
 		// 发送游戏结束信息
-		SendMessage(api, channelId, data, message.GameEndTemplate.FormatTemplate(nil))
+		SendMessage(api, channelId, data, message.GetGameEndMessage())
 
 		return nil
 	} else {

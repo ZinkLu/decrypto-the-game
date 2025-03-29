@@ -48,7 +48,7 @@ func (session *Session) createNewRound() *Round {
 
 	round := &Round{
 		currentTeam:        currentTeam,
-		secret:             secret_codes[rand.Intn(len(secret_codes))],
+		secret:             SECRET_CODES[rand.Intn(len(SECRET_CODES))],
 		encryptPlayerIndex: teamsEncryptPlayerIndex,
 		encryptPlayer:      currentTeam.Players[teamsEncryptPlayerIndex],
 		gameSession:        session,

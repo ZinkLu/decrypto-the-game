@@ -5,7 +5,7 @@ import (
 	"math/rand"
 )
 
-var secret_codes = [24][3]int{
+var SECRET_CODES = [24][3]int{
 	{1, 2, 3},
 	{1, 2, 4},
 	{1, 3, 2},
@@ -32,7 +32,7 @@ var secret_codes = [24][3]int{
 	{4, 3, 2},
 }
 
-const max_round = 16
+const MAX_ROUND = 16
 
 // 代表一场 decrypto 游戏对局
 type Session struct {
@@ -58,7 +58,7 @@ func NewWithAutoTeamUp(sessionId string, players []*Player) (*Session, error) {
 	teamA, _ := newTeam(players[:splitter])
 	teamB, _ := newTeam(players[splitter:])
 
-	return &Session{sessionId: sessionId, maxRounds: max_round, teams: [2]*Team{teamA, teamB}}, nil
+	return &Session{sessionId: sessionId, maxRounds: MAX_ROUND, teams: [2]*Team{teamA, teamB}}, nil
 }
 
 // 自选队伍并开始一场对局
@@ -76,5 +76,5 @@ func NewWithTeams(sessionId string, teamAPlayers []*Player, teamBPlayers []*Play
 	if err != nil {
 		return nil, err
 	}
-	return &Session{sessionId: sessionId, maxRounds: max_round, teams: [2]*Team{teamA, teamB}}, nil
+	return &Session{sessionId: sessionId, maxRounds: MAX_ROUND, teams: [2]*Team{teamA, teamB}}, nil
 }
