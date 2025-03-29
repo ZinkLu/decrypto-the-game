@@ -1,231 +1,144 @@
 package message
 
-// TempalteString can be directly modify for better experience.
-
+// TemplateString can be directly modified for better experience.
 const (
-	// HelpTemplate is the template for help message
-	helpMessageTemplateString = `
-💅 解密游戏冲冲冲! ✨🔥
-╔═══════════════════════════════╗
- 🎮 开新局:                 
- @ 三人起步，发"开始游戏" 就嗨了~ 
-							   
- 📱 咋玩: '@小红 @小明 @{{.BotName}}      
-	 /开始游戏'                 
-╚═══════════════════════════════╝
+	// HelpTemplate is the template for the help message.
+	helpMessageTemplateString = `🎭 欢迎来到「谍报风云」！
+✨ 🕹️ 开始游戏：需要至少 3 位玩家，输入 "开始游戏" 即可。
+🔢 示例：'@小红 @小明 @{{.BotName}} /开始游戏'
+⚠️ 注意：游戏支持 4️⃣, 6️⃣ 或 8️⃣ 名玩家（包含你）`
 
-⚠️ 划重点! ⚠️
-▶️ 玩家必须是 4️⃣, 6️⃣ 或 8️⃣ 人(带上你)
-▶️ 脑细胞ready? 干就完了! 🤙`
+	// GameNameTemplate is the template for the game name.
+	gameNameMessageTemplateString = `⚔️ {{.Team1}} VS {{.Team2}} 谁是谍中之王? 👑`
 
-	// GameNameTemplate is the template for game name
-	gameNameMessageTemplateString = "✨ {{.Team1}} VS {{.Team2}} 谁才是GOAT? 👑"
+	// GameStartTemplate is the template for the game start message.
+	gameStartMessageTemplateString = `🕵️‍♂️ 欢迎进入「谍报风云」！🔥
+🔵 蓝队特工：{{.BlueTeam}}
+🔴 红队特工：{{.RedTeam}}`
 
-	// GameStartTemplate is the template for game start message
-	gameStartMessageTemplateString = `
-🎮 解密大作战已上线! 🔥
-┏━━━━━━━━━━━ LESSGO ━━━━━━━━━━━┓
-	
-🔵 蓝队卷王: {{.BlueTeam}}
-	
-🔴 红队带飞: {{.RedTeam}}
+	// GameEndTemplate is the template for the game end message.
+	gameEndMessageTemplateString = `🏁 游戏结束！🏁
+🙏 感谢所有特工的参与！
+🤙 下次再会，继续挑战！`
 
-┗━━━━━━━━━ 开摆! ━━━━━━━━━━┛`
+	// CloseRoomTemplate is the template for closing room message.
+	closeRoomMessageTemplateString = `⏳ 10 秒后房间关闭！⏳
+🚪 大家的精彩表现！期待下次再聚！`
 
-	// GameEndTemplate is the template for game end message
-	gameEndMessageTemplateString = `
-🏁 game over! 爷青结! 🏁
-┌─────────────────────┐
-  👑 多谢各位大神!
-  🤙 下把见~        
-└─────────────────────┘`
+	// GameRoomsLinkTemplate is the template for game rooms link message.
+	gameRoomsLinkMessageTemplateString = `🏠 游戏房间已准备好！
+🚪 点击加入：<#{{.RoomID}}>`
 
-	// CloseRoomTemplate is the template for close room message
-	closeRoomMessageTemplateString = `
-⏱️ 10秒清场倒计时! ⏱️
-	 _.-._
-	| | | |_
-	| | | | |    下把接着卷,
-	| | | | |    溜啦溜啦~
-   _|_|_|_|_|_
-  |___________|`
+	// NoEncryptingMessageTemplate is the template for no encrypting message.
+	noEncryptingMessageTemplateString = `⛔ 操作无效 ⛔
+🔒 您不是加密者，无法查看机密信息`
 
-	// GameRoomsLinkTemplate is the template for game rooms link message
-	gameRoomsLinkMessageTemplateString = `
-🏠 游戏房间已就位! 速来!
-┏━━━━━━━━━━━━━━━━━┓
-  🚪 一键进入:    
-  <#{{.RoomID}}>          
-┗━━━━━━━━━━━━━━━━━┛`
+	// EncryptSuccessTemplate is the template for successful encryption.
+	encryptSuccessMessageTemplateString = `✅ 加密成功！📡
+1️⃣ {{.Word1}}
+2️⃣ {{.Word2}}
+3️⃣ {{.Word3}}
+🧠 队友能破解吗？`
 
-	// NoEncryptingMessageTemplate is the template for no encrypting message
-	noEncryptingMessageTemplateString = `
-⛔ 没权限嗷 ⛔
-┌───────────────────┐
- 🔒 这把不是你加密
- 🚫 密码信息看不了
-└───────────────────┘
-等等啦，马上轮到你...`
+	// GameOverTemplate is the template for game over message.
+	gameOverMessageTemplateString = `🎊 游戏结束！🎉
+🏆 胜利者：{{.Winner}}
+🔥 再接再厉，谍王非你莫属！`
 
-	// EncryptSuccessTemplate is the template for successful encryption
-	encryptSuccessMessageTemplateString = `
-✅ 加密成功! 这波稳了! ✅
-┏━━━━━━━━━━━━━━━━━━━━━┓
-  📡 密码已送达:      
-					 
-  1️⃣ {{.Word1}}      
-  2️⃣ {{.Word2}}      
-  3️⃣ {{.Word3}}      
-┗━━━━━━━━━━━━━━━━━━━━━┛
-队友能get到你的点吗? 🧠`
+	// GeneralWrongPlayerTemplate is the template for wrong player message.
+	generalWrongPlayerMessageTemplateString = `⏳ 稍安勿躁 ⏳
+🔄 当前轮到 {{.Player}} 操作`
 
-	// GameOverTemplate is the template for game over message
-	gameOverMessageTemplateString = `
-🎊 游戏结束! yyds! 🎉
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-  🏆 赢麻了: {{.Winner}}  
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-太顶了! 这把C位666! 🔥`
+	// MaxRoundReachedTemplate is the template for max round reached message.
+	maxRoundReachedMessageTemplateString = `⌛ 轮次用尽，游戏结束！
+🎲 双方势均力敌！✨
+💪 下次努力突破！
+👀 两队可以直接猜对面的机密词语，猜对多者胜出`
 
-	// GeneralWrongPlayerTemplate is the template for wrong player message
-	generalWrongPlayerMessageTemplateString = `
-⏳ 急啥急! ⏳
-┌────────────────────────┐
- 🔄 现在是 {{.Player}}  
-	在秀操作哦~           
-						
- 🙏 淡定淡定      
-└────────────────────────┘`
+	// ReadyToEncryptTemplate is the template for ready to encrypt message.
+	readyToEncryptMessageTemplateString = `🔐 加密任务发送！
+🎯 加密数字：{{.Digits}}
+🔤 对应词语：{{.Words}}
+📝 使用指南：
+   游戏频道 @{{.BotName}} + 三个提示词
+   示例：@{{.BotName}} 词1 词2 词3
+   ⏰ 加油，加密大师！`
 
-	// MaxRoundReachedTemplate is the template for max round reached message
-	maxRoundReachedMessageTemplateString = `
-⌛ 时间到! 游戏结束! ⌛
-┏━━━━━━━━━━━━━━━━━━━━━━━━┓
- 🎲 平手! 都是人才!
- 🔍 互相内卷ing?     
- ✨ 下把继续卷!     
-┗━━━━━━━━━━━━━━━━━━━━━━━━┛`
+	// ReplyWrongDigitsFormatTemplate is the template for wrong digits format message.
+	replyWrongDigitsFormatMessageTemplateString = `🔢 数字格式有误！重试一次！
+📋 请使用三个 1-4 的数字，并用空格分隔。
+✅ 示例：1 2 3 或 2 4 1`
 
-	// ReadyToEncryptTemplate is the template for ready to encrypt message
-	readyToEncryptMessageTemplateString = `
-🔐 加密任务已发送! 收到请回复! 🔐
-╔═════════════════════════════╗
- 🎯 加密数字: {{.Digits}}    
- 🔤 对应词语: {{.Words}}     
-╚═════════════════════════════╝
+	// ReplyWrongWordsFormatTemplate is the template for wrong words format message.
+	replyWrongWordsFormatMessageTemplateString = `📝 词语格式有误！请重试！
+🔤 需要三个词，并用空格分隔。
+✅ 示例：猫 狗 鸟`
 
-📝 操作指南:
-   公共频道 @{{.BotName}} + 三个提示词
-   (例: @{{.BotName}} flex 猛 skr)
-   
-   ⏰ 考验智商的时刻...`
+	// StartDecryptTemplate is the template for start decrypt message.
+	startDecryptMessageTemplateString = `🔓 解密时间到！破解敌方密码！
+🎯 {{.Team}} 开始行动!
+☝️ 请队员充分讨论后由任意队员发送:
+    @{{.BotName}} + 三位数字密码（空格分割）
+✅ 示例：@{{.BotName}} 4 1 3`
 
-	// ReplyWrongDigitsFormatTemplate is the template for wrong digits format message
-	replyWrongDigitsFormatMessageTemplateString = `
-🔢 数字格式错误! 重来! 🔢
-┌────────────────────────────┐
- 📋 整三个1-4之间的数字
-	空格隔开就好              
-							
- ✅ 正确示例:               
-	1 2 3                   
-	2 4 1                   
-└────────────────────────────┘`
-
-	// ReplyWrongWordsFormatTemplate is the template for wrong words format message
-	replyWrongWordsFormatMessageTemplateString = `
-📝 词语格式不对! 重打! 📝
-┌────────────────────────────┐
- 🔤 三个词 
-	(空格隔开)            
-							
- ✅ 能这样:               
-	vibe 夏天 红色          
-	键盘 手机 耳机          
-└────────────────────────────┘`
-
-	// StartDecryptTemplate is the template for start decrypt message
-	startDecryptMessageTemplateString = `
-🔓 解密时间到! 破解敌方密码! 🔓
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
- 🎯 {{.Team}} 请出手:        
-	@{{.BotName}} + 你猜的密码
-							 
- ✅ 例: @{{.BotName}} 4 1 3   
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-解对了=赢麻了! 💯`
-
-	// StartEncryptTemplate is the template for start encrypt message
+	// StartEncryptTemplate is the template for start encrypt message.
 	startEncryptMessageTemplateString = `
-📠 加密时刻! 展示你的脑洞! 📠
-╔════════════════════════════════════╗
- 🔐 {{.Player}}，该你表演了!      
-╚════════════════════════════════════╝
+🔐 加密时刻到！{{.Player}}，展现你的智慧！
+💡 私信查看秘密指令：
+   • {{.Player}} 查看密码：<{{.SecretCode}}>
+   • 其他玩家查看词库：<{{.PlainWords}}>`
 
-💡 秘密指令:
-   • {{.Player}} 私信我: <{{.SecretCode}}> 查看密码
-   
-   • 其他玩家私信: <{{.PlainWords}}> 看词库
-	 
-⏳ 开始计时...靠你了大神! 🔥`
-
-	// StartInterceptTemplate is the template for start intercept message
+	// StartInterceptTemplate is the template for start intercept message.
 	startInterceptTemplateString = `
-🚨 拦截时刻! 猜猜对面密码! 🚨
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
- 🎯 {{.Team}} 出击:      
-	@{{.BotName}} + 你猜的密码
-							 
- ✅ 例: @{{.BotName}} 1 3 2   
-┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-拦截成功=直接超神! 🤯 搞起!`
+🚨 {{.Team}} 开始拦截!
+😶 请队员充分讨论后由任意队员发送:
+    @{{.BotName}} + 三位数字密码（空格分割）
+✅ 示例：@{{.BotName}} 1 3 2`
 
 	//teamStatusMessageTemplateString
-	teamStatusMessageTemplateString = `📖 内部情报!
-你的` + PLAIN_WORDS + `是:
-	{{range .Words}}
-		{{GetEmojiDigits .Index}} {{.Value}}
-	{{end}}
-
-🎯 已成功拦截: {{.InterceptedCounts}} 次!
-💥 解密翻车: {{.DecryptWrongCounts}} 次
-`
+	teamStatusMessageTemplateString = `📖 内部情报更新！
+你的` + PLAIN_WORDS + `清单:
+{{range .Words}}
+{{GetEmojiDigits .Index}} {{.Value}}
+{{end}}
+🎯 成功拦截：{{.InterceptedCounts}} 次！
+🔍 解密失败：{{.DecryptWrongCounts}} 次`
 
 	// GameRoundInfo
-	gameRoundInfoMessageTempalteString = `🔄 第{{.NumberOfRounds}}轮
-🧠 加密大佬:{{.EncryptPlayer}}
-🔐 加密内容:{{.EncryptedMessage}}
-🎯 真正密码:{{.SecretDigits}}
-🕵️ 拦截密码:{{.InterceptSecret}}
-🔑 解密密码:{{.InterceptSecret}}
+	gameRoundInfoMessageTempalteString = `🔄 第 {{.NumberOfRounds}} 轮
+🧠 加密特工：{{.EncryptPlayer}}
+🔐 加密内容：{{.EncryptedMessage}}
+🎯 真实密码：{{.SecretDigits}}
+🕵️ 拦截密码：{{.InterceptSecret}}
+🔑 解密密码：{{.InterceptSecret}}
 {{if .IsInterceptSuccess}}
-😎✨ 拦截成功! 🚀💯
+🚀 成功拦截，太棒了！
 {{else if not .IsDecryptedCorrect}}
-🙃💔 接收失败! 💪🔥
+💔 解密失败，很可惜！
 {{else}}
-👍😄 正常发挥! 💪🌟
+✨ 出色发挥！
 {{end}}`
 
 	// skip intercept message
-	skipInterceptMessageTemplateString = `💨 第一轮跳过拦截阶段`
+	skipInterceptMessageTemplateString = `💨 跳过第一轮拦截阶段`
 
 	// INTERCEPT_SUCCESS_MESSAGE
-	interceptSuccessMessageTemplateString = `🫡 密码已被成功拦截！跳过友方解密！🔥`
+	interceptSuccessMessageTemplateString = `🛡️ 密码成功拦截，得 1 分，跳过解密阶段！`
 
 	// INTERCEPT_FAIL_MESSAGE
-	interceptFailMessageTemplateString = `✈ 拦截失败！友方开始解密！🧐`
+	interceptFailMessageTemplateString = `❌ 拦截失败，友方开始解密`
 
 	// INTERCEPT_DONE_MESSAGE
-	interceptDoneMessageTemplateString = `🛑 拦截破译中！
-👉 拦截密码：{{.Word1}} {{.Word2}} {{.Word3}}`
+	interceptDoneMessageTemplateString = `🔍 拦截操作进行中...
+👉 猜想的密码：{{.Digit1}} {{.Digit2}} {{.Digit3}}`
 
 	// DECRYPT_DONE_MESSAGE
-	decryptDoneMessageTemplateString = `🔑 消息解密中！
+	decryptDoneMessageTemplateString = `🔑 解密进行中...
 ✨ 解密密码：{{.Digit1}} {{.Digit2}} {{.Digit3}}`
 
 	// DECRYPT_FAIL_MESSAGE
-	decryptFailMessageTemplateString = `❌ 密码错误！！解密失败了！😵‍💫 `
+	decryptFailMessageTemplateString = `😵‍💫 解密失败，扣 1 分，再接再厉！`
 
 	// DECRYPT_SUCCESS_MESSAGE
-	decryptSuccessMessageTemplateString = `🔓 解密成功！有惊无险！🎉`
+	decryptSuccessMessageTemplateString = `🎉 解密成功！任务完成！交换攻防！🔄`
 )

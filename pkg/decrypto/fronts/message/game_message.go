@@ -277,9 +277,9 @@ var interceptDoneMessageTemplate = loadTemplate("interceptDone", interceptDoneMe
 func GetInterceptDoneMessage(words [3]int) string {
 	return interceptDoneMessageTemplate.FormatTemplate(
 		map[string]string{
-			"Word1": GetEmojiDigits(words[0]),
-			"Word2": GetEmojiDigits(words[1]),
-			"Word3": GetEmojiDigits(words[2]),
+			"Digit1": GetEmojiDigits(words[0]),
+			"Digit2": GetEmojiDigits(words[1]),
+			"Digit3": GetEmojiDigits(words[2]),
 		},
 	)
 }

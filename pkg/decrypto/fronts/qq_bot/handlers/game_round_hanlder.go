@@ -113,7 +113,7 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 							msg.ChannelID,
 							msg,
 							message.GetStartIterceptMessage(
-								getPlayersNamesString(opponent.Players, true, message.SPLITTER),
+								getPlayersNamesString(opponent.Players, true, message.SPLITTER, r.EncryptPlayer()),
 								BOT_INFO.Username,
 							),
 						)

@@ -1,22 +1,22 @@
 package message
 
-const CANT_FOUNT_GAME_IN_THREAD = `✨ 想结束游戏？✨
-先去正在游玩的房间@我呀！😉`
+const CANT_FOUNT_GAME_IN_THREAD = `✨ 游戏尚未开始 ✨
+请在活跃的游戏房间中 @我 来结束游戏哦！🕹️`
 
-const CANT_CREATE_PRIVATE_ROOM = `⚠️ 啊咧？房间创建失败了...
-要不查一下日志看看发生啥了？🤔`
+const CANT_CREATE_PRIVATE_ROOM = `⚠️ Oops！房间创建失败了...
+查看日志以获得更多信息吧！🔍`
 
-const CANT_CREATE_GAME_SESSION = `⚠️ 游戏创建失败惹...
-看看日志找找原因吧 👀`
+const CANT_CREATE_GAME_SESSION = `⚠️ 游戏未能创建...
+请查阅日志来识别问题吧 🔎`
 
-const CANT_CREATE_GAME_SESSION_IN_GAME_ROOM = `❌ 不能在游戏房间开始新游戏啦～
-去游戏大厅@我就好啦！✨`
+const CANT_CREATE_GAME_SESSION_IN_GAME_ROOM = `❌ 当前房间已有游戏进行中，
+请前往游戏大厅 @我 来开始新的游戏！🚪`
 
-const HAS_GAME_IN_ROOM = `🎮 这个房间正high着呢，
-得等游戏结束才能关闭哦～🎮`
+const HAS_GAME_IN_ROOM = `🎮 这个房间正有游戏进行呢，
+请等待游戏结束后再操作！⏳`
 
-const NOT_A_GAME_ROOM = `🔍 这不是游戏房间啦，
-没法自动关闭，手动关一下吧～👋`
+const NOT_A_GAME_ROOM = `🔍 这不是一个游戏房间，
+请手动关闭或调整位置吧！👋`
 
-const ROOM_IN_DELETING = `⏳ 房间已经在关闭了啦，
-马上就好～稍等一下下 ⏳`
+const ROOM_IN_DELETING = `⏳ 房间正在关闭中，
+请稍候... 谢谢耐心等待！⏲️`
