@@ -84,7 +84,7 @@ func registerEncryptHandlers(client openapi.OpenAPI) {
 						client,
 						msg.ChannelID,
 						msg,
-						message.GetEncryptSuccessMessage([3]string(encryptoMessage)),
+						message.GetEncryptSuccessMessage(r.GetRoundNumber(), [3]string(encryptoMessage)),
 					)
 
 					// 重新将信息丢回去给下一个 handler 处理
@@ -112,9 +112,10 @@ func registerInterceptHandlers(client openapi.OpenAPI) {
 							client,
 							msg.ChannelID,
 							msg,
-							message.GetStartIterceptMessage(
+							message.GetStartInterceptMessage(
 								getPlayersNamesString(opponent.Players, true, message.SPLITTER, r.EncryptPlayer()),
 								BOT_INFO.Username,
+								r.GetEncryptedMessage(),
 							),
 						)
 						first = false
@@ -236,6 +237,7 @@ func registerDecryptHandlers(client openapi.OpenAPI) {
 							message.GetStartDecryptMessage(
 								getPlayersNamesString(rt.Players, true, message.SPLITTER, r.EncryptPlayer()),
 								BOT_INFO.Username,
+								r.GetEncryptedMessage(),
 							),
 						)
 						first = false

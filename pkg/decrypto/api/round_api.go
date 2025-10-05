@@ -53,6 +53,10 @@ func (round *Round) isFinalRound() bool {
 	return round.roundN == round.gameSession.maxRounds
 }
 
+func (round *Round) GetRoundNumber() uint8 {
+	return round.roundN
+}
+
 // 进行当前的队伍，当前阶段的操作;
 // 如果这么做了，会将 Round 中的状态自动进行迁移至下一个状态，
 // 同时返回下一个状态时正在操作的队伍和新的状态

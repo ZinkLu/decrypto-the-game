@@ -57,16 +57,16 @@ var startEncryptMessageTemplate = loadTemplate("startEncrypt", startEncryptMessa
 func GetStartEncryptMessage(player string) string {
 	return startEncryptMessageTemplate.FormatTemplate(
 		map[string]string{
-			"Player":     player,
-			"SecretCode": SECRET_CODES,
-			"PlainWords": PLAIN_WORDS,
+			"Player":            player,
+			"SecretCodeCommand": SECRET_CODES,
+			"PlainWordsCommand": PLAIN_WORDS,
 		},
 	)
 }
 
 var readyToEncryptMessageTemplate = loadTemplate("readyToEncrypt", readyToEncryptMessageTemplateString)
 
-func GetReadyToEncryptMeesage(digits [3]int, words [3]string, botName string) string {
+func GetReadyToEncryptMessage(digits [3]int, words [4]string, botName string) string {
 	// Convert the [3]int to []string
 	digitsStr := make([]string, 3)
 	for i, d := range digits {
@@ -84,34 +84,41 @@ func GetReadyToEncryptMeesage(digits [3]int, words [3]string, botName string) st
 
 var encryptSuccessMessageTemplate = loadTemplate("encryptSuccess", encryptSuccessMessageTemplateString)
 
-func GetEncryptSuccessMessage(words [3]string) string {
+func GetEncryptSuccessMessage(round uint8, words [3]string) string {
 	return encryptSuccessMessageTemplate.FormatTemplate(
-		map[string]string{
-			"Wrod1": words[0],
-			"Wrod2": words[1],
-			"Wrod3": words[2],
+		map[string]any{
+			"Word1": words[0],
+			"Word2": words[1],
+			"Word3": words[2],
+			"Round": round,
 		},
 	)
 }
 
 var startInterceptTemplate = loadTemplate("startIntercept", startInterceptTemplateString)
 
-func GetStartIterceptMessage(team, botName string) string {
+func GetStartInterceptMessage(team, botName string, words [3]string) string {
 	return startInterceptTemplate.FormatTemplate(
 		map[string]string{
 			"Team":    team,
 			"BotName": botName,
+			"Word1":   words[0],
+			"Word2":   words[1],
+			"Word3":   words[2],
 		},
 	)
 }
 
 var startDecryptMessageTemplate = loadTemplate("startDecrypt", startDecryptMessageTemplateString)
 
-func GetStartDecryptMessage(team, botName string) string {
+func GetStartDecryptMessage(team, botName string, words [3]string) string {
 	return startDecryptMessageTemplate.FormatTemplate(
 		map[string]string{
 			"Team":    team,
 			"BotName": botName,
+			"Word1":   words[0],
+			"Word2":   words[1],
+			"Word3":   words[2],
 		},
 	)
 }
@@ -228,7 +235,7 @@ func GetTeamStatusMessage(words [4]string, interceptedCounts, decryptWrongCounts
 	)
 }
 
-var gameRoundInfoMessageTempalte = loadTemplate("gameRoundInfo", gameRoundInfoMessageTempalteString)
+var gameRoundInfoMessageTemplate = loadTemplate("gameRoundInfo", gameRoundInfoMessageTemplateString)
 
 func GetGameRoundInfoMessage(
 	numberOfRounds uint8,
@@ -240,7 +247,7 @@ func GetGameRoundInfoMessage(
 	isInterceptSuccess,
 	isDecryptedCorrect bool,
 ) string {
-	return gameRoundInfoMessageTempalte.FormatTemplate(
+	return gameRoundInfoMessageTemplate.FormatTemplate(
 		map[string]any{
 			"NumberOfRounds":     numberOfRounds,
 			"EncryptPlayer":      encryptPlayer,

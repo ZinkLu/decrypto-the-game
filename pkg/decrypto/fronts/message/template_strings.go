@@ -20,17 +20,21 @@ const (
    • 所有玩家需在同一群聊中参与`
 
 	// GameNameTemplate is the template for the game name.
-	gameNameMessageTemplateString = `⚔️ {{.Team1}} VS {{.Team2}} 谁是谍中之王? 👑`
+	gameNameMessageTemplateString = `{{.Emoji}} 谍报战 - {{.hostName}} 的房间`
 
 	// GameStartTemplate is the template for the game start message.
-	gameStartMessageTemplateString = `🕵️‍♂️ 欢迎进入「谍报风云」！🔥
-🔵 蓝队特工：{{.BlueTeam}}
-🔴 红队特工：{{.RedTeam}}`
+	gameStartMessageTemplateString = `🔐「谍报战」游戏开始！
+
+🔵 蓝队：{{.BlueTeam}}
+🔴 红队：{{.RedTeam}}
+
+📌 接下来：每位玩家将收到 4 个秘密关键词，请妥善保管！
+`
 
 	// GameEndTemplate is the template for the game end message.
 	gameEndMessageTemplateString = `🏁 游戏结束！🏁
-🙏 感谢所有特工的参与！
-🤙 下次再会，继续挑战！`
+🙏 感谢所有玩家的精彩对决！
+🔐 期待下次密码攻防战！`
 
 	// CloseRoomTemplate is the template for closing room message.
 	closeRoomMessageTemplateString = `⏳ 10 秒后房间关闭！⏳
@@ -45,11 +49,12 @@ const (
 🔒 您不是加密者，无法查看机密信息`
 
 	// EncryptSuccessTemplate is the template for successful encryption.
-	encryptSuccessMessageTemplateString = `✅ 加密成功！📡
+	encryptSuccessMessageTemplateString = `📡 第{{.Round}}轮线索已发送！
 1️⃣ {{.Word1}}
 2️⃣ {{.Word2}}
 3️⃣ {{.Word3}}
-🧠 队友能破解吗？`
+
+👀 对手先进行拦截！队友再进行解密！🔐`
 
 	// GameOverTemplate is the template for game over message.
 	gameOverMessageTemplateString = `🎊 游戏结束！🎉
@@ -67,13 +72,24 @@ const (
 👀 两队可以直接猜对面的机密词语，猜对多者胜出`
 
 	// ReadyToEncryptTemplate is the template for ready to encrypt message.
-	readyToEncryptMessageTemplateString = `🔐 加密任务发送！
-🎯 加密数字：{{.Digits}}
-🔤 对应词语：{{.Words}}
-📝 使用指南：
-   游戏频道 @{{.BotName}} + 三个提示词
-   示例：@{{.BotName}} 词1 词2 词3
-   ⏰ 加油，加密大师！`
+	readyToEncryptMessageTemplateString = `🔐 第{{.Round}}轮 - 你的出题任务
+
+🎯 需暗示的编号序列：{{.Digits}}
+
+🔤 你的关键词：
+1: {{.Word1}}
+2: {{.Word2}}
+3: {{.Word3}}
+4: {{.Word4}}
+
+📝 提交格式：
+在游戏频道发送：
+@{{.BotName}} [线索1] [线索2] [线索3]
+
+✅ 示例：
+@{{.BotName}} 红色 飞行 黑夜
+
+⏰ 请注意您的思考时间！`
 
 	// ReplyWrongDigitsFormatTemplate is the template for wrong digits format message.
 	replyWrongDigitsFormatMessageTemplateString = `🔢 数字格式有误！重试一次！
@@ -86,25 +102,41 @@ const (
 ✅ 示例：猫 狗 鸟`
 
 	// StartDecryptTemplate is the template for start decrypt message.
-	startDecryptMessageTemplateString = `🔓 解密时间到！破解敌方密码！
-🎯 {{.Team}} 开始行动!
-☝️ 请队员充分讨论后由任意队员发送:
-    @{{.BotName}} + 三位数字密码（空格分割）
-✅ 示例：@{{.BotName}} 4 1 3`
+	startDecryptMessageTemplateString = `👀 拦截机会！
+
+{{.Team}}，请尝试解密队友的密码！
+
+📡 我方线索：
+{{.Word1}}  {{.Word2}}  {{.Word3}}
+
+☝️ 讨论后，任一队员在游戏频道发送：
+@{{.BotName}} [数字1] [数字2] [数字3]
+
+✅ 示例：@{{.BotName}} 2 1 3
+（数字范围：1-4，顺序对应线索顺序）
+
+⏰ 请注意你的思考时间！`
 
 	// StartEncryptTemplate is the template for start encrypt message.
-	startEncryptMessageTemplateString = `
-🔐 加密时刻到！{{.Player}}，展现你的智慧！
-💡 私信查看秘密指令：
-   • {{.Player}} 查看密码：<{{.SecretCode}}>
-   • 其他玩家查看词库：<{{.PlainWords}}>`
+	startEncryptMessageTemplateString = `{{.Player}} 本轮加密
+➡️ 请私信我并输出 <{{.SecretCodeCommand}}> 来获取本轮密码
+`
 
 	// StartInterceptTemplate is the template for start intercept message.
-	startInterceptTemplateString = `
-🚨 {{.Team}} 开始拦截!
-😶 请队员充分讨论后由任意队员发送:
-    @{{.BotName}} + 三位数字密码（空格分割）
-✅ 示例：@{{.BotName}} 1 3 2`
+	startInterceptTemplateString = `👀 拦截阶段 - 第{{.Round}}轮
+
+{{.Team}}，请猜测刚才线索对应的编号序列。
+
+📡 对方线索：
+{{.Word1}}  {{.Word2}}  {{.Word3}}
+
+💬 讨论后，任一队员在游戏频道发送：
+@{{.BotName}} [数字1] [数字2] [数字3]
+
+✅ 示例：@{{.BotName}} 2 1 3
+（数字范围：1-4，顺序对应线索顺序）
+
+⏰ 请注意你的思考时间！`
 
 	//teamStatusMessageTemplateString
 	teamStatusMessageTemplateString = `📖 内部情报更新！
@@ -116,7 +148,7 @@ const (
 🔍 解密失败：{{.DecryptWrongCounts}} 次`
 
 	// GameRoundInfo
-	gameRoundInfoMessageTempalteString = `🔄 第 {{.NumberOfRounds}} 轮
+	gameRoundInfoMessageTemplateString = `🔄 第 {{.NumberOfRounds}} 轮
 🧠 加密特工：{{.EncryptPlayer}}
 🔐 加密内容：{{.EncryptedMessage}}
 🎯 真实密码：{{.SecretDigits}}

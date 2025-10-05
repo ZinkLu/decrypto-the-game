@@ -26,12 +26,12 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 				SendDirectMessage(api, data.Author.ID, data, message.GetGameStatusMessage(session))
 			} else if strings.Contains(data.Content, message.SECRET_CODES) {
 				if session.GetCurrentRound().EncryptPlayer().Uid == data.Author.ID {
-					words := session.GetCurrentRound().GetSecretWords()
+					words := session.GetCurrentRound().GetCurrentTeam().Words
 					SendDirectMessage(
 						api,
 						data.ChannelID,
 						data,
-						message.GetReadyToEncryptMeesage(
+						message.GetReadyToEncryptMessage(
 							session.GetCurrentRound().GetSecretDigits(),
 							words,
 							BOT_INFO.Username,
