@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
@@ -98,7 +99,7 @@ func closeRoom(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 			time.Sleep(time.Second * 10)
 			err := api.DeleteChannel(context.Background(), channelId)
 			if err != nil {
-				utils.Log.Error("删除房间失败, error is %s", err)
+				utils.Log.Error("删除房间失败, error is", slog.Any("error", err))
 			}
 			delete(roomMap, channelId)
 		}()

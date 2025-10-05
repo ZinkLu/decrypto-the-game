@@ -26,8 +26,6 @@ func (bot *QQBot) Start() {
 	api := bot.api
 	ws, _ := api.WS(ctx, nil, "")
 
-	// utils.Log.Debug("err:%v", err)
-
 	if me, err := api.Me(context.Background()); err == nil {
 		handlers.BOT_INFO = me
 	}
