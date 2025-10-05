@@ -98,7 +98,7 @@ func closeRoom(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 			time.Sleep(time.Second * 10)
 			err := api.DeleteChannel(context.Background(), channelId)
 			if err != nil {
-				utils.Log.Errorf("删除房间失败, error is %s", err)
+				utils.Log.Error("删除房间失败, error is %s", err)
 			}
 			delete(roomMap, channelId)
 		}()

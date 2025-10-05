@@ -104,7 +104,7 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 				broker <- data
 
 			} else {
-				utils.Log.Errorf("创建对局失败, error is %s", err)
+				utils.Log.Error("创建对局失败, error is %s", err)
 				SendMessage(api, data.ChannelID, data, err.Error())
 				// 删除房间
 				api.DeleteChannel(context.Background(), gameChannel.ID)
@@ -112,7 +112,7 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 			}
 		} else {
 			// 发送错误信息
-			utils.Log.Errorf("房间创建失败, error is %s", err)
+			utils.Log.Error("房间创建失败, error is %s", err)
 			SendMessage(api, data.ChannelID, data, message.CANT_CREATE_PRIVATE_ROOM)
 			return err
 		}

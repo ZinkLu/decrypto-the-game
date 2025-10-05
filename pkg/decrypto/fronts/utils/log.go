@@ -1,9 +1,14 @@
 package utils
 
-import "github.com/sirupsen/logrus"
+import (
+	"log/slog"
+	"os"
+)
 
-var Log = logrus.New()
+var Log *slog.Logger = slog.New(
+	slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{}),
+)
 
 func init() {
-	Log.SetLevel(logrus.InfoLevel)
+
 }
