@@ -45,7 +45,7 @@ func (bot *DiscordBot) Start() {
 
 }
 
-func getHandler() interface{} {
+func getHandler() any {
 	return messageCreate
 }
 

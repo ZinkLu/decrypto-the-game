@@ -12,12 +12,14 @@ import (
 	"github.com/tencent-connect/botgo/openapi"
 	"github.com/tencent-connect/botgo/token"
 	"github.com/tencent-connect/botgo/websocket"
+	"golang.org/x/oauth2"
 )
 
 type QQBot struct {
-	botId     string
-	botSecret string
-	api       openapi.OpenAPI
+	botId       string
+	botSecret   string
+	tokenSource oauth2.TokenSource
+	api         openapi.OpenAPI
 }
 
 func (bot *QQBot) Start() {
@@ -35,7 +37,7 @@ func (bot *QQBot) Start() {
 
 	initRoundHandler(api)
 	// 启动 session manager 进行 ws 连接的管理，如果接口返回需要启动多个 shard 的连接，这里也会自动启动多个
-	botgo.NewSessionManager().Start(ws, nil, &intent)
+	botgo.NewSessionManager().Start(ws, bot.tokenSource, &intent)
 
 }
 
@@ -68,8 +70,9 @@ func CreateBot(botId string, botSecret string, debug bool) *QQBot {
 	}
 
 	return &QQBot{
-		botId:     botId,
-		botSecret: botSecret,
-		api:       api,
+		botId:       botId,
+		botSecret:   botSecret,
+		tokenSource: tokenSource,
+		api:         api,
 	}
 }
