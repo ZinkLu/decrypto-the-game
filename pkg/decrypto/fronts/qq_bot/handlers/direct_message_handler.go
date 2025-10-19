@@ -35,6 +35,7 @@ func GetDirectMessageHandler(api openapi.OpenAPI) event.DirectMessageEventHandle
 							session.GetCurrentRound().GetSecretDigits(),
 							words,
 							BOT_INFO.Username,
+							session.GetCurrentRound().GetNumberOfRounds(),
 						),
 					)
 				} else {

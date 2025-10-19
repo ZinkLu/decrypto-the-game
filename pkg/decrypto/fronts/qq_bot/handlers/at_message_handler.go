@@ -67,9 +67,7 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 	// 	user,
 	// }
 
-	if len(users)%2 != 0 ||
-		len(users) < 4 ||
-		len(users) > 8 {
+	if !isNumberOfUsersValid(len(users)) {
 		help(api, data)
 	} else {
 		if gameChannel, err := createPrivateGameRoom(api, data, users, users[0]); err == nil {
@@ -92,6 +90,7 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 				SendMessage(api, gameChannel.ID, data, message.GetGameStartMessage(
 					strings.Join(teamANames, ","),
 					strings.Join(teamBNames, ","),
+					message.PLAIN_WORDS,
 				))
 
 				go session.AutoForward(ctx)
@@ -119,6 +118,16 @@ func gameStart(api openapi.OpenAPI, data *dto.WSATMessageData) error {
 		}
 	}
 	return nil
+}
+
+func isNumberOfUsersValid(users int) bool {
+	return true
+	if users%2 != 0 ||
+		users < 4 ||
+		users > 8 {
+		return false
+	}
+	return true
 }
 
 // 游戏结束

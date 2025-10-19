@@ -28,7 +28,7 @@ const (
 🔵 蓝队：{{.BlueTeam}}
 🔴 红队：{{.RedTeam}}
 
-📌 接下来：每位玩家将收到 4 个秘密关键词，请妥善保管！
+📌 接下来：每位玩家请私信我"{{.SecretCodeCommand}}" 来获取秘密 4 个秘密词组，请妥善保管！
 `
 
 	// GameEndTemplate is the template for the game end message.
@@ -77,10 +77,9 @@ const (
 🎯 需暗示的编号序列：{{.Digits}}
 
 🔤 你的关键词：
-1: {{.Word1}}
-2: {{.Word2}}
-3: {{.Word3}}
-4: {{.Word4}}
+{{range $Index, $Value := .Words}}
+{{GetEmojiDigits ($Index | add1)}}. {{$Value}}
+{{end}}
 
 📝 提交格式：
 在游戏频道发送：
@@ -102,12 +101,13 @@ const (
 ✅ 示例：猫 狗 鸟`
 
 	// StartDecryptTemplate is the template for start decrypt message.
-	startDecryptMessageTemplateString = `👀 拦截机会！
+	startDecryptMessageTemplateString = `🔐 解密阶段！
 
 {{.Team}}，请尝试解密队友的密码！
 
 📡 我方线索：
-{{.Word1}}  {{.Word2}}  {{.Word3}}
+
+{{range .Words}} {{.}} {{end}}
 
 ☝️ 讨论后，任一队员在游戏频道发送：
 @{{.BotName}} [数字1] [数字2] [数字3]
@@ -139,10 +139,9 @@ const (
 ⏰ 请注意你的思考时间！`
 
 	//teamStatusMessageTemplateString
-	teamStatusMessageTemplateString = `📖 内部情报更新！
-你的` + PLAIN_WORDS + `清单:
-{{range .Words}}
-{{GetEmojiDigits .Index}} {{.Value}}
+	teamStatusMessageTemplateString = `📖 你的` + PLAIN_WORDS + `清单:
+{{range $Index, $Value := .Words}}
+{{GetEmojiDigits ($Index | add1)}} {{$Value}}
 {{end}}
 🎯 成功拦截：{{.InterceptedCounts}} 次！
 🔍 解密失败：{{.DecryptWrongCounts}} 次`

@@ -7,7 +7,7 @@ import (
 	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
 )
 
-const PLAIN_WORDS = "机密"
+const PLAIN_WORDS = "词组"
 const GAME_PROCESS = "进度"
 const SECRET_CODES = "密码"
 const SELF_ENCRYPTION_HISTORY = "我方"
@@ -15,12 +15,14 @@ const OPPONENT_ENCRYPTION_HISTORY = "对方"
 const SPLITTER = " "
 
 const STATUS_HELP_MESSAGE = `🎮 游戏进行中~ 回复以下关键词:
-	💫 [` + PLAIN_WORDS + `]: 查看你队伍的机密
-	🔄 [` + GAME_PROCESS + `]: 查看游戏进度+历史
-	🤙 [` + SELF_ENCRYPTION_HISTORY + `]: 我方已用加密词
-	👀 [` + OPPONENT_ENCRYPTION_HISTORY + `]: 偷窥对方已用加密词
 
-当前轮到你来当加密官？回复:
+	💫 [` + PLAIN_WORDS + `]: 查看你队伍的明文词组
+	🔄 [` + GAME_PROCESS + `]: 查看当前进度
+	🤙 [` + SELF_ENCRYPTION_HISTORY + `]: 查看我方已用加密词
+	👀 [` + OPPONENT_ENCRYPTION_HISTORY + `]: 查看对方已用加密词
+
+如果您是本轮的加密者，回复:
+
 	🔐 [` + SECRET_CODES + `]: 查看本局的密码
 `
 
@@ -47,7 +49,7 @@ func GetGameStatusMessage(session *api.Session) string {
 		roundMsg = "还没有轮次信息"
 	}
 
-	sb.WriteString(fmt.Sprintf(`当前第 %d 轮次，以下是对战历史:\n`, session.GetCurrentRound().GetNumberOfRounds()))
+	sb.WriteString(fmt.Sprintf("当前第 %d 轮次，以下是对战历史:\n", session.GetCurrentRound().GetNumberOfRounds()))
 	sb.WriteString(strings.TrimSpace(roundMsg))
 	return sb.String()
 }

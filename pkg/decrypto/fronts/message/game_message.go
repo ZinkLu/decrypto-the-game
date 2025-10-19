@@ -21,6 +21,7 @@ func (t *formattableTemplate) FormatTemplate(data any) string {
 var funMap = template.FuncMap{
 	"GetEmojiDigits": GetEmojiDigits,
 	"not":            func(b bool) bool { return !b },
+	"add1":           func(i int) int { return i + 1 },
 }
 
 // loadTemplate parses a template from a string
@@ -66,7 +67,7 @@ func GetStartEncryptMessage(player string) string {
 
 var readyToEncryptMessageTemplate = loadTemplate("readyToEncrypt", readyToEncryptMessageTemplateString)
 
-func GetReadyToEncryptMessage(digits [3]int, words [4]string, botName string) string {
+func GetReadyToEncryptMessage(digits [3]int, words [4]string, botName string, round uint8) string {
 	// Convert the [3]int to []string
 	digitsStr := make([]string, 3)
 	for i, d := range digits {
@@ -74,7 +75,8 @@ func GetReadyToEncryptMessage(digits [3]int, words [4]string, botName string) st
 	}
 
 	return readyToEncryptMessageTemplate.FormatTemplate(
-		map[string]string{
+		map[string]any{
+			"Round":   round,
 			"Digits":  strings.Join(digitsStr, " "),
 			"Words":   strings.Join(words[:], " "),
 			"BotName": botName,
@@ -113,12 +115,10 @@ var startDecryptMessageTemplate = loadTemplate("startDecrypt", startDecryptMessa
 
 func GetStartDecryptMessage(team, botName string, words [3]string) string {
 	return startDecryptMessageTemplate.FormatTemplate(
-		map[string]string{
+		map[string]any{
 			"Team":    team,
 			"BotName": botName,
-			"Word1":   words[0],
-			"Word2":   words[1],
-			"Word3":   words[2],
+			"Words":   words,
 		},
 	)
 }
@@ -186,11 +186,12 @@ func GetGameTitle(emoji, hostName string) string {
 
 var gameStartMessageTemplate = loadTemplate("gameStart", gameStartMessageTemplateString)
 
-func GetGameStartMessage(teamANames, teamBNames string) string {
+func GetGameStartMessage(teamANames, teamBNames, secretCodeCommand string) string {
 	return gameStartMessageTemplate.FormatTemplate(
 		map[string]string{
-			"BlueTeam": teamANames,
-			"RedTeam":  teamBNames,
+			"BlueTeam":          teamANames,
+			"RedTeam":           teamBNames,
+			"SecretCodeCommand": secretCodeCommand,
 		},
 	)
 }
