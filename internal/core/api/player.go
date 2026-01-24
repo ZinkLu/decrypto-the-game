@@ -1,6 +1,6 @@
 package api
 
 type Player struct {
-	Uid      string
+	UID      string
 	NickName string
 }

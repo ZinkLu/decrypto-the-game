@@ -78,3 +78,23 @@ func NewWithTeams(sessionId string, teamAPlayers []*Player, teamBPlayers []*Play
 	}
 	return &Session{sessionId: sessionId, maxRounds: MAX_ROUND, teams: [2]*Team{teamA, teamB}}, nil
 }
+
+// SessionID returns the session ID
+func (s *Session) SessionID() string {
+	return s.sessionId
+}
+
+// GetTeams returns both teams in the session
+func (s *Session) GetTeams() [2]*Team {
+	return s.teams
+}
+
+// GetCurrentRound returns the current round
+func (s *Session) GetCurrentRound() *Round {
+	return s.currentRound
+}
+
+// GetMaxRounds returns the maximum number of rounds
+func (s *Session) GetMaxRounds() uint8 {
+	return s.maxRounds
+}

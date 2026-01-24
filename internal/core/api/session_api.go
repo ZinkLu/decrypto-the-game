@@ -91,7 +91,7 @@ func (s *Session) AutoForward(ctx context.Context) {
 func (s *Session) GetUserTeam(uid string) *Team {
 	var target *Team
 	for _, p := range s.teams[0].Players {
-		if p.Uid == uid {
+		if p.UID == uid {
 			target = s.teams[0]
 			break
 		}
@@ -108,7 +108,7 @@ func (s *Session) GetUserTeam(uid string) *Team {
 func (s *Session) GetUserOpponent(uid string) *Team {
 	var target *Team
 	for _, p := range s.teams[0].Players {
-		if p.Uid == uid {
+		if p.UID == uid {
 			target = s.teams[0]
 			break
 		}
@@ -120,13 +120,3 @@ func (s *Session) GetUserOpponent(uid string) *Team {
 
 	return s.teams[0]
 }
-
-/*
-	========================== read-only properties ============================
-*/
-
-func (session *Session) GetCurrentRound() *Round { return session.currentRound }
-func (session *Session) GetTeams() [2]*Team      { return session.teams }
-func (session *Session) GetMaxRounds() uint8     { return session.maxRounds }
-func (session *Session) GetSessionId() string    { return session.sessionId }
-func (session *Session) GetRounds() []*Round     { return session.rounds }

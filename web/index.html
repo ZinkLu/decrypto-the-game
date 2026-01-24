@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Decrypto - 谍报风云</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 40px 0;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #00d4ff, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: #94a3b8;
+            font-size: 1.2rem;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #e2e8f0;
+        }
+
+        .player-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        input {
+            flex: 1;
+            padding: 12px 16px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            font-size: 1rem;
+        }
+
+        input::placeholder {
+            color: #64748b;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+
+        button {
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, #00d4ff, #7c3aed);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 212, 255, 0.3);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .player-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .player-tag {
+            background: linear-gradient(90deg, rgba(0, 212, 255, 0.2), rgba(124, 58, 237, 0.2));
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .player-tag .remove {
+            cursor: pointer;
+            color: #ef4444;
+            font-weight: bold;
+        }
+
+        .game-area {
+            display: none;
+        }
+
+        .game-area.active {
+            display: block;
+        }
+
+        .team-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .team {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            border: 2px solid transparent;
+        }
+
+        .team-a {
+            border-color: #00d4ff;
+        }
+
+        .team-b {
+            border-color: #7c3aed;
+        }
+
+        .team h3 {
+            margin-bottom: 15px;
+        }
+
+        .team-a h3 {
+            color: #00d4ff;
+        }
+
+        .team-b h3 {
+            color: #7c3aed;
+        }
+
+        .word-display {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .word-card {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .status-message {
+            text-align: center;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .status-message.show {
+            display: block;
+        }
+
+        .status-message.success {
+            background: rgba(34, 197, 94, 0.2);
+            border: 1px solid #22c55e;
+        }
+
+        .status-message.error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+        }
+
+        .rules {
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+
+        .rules li {
+            margin-bottom: 8px;
+        }
+
+        @media (max-width: 768px) {
+            .team-container {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Decrypto</h1>
+            <p class="subtitle">谍报风云 - 团队暗号破解游戏</p>
+        </header>
+
+        <!-- Lobby Section -->
+        <div id="lobby" class="card">
+            <h2>创建游戏</h2>
+            <p style="color: #94a3b8; margin-bottom: 20px;">添加至少 4 名玩家即可开始游戏</p>
+
+            <div class="player-input">
+                <input type="text" id="playerName" placeholder="输入玩家名称..." />
+                <button class="btn-secondary" onclick="addPlayer()">添加玩家</button>
+            </div>
+
+            <div class="player-list" id="playerList"></div>
+
+            <div style="margin-top: 20px;">
+                <button class="btn-primary" onclick="createGame()">开始游戏</button>
+                <button class="btn-secondary" onclick="clearPlayers()" style="margin-left: 10px;">清空</button>
+            </div>
+        </div>
+
+        <!-- Status Message -->
+        <div id="statusMessage" class="status-message"></div>
+
+        <!-- Game Area -->
+        <div id="gameArea" class="game-area">
+            <div class="card">
+                <h2 id="gameTitle">游戏进行中</h2>
+                <p id="gameInfo" style="color: #94a3b8; margin-bottom: 20px;"></p>
+
+                <div class="team-container">
+                    <div class="team team-a">
+                        <h3>蓝队</h3>
+                        <div id="teamAMembers" style="margin-bottom: 15px; color: #94a3b8;"></div>
+                        <div class="word-display" id="teamAWords"></div>
+                    </div>
+                    <div class="team team-b">
+                        <h3>紫队</h3>
+                        <div id="teamBMembers" style="margin-bottom: 15px; color: #94a3b8;"></div>
+                        <div class="word-display" id="teamBWords"></div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 30px; text-align: center;">
+                    <button class="btn-secondary" onclick="endGame()">结束游戏</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Rules Section -->
+        <div class="card">
+            <h2>游戏规则</h2>
+            <ul class="rules">
+                <li><strong>目标：</strong>让你的队友猜出你的密码，同时阻止对手破解你们的暗号。</li>
+                <li><strong>人数：</strong>4-8 人，分为两支队伍（每队 2-4 人）。</li>
+                <li><strong>流程：</strong>每轮由一名加密者给出 3 个提示词，对队队友需猜出对应的数字。</li>
+                <li><strong>胜利条件：</strong>率先获得 2 次成功拦截或让对方猜错 2 次。</li>
+                <li><strong>提示：</strong>提示词不能包含密码中的字，也不能太明显！</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        let players = [];
+        let currentSession = null;
+
+        function addPlayer() {
+            const input = document.getElementById('playerName');
+            const name = input.value.trim();
+
+            if (name && !players.includes(name)) {
+                players.push(name);
+                renderPlayers();
+                input.value = '';
+            }
+        }
+
+        function removePlayer(name) {
+            players = players.filter(p => p !== name);
+            renderPlayers();
+        }
+
+        function renderPlayers() {
+            const list = document.getElementById('playerList');
+            list.innerHTML = players.map(p => `
+                <div class="player-tag">
+                    <span>${p}</span>
+                    <span class="remove" onclick="removePlayer('${p}')">&times;</span>
+                </div>
+            `).join('');
+        }
+
+        function clearPlayers() {
+            players = [];
+            renderPlayers();
+        }
+
+        function showStatus(message, type) {
+            const el = document.getElementById('statusMessage');
+            el.textContent = message;
+            el.className = `status-message show ${type}`;
+            setTimeout(() => {
+                el.className = 'status-message';
+            }, 3000);
+        }
+
+        async function createGame() {
+            if (players.length < 4) {
+                showStatus('至少需要 4 名玩家才能开始游戏', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/game/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: 'game_' + Date.now(),
+                        players: players.map((name, i) => ({
+                            id: 'player_' + i,
+                            nick_name: name
+                        }))
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error('创建游戏失败');
+                }
+
+                const data = await response.json();
+                currentSession = data;
+
+                document.getElementById('lobby').style.display = 'none';
+                document.getElementById('gameArea').classList.add('active');
+
+                renderGame(data);
+            } catch (error) {
+                showStatus(error.message, 'error');
+            }
+        }
+
+        function renderGame(data) {
+            document.getElementById('gameTitle').textContent = `游戏房间: ${data.session_id}`;
+            document.getElementById('gameInfo').textContent = `游戏已创建！两队已准备就绪。`;
+
+            document.getElementById('teamAMembers').textContent = '成员: ' + data.team_a_members.join(', ');
+            document.getElementById('teamBMembers').textContent = '成员: ' + data.team_b_members.join(', ');
+
+            // 显示词语占位
+            document.getElementById('teamAWords').innerHTML = [1, 2, 3, 4].map(i =>
+                `<div class="word-card">词语 ${i}</div>`
+            ).join('');
+
+            document.getElementById('teamBWords').innerHTML = [1, 2, 3, 4].map(i =>
+                `<div class="word-card">词语 ${i}</div>`
+            ).join('');
+        }
+
+        function endGame() {
+            currentSession = null;
+            document.getElementById('gameArea').classList.remove('active');
+            document.getElementById('lobby').style.display = 'block';
+        }
+
+        // Enter key to add player
+        document.getElementById('playerName').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                addPlayer();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -84,7 +84,7 @@ func getRandomPlayers() []*Player {
 	var ps []*Player = make([]*Player, 0)
 	for i := 0; i < 2; i++ {
 		ps = append(ps, &Player{
-			Uid:      uuid.NewString(),
+			UID:      uuid.NewString(),
 			NickName: fmt.Sprintf("Player-%d", i),
 		})
 	}
