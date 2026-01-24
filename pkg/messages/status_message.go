@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ZinkLu/decrypto-the-game/pkg/decrypto/api"
+	"github.com/ZinkLu/decrypto-the-game/internal/core/api"
 )
 
 const PLAIN_WORDS = "词组"
