@@ -1,37 +1,82 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap');
 
 @theme {
-  --color-cyber-black: #0a0a0f;
-  --color-cyber-dark: #1a1a2e;
-  --color-cyber-primary: #00ff9f;
-  --color-cyber-secondary: #00d4ff;
-  --color-cyber-accent: #ff00ff;
-  --color-cyber-warning: #ffcc00;
+  /* Cold War Communication Device Theme */
+  /* Team Colors */
+  --color-team-friendly: #00ff88;
+  --color-team-friendly-dim: #3d5544;
+  --color-team-enemy: #ff4444;
+  --color-team-enemy-dim: #442222;
 
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  /* CRT/Display Colors */
+  --color-crt-phosphor: #00ff88;
+  --color-crt-phosphor-dim: #2a4a3a;
+  --color-crt-amber: #ffaa00;
+  --color-crt-amber-dim: #4a3a2a;
+  --color-crt-screen: #0a0f0a;
+  --color-crt-screen-light: #1a2a1a;
 
-  --animate-pulse-glow: pulse-glow 2s ease-in-out infinite;
-  --animate-scan-line: scan-line 8s linear infinite;
+  /* UI Colors */
+  --color-metal: #4a4a4a;
+  --color-metal-light: #6a6a6a;
+  --color-metal-dark: #2a2a2a;
+  --color-panel: #3a3a3a;
+  --color-cream: #f5f0e6;
 
-  @keyframes pulse-glow {
-    0%, 100% { box-shadow: 0 0 5px #00ff9f, 0 0 10px #00ff9f; }
-    50% { box-shadow: 0 0 20px #00ff9f, 0 0 30px #00ff9f; }
+  /* Fonts */
+  --font-crt: 'VT323', 'Courier New', monospace;
+  --font-panel: 'Share Tech Mono', 'Arial', sans-serif;
+
+  /* Animations */
+  --animate-crt-flicker: crt-flicker 0.15s infinite;
+  --animate-oscilloscope: oscilloscope 2s linear infinite;
+  --animate-vu-needle: vu-needle 0.3s ease-out;
+  --animate-glow-pulse: glow-pulse 2s ease-in-out infinite;
+  --animate-scan-beam: scan-beam 8s linear infinite;
+
+  @keyframes crt-flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.9; }
+    94% { opacity: 1; }
+    95% { opacity: 0.95; }
   }
 
-  @keyframes scan-line {
-    0% { transform: translateY(-100%); }
-    100% { transform: translateY(100vh); }
+  @keyframes oscilloscope {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+
+  @keyframes vu-needle {
+    0% { transform: rotate(-45deg); }
+    100% { transform: rotate(var(--needle-angle, 0deg)); }
+  }
+
+  @keyframes glow-pulse {
+    0%, 100% {
+      text-shadow: 0 0 5px var(--color-crt-phosphor), 0 0 10px var(--color-crt-phosphor);
+      filter: brightness(1);
+    }
+    50% {
+      text-shadow: 0 0 10px var(--color-crt-phosphor), 0 0 20px var(--color-crt-phosphor), 0 0 30px var(--color-crt-phosphor);
+      filter: brightness(1.2);
+    }
+  }
+
+  @keyframes scan-beam {
+    0% { transform: translateY(-100%); opacity: 0; }
+    50% { opacity: 0.3; }
+    100% { transform: translateY(100vh); opacity: 0; }
   }
 }
 
 :root {
-  --cyber-black: #0a0a0f;
-  --cyber-dark: #1a1a2e;
-  --cyber-primary: #00ff9f;
-  --cyber-secondary: #00d4ff;
-  --cyber-accent: #ff00ff;
-  --cyber-warning: #ffcc00;
+  --crt-phosphor: #00ff88;
+  --crt-amber: #ffaa00;
+  --crt-screen: #0a0f0a;
+  --team-friendly: #00ff88;
+  --team-enemy: #ff4444;
 }
 
 * {
@@ -47,13 +92,41 @@ html, body, #root {
 }
 
 body {
-  background-color: var(--cyber-black);
-  color: white;
-  font-family: 'JetBrains Mono', monospace;
+  background-color: #1a1a1a;
+  font-family: var(--font-panel);
 }
 
-/* Scanline effect overlay */
-.scanline-overlay {
+/* CRT Screen Container */
+.crt-screen {
+  background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+  border-radius: 12px;
+  padding: 8px;
+  box-shadow:
+    inset 0 2px 10px rgba(0,0,0,0.5),
+    0 10px 0 40px rgba(0,0,0,0.5),
+    0 0 0 4px #3a3a3a;
+}
+
+.crt-screen-inner {
+  background: var(--crt-screen);
+  border-radius: 8px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 100px rgba(0,0,0,0.9);
+
+  /* CRT curvature effect */
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%);
+    pointer-events: none;
+    z-index: 100;
+  }
+}
+
+/* Scanline overlay */
+.crt-scanlines {
   position: fixed;
   top: 0;
   left: 0;
@@ -61,82 +134,319 @@ body {
   height: 100%;
   pointer-events: none;
   z-index: 9999;
-  background: linear-gradient(
+  background: repeating-linear-gradient(
     to bottom,
-    transparent 50%,
-    rgba(0, 0, 0, 0.1) 50%
+    transparent 0px,
+    transparent 2px,
+    rgba(0, 0, 0, 0.15) 2px,
+    rgba(0, 0, 0, 0.15) 4px
   );
-  background-size: 100% 4px;
 }
 
-/* Neon glow effects */
-.neon-text {
-  text-shadow: 0 0 5px currentColor, 0 0 10px currentColor, 0 0 20px currentColor;
+/* Phosphor text effect */
+.phosphor-text {
+  font-family: var(--font-crt);
+  color: var(--crt-phosphor);
+  text-shadow:
+    0 0 5px var(--crt-phosphor),
+    0 0 10px var(--crt-phosphor),
+    0 0 20px var(--crt-phosphor);
+  animation: var(--animate-glow-pulse);
 }
 
-.neon-border {
-  box-shadow: 0 0 5px currentColor, 0 0 10px currentColor, inset 0 0 5px currentColor;
+.phosphor-text-amber {
+  font-family: var(--font-crt);
+  color: var(--crt-amber);
+  text-shadow:
+    0 0 5px var(--crt-amber),
+    0 0 10px var(--crt-amber),
+    0 0 20px var(--crt-amber);
 }
 
-/* Cyber button base style */
-.cyber-button {
-  position: relative;
-  padding: 1rem 2rem;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 1rem;
-  font-weight: 700;
+/* Physical panel button style */
+.panel-button {
+  font-family: var(--font-panel);
+  background: linear-gradient(180deg, #5a5a5a 0%, #3a3a3a 50%, #2a2a2a 100%);
+  border: none;
+  border-radius: 6px;
+  padding: 12px 24px;
+  color: var(--crt-amber);
+  font-size: 14px;
+  font-weight: bold;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  border: 2px solid var(--cyber-primary);
-  background: transparent;
-  color: var(--cyber-primary);
+  letter-spacing: 2px;
   cursor: pointer;
-  overflow: hidden;
-  transition: all 0.3s ease;
+  box-shadow:
+    0 4px 0 #1a1a1a,
+    0 6px 10px rgba(0,0,0,0.3),
+    inset 0 1px 0 rgba(255,255,255,0.1);
+  transition: all 0.1s ease;
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    right: 2px;
+    height: 50%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.1), transparent);
+    border-radius: 4px 4px 0 0;
+  }
+
+  &:hover {
+    background: linear-gradient(180deg, #6a6a6a 0%, #4a4a4a 50%, #3a3a3a 100%);
+    transform: translateY(1px);
+    box-shadow:
+      0 3px 0 #1a1a1a,
+      0 5px 8px rgba(0,0,0,0.3);
+  }
+
+  &:active {
+    transform: translateY(3px);
+    box-shadow:
+      0 1px 0 #1a1a1a,
+      0 2px 4px rgba(0,0,0,0.3);
+  }
+
+  &.friendly {
+    color: var(--team-friendly);
+    border: 2px solid var(--team-friendly);
+  }
+
+  &.enemy {
+    color: var(--team-enemy);
+    border: 2px solid var(--team-enemy);
+  }
 }
 
-.cyber-button::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
+/* Panel indicator light */
+.indicator-light {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #1a1a1a;
+  box-shadow:
+    inset 0 2px 4px rgba(0,0,0,0.5),
+    0 0 5px rgba(0,0,0,0.3);
+  position: relative;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.3);
+  }
+
+  &.on {
+    background: var(--color-crt-phosphor);
+    box-shadow:
+      inset 0 2px 4px rgba(0,0,0,0.3),
+      0 0 10px var(--color-crt-phosphor),
+      0 0 20px var(--color-crt-phosphor);
+  }
+
+  &.on.amber {
+    background: var(--color-crt-amber);
+    box-shadow:
+      inset 0 2px 4px rgba(0,0,0,0.3),
+      0 0 10px var(--color-crt-amber),
+      0 0 20px var(--color-crt-amber);
+  }
+}
+
+/* VU Meter styles */
+.vu-meter {
+  background: linear-gradient(180deg, #2a2a2a, #1a1a1a);
+  border: 2px solid #3a3a3a;
+  border-radius: 4px;
+  padding: 8px;
+  width: 60px;
+}
+
+.vu-scale {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.vu-mark {
   width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(0, 255, 159, 0.2), transparent);
-  transition: left 0.5s ease;
+  height: 4px;
+  background: #4a4a4a;
+
+  &.red { background: var(--team-enemy); }
+  &.amber { background: var(--crt-amber); }
+  &.green { background: var(--team-friendly); }
 }
 
-.cyber-button:hover::before {
-  left: 100%;
+.vu-needle-container {
+  position: relative;
+  width: 50px;
+  height: 80px;
+  overflow: hidden;
 }
 
-.cyber-button:hover {
-  background: rgba(0, 255, 159, 0.1);
-  box-shadow: 0 0 20px rgba(0, 255, 159, 0.5), inset 0 0 20px rgba(0, 255, 159, 0.1);
+.vu-needle {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  height: 45px;
+  background: var(--team-enemy);
+  transform-origin: bottom center;
+  transform: rotate(-45deg);
+  transition: transform 0.3s ease-out;
+  box-shadow: 0 0 5px var(--team-enemy);
 }
 
-/* Glitch effect keyframes */
-@keyframes glitch {
-  0% {
-    transform: translate(0);
+/* Screw decoration */
+.screw {
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(circle, #6a6a6a, #3a3a3a);
+  border-radius: 50%;
+  position: relative;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 2px;
+    background: #2a2a2a;
+    transform: translate(-50%, -50%) rotate(45deg);
   }
-  20% {
-    transform: translate(-2px, 2px);
-  }
-  40% {
-    transform: translate(-2px, -2px);
-  }
-  60% {
-    transform: translate(2px, 2px);
-  }
-  80% {
-    transform: translate(2px, -2px);
-  }
-  100% {
-    transform: translate(0);
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 8px;
+    height: 2px;
+    background: #2a2a2a;
+    transform: translate(-50%, -50%) rotate(-45deg);
   }
 }
 
-.glitch {
-  animation: glitch 0.3s infinite;
+/* Panel grille pattern */
+.panel-grille {
+  background: repeating-linear-gradient(
+    90deg,
+    #2a2a2a,
+    #2a2a2a 2px,
+    #1a1a1a 2px,
+    #1a1a1a 4px
+  );
+}
+
+/* Toggle switch */
+.toggle-switch {
+  width: 50px;
+  height: 24px;
+  background: #2a2a2a;
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  border: 2px solid #4a4a4a;
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    background: linear-gradient(180deg, #6a6a6a, #4a4a4a);
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  }
+
+  &.active::after {
+    transform: translateX(26px);
+    background: var(--crt-phosphor);
+    box-shadow: 0 0 10px var(--crt-phosphor);
+  }
+}
+
+/* Knob control */
+.knob {
+  width: 50px;
+  height: 50px;
+  background: radial-gradient(circle at 30% 30%, #5a5a5a, #2a2a2a);
+  border-radius: 50%;
+  border: 3px solid #3a3a3a;
+  position: relative;
+  cursor: pointer;
+  box-shadow:
+    0 4px 8px rgba(0,0,0,0.4),
+    inset 0 2px 4px rgba(255,255,255,0.1);
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 4px;
+    height: 12px;
+    background: var(--crt-amber);
+    transform: translateX(-50%);
+    border-radius: 2px;
+    box-shadow: 0 0 5px var(--crt-amber);
+  }
+}
+
+/* Frame corner decorations */
+.frame-corner {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--crt-phosphor);
+  opacity: 0.5;
+
+  &.tl { top: 8px; left: 8px; border-right: none; border-bottom: none; }
+  &.tr { top: 8px; right: 8px; border-left: none; border-bottom: none; }
+  &.bl { bottom: 8px; left: 8px; border-right: none; border-top: none; }
+  &.br { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+}
+
+/* Amber alert box */
+.alert-box {
+  background: rgba(255, 170, 0, 0.1);
+  border: 2px solid var(--crt-amber);
+  border-radius: 4px;
+  padding: 12px;
+  color: var(--crt-amber);
+  font-family: var(--font-crt);
+}
+
+/* Blink animation */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+/* Text entry cursor */
+.crt-cursor {
+  display: inline-block;
+  width: 10px;
+  height: 18px;
+  background: var(--crt-phosphor);
+  animation: blink 1s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 2px;
+  box-shadow: 0 0 5px var(--crt-phosphor);
 }
