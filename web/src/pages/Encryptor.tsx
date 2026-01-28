@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PhosphorText } from '../components/PhosphorText';
-
-// 紧张度等级
-type TensionLevel = 'normal' | 'warning' | 'tense' | 'critical';
+import { CRTContainer, CRTPanel, TensionLevel } from '../components/CRTContainer';
+import { CountdownTimer } from '../components/CountdownTimer';
+import { MascotProgress } from '../components/Mascot';
 
 // 密语卡片数据
 interface SecretCard {
@@ -19,8 +18,8 @@ interface HistoryEntry {
   entries: { number: number; word: string; clue: string }[];
 }
 
-// 紧张度颜色配置
-const tensionConfig = {
+// 紧张度配置（带吉祥物状态）
+const tensionConfigWithMascot = {
   normal: {
     bg: '#1a2f1a',
     text: '#00ff88',
@@ -28,6 +27,7 @@ const tensionConfig = {
     emoji: '(•‿•)',
     message: '专注加密中...',
     glowIntensity: 1,
+    mascotProgress: 'ready' as MascotProgress,
   },
   warning: {
     bg: '#2f2a1a',
@@ -36,6 +36,7 @@ const tensionConfig = {
     emoji: '(•_•;)',
     message: '时间不多了...',
     glowIntensity: 1.2,
+    mascotProgress: 'almost' as MascotProgress,
   },
   tense: {
     bg: '#2f1a1a',
@@ -44,6 +45,7 @@ const tensionConfig = {
     emoji: '(°△°;)',
     message: '快快快！',
     glowIntensity: 1.5,
+    mascotProgress: 'received' as MascotProgress,
   },
   critical: {
     bg: '#3a1010',
@@ -52,17 +54,18 @@ const tensionConfig = {
     emoji: '(°Д°;)',
     message: '！！！',
     glowIntensity: 2,
+    mascotProgress: 'waiting' as MascotProgress,
   },
 };
 
 export default function Encryptor() {
   const [currentCard, setCurrentCard] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(90); // 90秒倒计时
+  const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [showHistory, setShowHistory] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  // 模拟数据 - 实际应该从游戏状态获取
+  // 模拟数据
   const [cards] = useState<SecretCard[]>([
     { id: 1, number: 3, word: '咖啡', clue: '' },
     { id: 2, number: 1, word: '猫咪', clue: '' },
@@ -109,7 +112,6 @@ export default function Encryptor() {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          // 自动提交逻辑
           return 0;
         }
         return prev - 1;
@@ -119,34 +121,21 @@ export default function Encryptor() {
     return () => clearInterval(timer);
   }, [isSubmitted]);
 
-  // 检查是否所有输入都已填写
   const allCluesFilled = cards.every((card) => card.clue.trim() !== '');
 
-  // 处理线索输入
   const handleClueChange = (cardId: number, value: string) => {
-    // 限制长度和特殊字符
     const sanitized = value.replace(/[<>{}[\]|\\^`]/g, '').slice(0, 8);
-    // 这里应该更新实际的游戏状态
     console.log(`Card ${cardId} clue:`, sanitized);
   };
 
-  // 处理提交
   const handleSubmit = () => {
     if (allCluesFilled) {
       setIsSubmitted(true);
-      // 这里应该调用实际的提交 API
       console.log('Submitting clues:', cards.map((c) => c.clue));
     }
   };
 
-  // 格式化时间
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const config = tensionConfig[tension];
+  const config = tensionConfigWithMascot[tension];
 
   return (
     <div
@@ -155,229 +144,251 @@ export default function Encryptor() {
         background: `linear-gradient(180deg, ${config.bg} 0%, #0a0f0a 100%)`,
       }}
     >
-      {/* CRT Scanlines */}
-      <div className="crt-scanlines" />
+      <CRTContainer showScanlines={true} showVignette={true} showReflection={true} intensity="medium">
+        <div className="relative z-10 h-full flex flex-col">
+          {/* 顶部区域：倒计时和进度 */}
+          <div className="flex flex-col items-center pt-6">
+            <CountdownTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
 
-      {/* 顶部倒计时区 */}
-      <div className="relative z-10 flex flex-col items-center pt-6">
-        {/* 时间显示 */}
-        <div className="flex items-center gap-4">
-          <PhosphorText
-            text={formatTime(timeLeft)}
-            size="large"
-            color={tension === 'critical' ? 'amber' : 'green'}
-          />
-        </div>
-
-        {/* 进度条 */}
-        <div className="w-64 h-2 mt-3 bg-[#1a1a1a] rounded-full overflow-hidden border border-[#3a3a3a]">
-          <motion.div
-            className="h-full rounded-full"
-            style={{
-              backgroundColor: config.progressBar,
-              boxShadow: `0 0 10px ${config.progressBar}`,
-            }}
-            initial={{ width: '100%' }}
-            animate={{
-              width: `${(timeLeft / 90) * 100}%`,
-              filter: tension === 'critical' ? `brightness(${config.glowIntensity})` : 'brightness(1)',
-            }}
-            transition={{ duration: 1, ease: 'linear' }}
-          />
-        </div>
-      </div>
-
-      {/* 进度指示器 */}
-      <div className="relative z-10 flex items-center justify-center gap-2 mt-4">
-        {cards.map((card, index) => (
-          <div key={card.id} className="flex items-center">
-            {index > 0 && <span className="text-[#3a3a3a] mx-1">/</span>}
-            <motion.span
-              className="text-lg font-mono"
-              style={{
-                color:
-                  index < currentCard
-                    ? '#00ff88'
-                    : index === currentCard
-                      ? config.text
-                      : '#3a3a3a',
-                textShadow:
-                  index === currentCard
-                    ? `0 0 10px ${config.text}`
-                    : 'none',
-              }}
-              animate={{
-                scale: index === currentCard ? 1.1 : 1,
-              }}
-            >
-              {index < currentCard ? '✓' : index + 1}
-            </motion.span>
-          </div>
-        ))}
-        <span className="text-[#3a3a3a] text-sm ml-2">({currentCard + 1}/{cards.length})</span>
-      </div>
-
-      {/* 卡片区域 */}
-      <div className="relative z-10 flex items-center justify-center h-[55%] mt-4">
-        {/* 左箭头（桌面端） */}
-        <motion.button
-          className="absolute left-4 z-20 hidden lg:block"
-          onClick={() => setCurrentCard((prev) => Math.max(0, prev - 1))}
-          disabled={currentCard === 0}
-          whileHover={{ scale: 1.2 }}
-          whileTap={{ scale: 0.9 }}
-          style={{
-            opacity: currentCard === 0 ? 0.3 : 0.7,
-          }}
-        >
-          <span
-            className="text-4xl font-bold"
-            style={{ color: config.text }}
-          >
-            ‹
-          </span>
-        </motion.button>
-
-        {/* 卡片容器 */}
-        <div className="relative w-full max-w-lg mx-4 h-full">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentCard}
-              className="absolute inset-0"
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
-              transition={{ duration: 0.3 }}
-            >
-              {/* 卡片 */}
-              <div
-                className="crt-screen h-full"
-                style={{
-                  maxWidth: '100%',
-                  background: `linear-gradient(145deg, #2a2a2a, #1a1a1a)`,
-                }}
-              >
-                <div className="crt-screen-inner h-full p-6 flex flex-col">
-                  {/* 卡片头部 */}
-                  <div className="text-center">
-                    <span
-                      className="text-[#3a3a3a] text-sm font-mono"
-                      style={{ fontFamily: "'VT323', monospace" }}
-                    >
-                      密码 #{currentCard + 1}
-                    </span>
-                  </div>
-
-                  {/* 密码数字 */}
-                  <div className="flex-1 flex items-center justify-center">
-                    <PhosphorText
-                      text={cards[currentCard].number.toString()}
-                      size="large"
-                      color="green"
-                    />
-                  </div>
-
-                  {/* 密语词 */}
-                  <div className="text-center">
-                    <span
-                      className="text-xl font-mono"
-                      style={{
-                        color: '#f5f0e6',
-                        textShadow: '0 0 5px rgba(245, 240, 230, 0.5)',
-                      }}
-                    >
-                      {cards[currentCard].word}
-                    </span>
-                  </div>
-
-                  {/* 输入框 */}
-                  <div className="mt-4">
-                    <div
-                      className="relative bg-[#0a0f0a] rounded border border-[#3d5544] overflow-hidden"
-                      style={{
-                        boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)',
-                      }}
-                    >
-                      <input
-                        type="text"
-                        value={cards[currentCard].clue}
-                        onChange={(e) => handleClueChange(cards[currentCard].id, e.target.value)}
-                        placeholder="输入线索词..."
-                        className="w-full px-4 py-3 bg-transparent text-lg font-mono outline-none"
-                        style={{
-                          fontFamily: "'VT323', 'Courier New', monospace",
-                          color: '#00ff88',
-                          textShadow: '0 0 5px #00ff88',
-                        }}
-                        disabled={isSubmitted}
-                      />
-                    </div>
-                  </div>
-
-                  {/* 历史线索按钮 */}
-                  <div className="mt-auto pt-4">
-                    <motion.button
-                      className="w-full py-2 rounded border border-[#3d5544] text-[#00ff88] text-sm font-mono hover:bg-[#3d5544] hover:bg-opacity-20 transition-colors"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => setShowHistory(true)}
-                      style={{ fontFamily: "'VT323', monospace" }}
-                    >
-                      [📋 历史线索]
-                    </motion.button>
-                  </div>
+            {/* 进度指示器 */}
+            <div className="flex items-center justify-center gap-2 mt-4">
+              {cards.map((card, index) => (
+                <div key={card.id} className="flex items-center">
+                  {index > 0 && <span className="text-[#3a3a3a] mx-1">/</span>}
+                  <motion.span
+                    className="text-lg font-mono cursor-pointer"
+                    style={{
+                      fontFamily: "'VT323', monospace",
+                      color:
+                        index < currentCard
+                          ? '#00ff88'
+                          : index === currentCard
+                            ? config.text
+                            : '#3a3a3a',
+                      textShadow:
+                        index === currentCard ? `0 0 10px ${config.text}` : 'none',
+                    }}
+                    animate={{
+                      scale: index === currentCard ? 1.1 : 1,
+                    }}
+                    onClick={() => !isSubmitted && setCurrentCard(index)}
+                  >
+                    {index < currentCard ? '✓' : index + 1}
+                  </motion.span>
                 </div>
-              </div>
-            </motion.div>
-          </AnimatePresence>
-        </div>
+              ))}
+              <span
+                className="text-[#3a3a3a] text-sm ml-2"
+                style={{ fontFamily: "'VT323', monospace" }}
+              >
+                ({currentCard + 1}/{cards.length})
+              </span>
+            </div>
+          </div>
 
-        {/* 右箭头（桌面端） */}
-        <motion.button
-          className="absolute right-4 z-20 hidden lg:block"
-          onClick={() => setCurrentCard((prev) => Math.min(cards.length - 1, prev + 1))}
-          disabled={currentCard === cards.length - 1}
-          whileHover={{ scale: 1.2 }}
-          whileTap={{ scale: 0.9 }}
-          style={{
-            opacity: currentCard === cards.length - 1 ? 0.3 : 0.7,
-          }}
-        >
-          <span
-            className="text-4xl font-bold"
-            style={{ color: config.text }}
-          >
-            ›
-          </span>
-        </motion.button>
-      </div>
-
-      {/* 发送按钮（第三张卡片完成后显示） */}
-      <AnimatePresence>
-        {currentCard === 2 && allCluesFilled && !isSubmitted && (
-          <motion.div
-            className="relative z-10 flex justify-center mt-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
-          >
+          {/* 中间区域：卡片 */}
+          <div className="flex-1 flex items-center justify-center">
+            {/* 左箭头 */}
             <motion.button
-              className="px-8 py-3 rounded font-bold text-lg"
+              className="absolute left-4 z-20 hidden lg:block"
+              onClick={() => setCurrentCard((prev) => Math.max(0, prev - 1))}
+              disabled={currentCard === 0 || isSubmitted}
+              whileHover={{ scale: currentCard === 0 ? 1 : 1.2 }}
+              whileTap={{ scale: currentCard === 0 ? 1 : 0.9 }}
               style={{
-                fontFamily: "'VT323', monospace",
-                background: `linear-gradient(180deg, #00ff88 0%, #00aa55 50%, #008844 100%)`,
-                color: '#0a0f0a',
-                boxShadow: '0 4px 0 #005533, 0 6px 20px rgba(0, 255, 136, 0.4)',
+                opacity: currentCard === 0 ? 0.3 : 0.7,
               }}
-              whileHover={{ scale: 1.05, y: -2 }}
-              whileTap={{ scale: 0.95, y: 2 }}
-              onClick={handleSubmit}
             >
-              ◆ 发送加密 ◆
+              <span
+                className="text-4xl font-bold"
+                style={{ color: config.text }}
+              >
+                ‹
+              </span>
             </motion.button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
+            {/* 卡片容器 */}
+            <div className="relative w-full max-w-lg mx-4">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={currentCard}
+                  className="absolute inset-0"
+                  initial={{ opacity: 0, x: 50 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -50 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <CRTPanel
+                    className="p-1"
+                    borderColor={isSubmitted ? '#3d5544' : '#4a4a4a'}
+                    background="#0a0f0a"
+                  >
+                    <div className="crt-screen-inner p-6 flex flex-col h-full min-h-[400px]">
+                      {/* 卡片头部 */}
+                      <div className="text-center">
+                        <span
+                          className="text-[#3a3a3a] text-sm font-mono"
+                          style={{ fontFamily: "'VT323', monospace" }}
+                        >
+                          密码 #{currentCard + 1}
+                        </span>
+                      </div>
+
+                      {/* 密码数字 */}
+                      <div className="flex-1 flex items-center justify-center">
+                        <span
+                          className="text-6xl font-bold font-mono"
+                          style={{
+                            fontFamily: "'VT323', monospace",
+                            color: isSubmitted ? '#00ff88' : '#ffaa00',
+                            textShadow: `0 0 20px ${isSubmitted ? '#00ff88' : '#ffaa00'}`,
+                          }}
+                        >
+                          {cards[currentCard].number}
+                        </span>
+                      </div>
+
+                      {/* 密语词 */}
+                      <div className="text-center">
+                        <span
+                          className="text-xl font-mono"
+                          style={{
+                            color: '#f5f0e6',
+                            textShadow: '0 0 5px rgba(245, 240, 230, 0.5)',
+                          }}
+                        >
+                          {cards[currentCard].word}
+                        </span>
+                      </div>
+
+                      {/* 输入框 */}
+                      <div className="mt-4">
+                        <div
+                          className="relative bg-[#0a0f0a] rounded border border-[#3d5544] overflow-hidden"
+                          style={{
+                            boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)',
+                          }}
+                        >
+                          <input
+                            type="text"
+                            value={cards[currentCard].clue}
+                            onChange={(e) => handleClueChange(cards[currentCard].id, e.target.value)}
+                            placeholder="输入线索词..."
+                            className="w-full px-4 py-3 bg-transparent text-lg font-mono outline-none"
+                            style={{
+                              fontFamily: "'VT323', 'Courier New', monospace",
+                              color: '#00ff88',
+                              textShadow: '0 0 5px #00ff88',
+                            }}
+                            disabled={isSubmitted}
+                          />
+                        </div>
+                      </div>
+
+                      {/* 底部按钮区域 */}
+                      <div className="mt-auto pt-4 flex gap-2">
+                        <motion.button
+                          className="flex-1 py-2 rounded border border-[#3d5544] text-[#00ff88] text-sm font-mono hover:bg-[#3d5544] hover:bg-opacity-20 transition-colors"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => setShowHistory(true)}
+                          style={{ fontFamily: "'VT323', monospace" }}
+                        >
+                          [📋 历史]
+                        </motion.button>
+                        <motion.button
+                          className="flex-1 py-2 rounded border border-[#3d5544] text-[#00ff88] text-sm font-mono hover:bg-[#3d5544] hover:bg-opacity-20 transition-colors"
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.98 }}
+                          onClick={() => setCurrentCard((prev) => Math.min(cards.length - 1, prev + 1))}
+                          disabled={currentCard === cards.length - 1 || isSubmitted}
+                          style={{
+                            opacity: currentCard === cards.length - 1 ? 0.3 : 1,
+                          }}
+                        >
+                          [下一张 ›]
+                        </motion.button>
+                      </div>
+                    </div>
+                  </CRTPanel>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+
+            {/* 右箭头 */}
+            <motion.button
+              className="absolute right-4 z-20 hidden lg:block"
+              onClick={() => setCurrentCard((prev) => Math.min(cards.length - 1, prev + 1))}
+              disabled={currentCard === cards.length - 1 || isSubmitted}
+              whileHover={{ scale: currentCard === cards.length - 1 ? 1 : 1.2 }}
+              whileTap={{ scale: currentCard === cards.length - 1 ? 1 : 0.9 }}
+              style={{
+                opacity: currentCard === cards.length - 1 ? 0.3 : 0.7,
+              }}
+            >
+              <span
+                className="text-4xl font-bold"
+                style={{ color: config.text }}
+              >
+                ›
+              </span>
+            </motion.button>
+          </div>
+
+          {/* 底部区域：发送按钮 */}
+          <div className="h-24 flex items-center justify-center">
+            <AnimatePresence>
+              {allCluesFilled && !isSubmitted && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 20 }}
+                >
+                  <motion.button
+                    className="px-8 py-3 rounded font-bold text-lg"
+                    style={{
+                      fontFamily: "'VT323', monospace",
+                      background: `linear-gradient(180deg, #00ff88 0%, #00aa55 50%, #008844 100%)`,
+                      color: '#0a0f0a',
+                      boxShadow: '0 4px 0 #005533, 0 6px 20px rgba(0, 255, 136, 0.4)',
+                    }}
+                    whileHover={{ scale: 1.05, y: -2 }}
+                    whileTap={{ scale: 0.95, y: 2 }}
+                    onClick={handleSubmit}
+                  >
+                    ◆ 发送加密 ◆
+                  </motion.button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {isSubmitted && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="text-center"
+              >
+                <span
+                  className="text-xl font-mono"
+                  style={{
+                    fontFamily: "'VT323', monospace",
+                    color: '#00ff88',
+                    textShadow: '0 0 10px #00ff88',
+                  }}
+                >
+                  ✓ 已发送，等待队友...
+                </span>
+              </motion.div>
+            )}
+          </div>
+
+          {/* 装饰：设备边框螺丝 */}
+          <div className="absolute top-4 left-4 w-3 h-3 screw opacity-50" />
+          <div className="absolute top-4 right-4 w-3 h-3 screw opacity-50" />
+          <div className="absolute bottom-4 left-4 w-3 h-3 screw opacity-50" />
+          <div className="absolute bottom-4 right-4 w-3 h-3 screw opacity-50" />
+        </div>
+      </CRTContainer>
 
       {/* 紧张状态下的抖动效果 */}
       {(tension === 'tense' || tension === 'critical') && (
@@ -401,7 +412,6 @@ export default function Encryptor() {
       <AnimatePresence>
         {showHistory && (
           <>
-            {/* 遮罩层 */}
             <motion.div
               className="absolute inset-0 bg-black/50 z-40"
               initial={{ opacity: 0 }}
@@ -410,7 +420,6 @@ export default function Encryptor() {
               onClick={() => setShowHistory(false)}
             />
 
-            {/* 抽屉 */}
             <motion.div
               className="absolute bottom-0 left-0 right-0 z-50"
               initial={{ y: '100%' }}
@@ -418,7 +427,6 @@ export default function Encryptor() {
               exit={{ y: '100%' }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             >
-              {/* 撕边纸张效果 */}
               <div
                 className="relative mx-4 rounded-t-lg"
                 style={{
@@ -427,7 +435,6 @@ export default function Encryptor() {
                     'repeating-linear-gradient(transparent, transparent 28px, #a0c4e8 28px, #a0c4e8 29px)',
                 }}
               >
-                {/* 撕边顶部 */}
                 <div className="absolute -top-3 left-4 right-4 h-3">
                   <svg viewBox="0 0 100 10" className="w-full h-full">
                     <path
@@ -484,7 +491,7 @@ export default function Encryptor() {
                                 color: '#2a2a2a',
                               }}
                             >
-                              {entry.number} {entry.word} → &quot;{entry.clue}&quot;
+                              {entry.number} {entry.word} → "{entry.clue}"
                             </div>
                           ))}
                         </div>
@@ -498,111 +505,12 @@ export default function Encryptor() {
         )}
       </AnimatePresence>
 
-      {/* 底部吉祥物区域（带 CRT 效果） */}
-      <div
-        className="absolute bottom-0 left-0 right-0 z-10"
-        style={{ height: '15%', minHeight: '100px' }}
-      >
-        {/* CRT 屏幕边框 */}
-        <div
-          className="absolute inset-0 rounded-t-lg"
-          style={{
-            background: `linear-gradient(145deg, #3a3a3a, #2a2a2a)`,
-            borderTop: '4px solid #4a4a4a',
-          }}
-        />
-
-        {/* CRT 屏幕内部 */}
-        <div
-          className="absolute inset-x-4 bottom-2 top-2 rounded overflow-hidden"
-          style={{
-            background: '#0a0f0a',
-            border: '2px solid #1a1a1a',
-          }}
-        >
-          {/* CRT 效果层 */}
-          <div
-            className="absolute inset-0 opacity-30"
-            style={{
-              background: `repeating-linear-gradient(
-                to bottom,
-                transparent 0px,
-                transparent 2px,
-                rgba(0, 0, 0, 0.1) 2px,
-                rgba(0, 0, 0, 0.1) 4px
-              )`,
-            }}
-          />
-
-          {/* 屏幕边缘暗角 */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background: 'radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%)',
-            }}
-          />
-
-          {/* 屏幕反光 */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 50%)',
-            }}
-          />
-
-          {/* 吉祥物内容 */}
-          <div className="relative z-10 flex flex-col items-center justify-center h-full">
-            {/* 表情 */}
-            <motion.div
-              className="text-4xl"
-              animate={{
-                scale: tension === 'critical' ? [1, 1.1, 1] : 1,
-                rotate: tension === 'critical' ? [-1, 1, -1] : 0,
-                filter:
-                  tension === 'critical'
-                    ? `drop-shadow(0 0 10px ${config.text})`
-                    : `drop-shadow(0 0 5px ${config.text})`,
-              }}
-              transition={{
-                duration: tension === 'critical' ? 0.15 : 0.5,
-                repeat: tension === 'critical' ? Infinity : 0,
-              }}
-              style={{
-                color: config.text,
-                textShadow: `0 0 10px ${config.text}, 0 0 20px ${config.text}`,
-              }}
-            >
-              {config.emoji}
-            </motion.div>
-
-            {/* 状态文字 */}
-            <motion.span
-              className="text-sm mt-1"
-              style={{
-                fontFamily: "'VT323', monospace",
-                color: config.text,
-                textShadow: `0 0 5px ${config.text}`,
-              }}
-              animate={{
-                opacity: [1, 0.7, 1],
-              }}
-              transition={{
-                duration: tension === 'critical' ? 0.3 : 1,
-                repeat: Infinity,
-              }}
-            >
-              {config.message}
-            </motion.span>
-          </div>
-        </div>
-      </div>
-
       {/* 紧急情况下的红色脉冲 */}
       {tension === 'critical' && (
         <motion.div
           className="absolute inset-0 pointer-events-none z-0"
           animate={{
-            opacity: [0, 0.2, 0],
+            opacity: [0, 0.15, 0],
           }}
           transition={{
             duration: 0.5,
