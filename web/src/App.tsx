@@ -2,9 +2,10 @@ import { useState } from 'react';
 import Home from './pages/Home';
 import Encryptor from './pages/Encryptor';
 import TeammateWaiting from './pages/TeammateWaiting';
+import OpponentWaiting from './pages/OpponentWaiting';
 import TransitionOverlay, { TransitionRole } from './components/TransitionOverlay';
 
-type PageType = 'home' | 'encryptor' | 'teammate-waiting';
+type PageType = 'home' | 'encryptor' | 'teammate-waiting' | 'opponent-waiting';
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<PageType>('home');
@@ -32,6 +33,7 @@ export default function App() {
         {/* 当前页面淡出 */}
         {currentPage === 'encryptor' && <Encryptor />}
         {currentPage === 'teammate-waiting' && <TeammateWaiting />}
+        {currentPage === 'opponent-waiting' && <OpponentWaiting />}
         {currentPage === 'home' && <Home />}
 
         {/* 过渡动画 */}
@@ -75,6 +77,22 @@ export default function App() {
     );
   }
 
+  if (currentPage === 'opponent-waiting') {
+    return (
+      <div className="w-full h-full relative">
+        <OpponentWaiting />
+        {/* Debug button to go back */}
+        <button
+          onClick={() => switchPage('home', 'opponent')}
+          className="fixed top-4 right-4 z-50 px-3 py-1 text-xs bg-[#1a1a1a] text-[#00aaff] border border-[#2a4a6a] rounded"
+          style={{ fontFamily: "'VT323', monospace" }}
+        >
+          ← BACK
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-full relative">
       <Home />
@@ -98,7 +116,7 @@ export default function App() {
             过渡→队友
           </button>
           <button
-            onClick={() => switchPage('teammate-waiting', 'opponent')}
+            onClick={() => switchPage('opponent-waiting', 'opponent')}
             className="px-3 py-1 text-xs bg-[#1a1a1a] text-[#ff4444] border border-[#5a2020] rounded"
             style={{ fontFamily: "'VT323', monospace" }}
           >
@@ -120,7 +138,14 @@ export default function App() {
             className="px-3 py-1 text-xs bg-[#2a2a2a] text-[#00aaff] border border-[#2a3a4a] rounded opacity-60"
             style={{ fontFamily: "'VT323', monospace" }}
           >
-            直接 A2
+            直接 A2-队友
+          </button>
+          <button
+            onClick={() => setCurrentPage('opponent-waiting')}
+            className="px-3 py-1 text-xs bg-[#2a2a2a] text-[#ff4444] border border-[#5a2020] rounded opacity-60"
+            style={{ fontFamily: "'VT323', monospace" }}
+          >
+            直接 A2-对手
           </button>
         </div>
       </div>
