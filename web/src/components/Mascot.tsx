@@ -1,46 +1,50 @@
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { useState } from 'react';
-import { CRTContainer } from './CRTContainer';
-import { CRTPanel } from './CRTContainer';
+import { CRTContainer, CRTPanel } from './CRTContainer';
+import {
+  MascotAction,
+  MascotFrame,
+  mascotAnimations,
+  mascotStateConfig,
+  tensionActionOverride,
+  mascotColors,
+  MascotState,
+} from '../theme/mascot';
+import { TensionLevel } from '../theme/colors';
 
-export type MascotProgress = 'waiting' | 'received' | 'almost' | 'ready';
-
-interface MascotState {
-  emoji: string;
-  message: string;
-  animation: 'idle' | 'watch' | 'nervous' | 'celebrate';
-}
-
-const mascotStates: Record<MascotProgress, MascotState> = {
-  waiting: {
-    emoji: '(・_・)',
-    message: '等待中...',
-    animation: 'idle',
-  },
-  received: {
-    emoji: '(・ω・)',
-    message: '收到信号...',
-    animation: 'watch',
-  },
-  almost: {
-    emoji: '(•‿•)',
-    message: '快好了...',
-    animation: 'nervous',
-  },
-  ready: {
-    emoji: '(^_^)',
-    message: '准备就绪！',
-    animation: 'celebrate',
-  },
-};
+export type MascotProgress = MascotState;
 
 interface MascotProps {
   progress: MascotProgress;
   completedCount: number;
   totalCount?: number;
-  tension?: 'normal' | 'warning' | 'tense' | 'critical';
+  tension?: TensionLevel;
   size?: 'small' | 'medium' | 'large';
 }
+
+const sizeConfig = {
+  small: {
+    faceSize: 'text-2xl',
+    bodySize: 'text-sm',
+    accessorySize: 'text-lg',
+    textSize: 'text-xs',
+    padding: 'p-2',
+  },
+  medium: {
+    faceSize: 'text-4xl',
+    bodySize: 'text-lg',
+    accessorySize: 'text-2xl',
+    textSize: 'text-sm',
+    padding: 'p-4',
+  },
+  large: {
+    faceSize: 'text-6xl',
+    bodySize: 'text-xl',
+    accessorySize: 'text-3xl',
+    textSize: 'text-base',
+    padding: 'p-6',
+  },
+};
 
 export function Mascot({
   progress,
@@ -49,68 +53,86 @@ export function Mascot({
   tension = 'normal',
   size = 'medium',
 }: MascotProps) {
-  const state = mascotStates[progress];
-  const [isEasterEgg, setIsEasterEgg] = useState(false);
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [currentAction, setCurrentAction] = useState<MascotAction>('idle');
+  const [isPlayingIdleAction, setIsPlayingIdleAction] = useState(false);
 
-  // 紧张状态下的额外动画
+  const sizes = sizeConfig[size];
+  const stateConfig = mascotStateConfig[progress];
+  const color = mascotColors[tension] || mascotColors.normal;
+
+  // 确定当前应该播放的动作
+  const getActiveAction = useCallback((): MascotAction => {
+    // 紧张度覆盖
+    if (tension !== 'normal' && tensionActionOverride[tension]) {
+      return tensionActionOverride[tension];
+    }
+    // 正在播放闲置动作
+    if (isPlayingIdleAction) {
+      return currentAction;
+    }
+    // 默认使用状态的主动作
+    return stateConfig.primaryAction;
+  }, [tension, isPlayingIdleAction, currentAction, stateConfig]);
+
+  // 动画帧循环
+  useEffect(() => {
+    const action = getActiveAction();
+    const animation = mascotAnimations[action];
+
+    if (!animation) return;
+
+    const interval = setInterval(() => {
+      setCurrentFrame((prev) => {
+        const nextFrame = prev + 1;
+        if (nextFrame >= animation.frames.length) {
+          if (animation.loop) {
+            return 0;
+          } else {
+            // 非循环动画结束后返回 idle
+            setIsPlayingIdleAction(false);
+            return animation.frames.length - 1;
+          }
+        }
+        return nextFrame;
+      });
+    }, animation.frameDuration);
+
+    return () => clearInterval(interval);
+  }, [getActiveAction]);
+
+  // 随机触发闲置动作
+  useEffect(() => {
+    if (tension !== 'normal' || !stateConfig.idleActions || isPlayingIdleAction) {
+      return;
+    }
+
+    const checkIdle = setInterval(() => {
+      if (Math.random() < (stateConfig.idleChance || 0.1)) {
+        const randomAction =
+          stateConfig.idleActions![
+            Math.floor(Math.random() * stateConfig.idleActions!.length)
+          ];
+        setCurrentAction(randomAction);
+        setCurrentFrame(0);
+        setIsPlayingIdleAction(true);
+      }
+    }, 3000);
+
+    return () => clearInterval(checkIdle);
+  }, [tension, stateConfig, isPlayingIdleAction]);
+
+  // 重置帧计数当动作改变时
+  useEffect(() => {
+    setCurrentFrame(0);
+  }, [currentAction, progress, tension]);
+
+  const activeAction = getActiveAction();
+  const animation = mascotAnimations[activeAction];
+  const frame: MascotFrame = animation?.frames[currentFrame] || { face: '(・_・)' };
+
   const isCritical = tension === 'critical';
   const isTense = tension === 'tense';
-
-  const sizeClasses = {
-    small: 'text-2xl',
-    medium: 'text-4xl',
-    large: 'text-6xl',
-  };
-
-  const textSize = {
-    small: 'text-xs',
-    medium: 'text-sm',
-    large: 'text-base',
-  };
-
-  // 进度文字
-  const progressText = `${completedCount}/${totalCount}`;
-
-  // 根据动画类型确定动画配置
-  const getAnimationConfig = () => {
-    if (isCritical) {
-      return {
-        animate: {
-          scale: [1, 1.1, 1, 1.05, 1],
-          rotate: [-1, 1, -1, 0],
-          x: [0, -2, 2, -2, 0],
-        },
-        transition: { duration: 0.2, repeat: Infinity, repeatType: 'loop' as const },
-      };
-    }
-    if (isTense) {
-      return {
-        animate: { scale: [1, 1.03, 1] },
-        transition: { duration: 0.5, repeat: Infinity },
-      };
-    }
-    if (state.animation === 'celebrate') {
-      return {
-        animate: {
-          scale: [1, 1.1, 0.95, 1.05, 1],
-          y: [0, -5, 0],
-        },
-        transition: { duration: 0.6 },
-      };
-    }
-    if (state.animation === 'watch') {
-      return {
-        animate: { scale: [1, 1.02, 1] },
-        transition: { duration: 2, repeat: Infinity },
-      };
-    }
-    return {
-      animate: { scale: 1 },
-      transition: { duration: 1 },
-    };
-  };
-
-  const animationConfig = getAnimationConfig();
 
   return (
     <CRTPanel
@@ -124,7 +146,7 @@ export function Mascot({
         showReflection={true}
         intensity="low"
       >
-        <div className="flex flex-col items-center justify-center p-4">
+        <div className={`flex flex-col items-center justify-center ${sizes.padding}`}>
           {/* 进度指示 */}
           <div
             className="text-xs font-mono mb-2"
@@ -133,32 +155,86 @@ export function Mascot({
               color: isCritical ? '#ff4444' : '#3d5544',
             }}
           >
-            [{progressText}]
+            [{completedCount}/{totalCount}]
           </div>
 
-          {/* 吉祥物表情 */}
+          {/* 吉祥物主体 */}
           <motion.div
-            className={`${sizeClasses[size]} ${isCritical ? 'cursor-pointer' : ''}`}
-            style={{
-              color: isCritical ? '#ff4444' : '#00ff88',
-              textShadow: isCritical
-                ? '0 0 10px #ff4444, 0 0 20px #ff4444'
-                : '0 0 10px #00ff88, 0 0 20px #00ff88',
-            }}
-            animate={animationConfig.animate}
-            transition={animationConfig.transition}
-            onClick={() => !isCritical && setIsEasterEgg(true)}
+            className="relative flex flex-col items-center"
+            animate={
+              isCritical
+                ? {
+                    x: [0, -2, 2, -2, 2, 0],
+                    scale: [1, 1.05, 1],
+                  }
+                : isTense
+                  ? {
+                      scale: [1, 1.02, 1],
+                    }
+                  : {}
+            }
+            transition={
+              isCritical
+                ? { duration: 0.15, repeat: Infinity }
+                : isTense
+                  ? { duration: 0.5, repeat: Infinity }
+                  : {}
+            }
           >
-            {isEasterEgg ? '(≧▽≦)' : state.emoji}
+            {/* 配件（左侧或上方） */}
+            {frame.accessory && (
+              <motion.span
+                className={`absolute -right-6 -top-2 ${sizes.accessorySize}`}
+                initial={{ opacity: 0, scale: 0 }}
+                animate={{ opacity: 1, scale: 1 }}
+                style={{
+                  filter: `drop-shadow(0 0 5px ${color})`,
+                }}
+              >
+                {frame.accessory}
+              </motion.span>
+            )}
+
+            {/* 表情 */}
+            <motion.div
+              className={sizes.faceSize}
+              style={{
+                fontFamily: "'VT323', monospace",
+                color: color,
+                textShadow: `0 0 10px ${color}, 0 0 20px ${color}`,
+              }}
+              key={frame.face}
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              transition={{ duration: 0.1 }}
+            >
+              {frame.face}
+            </motion.div>
+
+            {/* 身体 */}
+            {frame.body && (
+              <motion.div
+                className={`${sizes.bodySize} -mt-1`}
+                style={{
+                  fontFamily: "'VT323', monospace",
+                  color: color,
+                  textShadow: `0 0 5px ${color}`,
+                  opacity: 0.8,
+                }}
+                key={frame.body}
+              >
+                {frame.body}
+              </motion.div>
+            )}
           </motion.div>
 
           {/* 状态文字 */}
           <motion.span
-            className={`${textSize[size]} mt-2 font-mono`}
+            className={`${sizes.textSize} mt-2 font-mono`}
             style={{
               fontFamily: "'VT323', monospace",
-              color: isCritical ? '#ff4444' : '#00ff88',
-              textShadow: `0 0 5px ${isCritical ? '#ff4444' : '#00ff88'}`,
+              color: color,
+              textShadow: `0 0 5px ${color}`,
             }}
             animate={
               isCritical
@@ -171,13 +247,13 @@ export function Mascot({
                 : { duration: 1.5, repeat: Infinity }
             }
           >
-            {state.message}
+            {stateConfig.message}
           </motion.span>
 
           {/* 紧张状态下的额外效果 */}
           {isCritical && (
             <motion.div
-              className="absolute inset-0 pointer-events-none"
+              className="absolute inset-0 pointer-events-none rounded"
               style={{
                 background: 'radial-gradient(ellipse at center, rgba(255, 68, 68, 0.2), transparent 70%)',
               }}

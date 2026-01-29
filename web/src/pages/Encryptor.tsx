@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, PanInfo } from 'framer-motion';
 import { PhosphorText } from '../components/PhosphorText';
+import { SlotMachineNumber } from '../components/SlotMachineNumber';
+import { CRTInput } from '../components/CRTInput';
 import { TensionLevel, encryptorTensionConfig } from '../theme/colors';
 
 // 密语卡片数据
@@ -26,6 +28,7 @@ export default function Encryptor() {
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [showHistory, setShowHistory] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [slotAnimationCompleted, setSlotAnimationCompleted] = useState<Set<number>>(new Set());
 
   // 模拟数据 - 实际应该从游戏状态获取
   const [cards] = useState<SecretCard[]>([
@@ -182,37 +185,95 @@ export default function Encryptor() {
         <span className="text-[#3a3a3a] text-sm ml-2">({currentCard + 1}/{cards.length})</span>
       </div>
 
-      {/* 卡片区域 */}
-      <div className="relative z-10 flex items-center justify-center h-[55%] mt-4">
-        {/* 左箭头（桌面端） */}
-        <motion.button
-          className="absolute left-4 z-20 hidden lg:block"
-          onClick={() => setCurrentCard((prev) => Math.max(0, prev - 1))}
-          disabled={currentCard === 0}
-          whileHover={{ scale: 1.2 }}
-          whileTap={{ scale: 0.9 }}
-          style={{
-            opacity: currentCard === 0 ? 0.3 : 0.7,
-          }}
-        >
-          <span
-            className="text-4xl font-bold"
-            style={{ color: config.text }}
+      {/* 卡片区域 - 带 peek 效果 */}
+      <div className="relative z-10 flex items-center justify-center h-[55%] mt-4 overflow-hidden">
+        {/* 左侧 peek 卡片 */}
+        {currentCard > 0 && (
+          <motion.div
+            className="absolute left-0 z-5 hidden lg:block cursor-pointer"
+            style={{
+              width: '80px',
+              height: '85%',
+            }}
+            initial={{ opacity: 0, x: -50 }}
+            animate={{ opacity: 0.5, x: 0 }}
+            whileHover={{ opacity: 0.7, scale: 1.02 }}
+            onClick={() => setCurrentCard((prev) => Math.max(0, prev - 1))}
           >
-            ‹
-          </span>
-        </motion.button>
+            <div
+              className="h-full rounded-r-lg"
+              style={{
+                background: 'linear-gradient(90deg, transparent, #1a2a1a)',
+                borderRight: '2px solid #3d5544',
+                filter: 'blur(1px)',
+              }}
+            >
+              <div className="h-full flex items-center justify-center">
+                <span
+                  className="text-4xl font-mono opacity-30"
+                  style={{ color: '#00ff88' }}
+                >
+                  {cards[currentCard - 1].number}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
-        {/* 卡片容器 */}
-        <div className="relative w-full max-w-lg mx-4 h-full">
+        {/* 右侧 peek 卡片 */}
+        {currentCard < cards.length - 1 && (
+          <motion.div
+            className="absolute right-0 z-5 hidden lg:block cursor-pointer"
+            style={{
+              width: '80px',
+              height: '85%',
+            }}
+            initial={{ opacity: 0, x: 50 }}
+            animate={{ opacity: 0.5, x: 0 }}
+            whileHover={{ opacity: 0.7, scale: 1.02 }}
+            onClick={() => setCurrentCard((prev) => Math.min(cards.length - 1, prev + 1))}
+          >
+            <div
+              className="h-full rounded-l-lg"
+              style={{
+                background: 'linear-gradient(-90deg, transparent, #1a2a1a)',
+                borderLeft: '2px solid #3d5544',
+                filter: 'blur(1px)',
+              }}
+            >
+              <div className="h-full flex items-center justify-center">
+                <span
+                  className="text-4xl font-mono opacity-30"
+                  style={{ color: '#00ff88' }}
+                >
+                  {cards[currentCard + 1].number}
+                </span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* 主卡片容器 - 支持滑动切换 */}
+        <div className="relative w-full max-w-md mx-16 lg:mx-24 h-full touch-pan-y">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentCard}
               className="absolute inset-0"
-              initial={{ opacity: 0, x: 50 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -50 }}
-              transition={{ duration: 0.3 }}
+              initial={{ opacity: 0, scale: 0.95, rotateY: 5 }}
+              animate={{ opacity: 1, scale: 1, rotateY: 0 }}
+              exit={{ opacity: 0, scale: 0.95, rotateY: -5 }}
+              transition={{ duration: 0.3, ease: 'easeOut' }}
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.2}
+              onDragEnd={(_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+                const threshold = 80;
+                if (info.offset.x > threshold && currentCard > 0) {
+                  setCurrentCard((prev) => prev - 1);
+                } else if (info.offset.x < -threshold && currentCard < cards.length - 1) {
+                  setCurrentCard((prev) => prev + 1);
+                }
+              }}
             >
               {/* 卡片 */}
               <div
@@ -233,13 +294,26 @@ export default function Encryptor() {
                     </span>
                   </div>
 
-                  {/* 密码数字 */}
+                  {/* 密码数字 - 老虎机滚动效果 */}
                   <div className="flex-1 flex items-center justify-center">
-                    <PhosphorText
-                      text={cards[currentCard].number.toString()}
-                      size="large"
-                      color="green"
-                    />
+                    {slotAnimationCompleted.has(currentCard) ? (
+                      // 动画完成后显示静态数字
+                      <PhosphorText
+                        text={cards[currentCard].number.toString()}
+                        size="large"
+                        color="green"
+                      />
+                    ) : (
+                      // 首次显示时播放老虎机动画
+                      <SlotMachineNumber
+                        targetNumber={cards[currentCard].number}
+                        size="large"
+                        color="green"
+                        onComplete={() => {
+                          setSlotAnimationCompleted(prev => new Set([...prev, currentCard]));
+                        }}
+                      />
+                    )}
                   </div>
 
                   {/* 密语词 */}
@@ -255,28 +329,17 @@ export default function Encryptor() {
                     </span>
                   </div>
 
-                  {/* 输入框 */}
+                  {/* 输入框 - 增强型 CRT 输入 */}
                   <div className="mt-4">
-                    <div
-                      className="relative bg-[#0a0f0a] rounded border border-[#3d5544] overflow-hidden"
-                      style={{
-                        boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.5)',
-                      }}
-                    >
-                      <input
-                        type="text"
-                        value={cards[currentCard].clue}
-                        onChange={(e) => handleClueChange(cards[currentCard].id, e.target.value)}
-                        placeholder="输入线索词..."
-                        className="w-full px-4 py-3 bg-transparent text-lg font-mono outline-none"
-                        style={{
-                          fontFamily: "'VT323', 'Courier New', monospace",
-                          color: '#00ff88',
-                          textShadow: '0 0 5px #00ff88',
-                        }}
-                        disabled={isSubmitted}
-                      />
-                    </div>
+                    <CRTInput
+                      value={cards[currentCard].clue}
+                      onChange={(value) => handleClueChange(cards[currentCard].id, value)}
+                      placeholder="输入线索词..."
+                      tension={tension}
+                      disabled={isSubmitted}
+                      maxLength={8}
+                      color="green"
+                    />
                   </div>
 
                   {/* 历史线索按钮 */}
@@ -297,24 +360,20 @@ export default function Encryptor() {
           </AnimatePresence>
         </div>
 
-        {/* 右箭头（桌面端） */}
-        <motion.button
-          className="absolute right-4 z-20 hidden lg:block"
-          onClick={() => setCurrentCard((prev) => Math.min(cards.length - 1, prev + 1))}
-          disabled={currentCard === cards.length - 1}
-          whileHover={{ scale: 1.2 }}
-          whileTap={{ scale: 0.9 }}
-          style={{
-            opacity: currentCard === cards.length - 1 ? 0.3 : 0.7,
-          }}
-        >
-          <span
-            className="text-4xl font-bold"
-            style={{ color: config.text }}
+        {/* 移动端滑动提示 */}
+        <div className="lg:hidden absolute bottom-2 left-0 right-0 text-center">
+          <motion.span
+            className="text-xs font-mono"
+            style={{
+              fontFamily: "'VT323', monospace",
+              color: '#3d5544',
+            }}
+            animate={{ opacity: [0.3, 0.6, 0.3] }}
+            transition={{ duration: 2, repeat: Infinity }}
           >
-            ›
-          </span>
-        </motion.button>
+            ← 滑动切换 →
+          </motion.span>
+        </div>
       </div>
 
       {/* 发送按钮（第三张卡片完成后显示） */}

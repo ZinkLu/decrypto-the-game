@@ -23,11 +23,27 @@ export default function TeammateWaiting() {
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [completedCount, setCompletedCount] = useState(0);
+  const [isBooting, setIsBooting] = useState(true);
+  const [bootedWindows, setBootedWindows] = useState<Set<number>>(new Set());
   const [waveforms, setWaveforms] = useState<WaveformState[]>([
     { id: 1, state: 'active', statusText: '正在输入' },
     { id: 2, state: 'waiting', statusText: '等待中' },
     { id: 3, state: 'waiting', statusText: '等待中' },
   ]);
+
+  // 开机动画序列：依次启动每个波形窗口
+  useEffect(() => {
+    if (!isBooting) return;
+
+    const bootTimers = [
+      setTimeout(() => setBootedWindows(new Set([1])), 300),
+      setTimeout(() => setBootedWindows(new Set([1, 2])), 600),
+      setTimeout(() => setBootedWindows(new Set([1, 2, 3])), 900),
+      setTimeout(() => setIsBooting(false), 1500),
+    ];
+
+    return () => bootTimers.forEach(t => clearTimeout(t));
+  }, [isBooting]);
 
   // 模拟加密者数据
   const encryptor: TeammateData = {
@@ -188,49 +204,77 @@ export default function TeammateWaiting() {
               <CRTContainer showScanlines={true} showVignette={true} showReflection={false} intensity="low">
                 {/* 桌面端：3列布局 */}
                 <div className="hidden lg:flex justify-center gap-8 py-4">
-                  {waveforms.map((waveform) => (
-                    <WaveformWindow
-                      key={waveform.id}
-                      index={waveform.id}
-                      state={waveform.state}
-                      statusText={waveform.statusText}
-                      showCheckmark={waveform.state === 'completed'}
-                      width={220}
-                      height={90}
-                    />
-                  ))}
+                  {waveforms.map((waveform) => {
+                    // 开机期间：未启动的窗口显示 boot 状态
+                    const displayState = isBooting && !bootedWindows.has(waveform.id)
+                      ? 'boot'
+                      : waveform.state;
+                    const displayText = isBooting && !bootedWindows.has(waveform.id)
+                      ? '启动中...'
+                      : waveform.statusText;
+
+                    return (
+                      <WaveformWindow
+                        key={waveform.id}
+                        index={waveform.id}
+                        state={displayState}
+                        statusText={displayText}
+                        showCheckmark={waveform.state === 'completed' && !isBooting}
+                        width={220}
+                        height={90}
+                      />
+                    );
+                  })}
                 </div>
 
                 {/* 移动端：2+1 布局 */}
                 <div className="lg:hidden flex flex-col items-center gap-4 py-4">
                   {/* 第一行：2个波形 */}
                   <div className="flex justify-center gap-4">
-                    {waveforms.slice(0, 2).map((waveform) => (
-                      <WaveformWindow
-                        key={waveform.id}
-                        index={waveform.id}
-                        state={waveform.state}
-                        statusText={waveform.statusText}
-                        showCheckmark={waveform.state === 'completed'}
-                        width={140}
-                        height={70}
-                      />
-                    ))}
+                    {waveforms.slice(0, 2).map((waveform) => {
+                      const displayState = isBooting && !bootedWindows.has(waveform.id)
+                        ? 'boot'
+                        : waveform.state;
+                      const displayText = isBooting && !bootedWindows.has(waveform.id)
+                        ? '启动中...'
+                        : waveform.statusText;
+
+                      return (
+                        <WaveformWindow
+                          key={waveform.id}
+                          index={waveform.id}
+                          state={displayState}
+                          statusText={displayText}
+                          showCheckmark={waveform.state === 'completed' && !isBooting}
+                          width={140}
+                          height={70}
+                        />
+                      );
+                    })}
                   </div>
 
                   {/* 第二行：1个波形 */}
                   <div className="flex justify-center">
-                    {waveforms.slice(2, 3).map((waveform) => (
-                      <WaveformWindow
-                        key={waveform.id}
-                        index={waveform.id}
-                        state={waveform.state}
-                        statusText={waveform.statusText}
-                        showCheckmark={waveform.state === 'completed'}
-                        width={140}
-                        height={70}
-                      />
-                    ))}
+                    {waveforms.slice(2, 3).map((waveform) => {
+                      const displayState = isBooting && !bootedWindows.has(waveform.id)
+                        ? 'boot'
+                        : waveform.state;
+                      const displayText = isBooting && !bootedWindows.has(waveform.id)
+                        ? '启动中...'
+                        : waveform.statusText;
+
+                      return (
+                        <WaveformWindow
+                          key={waveform.id}
+                          index={waveform.id}
+                          state={displayState}
+                          statusText={displayText}
+                          showCheckmark={waveform.state === 'completed' && !isBooting}
+                          width={140}
+                          height={70}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               </CRTContainer>
