@@ -44,7 +44,62 @@ export const colors = {
   // Transition Backgrounds
   transitionFriendlyBg: 'var(--color-transition-friendly-bg)',
   transitionEnemyBg: 'var(--color-transition-enemy-bg)',
+
+  // Status Indicators
+  statusConnected: 'var(--color-status-connected)',
+  statusDisconnected: 'var(--color-status-disconnected)',
+  statusPending: 'var(--color-status-pending)',
 } as const;
+
+// ============================================================
+// Device Appearance Colors
+// ============================================================
+
+export const deviceColors = {
+  frame: 'var(--color-device-frame)',
+  frameLight: 'var(--color-device-frame-light)',
+  frameDark: 'var(--color-device-frame-dark)',
+  labelBg: 'var(--color-device-label-bg)',
+  labelBorder: 'var(--color-device-label-border)',
+  screw: 'var(--color-device-screw)',
+  screwSlot: 'var(--color-device-screw-slot)',
+} as const;
+
+// ============================================================
+// Screen Effect Colors
+// ============================================================
+
+export const screenEffectColors = {
+  reflection: 'var(--color-screen-reflection)',
+  shadow: 'var(--color-screen-shadow)',
+  vignette: 'var(--color-screen-vignette)',
+  scanline: 'var(--color-screen-scanline)',
+} as const;
+
+// ============================================================
+// Spacing Tokens
+// ============================================================
+
+export const spacing = {
+  xs: 'var(--spacing-xs)',
+  sm: 'var(--spacing-sm)',
+  md: 'var(--spacing-md)',
+  lg: 'var(--spacing-lg)',
+  xl: 'var(--spacing-xl)',
+  '2xl': 'var(--spacing-2xl)',
+} as const;
+
+// ============================================================
+// Radius Tokens
+// ============================================================
+
+export const radius = {
+  sm: 'var(--radius-sm)',
+  md: 'var(--radius-md)',
+  lg: 'var(--radius-lg)',
+  xl: 'var(--radius-xl)',
+  full: 'var(--radius-full)',
+} as const
 
 // ============================================================
 // Tension Level Types
@@ -154,19 +209,61 @@ export const encryptorTensionConfig = {
 // ============================================================
 
 export const rawColors = {
+  // CRT Display
   crtScreen: '#0a0f0a',
+  crtScreenLight: '#1a2a1a',
   crtPhosphor: '#00ff88',
+  crtPhosphorDim: '#2a4a3a',
   crtAmber: '#ffaa00',
+  crtAmberDim: '#4a3a2a',
+
+  // Team Colors
   teamFriendly: '#00ff88',
+  teamFriendlyDim: '#3d5544',
   teamEnemy: '#ff4444',
+  teamEnemyDim: '#442222',
+
+  // Base Grays
   bgBase: '#1a1a1a',
   bgDark: '#0a0f0a',
   bgDarkBlue: '#0a0f1a',
+
+  // UI Metals
+  metal: '#4a4a4a',
+  metalLight: '#6a6a6a',
+  metalDark: '#2a2a2a',
   panel: '#3a3a3a',
+
+  // Text
   cream: '#f5f0e6',
+
+  // Device
+  deviceFrame: '#2a2a2a',
+  deviceFrameLight: '#3a3a3a',
+  deviceFrameDark: '#1a1a1a',
+  deviceLabelBg: '#1a1a1a',
+  deviceLabelBorder: '#3a3a3a',
+  deviceScrew: '#4a4a4a',
+  deviceScrewSlot: '#2a2a2a',
+
+  // Status
+  statusConnected: '#00ff88',
+  statusDisconnected: '#ff4444',
+  statusPending: '#ffaa00',
+
   // Opponent view colors
   opponentNormalBorder: '#2a4a6a',
   opponentNormalBg: '#1a2a3a',
+
+  // Tension colors
+  tensionNormalBg: '#1a2f1a',
+  tensionNormalText: '#00ff88',
+  tensionWarningBg: '#2f2a1a',
+  tensionWarningText: '#88ff00',
+  tensionTenseBg: '#2f1a1a',
+  tensionTenseText: '#ffaa00',
+  tensionCriticalBg: '#3a1010',
+  tensionCriticalText: '#ff4444',
 } as const;
 
 // ============================================================

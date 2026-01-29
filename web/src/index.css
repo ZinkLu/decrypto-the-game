@@ -73,6 +73,41 @@
   --color-transition-friendly-bg: #0a1a0a;
   --color-transition-enemy-bg: #1a0a0a;
 
+  /* === Device Appearance === */
+  --color-device-frame: #2a2a2a;
+  --color-device-frame-light: #3a3a3a;
+  --color-device-frame-dark: #1a1a1a;
+  --color-device-label-bg: #1a1a1a;
+  --color-device-label-border: #3a3a3a;
+  --color-device-screw: #4a4a4a;
+  --color-device-screw-slot: #2a2a2a;
+
+  /* === Screen Effects === */
+  --color-screen-reflection: rgba(255, 255, 255, 0.08);
+  --color-screen-shadow: rgba(0, 0, 0, 0.9);
+  --color-screen-vignette: rgba(0, 0, 0, 0.4);
+  --color-screen-scanline: rgba(0, 0, 0, 0.15);
+
+  /* === Status Indicators === */
+  --color-status-connected: #00ff88;
+  --color-status-disconnected: #ff4444;
+  --color-status-pending: #ffaa00;
+
+  /* === Spacing Tokens === */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  --spacing-2xl: 48px;
+
+  /* === Radius Tokens === */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
   /* === Fonts === */
   --font-crt: 'VT323', 'Courier New', monospace;
   --font-panel: 'Share Tech Mono', 'Arial', sans-serif;

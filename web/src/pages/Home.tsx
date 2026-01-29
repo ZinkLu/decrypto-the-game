@@ -4,12 +4,16 @@ import { PhosphorText } from '../components/PhosphorText';
 import { CRTTypeWriter } from '../components/CRTTypeWriter';
 import { Oscilloscope } from '../components/Oscilloscope';
 import { VUMeter, StereoVUMeter } from '../components/VUMeter';
+import { colors, deviceColors, rawColors } from '../theme/colors';
 
 export default function Home() {
   return (
-    <div className="relative w-full h-full overflow-hidden bg-[#1a1a1a]">
+    <div
+      className="relative w-full h-full overflow-hidden"
+      style={{ backgroundColor: colors.bgBase }}
+    >
       {/* Oscilloscope Background */}
-      <OscilloscopeBackground speed={0.8} density={30} color="#00ff88" />
+      <OscilloscopeBackground speed={0.8} density={30} color={rawColors.crtPhosphor} />
 
       {/* CRT Scanlines Overlay */}
       <div className="crt-scanlines" />
@@ -36,10 +40,17 @@ export default function Home() {
           <div className="crt-screen-inner p-6">
             {/* Device label plate */}
             <div
-              className="absolute top-4 left-1/2 -translate-x-1/2 bg-[#1a1a1a] px-4 py-1 rounded border border-[#3a3a3a]"
-              style={{ fontFamily: "'VT323', monospace" }}
+              className="absolute top-4 left-1/2 -translate-x-1/2 px-4 py-1 rounded border"
+              style={{
+                fontFamily: "'VT323', monospace",
+                backgroundColor: deviceColors.labelBg,
+                borderColor: deviceColors.labelBorder,
+              }}
             >
-              <span className="text-[#ffaa00] text-sm tracking-widest">
+              <span
+                className="text-sm tracking-widest"
+                style={{ color: colors.crtAmber }}
+              >
                 MODEL DC-9000 // ENCRYPTION TERMINAL
               </span>
             </div>
@@ -59,7 +70,7 @@ export default function Home() {
                     text="团队暗号破解通信系统"
                     speed={60}
                     delay={300}
-                    cursorColor="#00ff88"
+                    cursorColor={rawColors.crtPhosphor}
                   />
                 </div>
               </motion.div>
@@ -70,7 +81,7 @@ export default function Home() {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.8, delay: 0.3 }}
               >
-                <Oscilloscope width={300} height={60} speed={0.5} color="#00ff88" />
+                <Oscilloscope width={300} height={60} speed={0.5} color={rawColors.crtPhosphor} />
               </motion.div>
 
               {/* Signal meters */}
@@ -106,7 +117,7 @@ export default function Home() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   className="panel-button"
-                  style={{ border: '2px solid #ffaa00' }}
+                  style={{ border: `2px solid ${colors.crtAmber}` }}
                 >
                   <span className="relative z-10 flex items-center gap-2">
                     <span className="indicator-light on amber" />
@@ -120,21 +131,61 @@ export default function Home() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.9 }}
-                className="flex items-center gap-4 mt-4 p-3 bg-[#0a0f0a] rounded border border-[#3d5544]"
+                className="flex items-center gap-4 mt-4 p-3 rounded border"
+                style={{
+                  backgroundColor: colors.bgDark,
+                  borderColor: colors.teamFriendlyDim,
+                }}
               >
                 <div className="flex items-center gap-2">
-                  <span className="text-[#00ff88] text-xs font-mono">STATUS:</span>
-                  <span className="text-[#00ff88] text-xs font-mono blink">CONNECTED</span>
+                  <span
+                    className="text-xs font-mono"
+                    style={{ color: colors.crtPhosphor }}
+                  >
+                    STATUS:
+                  </span>
+                  <span
+                    className="text-xs font-mono blink"
+                    style={{ color: colors.statusConnected }}
+                  >
+                    CONNECTED
+                  </span>
                 </div>
-                <div className="w-px h-4 bg-[#3d5544]" />
+                <div
+                  className="w-px h-4"
+                  style={{ backgroundColor: colors.teamFriendlyDim }}
+                />
                 <div className="flex items-center gap-2">
-                  <span className="text-[#ffaa00] text-xs font-mono">ENC:</span>
-                  <span className="text-[#ffaa00] text-xs font-mono">AES-256</span>
+                  <span
+                    className="text-xs font-mono"
+                    style={{ color: colors.crtAmber }}
+                  >
+                    ENC:
+                  </span>
+                  <span
+                    className="text-xs font-mono"
+                    style={{ color: colors.crtAmber }}
+                  >
+                    AES-256
+                  </span>
                 </div>
-                <div className="w-px h-4 bg-[#3d5544]" />
+                <div
+                  className="w-px h-4"
+                  style={{ backgroundColor: colors.teamFriendlyDim }}
+                />
                 <div className="flex items-center gap-2">
-                  <span className="text-[#ffaa00] text-xs font-mono">VER:</span>
-                  <span className="text-[#ffaa00] text-xs font-mono">2.0.1</span>
+                  <span
+                    className="text-xs font-mono"
+                    style={{ color: colors.crtAmber }}
+                  >
+                    VER:
+                  </span>
+                  <span
+                    className="text-xs font-mono"
+                    style={{ color: colors.crtAmber }}
+                  >
+                    2.0.1
+                  </span>
                 </div>
               </motion.div>
 
@@ -146,8 +197,11 @@ export default function Home() {
                 transition={{ delay: 1.5 }}
               >
                 <span
-                  className="text-[#ffaa00] text-sm font-mono"
-                  style={{ textShadow: '0 0 5px #ffaa00' }}
+                  className="text-sm font-mono"
+                  style={{
+                    color: colors.crtAmber,
+                    textShadow: `0 0 5px ${rawColors.crtAmber}`,
+                  }}
                 >
                   Press any key to continue_
                 </span>

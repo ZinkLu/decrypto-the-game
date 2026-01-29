@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
-import { colors as themeColors } from '../theme/colors';
+import { colors as themeColors, screenEffectColors } from '../theme/colors';
+import { CRTEffectLayer } from './effects/CRTEffectLayer';
 
 // Re-export from theme for backward compatibility
 export { tensionConfig, type TensionLevel, colors } from '../theme/colors';
@@ -14,6 +15,12 @@ interface CRTContainerProps {
   showVignette?: boolean;
   showReflection?: boolean;
   intensity?: 'low' | 'medium' | 'high';
+  // New enhanced properties
+  showRGBShift?: boolean;
+  rgbShiftIntensity?: number;
+  curvatureIntensity?: 'subtle' | 'medium' | 'strong';
+  flickerFrequency?: number;
+  showFlicker?: boolean;
 }
 
 /**
@@ -27,56 +34,38 @@ export function CRTContainer({
   showVignette = true,
   showReflection = true,
   intensity = 'medium',
+  showRGBShift = false,
+  rgbShiftIntensity = 2,
+  curvatureIntensity,
+  flickerFrequency = 0.05,
+  showFlicker = true,
 }: CRTContainerProps) {
   const intensityConfig = {
-    low: { scanlineOpacity: 0.08, vignetteOpacity: 0.3, flickerChance: 0.02 },
-    medium: { scanlineOpacity: 0.15, vignetteOpacity: 0.5, flickerChance: 0.05 },
-    high: { scanlineOpacity: 0.25, vignetteOpacity: 0.7, flickerChance: 0.1 },
+    low: { scanlineOpacity: 0.08, vignetteOpacity: 0.3 },
+    medium: { scanlineOpacity: 0.15, vignetteOpacity: 0.5 },
+    high: { scanlineOpacity: 0.25, vignetteOpacity: 0.7 },
   };
 
   const config = intensityConfig[intensity];
 
   return (
-    <div className={`relative ${className}`}>
-      {/* CRT 扫描线 */}
-      {showScanlines && (
-        <div
-          className="absolute inset-0 pointer-events-none z-50"
-          style={{
-            background: `repeating-linear-gradient(
-              to bottom,
-              transparent 0px,
-              transparent 2px,
-              rgba(0, 0, 0, ${config.scanlineOpacity}) 2px,
-              rgba(0, 0, 0, ${config.scanlineOpacity}) 4px
-            )`,
-          }}
-        />
-      )}
-
-      {/* 屏幕边缘暗角 */}
-      {showVignette && (
-        <div
-          className="absolute inset-0 pointer-events-none z-40"
-          style={{
-            background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.8) 100%)',
-          }}
-        />
-      )}
-
-      {/* 屏幕反光效果 */}
-      {showReflection && (
-        <div
-          className="absolute inset-0 pointer-events-none z-30"
-          style={{
-            background: 'linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 50%, rgba(0,0,0,0.1) 100%)',
-          }}
-        />
-      )}
-
+    <CRTEffectLayer
+      className={className}
+      showScanlines={showScanlines}
+      scanlineOpacity={config.scanlineOpacity}
+      showVignette={showVignette}
+      vignetteOpacity={config.vignetteOpacity}
+      showReflection={showReflection}
+      showRGBShift={showRGBShift}
+      rgbShiftIntensity={rgbShiftIntensity}
+      showCurvature={!!curvatureIntensity}
+      curvatureIntensity={curvatureIntensity}
+      showFlicker={showFlicker}
+      flickerFrequency={flickerFrequency}
+    >
       {/* 内容 */}
       <div className="relative z-10">{children}</div>
-    </div>
+    </CRTEffectLayer>
   );
 }
 
@@ -88,6 +77,9 @@ interface CRTPanelProps {
   className?: string;
   borderColor?: string;
   background?: string;
+  // Enhanced properties
+  showRGBShift?: boolean;
+  curvatureIntensity?: 'subtle' | 'medium' | 'strong';
 }
 
 export function CRTPanel({
@@ -95,6 +87,8 @@ export function CRTPanel({
   className = '',
   borderColor = colors.panel,
   background = colors.bgDark,
+  showRGBShift = false,
+  curvatureIntensity,
 }: CRTPanelProps) {
   return (
     <div
@@ -111,19 +105,25 @@ export function CRTPanel({
         className="rounded overflow-hidden relative"
         style={{
           background,
-          boxShadow: 'inset 0 0 100px rgba(0,0,0,0.9)',
+          boxShadow: `inset 0 0 100px ${screenEffectColors.shadow}`,
         }}
       >
         {/* 屏幕弧度效果 */}
         <div
           className="absolute inset-0 pointer-events-none z-20"
           style={{
-            background: 'radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)',
+            background: `radial-gradient(ellipse at center, transparent 60%, ${screenEffectColors.vignette} 100%)`,
           }}
         />
-        {children}
+        <CRTContainer
+          showScanlines={false}
+          showVignette={false}
+          showRGBShift={showRGBShift}
+          curvatureIntensity={curvatureIntensity}
+        >
+          {children}
+        </CRTContainer>
       </div>
     </div>
   );
 }
-
