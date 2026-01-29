@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CRTContainer } from '../components/CRTContainer';
-import { CRTPanel } from '../components/CRTContainer';
+import { CRTContainer, CRTPanel } from '../components/CRTContainer';
 import { CountdownTimer } from '../components/CountdownTimer';
 import { WaveformWindow, OscilloscopeState } from '../components/OscilloscopeCanvas';
 import { MascotDesktop, MascotMobile, MascotProgress } from '../components/Mascot';
-import { tensionConfig, TensionLevel } from '../components/CRTContainer';
+import { tensionConfig, TensionLevel, colors, rawColors } from '../theme/colors';
 
 // 模拟数据
 interface TeammateData {
@@ -120,7 +119,7 @@ export default function TeammateWaiting() {
     <div
       className="relative w-full h-full overflow-hidden transition-colors duration-1000"
       style={{
-        background: `linear-gradient(180deg, ${config.bg} 0%, #0a0f0a 100%)`,
+        background: `linear-gradient(180deg, ${config.bg} 0%, ${colors.bgDark} 100%)`,
       }}
     >
       {/* CRT 扫描线 */}
@@ -138,9 +137,9 @@ export default function TeammateWaiting() {
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center"
                 style={{
-                  background: 'linear-gradient(145deg, #3d5544, #1a2f1a)',
-                  border: '2px solid #00ff88',
-                  boxShadow: '0 0 10px rgba(0, 255, 136, 0.3)',
+                  background: `linear-gradient(145deg, ${colors.teamFriendlyDim}, ${colors.crtScreenLight})`,
+                  border: `2px solid ${colors.teamFriendly}`,
+                  boxShadow: `0 0 10px ${rawColors.teamFriendly}30`,
                 }}
               >
                 <span className="text-xl">🎧</span>
@@ -151,8 +150,8 @@ export default function TeammateWaiting() {
                 className="text-lg font-mono"
                 style={{
                   fontFamily: "'VT323', monospace",
-                  color: '#00ff88',
-                  textShadow: '0 0 10px #00ff88',
+                  color: colors.teamFriendly,
+                  textShadow: `0 0 10px ${colors.teamFriendly}`,
                 }}
               >
                 {encryptor.name} 正在加密...
@@ -164,7 +163,7 @@ export default function TeammateWaiting() {
               className="text-lg font-mono"
               style={{
                 fontFamily: "'VT323', monospace",
-                color: '#00ff88',
+                color: colors.teamFriendly,
               }}
               animate={{
                 opacity: [1, 0, 1, 0],
@@ -183,8 +182,8 @@ export default function TeammateWaiting() {
             {/* CRT 外框 */}
             <CRTPanel
               className="w-full max-w-4xl mx-4 p-4"
-              borderColor={tension === 'critical' ? '#5a2020' : '#3d5544'}
-              background="#0a1a0a"
+              borderColor={tensionConfig[tension].borderColor}
+              background={colors.crtScreenLight}
             >
               <CRTContainer showScanlines={true} showVignette={true} showReflection={false} intensity="low">
                 {/* 桌面端：3列布局 */}

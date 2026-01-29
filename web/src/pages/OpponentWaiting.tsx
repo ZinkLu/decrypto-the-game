@@ -5,7 +5,7 @@ import { CRTPanel } from '../components/CRTContainer';
 import { CountdownTimer } from '../components/CountdownTimer';
 import { WaveformWindow, OscilloscopeState } from '../components/OscilloscopeCanvas';
 import { MascotDesktop, MascotMobile, MascotProgress } from '../components/Mascot';
-import { TensionLevel } from '../components/CRTContainer';
+import { TensionLevel, opponentTensionConfig, colors, rawColors } from '../theme/colors';
 
 // 模拟数据
 interface OpponentData {
@@ -18,38 +18,6 @@ interface WaveformState {
   state: OscilloscopeState;
   statusText: string;
 }
-
-// 紧张度配置 - 对手视角使用不同颜色
-const opponentTensionConfig = {
-  normal: {
-    bg: '#1a2a3a',
-    text: '#00aaff',
-    progressBar: '#00aaff',
-    borderColor: '#2a4a6a',
-    mascotColor: '#00aaff',
-  },
-  warning: {
-    bg: '#2a2a3a',
-    text: '#88ccff',
-    progressBar: '#88ccff',
-    borderColor: '#4a5a7a',
-    mascotColor: '#88ccff',
-  },
-  tense: {
-    bg: '#2a1a2a',
-    text: '#ff88aa',
-    progressBar: '#ff88aa',
-    borderColor: '#5a3a4a',
-    mascotColor: '#ff88aa',
-  },
-  critical: {
-    bg: '#3a1a1a',
-    text: '#ff4444',
-    progressBar: '#ff4444',
-    borderColor: '#6a2a2a',
-    mascotColor: '#ff4444',
-  },
-};
 
 export default function OpponentWaiting() {
   const [timeLeft, setTimeLeft] = useState(90);
@@ -147,7 +115,7 @@ export default function OpponentWaiting() {
     <div
       className="relative w-full h-full overflow-hidden transition-colors duration-1000"
       style={{
-        background: `linear-gradient(180deg, ${config.bg} 0%, #0a0f1a 100%)`,
+        background: `linear-gradient(180deg, ${config.bg} 0%, ${colors.bgDarkBlue} 100%)`,
       }}
     >
       {/* CRT 扫描线 */}
@@ -165,7 +133,7 @@ export default function OpponentWaiting() {
               <div
                 className="w-10 h-10 rounded-full flex items-center justify-center"
                 style={{
-                  background: 'linear-gradient(145deg, #2a4a6a, #1a2a3a)',
+                  background: `linear-gradient(145deg, ${rawColors.opponentNormalBorder}, ${rawColors.opponentNormalBg})`,
                   border: `2px solid ${config.text}`,
                   boxShadow: `0 0 10px ${config.text}40`,
                 }}
@@ -211,7 +179,7 @@ export default function OpponentWaiting() {
             <CRTPanel
               className="w-full max-w-4xl mx-4 p-4"
               borderColor={config.borderColor}
-              background="#0a0f1a"
+              background={colors.bgDarkBlue}
             >
               <CRTContainer showScanlines={true} showVignette={true} showReflection={false} intensity="low">
                 {/* 桌面端：3列布局 */}

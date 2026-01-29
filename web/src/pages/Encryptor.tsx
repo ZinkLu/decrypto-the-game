@@ -1,9 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PhosphorText } from '../components/PhosphorText';
-
-// 紧张度等级
-type TensionLevel = 'normal' | 'warning' | 'tense' | 'critical';
+import { TensionLevel, encryptorTensionConfig } from '../theme/colors';
 
 // 密语卡片数据
 interface SecretCard {
@@ -19,41 +17,8 @@ interface HistoryEntry {
   entries: { number: number; word: string; clue: string }[];
 }
 
-// 紧张度颜色配置
-const tensionConfig = {
-  normal: {
-    bg: '#1a2f1a',
-    text: '#00ff88',
-    progressBar: '#00ff88',
-    emoji: '(•‿•)',
-    message: '专注加密中...',
-    glowIntensity: 1,
-  },
-  warning: {
-    bg: '#2f2a1a',
-    text: '#88ff00',
-    progressBar: '#88ff00',
-    emoji: '(•_•;)',
-    message: '时间不多了...',
-    glowIntensity: 1.2,
-  },
-  tense: {
-    bg: '#2f1a1a',
-    text: '#ffaa00',
-    progressBar: '#ffaa00',
-    emoji: '(°△°;)',
-    message: '快快快！',
-    glowIntensity: 1.5,
-  },
-  critical: {
-    bg: '#3a1010',
-    text: '#ff4444',
-    progressBar: '#ff4444',
-    emoji: '(°Д°;)',
-    message: '！！！',
-    glowIntensity: 2,
-  },
-};
+// Use encryptorTensionConfig from theme
+const tensionConfig = encryptorTensionConfig;
 
 export default function Encryptor() {
   const [currentCard, setCurrentCard] = useState(0);

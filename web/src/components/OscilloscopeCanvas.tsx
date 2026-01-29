@@ -1,37 +1,8 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import { waveConfig, rawColors } from '../theme/colors';
 
 export type OscilloscopeState = 'active' | 'completed' | 'waiting';
-
-/**
- * 波形配置
- */
-const waveConfig = {
-  active: {
-    color: '#00ff88',
-    borderColor: '#00ff88',
-    amplitude: 25,
-    frequency: 0.05,
-    speed: 1.5,
-    glowIntensity: 10,
-  },
-  completed: {
-    color: '#3d5544',
-    borderColor: '#3d5544',
-    amplitude: 8,
-    frequency: 0.02,
-    speed: 0.3,
-    glowIntensity: 3,
-  },
-  waiting: {
-    color: '#1a2f1a',
-    borderColor: '#1a2f1a',
-    amplitude: 2,
-    frequency: 0,
-    speed: 0,
-    glowIntensity: 0,
-  },
-};
 
 interface OscilloscopeCanvasProps {
   width?: number;
@@ -183,7 +154,7 @@ export function OscilloscopeCanvas({
         height={height}
         className="rounded"
         style={{
-          background: '#0a0f0a',
+          background: rawColors.crtScreen,
           border: `1px solid ${config.borderColor}`,
         }}
       />

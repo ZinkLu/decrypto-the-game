@@ -1,37 +1,9 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { transitionConfig, type TransitionRole } from '../theme/colors';
 
-/**
- * 角色类型
- */
-export type TransitionRole = 'encryptor' | 'teammate' | 'opponent';
-
-/**
- * 过渡配置
- */
-interface TransitionConfig {
-  text: string;
-  color: string;
-  bgColor: string;
-}
-
-const transitionConfig: Record<TransitionRole, TransitionConfig> = {
-  encryptor: {
-    text: '加密已发送',
-    color: '#00ff88',
-    bgColor: '#0a1a0a',
-  },
-  teammate: {
-    text: '准备解码',
-    color: '#00ff88',
-    bgColor: '#0a1a0a',
-  },
-  opponent: {
-    text: '信号截获',
-    color: '#ff4444',
-    bgColor: '#1a0a0a',
-  },
-};
+// Re-export for backward compatibility
+export type { TransitionRole } from '../theme/colors';
 
 interface TransitionOverlayProps {
   role: TransitionRole;

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { PhosphorText } from './PhosphorText';
-import { TensionLevel, tensionConfig } from './CRTContainer';
+import { TensionLevel, tensionConfig, rawColors } from '../theme/colors';
 
 interface CountdownTimerProps {
   totalSeconds: number;
@@ -167,8 +167,8 @@ export function CountdownSimple({
       className="font-mono"
       style={{
         fontFamily: "'VT323', monospace",
-        color: timeLeft < 15 ? '#ff4444' : '#ffaa00',
-        textShadow: `0 0 10px ${timeLeft < 15 ? '#ff4444' : '#ffaa00'}`,
+        color: timeLeft < 15 ? rawColors.teamEnemy : rawColors.crtAmber,
+        textShadow: `0 0 10px ${timeLeft < 15 ? rawColors.teamEnemy : rawColors.crtAmber}`,
       }}
     >
       {formatTime(timeLeft)}

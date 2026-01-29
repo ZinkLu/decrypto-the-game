@@ -1,4 +1,11 @@
 import { ReactNode } from 'react';
+import { colors as themeColors } from '../theme/colors';
+
+// Re-export from theme for backward compatibility
+export { tensionConfig, type TensionLevel, colors } from '../theme/colors';
+
+// Local alias for use in this file
+const colors = themeColors;
 
 interface CRTContainerProps {
   children: ReactNode;
@@ -86,14 +93,14 @@ interface CRTPanelProps {
 export function CRTPanel({
   children,
   className = '',
-  borderColor = '#3a3a3a',
-  background = '#0a0f0a',
+  borderColor = colors.panel,
+  background = colors.bgDark,
 }: CRTPanelProps) {
   return (
     <div
       className={`rounded-lg ${className}`}
       style={{
-        background: `linear-gradient(145deg, ${borderColor}, #1a1a1a)`,
+        background: `linear-gradient(145deg, ${borderColor}, ${colors.bgBase})`,
         boxShadow: `
           inset 0 2px 10px rgba(0,0,0,0.5),
           0 0 0 2px ${borderColor}
@@ -120,37 +127,3 @@ export function CRTPanel({
   );
 }
 
-/**
- * 紧张度配置类型
- */
-export type TensionLevel = 'normal' | 'warning' | 'tense' | 'critical';
-
-/**
- * 紧张度配置
- */
-export const tensionConfig = {
-  normal: {
-    bg: '#1a2f1a',
-    text: '#00ff88',
-    progressBar: '#00ff88',
-    borderColor: '#3d5544',
-  },
-  warning: {
-    bg: '#2f2a1a',
-    text: '#88ff00',
-    progressBar: '#88ff00',
-    borderColor: '#4a4a2a',
-  },
-  tense: {
-    bg: '#2f1a1a',
-    text: '#ffaa00',
-    progressBar: '#ffaa00',
-    borderColor: '#4a3a2a',
-  },
-  critical: {
-    bg: '#3a1010',
-    text: '#ff4444',
-    progressBar: '#ff4444',
-    borderColor: '#5a2020',
-  },
-};

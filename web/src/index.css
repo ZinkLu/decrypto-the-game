@@ -3,13 +3,14 @@
 
 @theme {
   /* Cold War Communication Device Theme */
-  /* Team Colors */
+
+  /* === Team Colors === */
   --color-team-friendly: #00ff88;
   --color-team-friendly-dim: #3d5544;
   --color-team-enemy: #ff4444;
   --color-team-enemy-dim: #442222;
 
-  /* CRT/Display Colors */
+  /* === CRT/Display Colors === */
   --color-crt-phosphor: #00ff88;
   --color-crt-phosphor-dim: #2a4a3a;
   --color-crt-amber: #ffaa00;
@@ -17,14 +18,62 @@
   --color-crt-screen: #0a0f0a;
   --color-crt-screen-light: #1a2a1a;
 
-  /* UI Colors */
+  /* === Base Grays === */
+  --color-bg-base: #1a1a1a;
+  --color-bg-dark: #0a0f0a;
+  --color-bg-dark-blue: #0a0f1a;
+
+  /* === UI Colors === */
   --color-metal: #4a4a4a;
   --color-metal-light: #6a6a6a;
   --color-metal-dark: #2a2a2a;
   --color-panel: #3a3a3a;
   --color-cream: #f5f0e6;
 
-  /* Fonts */
+  /* === Tension - Friendly View (Green) === */
+  --color-tension-normal-bg: #1a2f1a;
+  --color-tension-normal-text: #00ff88;
+  --color-tension-normal-border: #3d5544;
+
+  --color-tension-warning-bg: #2f2a1a;
+  --color-tension-warning-text: #88ff00;
+  --color-tension-warning-border: #4a4a2a;
+
+  --color-tension-tense-bg: #2f1a1a;
+  --color-tension-tense-text: #ffaa00;
+  --color-tension-tense-border: #4a3a2a;
+
+  --color-tension-critical-bg: #3a1010;
+  --color-tension-critical-text: #ff4444;
+  --color-tension-critical-border: #5a2020;
+
+  /* === Tension - Opponent View (Blue) === */
+  --color-opponent-normal-bg: #1a2a3a;
+  --color-opponent-normal-text: #00aaff;
+  --color-opponent-normal-border: #2a4a6a;
+
+  --color-opponent-warning-bg: #2a2a3a;
+  --color-opponent-warning-text: #88ccff;
+  --color-opponent-warning-border: #4a5a7a;
+
+  --color-opponent-tense-bg: #2a1a2a;
+  --color-opponent-tense-text: #ff88aa;
+  --color-opponent-tense-border: #5a3a4a;
+
+  --color-opponent-critical-bg: #3a1a1a;
+  --color-opponent-critical-text: #ff4444;
+  --color-opponent-critical-border: #6a2a2a;
+
+  /* === Waveform/Oscilloscope States === */
+  --color-wave-active: #00ff88;
+  --color-wave-completed: #3d5544;
+  --color-wave-waiting: #1a2f1a;
+
+  /* === Transition Colors === */
+  --color-transition-friendly-bg: #0a1a0a;
+  --color-transition-enemy-bg: #1a0a0a;
+
+  /* === Fonts === */
   --font-crt: 'VT323', 'Courier New', monospace;
   --font-panel: 'Share Tech Mono', 'Arial', sans-serif;
 
@@ -72,11 +121,12 @@
 }
 
 :root {
-  --crt-phosphor: #00ff88;
-  --crt-amber: #ffaa00;
-  --crt-screen: #0a0f0a;
-  --team-friendly: #00ff88;
-  --team-enemy: #ff4444;
+  /* Legacy aliases - use --color-* variables from @theme instead */
+  --crt-phosphor: var(--color-crt-phosphor);
+  --crt-amber: var(--color-crt-amber);
+  --crt-screen: var(--color-crt-screen);
+  --team-friendly: var(--color-team-friendly);
+  --team-enemy: var(--color-team-enemy);
 }
 
 * {
@@ -92,19 +142,19 @@ html, body, #root {
 }
 
 body {
-  background-color: #1a1a1a;
+  background-color: var(--color-bg-base);
   font-family: var(--font-panel);
 }
 
 /* CRT Screen Container */
 .crt-screen {
-  background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+  background: linear-gradient(145deg, var(--color-metal-dark), var(--color-bg-base));
   border-radius: 12px;
   padding: 8px;
   box-shadow:
     inset 0 2px 10px rgba(0,0,0,0.5),
     0 10px 0 40px rgba(0,0,0,0.5),
-    0 0 0 4px #3a3a3a;
+    0 0 0 4px var(--color-panel);
 }
 
 .crt-screen-inner {
@@ -166,7 +216,7 @@ body {
 /* Physical panel button style */
 .panel-button {
   font-family: var(--font-panel);
-  background: linear-gradient(180deg, #5a5a5a 0%, #3a3a3a 50%, #2a2a2a 100%);
+  background: linear-gradient(180deg, var(--color-metal-light) 0%, var(--color-panel) 50%, var(--color-metal-dark) 100%);
   border: none;
   border-radius: 6px;
   padding: 12px 24px;
@@ -177,7 +227,7 @@ body {
   letter-spacing: 2px;
   cursor: pointer;
   box-shadow:
-    0 4px 0 #1a1a1a,
+    0 4px 0 var(--color-bg-base),
     0 6px 10px rgba(0,0,0,0.3),
     inset 0 1px 0 rgba(255,255,255,0.1);
   transition: all 0.1s ease;
@@ -195,17 +245,17 @@ body {
   }
 
   &:hover {
-    background: linear-gradient(180deg, #6a6a6a 0%, #4a4a4a 50%, #3a3a3a 100%);
+    background: linear-gradient(180deg, var(--color-metal-light) 0%, var(--color-metal) 50%, var(--color-panel) 100%);
     transform: translateY(1px);
     box-shadow:
-      0 3px 0 #1a1a1a,
+      0 3px 0 var(--color-bg-base),
       0 5px 8px rgba(0,0,0,0.3);
   }
 
   &:active {
     transform: translateY(3px);
     box-shadow:
-      0 1px 0 #1a1a1a,
+      0 1px 0 var(--color-bg-base),
       0 2px 4px rgba(0,0,0,0.3);
   }
 
@@ -225,7 +275,7 @@ body {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #1a1a1a;
+  background: var(--color-bg-base);
   box-shadow:
     inset 0 2px 4px rgba(0,0,0,0.5),
     0 0 5px rgba(0,0,0,0.3);
@@ -261,8 +311,8 @@ body {
 
 /* VU Meter styles */
 .vu-meter {
-  background: linear-gradient(180deg, #2a2a2a, #1a1a1a);
-  border: 2px solid #3a3a3a;
+  background: linear-gradient(180deg, var(--color-metal-dark), var(--color-bg-base));
+  border: 2px solid var(--color-panel);
   border-radius: 4px;
   padding: 8px;
   width: 60px;
@@ -278,7 +328,7 @@ body {
 .vu-mark {
   width: 100%;
   height: 4px;
-  background: #4a4a4a;
+  background: var(--color-metal);
 
   &.red { background: var(--team-enemy); }
   &.amber { background: var(--crt-amber); }
@@ -309,7 +359,7 @@ body {
 .screw {
   width: 12px;
   height: 12px;
-  background: radial-gradient(circle, #6a6a6a, #3a3a3a);
+  background: radial-gradient(circle, var(--color-metal-light), var(--color-panel));
   border-radius: 50%;
   position: relative;
   box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
@@ -321,7 +371,7 @@ body {
     left: 50%;
     width: 8px;
     height: 2px;
-    background: #2a2a2a;
+    background: var(--color-metal-dark);
     transform: translate(-50%, -50%) rotate(45deg);
   }
 
@@ -332,7 +382,7 @@ body {
     left: 50%;
     width: 8px;
     height: 2px;
-    background: #2a2a2a;
+    background: var(--color-metal-dark);
     transform: translate(-50%, -50%) rotate(-45deg);
   }
 }
@@ -341,10 +391,10 @@ body {
 .panel-grille {
   background: repeating-linear-gradient(
     90deg,
-    #2a2a2a,
-    #2a2a2a 2px,
-    #1a1a1a 2px,
-    #1a1a1a 4px
+    var(--color-metal-dark),
+    var(--color-metal-dark) 2px,
+    var(--color-bg-base) 2px,
+    var(--color-bg-base) 4px
   );
 }
 
@@ -352,11 +402,11 @@ body {
 .toggle-switch {
   width: 50px;
   height: 24px;
-  background: #2a2a2a;
+  background: var(--color-metal-dark);
   border-radius: 12px;
   position: relative;
   cursor: pointer;
-  border: 2px solid #4a4a4a;
+  border: 2px solid var(--color-metal);
 
   &::after {
     content: '';
@@ -365,7 +415,7 @@ body {
     left: 2px;
     width: 16px;
     height: 16px;
-    background: linear-gradient(180deg, #6a6a6a, #4a4a4a);
+    background: linear-gradient(180deg, var(--color-metal-light), var(--color-metal));
     border-radius: 50%;
     transition: transform 0.2s ease;
     box-shadow: 0 2px 4px rgba(0,0,0,0.3);
@@ -382,9 +432,9 @@ body {
 .knob {
   width: 50px;
   height: 50px;
-  background: radial-gradient(circle at 30% 30%, #5a5a5a, #2a2a2a);
+  background: radial-gradient(circle at 30% 30%, var(--color-metal-light), var(--color-metal-dark));
   border-radius: 50%;
-  border: 3px solid #3a3a3a;
+  border: 3px solid var(--color-panel);
   position: relative;
   cursor: pointer;
   box-shadow:
