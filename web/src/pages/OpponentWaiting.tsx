@@ -1,13 +1,8 @@
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { CRTContainer } from '../components/CRTContainer';
-import { CRTPanel } from '../components/CRTContainer';
 import { CountdownTimer } from '../components/CountdownTimer';
-import { WaveformWindow, OscilloscopeState } from '../components/OscilloscopeCanvas';
-import { MascotDesktop, MascotMobile, MascotProgress } from '../components/Mascot';
-import { TensionLevel, opponentTensionConfig, colors, rawColors } from '../theme/colors';
+import { TensionLevel, rawColors } from '../theme/colors';
 
-// 模拟数据
+// Mock data
 interface OpponentData {
   name: string;
   avatar?: string;
@@ -15,7 +10,7 @@ interface OpponentData {
 
 interface WaveformState {
   id: number;
-  state: OscilloscopeState;
+  state: 'active' | 'completed' | 'waiting';
   statusText: string;
 }
 
@@ -29,12 +24,12 @@ export default function OpponentWaiting() {
     { id: 3, state: 'waiting', statusText: '等待中' },
   ]);
 
-  // 模拟对手数据
+  // Mock opponent data
   const opponent: OpponentData = {
     name: '对手',
   };
 
-  // 计算紧张度
+  // Calculate tension level
   useEffect(() => {
     if (timeLeft > 30) {
       setTension('normal');
@@ -47,7 +42,7 @@ export default function OpponentWaiting() {
     }
   }, [timeLeft]);
 
-  // 倒计时
+  // Countdown
   useEffect(() => {
     if (timeLeft <= 0) return;
 
@@ -64,12 +59,12 @@ export default function OpponentWaiting() {
     return () => clearInterval(timer);
   }, [timeLeft]);
 
-  // 模拟波形状态变化
+  // Simulate waveform state changes
   useEffect(() => {
     const timer1 = setTimeout(() => {
       setWaveforms((prev) =>
         prev.map((w) =>
-          w.id === 1 ? { ...w, state: 'completed' as OscilloscopeState, statusText: '已截获' } : w
+          w.id === 1 ? { ...w, state: 'completed' as const, statusText: '已截获' } : w
         )
       );
       setCompletedCount(1);
@@ -78,7 +73,7 @@ export default function OpponentWaiting() {
     const timer2 = setTimeout(() => {
       setWaveforms((prev) =>
         prev.map((w) =>
-          w.id === 2 ? { ...w, state: 'completed' as OscilloscopeState, statusText: '已截获' } : w
+          w.id === 2 ? { ...w, state: 'completed' as const, statusText: '已截获' } : w
         )
       );
       setCompletedCount(2);
@@ -87,7 +82,7 @@ export default function OpponentWaiting() {
     const timer3 = setTimeout(() => {
       setWaveforms((prev) =>
         prev.map((w) =>
-          w.id === 3 ? { ...w, state: 'completed' as OscilloscopeState, statusText: '已截获' } : w
+          w.id === 3 ? { ...w, state: 'completed' as const, statusText: '已截获' } : w
         )
       );
       setCompletedCount(3);
@@ -100,184 +95,273 @@ export default function OpponentWaiting() {
     };
   }, []);
 
-  // 根据完成数量确定吉祥物状态
-  const getMascotProgress = (): MascotProgress => {
-    if (completedCount === 0) return 'waiting';
-    if (completedCount === 1) return 'received';
-    if (completedCount === 2) return 'almost';
-    return 'ready';
+  // Get mascot message based on progress
+  const getMascotMessage = () => {
+    if (completedCount === 0) return '截获信号中...';
+    if (completedCount === 1) return '已截获一条!';
+    if (completedCount === 2) return '还差一条!';
+    return '全部截获!';
   };
 
-  const config = opponentTensionConfig[tension];
-  const mascotProgress = getMascotProgress();
+  const getMascotEmoji = () => {
+    if (completedCount === 0) return '(・_・)';
+    if (completedCount === 1) return '(◎_◎)';
+    if (completedCount === 2) return '(◉‿◉)';
+    return '\\(★ω★)/';
+  };
+
+  // Get raw text color based on tension
+  const getTextColor = () => {
+    switch (tension) {
+      case 'normal':
+        return '#00aaff';
+      case 'warning':
+        return '#88ccff';
+      case 'tense':
+        return '#ffaa00';
+      case 'critical':
+        return '#ff4444';
+      default:
+        return '#00aaff';
+    }
+  };
+
+  // Get raw bg color based on tension
+  const getBgColor = () => {
+    switch (tension) {
+      case 'normal':
+        return rawColors.opponentNormalBg;
+      case 'warning':
+        return '#1a2a4a';
+      case 'tense':
+        return rawColors.tensionTenseBg;
+      case 'critical':
+        return rawColors.tensionCriticalBg;
+      default:
+        return rawColors.opponentNormalBg;
+    }
+  };
 
   return (
     <div
       className="relative w-full h-full overflow-hidden transition-colors duration-1000"
       style={{
-        background: `linear-gradient(180deg, ${config.bg} 0%, ${colors.bgDarkBlue} 100%)`,
+        background: `linear-gradient(180deg, ${getBgColor()} 0%, ${rawColors.bgDarkBlue} 100%)`,
       }}
     >
-      {/* CRT 扫描线 */}
-      <CRTContainer showScanlines={true} showVignette={true} showReflection={true} intensity="medium">
-        <div className="relative z-10 h-full flex flex-col">
-          {/* 顶部区域：倒计时 */}
-          <div className="flex flex-col items-center pt-6">
-            <CountdownTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
-          </div>
+      <div className="relative z-10 h-full flex flex-col">
+        {/* Top area: countdown */}
+        <div className="flex flex-col items-center pt-6">
+          <CountdownTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
+        </div>
 
-          {/* 对手信息区 */}
-          <div className="flex flex-col items-center mt-4">
-            <div className="flex items-center gap-3">
-              {/* 头像/图标 */}
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center"
-                style={{
-                  background: `linear-gradient(145deg, ${rawColors.opponentNormalBorder}, ${rawColors.opponentNormalBg})`,
-                  border: `2px solid ${config.text}`,
-                  boxShadow: `0 0 10px ${config.text}40`,
-                }}
-              >
-                <span className="text-xl">🎯</span>
-              </div>
-
-              {/* 名字和状态 */}
-              <span
-                className="text-lg font-mono"
-                style={{
-                  fontFamily: "'VT323', monospace",
-                  color: config.text,
-                  textShadow: `0 0 10px ${config.text}`,
-                }}
-              >
-                {opponent.name} 正在加密...
-              </span>
+        {/* Opponent info area */}
+        <div className="flex flex-col items-center mt-4">
+          <div className="flex items-center gap-3">
+            {/* Avatar/icon */}
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center"
+              style={{
+                background: `linear-gradient(145deg, ${rawColors.opponentNormalBorder}, ${rawColors.opponentNormalBg})`,
+                border: `2px solid ${getTextColor()}`,
+              }}
+            >
+              <span className="text-xl">🎯</span>
             </div>
 
-            {/* 省略号动画 */}
-            <motion.span
+            {/* Name and status */}
+            <span
               className="text-lg font-mono"
               style={{
                 fontFamily: "'VT323', monospace",
-                color: config.text,
-              }}
-              animate={{
-                opacity: [1, 0, 1, 0],
-              }}
-              transition={{
-                duration: 1.5,
-                repeat: Infinity,
+                color: getTextColor(),
               }}
             >
-              ...
-            </motion.span>
+              {opponent.name} 正在加密...
+            </span>
           </div>
-
-          {/* 示波器指示区 */}
-          <div className="flex-1 flex flex-col items-center mt-6">
-            {/* CRT 外框 */}
-            <CRTPanel
-              className="w-full max-w-4xl mx-4 p-4"
-              borderColor={config.borderColor}
-              background={colors.bgDarkBlue}
-            >
-              <CRTContainer showScanlines={true} showVignette={true} showReflection={false} intensity="low">
-                {/* 桌面端：3列布局 */}
-                <div className="hidden lg:flex justify-center gap-8 py-4">
-                  {waveforms.map((waveform) => (
-                    <WaveformWindow
-                      key={waveform.id}
-                      index={waveform.id}
-                      state={waveform.state}
-                      statusText={waveform.statusText}
-                      showCheckmark={waveform.state === 'completed'}
-                      width={220}
-                      height={90}
-                    />
-                  ))}
-                </div>
-
-                {/* 移动端：2+1 布局 */}
-                <div className="lg:hidden flex flex-col items-center gap-4 py-4">
-                  {/* 第一行：2个波形 */}
-                  <div className="flex justify-center gap-4">
-                    {waveforms.slice(0, 2).map((waveform) => (
-                      <WaveformWindow
-                        key={waveform.id}
-                        index={waveform.id}
-                        state={waveform.state}
-                        statusText={waveform.statusText}
-                        showCheckmark={waveform.state === 'completed'}
-                        width={140}
-                        height={70}
-                      />
-                    ))}
-                  </div>
-
-                  {/* 第二行：1个波形 */}
-                  <div className="flex justify-center">
-                    {waveforms.slice(2, 3).map((waveform) => (
-                      <WaveformWindow
-                        key={waveform.id}
-                        index={waveform.id}
-                        state={waveform.state}
-                        statusText={waveform.statusText}
-                        showCheckmark={waveform.state === 'completed'}
-                        width={140}
-                        height={70}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </CRTContainer>
-            </CRTPanel>
-          </div>
-
-          {/* 底部吉祥物区域 */}
-          <div className="h-32 flex items-end justify-center pb-4">
-            {/* 桌面端 */}
-            <div className="hidden lg:block w-full max-w-md mx-auto">
-              <MascotDesktop
-                progress={mascotProgress}
-                completedCount={completedCount}
-                tension={tension}
-              />
-            </div>
-
-            {/* 移动端 */}
-            <div className="lg:hidden w-full max-w-xs mx-auto px-4">
-              <MascotMobile
-                progress={mascotProgress}
-                completedCount={completedCount}
-                tension={tension}
-              />
-            </div>
-          </div>
-
-          {/* 装饰：设备边框螺丝 */}
-          <div className="absolute top-4 left-4 w-3 h-3 screw opacity-50" />
-          <div className="absolute top-4 right-4 w-3 h-3 screw opacity-50" />
-          <div className="absolute bottom-4 left-4 w-3 h-3 screw opacity-50" />
-          <div className="absolute bottom-4 right-4 w-3 h-3 screw opacity-50" />
         </div>
-      </CRTContainer>
 
-      {/* 紧急情况下的红色脉冲 */}
-      {tension === 'critical' && (
-        <motion.div
-          className="absolute inset-0 pointer-events-none z-0"
-          animate={{
-            opacity: [0, 0.15, 0],
-          }}
-          transition={{
-            duration: 0.5,
-            repeat: Infinity,
-          }}
+        {/* Waveform indicator area */}
+        <div className="flex-1 flex flex-col items-center mt-6">
+          {/* Panel */}
+          <div
+            className="w-full max-w-4xl mx-4 p-4 rounded-lg"
+            style={{
+              background: rawColors.bgDarkBlue,
+              border: `2px solid ${rawColors.opponentNormalBorder}`,
+            }}
+          >
+            {/* Desktop: 3 columns */}
+            <div className="hidden lg:flex justify-center gap-8 py-4">
+              {waveforms.map((waveform) => (
+                <StatusIndicator
+                  key={waveform.id}
+                  index={waveform.id}
+                  state={waveform.state}
+                  statusText={waveform.statusText}
+                  theme="blue"
+                />
+              ))}
+            </div>
+
+            {/* Mobile: 2+1 layout */}
+            <div className="lg:hidden flex flex-col items-center gap-4 py-4">
+              {/* First row: 2 indicators */}
+              <div className="flex justify-center gap-4">
+                {waveforms.slice(0, 2).map((waveform) => (
+                  <StatusIndicator
+                    key={waveform.id}
+                    index={waveform.id}
+                    state={waveform.state}
+                    statusText={waveform.statusText}
+                    theme="blue"
+                  />
+                ))}
+              </div>
+
+              {/* Second row: 1 indicator */}
+              <div className="flex justify-center">
+                {waveforms.slice(2, 3).map((waveform) => (
+                  <StatusIndicator
+                    key={waveform.id}
+                    index={waveform.id}
+                    state={waveform.state}
+                    statusText={waveform.statusText}
+                    theme="blue"
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom mascot area */}
+        <div className="h-32 flex items-end justify-center pb-4">
+          <div
+            className="w-full max-w-md mx-auto p-4 rounded-lg"
+            style={{
+              background: rawColors.bgDark,
+              border: `2px solid ${rawColors.opponentNormalBorder}`,
+            }}
+          >
+            <div className="flex flex-col items-center justify-center">
+              {/* Progress indicator */}
+              <div
+                className="text-xs font-mono mb-2"
+                style={{
+                  fontFamily: "'VT323', monospace",
+                  color: rawColors.opponentNormalBorder,
+                }}
+              >
+                [{completedCount}/3]
+              </div>
+
+              {/* Expression */}
+              <div
+                className="text-2xl"
+                style={{
+                  fontFamily: "'VT323', monospace",
+                  color: getTextColor(),
+                }}
+              >
+                {getMascotEmoji()}
+              </div>
+
+              {/* Status text */}
+              <span
+                className="text-sm mt-1 font-mono"
+                style={{
+                  fontFamily: "'VT323', monospace",
+                  color: getTextColor(),
+                }}
+              >
+                {getMascotMessage()}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Simple status indicator component
+interface StatusIndicatorProps {
+  index: number;
+  state: 'active' | 'completed' | 'waiting';
+  statusText: string;
+  theme?: 'green' | 'blue';
+}
+
+function StatusIndicator({ index, state, statusText, theme = 'green' }: StatusIndicatorProps) {
+  const getColor = () => {
+    if (theme === 'blue') {
+      switch (state) {
+        case 'active':
+          return '#00aaff';
+        case 'completed':
+          return '#2a4a6a';
+        case 'waiting':
+          return '#1a2a3a';
+        default:
+          return '#2a4a6a';
+      }
+    }
+    // Green theme
+    switch (state) {
+      case 'active':
+        return rawColors.crtPhosphor;
+      case 'completed':
+        return rawColors.teamFriendlyDim;
+      case 'waiting':
+        return rawColors.tensionNormalBg;
+      default:
+        return rawColors.teamFriendlyDim;
+    }
+  };
+
+  const color = getColor();
+
+  return (
+    <div className="flex flex-col items-center">
+      {/* Status box */}
+      <div
+        className="w-36 h-20 lg:w-48 lg:h-24 rounded flex items-center justify-center"
+        style={{
+          background: rawColors.crtScreen,
+          border: `2px solid ${color}`,
+        }}
+      >
+        <span
+          className="text-2xl"
+          style={{ color }}
+        >
+          {state === 'completed' ? '✓' : state === 'active' ? '...' : '—'}
+        </span>
+      </div>
+
+      {/* Label */}
+      <div className="mt-2 text-center">
+        <div
+          className="text-sm font-mono"
           style={{
-            background: 'radial-gradient(ellipse at center, rgba(255, 68, 68, 0.3), transparent 70%)',
+            fontFamily: "'VT323', monospace",
+            color,
           }}
-        />
-      )}
+        >
+          #{index} {state === 'completed' && '✓'}
+        </div>
+        <div
+          className="text-xs font-mono opacity-70"
+          style={{
+            fontFamily: "'VT323', monospace",
+            color,
+          }}
+        >
+          {statusText}
+        </div>
+      </div>
     </div>
   );
 }

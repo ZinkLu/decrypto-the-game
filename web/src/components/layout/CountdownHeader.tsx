@@ -1,6 +1,5 @@
-import { motion } from 'framer-motion';
 import { PhosphorText } from '../PhosphorText';
-import { TensionLevel, tensionConfig, rawColors } from '../../theme/colors';
+import { TensionLevel, rawColors } from '../../theme/colors';
 
 interface CountdownHeaderProps {
   timeLeft: number;
@@ -8,13 +7,12 @@ interface CountdownHeaderProps {
   tension?: TensionLevel;
   showProgressBar?: boolean;
   className?: string;
-  // Customization
   formatTime?: (seconds: number) => string;
   progressBarHeight?: number;
 }
 
 /**
- * 默认时间格式化函数
+ * Default time format function
  */
 function defaultFormatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -23,8 +21,7 @@ function defaultFormatTime(seconds: number): string {
 }
 
 /**
- * 顶部倒计时区域组件
- * 显示时间、进度条和紧张度视觉反馈
+ * Top countdown area component
  */
 export function CountdownHeader({
   timeLeft,
@@ -35,8 +32,23 @@ export function CountdownHeader({
   formatTime = defaultFormatTime,
   progressBarHeight = 8,
 }: CountdownHeaderProps) {
-  const config = tensionConfig[tension];
   const progress = (timeLeft / totalTime) * 100;
+
+  // Get raw color for progress bar
+  const getProgressBarColor = () => {
+    switch (tension) {
+      case 'normal':
+        return rawColors.tensionNormalText;
+      case 'warning':
+        return rawColors.tensionWarningText;
+      case 'tense':
+        return rawColors.tensionTenseText;
+      case 'critical':
+        return rawColors.tensionCriticalText;
+      default:
+        return rawColors.tensionNormalText;
+    }
+  };
 
   return (
     <div className={`flex flex-col items-center ${className}`}>
@@ -46,7 +58,6 @@ export function CountdownHeader({
           text={formatTime(timeLeft)}
           size="large"
           color={tension === 'critical' ? 'amber' : 'green'}
-          glowIntensity={tension === 'critical' ? 1.5 : 1}
         />
       </div>
 
@@ -60,19 +71,12 @@ export function CountdownHeader({
             borderColor: rawColors.panel,
           }}
         >
-          <motion.div
-            className="h-full rounded-full"
+          <div
+            className="h-full rounded-full transition-all duration-1000"
             style={{
-              backgroundColor: config.progressBar,
-              boxShadow: `0 0 10px ${config.progressBar}`,
-            }}
-            initial={{ width: '100%' }}
-            animate={{
+              backgroundColor: getProgressBarColor(),
               width: `${progress}%`,
-              filter:
-                tension === 'critical' ? 'brightness(1.5)' : 'brightness(1)',
             }}
-            transition={{ duration: 1, ease: 'linear' }}
           />
         </div>
       )}

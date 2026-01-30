@@ -12,13 +12,13 @@ export default function App() {
   const [pendingPage, setPendingPage] = useState<PageType | null>(null);
   const [transitionRole, setTransitionRole] = useState<TransitionRole>('encryptor');
 
-  // 切换页面（带过渡动画）
+  // Switch page with transition
   const switchPage = (page: PageType, role: TransitionRole) => {
     setPendingPage(page);
     setTransitionRole(role);
   };
 
-  // 过渡完成回调
+  // Transition complete callback
   const handleTransitionComplete = () => {
     if (pendingPage) {
       setCurrentPage(pendingPage);
@@ -26,17 +26,17 @@ export default function App() {
     }
   };
 
-  // 如果有待处理的过渡，显示过渡层
+  // Show transition overlay if pending
   if (pendingPage) {
     return (
       <>
-        {/* 当前页面淡出 */}
+        {/* Current page underneath */}
         {currentPage === 'encryptor' && <Encryptor />}
         {currentPage === 'teammate-waiting' && <TeammateWaiting />}
         {currentPage === 'opponent-waiting' && <OpponentWaiting />}
         {currentPage === 'home' && <Home />}
 
-        {/* 过渡动画 */}
+        {/* Transition overlay */}
         <TransitionOverlay
           role={transitionRole}
           onComplete={handleTransitionComplete}
@@ -49,7 +49,6 @@ export default function App() {
     return (
       <div className="w-full h-full relative">
         <Encryptor />
-        {/* Debug button to go back */}
         <button
           onClick={() => switchPage('home', 'teammate')}
           className="fixed top-4 right-4 z-50 px-3 py-1 text-xs bg-[#1a1a1a] text-[#00ff88] border border-[#3d5544] rounded"
@@ -65,7 +64,6 @@ export default function App() {
     return (
       <div className="w-full h-full relative">
         <TeammateWaiting />
-        {/* Debug button to go back */}
         <button
           onClick={() => switchPage('home', 'encryptor')}
           className="fixed top-4 right-4 z-50 px-3 py-1 text-xs bg-[#1a1a1a] text-[#00ff88] border border-[#3d5544] rounded"
@@ -81,7 +79,6 @@ export default function App() {
     return (
       <div className="w-full h-full relative">
         <OpponentWaiting />
-        {/* Debug button to go back */}
         <button
           onClick={() => switchPage('home', 'opponent')}
           className="fixed top-4 right-4 z-50 px-3 py-1 text-xs bg-[#1a1a1a] text-[#00aaff] border border-[#2a4a6a] rounded"
@@ -97,9 +94,9 @@ export default function App() {
     <div className="w-full h-full relative">
       <Home />
 
-      {/* Debug buttons to test pages and transitions */}
+      {/* Debug buttons */}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-        {/* 过渡动画测试按钮 */}
+        {/* Transition buttons */}
         <div className="flex gap-2">
           <button
             onClick={() => switchPage('encryptor', 'encryptor')}
@@ -124,7 +121,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* 直接跳转按钮 */}
+        {/* Direct jump buttons */}
         <div className="flex gap-2">
           <button
             onClick={() => setCurrentPage('encryptor')}

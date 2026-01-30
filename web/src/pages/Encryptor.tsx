@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence, PanInfo } from 'framer-motion';
 import { PhosphorText } from '../components/PhosphorText';
-import { SlotMachineNumber } from '../components/SlotMachineNumber';
 import { CRTInput } from '../components/CRTInput';
-import { TensionLevel, encryptorTensionConfig } from '../theme/colors';
+import { TensionLevel, encryptorTensionConfig, rawColors } from '../theme/colors';
 
-// 密语卡片数据
+// Secret card data
 interface SecretCard {
   id: number;
   number: number;
@@ -13,7 +11,7 @@ interface SecretCard {
   clue: string;
 }
 
-// 历史记录
+// History entry
 interface HistoryEntry {
   round: number;
   entries: { number: number; word: string; clue: string }[];
@@ -24,14 +22,13 @@ const tensionConfig = encryptorTensionConfig;
 
 export default function Encryptor() {
   const [currentCard, setCurrentCard] = useState(0);
-  const [timeLeft, setTimeLeft] = useState(90); // 90秒倒计时
+  const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [showHistory, setShowHistory] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
-  const [slotAnimationCompleted, setSlotAnimationCompleted] = useState<Set<number>>(new Set());
 
-  // 模拟数据 - 实际应该从游戏状态获取
-  const [cards] = useState<SecretCard[]>([
+  // Mock data - should come from game state in real app
+  const [cards, setCards] = useState<SecretCard[]>([
     { id: 1, number: 3, word: '咖啡', clue: '' },
     { id: 2, number: 1, word: '猫咪', clue: '' },
     { id: 3, number: 4, word: '钥匙', clue: '' },
@@ -56,7 +53,7 @@ export default function Encryptor() {
     },
   ]);
 
-  // 计算紧张度
+  // Calculate tension level
   useEffect(() => {
     if (timeLeft > 30) {
       setTension('normal');
@@ -69,7 +66,7 @@ export default function Encryptor() {
     }
   }, [timeLeft]);
 
-  // 倒计时
+  // Countdown
   useEffect(() => {
     if (isSubmitted) return;
 
@@ -77,7 +74,6 @@ export default function Encryptor() {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timer);
-          // 自动提交逻辑
           return 0;
         }
         return prev - 1;
@@ -87,27 +83,28 @@ export default function Encryptor() {
     return () => clearInterval(timer);
   }, [isSubmitted]);
 
-  // 检查是否所有输入都已填写
+  // Check if all clues are filled
   const allCluesFilled = cards.every((card) => card.clue.trim() !== '');
 
-  // 处理线索输入
+  // Handle clue input change
   const handleClueChange = (cardId: number, value: string) => {
-    // 限制长度和特殊字符
     const sanitized = value.replace(/[<>{}[\]|\\^`]/g, '').slice(0, 8);
-    // 这里应该更新实际的游戏状态
-    console.log(`Card ${cardId} clue:`, sanitized);
+    setCards((prev) =>
+      prev.map((card) =>
+        card.id === cardId ? { ...card, clue: sanitized } : card
+      )
+    );
   };
 
-  // 处理提交
+  // Handle submit
   const handleSubmit = () => {
     if (allCluesFilled) {
       setIsSubmitted(true);
-      // 这里应该调用实际的提交 API
       console.log('Submitting clues:', cards.map((c) => c.clue));
     }
   };
 
-  // 格式化时间
+  // Format time
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -116,19 +113,48 @@ export default function Encryptor() {
 
   const config = tensionConfig[tension];
 
+  // Get raw color for progress bar
+  const getProgressBarColor = () => {
+    switch (tension) {
+      case 'normal':
+        return rawColors.tensionNormalText;
+      case 'warning':
+        return rawColors.tensionWarningText;
+      case 'tense':
+        return rawColors.tensionTenseText;
+      case 'critical':
+        return rawColors.tensionCriticalText;
+      default:
+        return rawColors.tensionNormalText;
+    }
+  };
+
+  // Get raw bg color
+  const getBgColor = () => {
+    switch (tension) {
+      case 'normal':
+        return rawColors.tensionNormalBg;
+      case 'warning':
+        return rawColors.tensionWarningBg;
+      case 'tense':
+        return rawColors.tensionTenseBg;
+      case 'critical':
+        return rawColors.tensionCriticalBg;
+      default:
+        return rawColors.tensionNormalBg;
+    }
+  };
+
   return (
     <div
       className="relative w-full h-full overflow-hidden transition-colors duration-1000"
       style={{
-        background: `linear-gradient(180deg, ${config.bg} 0%, #0a0f0a 100%)`,
+        background: `linear-gradient(180deg, ${getBgColor()} 0%, #0a0f0a 100%)`,
       }}
     >
-      {/* CRT Scanlines */}
-      <div className="crt-scanlines" />
-
-      {/* 顶部倒计时区 */}
+      {/* Top countdown area */}
       <div className="relative z-10 flex flex-col items-center pt-6">
-        {/* 时间显示 */}
+        {/* Time display */}
         <div className="flex items-center gap-4">
           <PhosphorText
             text={formatTime(timeLeft)}
@@ -137,75 +163,58 @@ export default function Encryptor() {
           />
         </div>
 
-        {/* 进度条 */}
+        {/* Progress bar */}
         <div className="w-64 h-2 mt-3 bg-[#1a1a1a] rounded-full overflow-hidden border border-[#3a3a3a]">
-          <motion.div
-            className="h-full rounded-full"
+          <div
+            className="h-full rounded-full transition-all duration-1000"
             style={{
-              backgroundColor: config.progressBar,
-              boxShadow: `0 0 10px ${config.progressBar}`,
-            }}
-            initial={{ width: '100%' }}
-            animate={{
+              backgroundColor: getProgressBarColor(),
               width: `${(timeLeft / 90) * 100}%`,
-              filter: tension === 'critical' ? `brightness(${config.glowIntensity})` : 'brightness(1)',
             }}
-            transition={{ duration: 1, ease: 'linear' }}
           />
         </div>
       </div>
 
-      {/* 进度指示器 */}
+      {/* Progress indicator */}
       <div className="relative z-10 flex items-center justify-center gap-2 mt-4">
         {cards.map((card, index) => (
           <div key={card.id} className="flex items-center">
             {index > 0 && <span className="text-[#3a3a3a] mx-1">/</span>}
-            <motion.span
+            <span
               className="text-lg font-mono"
               style={{
                 color:
                   index < currentCard
                     ? '#00ff88'
                     : index === currentCard
-                      ? config.text
+                      ? getProgressBarColor()
                       : '#3a3a3a',
-                textShadow:
-                  index === currentCard
-                    ? `0 0 10px ${config.text}`
-                    : 'none',
-              }}
-              animate={{
-                scale: index === currentCard ? 1.1 : 1,
               }}
             >
               {index < currentCard ? '✓' : index + 1}
-            </motion.span>
+            </span>
           </div>
         ))}
         <span className="text-[#3a3a3a] text-sm ml-2">({currentCard + 1}/{cards.length})</span>
       </div>
 
-      {/* 卡片区域 - 带 peek 效果 */}
+      {/* Card area */}
       <div className="relative z-10 flex items-center justify-center h-[55%] mt-4 overflow-hidden">
-        {/* 左侧 peek 卡片 */}
+        {/* Left peek card */}
         {currentCard > 0 && (
-          <motion.div
+          <div
             className="absolute left-0 z-5 hidden lg:block cursor-pointer"
             style={{
               width: '80px',
               height: '85%',
             }}
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 0.5, x: 0 }}
-            whileHover={{ opacity: 0.7, scale: 1.02 }}
             onClick={() => setCurrentCard((prev) => Math.max(0, prev - 1))}
           >
             <div
-              className="h-full rounded-r-lg"
+              className="h-full rounded-r-lg opacity-50"
               style={{
                 background: 'linear-gradient(90deg, transparent, #1a2a1a)',
                 borderRight: '2px solid #3d5544',
-                filter: 'blur(1px)',
               }}
             >
               <div className="h-full flex items-center justify-center">
@@ -217,28 +226,24 @@ export default function Encryptor() {
                 </span>
               </div>
             </div>
-          </motion.div>
+          </div>
         )}
 
-        {/* 右侧 peek 卡片 */}
+        {/* Right peek card */}
         {currentCard < cards.length - 1 && (
-          <motion.div
+          <div
             className="absolute right-0 z-5 hidden lg:block cursor-pointer"
             style={{
               width: '80px',
               height: '85%',
             }}
-            initial={{ opacity: 0, x: 50 }}
-            animate={{ opacity: 0.5, x: 0 }}
-            whileHover={{ opacity: 0.7, scale: 1.02 }}
             onClick={() => setCurrentCard((prev) => Math.min(cards.length - 1, prev + 1))}
           >
             <div
-              className="h-full rounded-l-lg"
+              className="h-full rounded-l-lg opacity-50"
               style={{
                 background: 'linear-gradient(-90deg, transparent, #1a2a1a)',
                 borderLeft: '2px solid #3d5544',
-                filter: 'blur(1px)',
               }}
             >
               <div className="h-full flex items-center justify-center">
@@ -250,284 +255,205 @@ export default function Encryptor() {
                 </span>
               </div>
             </div>
-          </motion.div>
+          </div>
         )}
 
-        {/* 主卡片容器 - 支持滑动切换 */}
-        <div className="relative w-full max-w-md mx-16 lg:mx-24 h-full touch-pan-y">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentCard}
-              className="absolute inset-0"
-              initial={{ opacity: 0, scale: 0.95, rotateY: 5 }}
-              animate={{ opacity: 1, scale: 1, rotateY: 0 }}
-              exit={{ opacity: 0, scale: 0.95, rotateY: -5 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
-              drag="x"
-              dragConstraints={{ left: 0, right: 0 }}
-              dragElastic={0.2}
-              onDragEnd={(_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
-                const threshold = 80;
-                if (info.offset.x > threshold && currentCard > 0) {
-                  setCurrentCard((prev) => prev - 1);
-                } else if (info.offset.x < -threshold && currentCard < cards.length - 1) {
-                  setCurrentCard((prev) => prev + 1);
-                }
+        {/* Main card container */}
+        <div className="relative w-full max-w-md mx-16 lg:mx-24 h-full">
+          <div className="absolute inset-0">
+            {/* Card */}
+            <div
+              className="h-full rounded-lg"
+              style={{
+                maxWidth: '100%',
+                background: `linear-gradient(145deg, #2a2a2a, #1a1a1a)`,
+                border: `2px solid ${rawColors.teamFriendlyDim}`,
               }}
             >
-              {/* 卡片 */}
-              <div
-                className="crt-screen h-full"
-                style={{
-                  maxWidth: '100%',
-                  background: `linear-gradient(145deg, #2a2a2a, #1a1a1a)`,
-                }}
-              >
-                <div className="crt-screen-inner h-full p-6 flex flex-col">
-                  {/* 卡片头部 */}
-                  <div className="text-center">
-                    <span
-                      className="text-[#3a3a3a] text-sm font-mono"
-                      style={{ fontFamily: "'VT323', monospace" }}
-                    >
-                      密码 #{currentCard + 1}
-                    </span>
-                  </div>
+              <div className="h-full p-6 flex flex-col">
+                {/* Card header */}
+                <div className="text-center">
+                  <span
+                    className="text-[#3a3a3a] text-sm font-mono"
+                    style={{ fontFamily: "'VT323', monospace" }}
+                  >
+                    密码 #{currentCard + 1}
+                  </span>
+                </div>
 
-                  {/* 密码数字 - 老虎机滚动效果 */}
-                  <div className="flex-1 flex items-center justify-center">
-                    {slotAnimationCompleted.has(currentCard) ? (
-                      // 动画完成后显示静态数字
-                      <PhosphorText
-                        text={cards[currentCard].number.toString()}
-                        size="large"
-                        color="green"
-                      />
-                    ) : (
-                      // 首次显示时播放老虎机动画
-                      <SlotMachineNumber
-                        targetNumber={cards[currentCard].number}
-                        size="large"
-                        color="green"
-                        onComplete={() => {
-                          setSlotAnimationCompleted(prev => new Set([...prev, currentCard]));
-                        }}
-                      />
-                    )}
-                  </div>
+                {/* Secret number */}
+                <div className="flex-1 flex items-center justify-center">
+                  <PhosphorText
+                    text={cards[currentCard].number.toString()}
+                    size="large"
+                    color="green"
+                  />
+                </div>
 
-                  {/* 密语词 */}
-                  <div className="text-center">
-                    <span
-                      className="text-xl font-mono"
-                      style={{
-                        color: '#f5f0e6',
-                        textShadow: '0 0 5px rgba(245, 240, 230, 0.5)',
-                      }}
-                    >
-                      {cards[currentCard].word}
-                    </span>
-                  </div>
+                {/* Secret word */}
+                <div className="text-center">
+                  <span
+                    className="text-xl font-mono"
+                    style={{
+                      color: '#f5f0e6',
+                    }}
+                  >
+                    {cards[currentCard].word}
+                  </span>
+                </div>
 
-                  {/* 输入框 - 增强型 CRT 输入 */}
-                  <div className="mt-4">
-                    <CRTInput
-                      value={cards[currentCard].clue}
-                      onChange={(value) => handleClueChange(cards[currentCard].id, value)}
-                      placeholder="输入线索词..."
-                      tension={tension}
-                      disabled={isSubmitted}
-                      maxLength={8}
-                      color="green"
-                    />
-                  </div>
+                {/* Input */}
+                <div className="mt-4">
+                  <CRTInput
+                    value={cards[currentCard].clue}
+                    onChange={(value) => handleClueChange(cards[currentCard].id, value)}
+                    placeholder="输入线索词..."
+                    disabled={isSubmitted}
+                    maxLength={8}
+                    color="green"
+                  />
+                </div>
 
-                  {/* 历史线索按钮 */}
-                  <div className="mt-auto pt-4">
-                    <motion.button
-                      className="w-full py-2 rounded border border-[#3d5544] text-[#00ff88] text-sm font-mono hover:bg-[#3d5544] hover:bg-opacity-20 transition-colors"
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => setShowHistory(true)}
-                      style={{ fontFamily: "'VT323', monospace" }}
-                    >
-                      [📋 历史线索]
-                    </motion.button>
-                  </div>
+                {/* History button */}
+                <div className="mt-auto pt-4">
+                  <button
+                    className="w-full py-2 rounded border border-[#3d5544] text-[#00ff88] text-sm font-mono hover:bg-[#3d5544] hover:bg-opacity-20 transition-colors"
+                    onClick={() => setShowHistory(true)}
+                    style={{ fontFamily: "'VT323', monospace" }}
+                  >
+                    [📋 历史线索]
+                  </button>
                 </div>
               </div>
-            </motion.div>
-          </AnimatePresence>
+            </div>
+          </div>
         </div>
 
-        {/* 移动端滑动提示 */}
+        {/* Mobile swipe hint */}
         <div className="lg:hidden absolute bottom-2 left-0 right-0 text-center">
-          <motion.span
+          <span
             className="text-xs font-mono"
             style={{
               fontFamily: "'VT323', monospace",
               color: '#3d5544',
             }}
-            animate={{ opacity: [0.3, 0.6, 0.3] }}
-            transition={{ duration: 2, repeat: Infinity }}
           >
-            ← 滑动切换 →
-          </motion.span>
+            ← 点击两侧切换 →
+          </span>
         </div>
       </div>
 
-      {/* 发送按钮（第三张卡片完成后显示） */}
-      <AnimatePresence>
-        {currentCard === 2 && allCluesFilled && !isSubmitted && (
-          <motion.div
-            className="relative z-10 flex justify-center mt-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 20 }}
+      {/* Submit button (shows when on last card and all clues filled) */}
+      {currentCard === 2 && allCluesFilled && !isSubmitted && (
+        <div className="relative z-10 flex justify-center mt-4">
+          <button
+            className="px-8 py-3 rounded font-bold text-lg"
+            style={{
+              fontFamily: "'VT323', monospace",
+              background: `linear-gradient(180deg, #00ff88 0%, #00aa55 50%, #008844 100%)`,
+              color: '#0a0f0a',
+            }}
+            onClick={handleSubmit}
           >
-            <motion.button
-              className="px-8 py-3 rounded font-bold text-lg"
-              style={{
-                fontFamily: "'VT323', monospace",
-                background: `linear-gradient(180deg, #00ff88 0%, #00aa55 50%, #008844 100%)`,
-                color: '#0a0f0a',
-                boxShadow: '0 4px 0 #005533, 0 6px 20px rgba(0, 255, 136, 0.4)',
-              }}
-              whileHover={{ scale: 1.05, y: -2 }}
-              whileTap={{ scale: 0.95, y: 2 }}
-              onClick={handleSubmit}
-            >
-              ◆ 发送加密 ◆
-            </motion.button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* 紧张状态下的抖动效果 */}
-      {(tension === 'tense' || tension === 'critical') && (
-        <motion.div
-          className="absolute inset-0 pointer-events-none z-50"
-          animate={{
-            x:
-              tension === 'critical'
-                ? [0, -2, 2, -2, 2, 0]
-                : [0, -1, 1, -1, 0],
-          }}
-          transition={{
-            duration: tension === 'critical' ? 0.1 : 0.2,
-            repeat: Infinity,
-            repeatType: 'loop',
-          }}
-        />
+            ◆ 发送加密 ◆
+          </button>
+        </div>
       )}
 
-      {/* 历史线索抽屉 */}
-      <AnimatePresence>
-        {showHistory && (
-          <>
-            {/* 遮罩层 */}
-            <motion.div
-              className="absolute inset-0 bg-black/50 z-40"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowHistory(false)}
-            />
+      {/* History drawer */}
+      {showHistory && (
+        <>
+          {/* Overlay */}
+          <div
+            className="absolute inset-0 bg-black/50 z-40"
+            onClick={() => setShowHistory(false)}
+          />
 
-            {/* 抽屉 */}
-            <motion.div
-              className="absolute bottom-0 left-0 right-0 z-50"
-              initial={{ y: '100%' }}
-              animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+          {/* Drawer */}
+          <div className="absolute bottom-0 left-0 right-0 z-50">
+            {/* Paper effect */}
+            <div
+              className="relative mx-4 rounded-t-lg"
+              style={{
+                background: '#f5f0e6',
+                backgroundImage:
+                  'repeating-linear-gradient(transparent, transparent 28px, #a0c4e8 28px, #a0c4e8 29px)',
+              }}
             >
-              {/* 撕边纸张效果 */}
-              <div
-                className="relative mx-4 rounded-t-lg"
-                style={{
-                  background: '#f5f0e6',
-                  backgroundImage:
-                    'repeating-linear-gradient(transparent, transparent 28px, #a0c4e8 28px, #a0c4e8 29px)',
-                }}
-              >
-                {/* 撕边顶部 */}
-                <div className="absolute -top-3 left-4 right-4 h-3">
-                  <svg viewBox="0 0 100 10" className="w-full h-full">
-                    <path
-                      d="M0,10 L5,5 L10,10 L15,3 L20,10 L25,6 L30,10 L35,4 L40,10 L45,5 L50,10 L55,4 L60,10 L65,6 L70,10 L75,3 L80,10 L85,5 L90,10 L95,4 L100,10 Z"
-                      fill="#f5f0e6"
-                    />
-                  </svg>
+              {/* Torn edge top */}
+              <div className="absolute -top-3 left-4 right-4 h-3">
+                <svg viewBox="0 0 100 10" className="w-full h-full">
+                  <path
+                    d="M0,10 L5,5 L10,10 L15,3 L20,10 L25,6 L30,10 L35,4 L40,10 L45,5 L50,10 L55,4 L60,10 L65,6 L70,10 L75,3 L80,10 L85,5 L90,10 L95,4 L100,10 Z"
+                    fill="#f5f0e6"
+                  />
+                </svg>
+              </div>
+
+              <div className="p-6 pb-8 max-h-80 overflow-y-auto">
+                <div className="flex justify-between items-center mb-4">
+                  <span
+                    className="text-lg font-bold"
+                    style={{
+                      fontFamily: "'VT323', monospace",
+                      color: '#2a2a2a',
+                    }}
+                  >
+                    📝 我的加密记录
+                  </span>
+                  <button
+                    className="text-sm"
+                    style={{
+                      fontFamily: "'VT323', monospace",
+                      color: '#4a4a4a',
+                    }}
+                    onClick={() => setShowHistory(false)}
+                  >
+                    [ 收起 ▼ ]
+                  </button>
                 </div>
 
-                <div className="p-6 pb-8 max-h-80 overflow-y-auto">
-                  <div className="flex justify-between items-center mb-4">
-                    <span
-                      className="text-lg font-bold"
-                      style={{
-                        fontFamily: "'VT323', monospace",
-                        color: '#2a2a2a',
-                      }}
-                    >
-                      📝 我的加密记录
-                    </span>
-                    <motion.button
-                      className="text-sm"
-                      style={{
-                        fontFamily: "'VT323', monospace",
-                        color: '#4a4a4a',
-                      }}
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      onClick={() => setShowHistory(false)}
-                    >
-                      [ 收起 ▼ ]
-                    </motion.button>
-                  </div>
-
-                  <div className="space-y-4">
-                    {history.map((round) => (
-                      <div key={round.round}>
-                        <span
-                          className="text-sm font-bold block mb-2"
-                          style={{
-                            fontFamily: "'VT323', monospace",
-                            color: '#4a4a4a',
-                          }}
-                        >
-                          第 {round.round} 轮
-                        </span>
-                        <div className="space-y-1">
-                          {round.entries.map((entry, idx) => (
-                            <div
-                              key={idx}
-                              className="text-sm"
-                              style={{
-                                fontFamily: "'VT323', monospace",
-                                color: '#2a2a2a',
-                              }}
-                            >
-                              {entry.number} {entry.word} → &quot;{entry.clue}&quot;
-                            </div>
-                          ))}
-                        </div>
+                <div className="space-y-4">
+                  {history.map((round) => (
+                    <div key={round.round}>
+                      <span
+                        className="text-sm font-bold block mb-2"
+                        style={{
+                          fontFamily: "'VT323', monospace",
+                          color: '#4a4a4a',
+                        }}
+                      >
+                        第 {round.round} 轮
+                      </span>
+                      <div className="space-y-1">
+                        {round.entries.map((entry, idx) => (
+                          <div
+                            key={idx}
+                            className="text-sm"
+                            style={{
+                              fontFamily: "'VT323', monospace",
+                              color: '#2a2a2a',
+                            }}
+                          >
+                            {entry.number} {entry.word} → &quot;{entry.clue}&quot;
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+            </div>
+          </div>
+        </>
+      )}
 
-      {/* 底部吉祥物区域（带 CRT 效果） */}
+      {/* Bottom mascot area */}
       <div
         className="absolute bottom-0 left-0 right-0 z-10"
         style={{ height: '15%', minHeight: '100px' }}
       >
-        {/* CRT 屏幕边框 */}
+        {/* Border */}
         <div
           className="absolute inset-0 rounded-t-lg"
           style={{
@@ -536,7 +462,7 @@ export default function Encryptor() {
           }}
         />
 
-        {/* CRT 屏幕内部 */}
+        {/* Inner screen */}
         <div
           className="absolute inset-x-4 bottom-2 top-2 rounded overflow-hidden"
           style={{
@@ -544,99 +470,31 @@ export default function Encryptor() {
             border: '2px solid #1a1a1a',
           }}
         >
-          {/* CRT 效果层 */}
-          <div
-            className="absolute inset-0 opacity-30"
-            style={{
-              background: `repeating-linear-gradient(
-                to bottom,
-                transparent 0px,
-                transparent 2px,
-                rgba(0, 0, 0, 0.1) 2px,
-                rgba(0, 0, 0, 0.1) 4px
-              )`,
-            }}
-          />
-
-          {/* 屏幕边缘暗角 */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background: 'radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%)',
-            }}
-          />
-
-          {/* 屏幕反光 */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background: 'linear-gradient(135deg, rgba(255,255,255,0.05) 0%, transparent 50%)',
-            }}
-          />
-
-          {/* 吉祥物内容 */}
+          {/* Mascot content */}
           <div className="relative z-10 flex flex-col items-center justify-center h-full">
-            {/* 表情 */}
-            <motion.div
+            {/* Expression */}
+            <div
               className="text-4xl"
-              animate={{
-                scale: tension === 'critical' ? [1, 1.1, 1] : 1,
-                rotate: tension === 'critical' ? [-1, 1, -1] : 0,
-                filter:
-                  tension === 'critical'
-                    ? `drop-shadow(0 0 10px ${config.text})`
-                    : `drop-shadow(0 0 5px ${config.text})`,
-              }}
-              transition={{
-                duration: tension === 'critical' ? 0.15 : 0.5,
-                repeat: tension === 'critical' ? Infinity : 0,
-              }}
               style={{
-                color: config.text,
-                textShadow: `0 0 10px ${config.text}, 0 0 20px ${config.text}`,
+                color: getProgressBarColor(),
               }}
             >
               {config.emoji}
-            </motion.div>
+            </div>
 
-            {/* 状态文字 */}
-            <motion.span
+            {/* Status text */}
+            <span
               className="text-sm mt-1"
               style={{
                 fontFamily: "'VT323', monospace",
-                color: config.text,
-                textShadow: `0 0 5px ${config.text}`,
-              }}
-              animate={{
-                opacity: [1, 0.7, 1],
-              }}
-              transition={{
-                duration: tension === 'critical' ? 0.3 : 1,
-                repeat: Infinity,
+                color: getProgressBarColor(),
               }}
             >
               {config.message}
-            </motion.span>
+            </span>
           </div>
         </div>
       </div>
-
-      {/* 紧急情况下的红色脉冲 */}
-      {tension === 'critical' && (
-        <motion.div
-          className="absolute inset-0 pointer-events-none z-0"
-          animate={{
-            opacity: [0, 0.2, 0],
-          }}
-          transition={{
-            duration: 0.5,
-            repeat: Infinity,
-          }}
-          style={{
-            background: 'radial-gradient(ellipse at center, rgba(255, 68, 68, 0.3), transparent 70%)',
-          }}
-        />
-      )}
     </div>
   );
 }
