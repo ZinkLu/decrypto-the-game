@@ -205,6 +205,29 @@ export const encryptorTensionConfig = {
 } as const;
 
 // ============================================================
+// Opponent (A3) Mascot Tension Config
+// ============================================================
+
+export const opponentMascotConfig = {
+  normal: {
+    emoji: '(\u00ac\u203f\u00ac)',
+    message: '\u76d1\u542c\u4e2d...',
+  },
+  warning: {
+    emoji: '(\u00ac\u03c9\u00ac)',
+    message: '\u4fe1\u53f7\u4e0d\u7a33\u5b9a...',
+  },
+  tense: {
+    emoji: '(\u00ac\u25bd\u00ac)',
+    message: '\u5feb\u622a\u83b7\u4e86...',
+  },
+  critical: {
+    emoji: '(\u00b0\u0414\u00b0;)',
+    message: '\uff01\uff01\uff01',
+  },
+} as const;
+
+// ============================================================
 // Raw Hex Values (for canvas 2D context and computed styles)
 // ============================================================
 
@@ -251,9 +274,14 @@ export const rawColors = {
   statusDisconnected: '#ff4444',
   statusPending: '#ffaa00',
 
-  // Opponent view colors
-  opponentNormalBorder: '#2a4a6a',
-  opponentNormalBg: '#1a2a3a',
+  // Opponent view colors (Red theme)
+  opponentNormalBorder: '#5a1a1a',
+  opponentNormalBg: '#1a0a0a',
+  opponentWarningBg: '#220a0a',
+  opponentTenseBg: '#2f0a0a',
+  opponentCriticalBg: '#3a1010',
+  opponentScreenBg: '#1a0a0a',
+  opponentCrtScreen: '#0f0505',
 
   // Tension colors
   tensionNormalBg: '#1a2f1a',

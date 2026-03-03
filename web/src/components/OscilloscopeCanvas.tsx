@@ -30,7 +30,7 @@ export function WaveformWindow({
   const getStateDisplay = () => {
     switch (state) {
       case 'active':
-        return '...';
+        return '…';
       case 'completed':
         return '✓';
       case 'waiting':

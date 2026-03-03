@@ -99,7 +99,7 @@ export default function TeammateWaiting() {
 
   // Get mascot message based on progress
   const getMascotMessage = () => {
-    if (completedCount === 0) return '等待加密中...';
+    if (completedCount === 0) return '等待加密中…';
     if (completedCount === 1) return '收到第一条!';
     if (completedCount === 2) return '快完成了!';
     return '全部收到!';
@@ -152,7 +152,7 @@ export default function TeammateWaiting() {
                 border: `2px solid ${rawColors.teamFriendly}`,
               }}
             >
-              <span className="text-xl">🎧</span>
+              <span className="text-xl" aria-hidden="true">🎧</span>
             </div>
 
             {/* Name and status */}
@@ -163,7 +163,7 @@ export default function TeammateWaiting() {
                 color: rawColors.teamFriendly,
               }}
             >
-              {encryptor.name} 正在加密...
+              {encryptor.name} 正在加密…
             </span>
           </div>
         </div>
@@ -228,12 +228,13 @@ export default function TeammateWaiting() {
               border: `2px solid ${rawColors.teamFriendlyDim}`,
             }}
           >
-            <div className="flex flex-col items-center justify-center">
+            <div className="flex flex-col items-center justify-center" aria-live="polite">
               {/* Progress indicator */}
               <div
                 className="text-xs font-mono mb-2"
                 style={{
                   fontFamily: "'VT323', monospace",
+                  fontVariantNumeric: 'tabular-nums',
                   color: rawColors.teamFriendlyDim,
                 }}
               >
@@ -243,6 +244,7 @@ export default function TeammateWaiting() {
               {/* Expression */}
               <div
                 className="text-2xl"
+                aria-hidden="true"
                 style={{
                   fontFamily: "'VT323', monospace",
                   color: rawColors.teamFriendly,
@@ -306,7 +308,7 @@ function StatusIndicator({ index, state, statusText }: StatusIndicatorProps) {
           className="text-2xl"
           style={{ color }}
         >
-          {state === 'completed' ? '✓' : state === 'active' ? '...' : '—'}
+          {state === 'completed' ? '✓' : state === 'active' ? '…' : '—'}
         </span>
       </div>
 

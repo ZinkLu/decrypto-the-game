@@ -12,12 +12,13 @@ interface CRTInputProps {
   onSubmit?: (value: string) => void;
   autoFocus?: boolean;
   className?: string;
+  'aria-label'?: string;
 }
 
 export function CRTInput({
   value,
   onChange,
-  placeholder = '输入...',
+  placeholder = '输入…',
   disabled = false,
   maxLength = 20,
   color = 'green',
@@ -25,6 +26,7 @@ export function CRTInput({
   onSubmit,
   autoFocus = false,
   className = '',
+  'aria-label': ariaLabel,
 }: CRTInputProps) {
   const [isFocused, setIsFocused] = useState(false);
   const [cursorVisible, setCursorVisible] = useState(true);
@@ -89,6 +91,9 @@ export function CRTInput({
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             disabled={disabled}
+            spellCheck={false}
+            autoComplete="off"
+            aria-label={ariaLabel || placeholder}
             className="absolute inset-0 w-full h-full bg-transparent outline-none opacity-0 cursor-text p-3"
             style={{ caretColor: 'transparent' }}
           />

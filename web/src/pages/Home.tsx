@@ -41,7 +41,7 @@ export default function Home() {
           <div className="flex flex-col items-center gap-8">
             {/* Title */}
             <div className="text-center">
-              <PhosphorText text="DECRYPTO" size="large" color="green" />
+              <h1><PhosphorText text="DECRYPTO" size="large" color="green" /></h1>
               <div
                 className="mt-2 font-mono"
                 style={{
@@ -56,7 +56,7 @@ export default function Home() {
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row gap-6 mt-4">
               <button
-                className="px-6 py-3 rounded font-bold text-lg"
+                className="px-6 py-3 rounded font-bold text-lg transition-[filter,box-shadow] duration-200 hover:brightness-125"
                 style={{
                   fontFamily: "'VT323', monospace",
                   background: rawColors.teamFriendlyDim,
@@ -68,13 +68,14 @@ export default function Home() {
                   <span
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: rawColors.crtPhosphor }}
+                    aria-hidden="true"
                   />
                   CREATE ROOM
                 </span>
               </button>
 
               <button
-                className="px-6 py-3 rounded font-bold text-lg"
+                className="px-6 py-3 rounded font-bold text-lg transition-[filter,box-shadow] duration-200 hover:brightness-125"
                 style={{
                   fontFamily: "'VT323', monospace",
                   background: rawColors.crtAmberDim,
@@ -86,6 +87,7 @@ export default function Home() {
                   <span
                     className="w-2 h-2 rounded-full"
                     style={{ backgroundColor: rawColors.crtAmber }}
+                    aria-hidden="true"
                   />
                   JOIN ROOM
                 </span>

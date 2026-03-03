@@ -155,7 +155,7 @@ export default function Encryptor() {
       {/* Top countdown area */}
       <div className="relative z-10 flex flex-col items-center pt-6">
         {/* Time display */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4" role="timer" aria-live="polite" aria-label={`剩余时间 ${formatTime(timeLeft)}`} style={{ fontVariantNumeric: 'tabular-nums' }}>
           <PhosphorText
             text={formatTime(timeLeft)}
             size="large"
@@ -166,7 +166,7 @@ export default function Encryptor() {
         {/* Progress bar */}
         <div className="w-64 h-2 mt-3 bg-[#1a1a1a] rounded-full overflow-hidden border border-[#3a3a3a]">
           <div
-            className="h-full rounded-full transition-all duration-1000"
+            className="h-full rounded-full transition-[width,background-color] duration-1000"
             style={{
               backgroundColor: getProgressBarColor(),
               width: `${(timeLeft / 90) * 100}%`,
@@ -191,7 +191,7 @@ export default function Encryptor() {
                       : '#3a3a3a',
               }}
             >
-              {index < currentCard ? '✓' : index + 1}
+              {index < currentCard ? <span aria-label="完成">✓</span> : index + 1}
             </span>
           </div>
         ))}
@@ -202,11 +202,14 @@ export default function Encryptor() {
       <div className="relative z-10 flex items-center justify-center h-[55%] mt-4 overflow-hidden">
         {/* Left peek card */}
         {currentCard > 0 && (
-          <div
+          <button
+            aria-label="上一张卡片"
             className="absolute left-0 z-5 hidden lg:block cursor-pointer"
             style={{
               width: '80px',
               height: '85%',
+              background: 'none',
+              padding: 0,
             }}
             onClick={() => setCurrentCard((prev) => Math.max(0, prev - 1))}
           >
@@ -226,16 +229,19 @@ export default function Encryptor() {
                 </span>
               </div>
             </div>
-          </div>
+          </button>
         )}
 
         {/* Right peek card */}
         {currentCard < cards.length - 1 && (
-          <div
+          <button
+            aria-label="下一张卡片"
             className="absolute right-0 z-5 hidden lg:block cursor-pointer"
             style={{
               width: '80px',
               height: '85%',
+              background: 'none',
+              padding: 0,
             }}
             onClick={() => setCurrentCard((prev) => Math.min(cards.length - 1, prev + 1))}
           >
@@ -255,7 +261,7 @@ export default function Encryptor() {
                 </span>
               </div>
             </div>
-          </div>
+          </button>
         )}
 
         {/* Main card container */}
@@ -307,7 +313,8 @@ export default function Encryptor() {
                   <CRTInput
                     value={cards[currentCard].clue}
                     onChange={(value) => handleClueChange(cards[currentCard].id, value)}
-                    placeholder="输入线索词..."
+                    placeholder="输入线索词…"
+                    aria-label={`密码 ${currentCard + 1} 线索词`}
                     disabled={isSubmitted}
                     maxLength={8}
                     color="green"
@@ -321,7 +328,7 @@ export default function Encryptor() {
                     onClick={() => setShowHistory(true)}
                     style={{ fontFamily: "'VT323', monospace" }}
                   >
-                    [📋 历史线索]
+                    [<span aria-hidden="true">📋</span> 历史线索]
                   </button>
                 </div>
               </div>
@@ -355,7 +362,7 @@ export default function Encryptor() {
             }}
             onClick={handleSubmit}
           >
-            ◆ 发送加密 ◆
+            <span aria-hidden="true">◆</span> 发送加密 <span aria-hidden="true">◆</span>
           </button>
         </div>
       )}
@@ -399,7 +406,7 @@ export default function Encryptor() {
                       color: '#2a2a2a',
                     }}
                   >
-                    📝 我的加密记录
+                    <span aria-hidden="true">📝</span> 我的加密记录
                   </span>
                   <button
                     className="text-sm"

@@ -8,6 +8,7 @@ interface CountdownTimerProps {
   showProgressBar?: boolean;
   size?: 'small' | 'medium' | 'large';
   showMinutes?: boolean;
+  theme?: 'friendly' | 'opponent';
 }
 
 export function CountdownTimer({
@@ -16,6 +17,7 @@ export function CountdownTimer({
   showProgressBar = true,
   size = 'medium',
   showMinutes = true,
+  theme = 'friendly',
 }: CountdownTimerProps) {
   const [timeLeft, setTimeLeft] = useState(totalSeconds);
   const [tension, setTension] = useState<TensionLevel>('normal');
@@ -87,6 +89,9 @@ export function CountdownTimer({
 
   // Get the raw color for the progress bar based on tension
   const getProgressBarColor = () => {
+    if (theme === 'opponent') {
+      return rawColors.teamEnemy;
+    }
     switch (tension) {
       case 'normal':
         return rawColors.tensionNormalText;
@@ -101,14 +106,24 @@ export function CountdownTimer({
     }
   };
 
+  // Get text color based on theme
+  const getTextColor = () => {
+    if (theme === 'opponent') {
+      return 'red';
+    }
+    return tension === 'critical' ? 'amber' : 'green';
+  };
+
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center" role="timer" aria-live="polite" aria-label={`剩余时间 ${formatTime(timeLeft)}`}>
       {/* Time display */}
-      <PhosphorText
-        text={formatTime(timeLeft)}
-        size={textSize}
-        color={tension === 'critical' ? 'amber' : 'green'}
-      />
+      <div style={{ fontVariantNumeric: 'tabular-nums' }}>
+        <PhosphorText
+          text={formatTime(timeLeft)}
+          size={textSize}
+          color={getTextColor()}
+        />
+      </div>
 
       {/* Progress bar */}
       {showProgressBar && (
@@ -121,7 +136,7 @@ export function CountdownTimer({
           }}
         >
           <div
-            className="h-full rounded-full transition-all duration-1000"
+            className="h-full rounded-full transition-[width,background-color] duration-1000"
             style={{
               backgroundColor: getProgressBarColor(),
               width: `${progressPercent}%`,
@@ -170,8 +185,11 @@ export function CountdownSimple({
   return (
     <span
       className="font-mono"
+      role="timer"
+      aria-live="polite"
       style={{
         fontFamily: "'VT323', monospace",
+        fontVariantNumeric: 'tabular-nums',
         color: timeLeft < 15 ? rawColors.teamEnemy : rawColors.crtAmber,
       }}
     >

@@ -47,22 +47,22 @@
   --color-tension-critical-text: #ff4444;
   --color-tension-critical-border: #5a2020;
 
-  /* === Tension - Opponent View (Blue) === */
-  --color-opponent-normal-bg: #1a2a3a;
-  --color-opponent-normal-text: #00aaff;
-  --color-opponent-normal-border: #2a4a6a;
+  /* === Tension - Opponent View (Red) === */
+  --color-opponent-normal-bg: #1a0a0a;
+  --color-opponent-normal-text: #ff4444;
+  --color-opponent-normal-border: #5a1a1a;
 
-  --color-opponent-warning-bg: #2a2a3a;
-  --color-opponent-warning-text: #88ccff;
-  --color-opponent-warning-border: #4a5a7a;
+  --color-opponent-warning-bg: #220a0a;
+  --color-opponent-warning-text: #ff6644;
+  --color-opponent-warning-border: #6a2a1a;
 
-  --color-opponent-tense-bg: #2a1a2a;
-  --color-opponent-tense-text: #ff88aa;
-  --color-opponent-tense-border: #5a3a4a;
+  --color-opponent-tense-bg: #2f0a0a;
+  --color-opponent-tense-text: #ff8844;
+  --color-opponent-tense-border: #7a3a2a;
 
-  --color-opponent-critical-bg: #3a1a1a;
+  --color-opponent-critical-bg: #3a1010;
   --color-opponent-critical-text: #ff4444;
-  --color-opponent-critical-border: #6a2a2a;
+  --color-opponent-critical-border: #8a2a2a;
 
   /* === Waveform/Oscilloscope States === */
   --color-wave-active: #00ff88;
@@ -170,6 +170,10 @@
   box-sizing: border-box;
 }
 
+html {
+  color-scheme: dark;
+}
+
 html, body, #root {
   width: 100%;
   height: 100%;
@@ -265,7 +269,7 @@ body {
     0 4px 0 var(--color-bg-base),
     0 6px 10px rgba(0,0,0,0.3),
     inset 0 1px 0 rgba(255,255,255,0.1);
-  transition: all 0.1s ease;
+  transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.1s ease;
   position: relative;
 
   &::before {
@@ -534,4 +538,39 @@ body {
   vertical-align: text-bottom;
   margin-left: 2px;
   box-shadow: 0 0 5px var(--crt-phosphor);
+}
+
+/* Focus visible styles */
+:focus-visible {
+  outline: 2px solid var(--color-crt-phosphor);
+  outline-offset: 2px;
+}
+
+/* Touch optimization */
+button, [role="button"], a, input {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .phosphor-text {
+    animation: none;
+  }
+
+  .blink {
+    animation: none;
+    opacity: 1;
+  }
+
+  .crt-cursor {
+    animation: none;
+    opacity: 1;
+  }
 }

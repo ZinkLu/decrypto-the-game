@@ -92,7 +92,8 @@ export function NumberPad({
         return (
           <motion.button
             key={num}
-            className="relative rounded-lg font-mono font-bold"
+            aria-label={`选择数字 ${num}`}
+            className="relative rounded-lg font-mono font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-crt-phosphor)]"
             style={{
               width: config.buttonSize,
               height: config.buttonSize,

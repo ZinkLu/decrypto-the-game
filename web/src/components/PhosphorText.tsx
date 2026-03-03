@@ -5,6 +5,8 @@ interface PhosphorTextProps {
   size?: 'small' | 'medium' | 'large';
   color?: 'green' | 'amber' | 'red' | 'blue' | string;
   className?: string;
+  'aria-hidden'?: boolean;
+  role?: string;
 }
 
 const colorMap: Record<string, string> = {
@@ -19,6 +21,7 @@ export function PhosphorText({
   size = 'medium',
   color = 'green',
   className = '',
+  ...ariaProps
 }: PhosphorTextProps) {
   const sizeClasses = {
     small: 'text-lg',
@@ -43,6 +46,7 @@ export function PhosphorText({
         fontFamily: "'VT323', 'Courier New', monospace",
         color: resolvedColor,
       }}
+      {...ariaProps}
     >
       {text}
     </div>

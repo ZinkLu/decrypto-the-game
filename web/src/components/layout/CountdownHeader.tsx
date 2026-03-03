@@ -72,7 +72,7 @@ export function CountdownHeader({
           }}
         >
           <div
-            className="h-full rounded-full transition-all duration-1000"
+            className="h-full rounded-full transition-[width,background-color] duration-1000"
             style={{
               backgroundColor: getProgressBarColor(),
               width: `${progress}%`,

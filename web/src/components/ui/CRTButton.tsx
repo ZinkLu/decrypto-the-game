@@ -101,6 +101,7 @@ export function CRTButton({
     <motion.button
       className={`
         relative font-bold uppercase cursor-pointer
+        focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-crt-phosphor)]
         ${fullWidth ? 'w-full' : ''}
         ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
         ${className}
