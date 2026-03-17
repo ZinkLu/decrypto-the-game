@@ -59,21 +59,6 @@ export const colors = {
   statusDisconnected: 'var(--color-status-disconnected)',
   statusPending: 'var(--color-status-pending)',
 
-  // Legacy aliases for old components
-  crtPhosphor: 'var(--color-team-friendly)',
-  crtPhosphorDim: 'var(--color-team-friendly-dim)',
-  crtAmber: 'var(--color-brass)',
-  crtAmberDim: 'var(--color-brass-dim)',
-  crtScreen: 'var(--color-bg-dark)',
-  crtScreenLight: 'var(--color-navy-light)',
-  bgDarkBlue: 'var(--color-bg-base)',
-  metal: 'var(--color-leather)',
-  metalLight: 'var(--color-desk-wood-light)',
-  metalDark: 'var(--color-desk-wood-dark)',
-  panel: 'var(--color-desk-wood)',
-  waveActive: 'var(--color-team-friendly)',
-  waveCompleted: 'var(--color-team-friendly-dim)',
-  waveWaiting: 'var(--color-navy-light)',
 } as const;
 
 // ============================================================
@@ -273,55 +258,7 @@ export const rawColors = {
   statusDisconnected: '#C41E3A',
   statusPending: '#B8860B',
 
-  // Legacy aliases for old components (CRTButton, NumberPad, CountdownTimer, etc.)
-  crtPhosphor: '#0E7C6B',
-  crtPhosphorDim: '#0A5A4D',
-  crtAmber: '#B8860B',
-  crtAmberDim: '#8B6508',
-  crtScreen: '#060A14',
-  crtScreenLight: '#142038',
-  metal: '#4A3728',
-  metalLight: '#5D4037',
-  metalDark: '#2C1A12',
-  panel: '#3E2723',
-  bgDarkBlue: '#0B1426',
-  deviceFrame: '#2C1A12',
-  deviceFrameLight: '#3E2723',
-  deviceFrameDark: '#1A1A1A',
-  deviceLabelBg: '#0B1426',
-  deviceLabelBorder: '#142038',
-  deviceScrew: '#5D4037',
-  deviceScrewSlot: '#2C1A12',
 } as const;
-
-// ============================================================
-// Legacy exports for old components
-// ============================================================
-
-export const deviceColors = {
-  frame: 'var(--color-desk-wood-dark)',
-  frameLight: 'var(--color-desk-wood)',
-  frameDark: 'var(--color-navy-dark)',
-  labelBg: 'var(--color-bg-base)',
-  labelBorder: 'var(--color-navy-light)',
-  screw: 'var(--color-desk-wood-light)',
-  screwSlot: 'var(--color-desk-wood-dark)',
-} as const;
-
-export const screenEffectColors = {
-  reflection: 'rgba(255, 255, 255, 0.08)',
-  shadow: 'rgba(0, 0, 0, 0.9)',
-  vignette: 'rgba(0, 0, 0, 0.4)',
-  scanline: 'rgba(0, 0, 0, 0.15)',
-} as const;
-
-export const waveConfig = {
-  active: { color: '#0E7C6B', borderColor: '#0E7C6B', amplitude: 25, frequency: 0.05, speed: 1.5, glowIntensity: 10 },
-  completed: { color: '#0A5A4D', borderColor: '#0A5A4D', amplitude: 8, frequency: 0.02, speed: 0.3, glowIntensity: 3 },
-  waiting: { color: '#142038', borderColor: '#142038', amplitude: 2, frequency: 0, speed: 0, glowIntensity: 0 },
-} as const;
-
-export type WaveState = keyof typeof waveConfig;
 
 // ============================================================
 // Transition Overlay Config
