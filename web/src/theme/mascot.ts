@@ -173,8 +173,8 @@ export const tensionActionOverride: Record<string, MascotAction> = {
 
 // 颜色配置
 export const mascotColors = {
-  normal: '#00ff88',
-  warning: '#88ff00',
-  tense: '#ffaa00',
-  critical: '#ff4444',
+  normal: '#0E7C6B',
+  warning: '#B8860B',
+  tense: '#C41E3A',
+  critical: '#FF2D2D',
 };

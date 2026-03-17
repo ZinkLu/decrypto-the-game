@@ -32,13 +32,11 @@ export default function App() {
   const [pendingPage, setPendingPage] = useState<PageType | null>(null);
   const [transitionRole, setTransitionRole] = useState<TransitionRole>('encryptor');
 
-  // Switch page with transition
   const switchPage = (page: PageType, role: TransitionRole) => {
     setPendingPage(page);
     setTransitionRole(role);
   };
 
-  // Transition complete callback
   const handleTransitionComplete = () => {
     if (pendingPage) {
       setCurrentPage(pendingPage);
@@ -46,10 +44,8 @@ export default function App() {
     }
   };
 
-  // Render the current page component
   const CurrentPageComponent = pageComponents[currentPage];
 
-  // Show transition overlay if pending
   if (pendingPage) {
     return (
       <>
@@ -69,63 +65,63 @@ export default function App() {
 
         {/* Debug buttons */}
         <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
-          {/* A-phase transition buttons */}
+          {/* A-phase */}
           <div
             className="text-xs px-2 py-0.5 text-center"
-            style={{ fontFamily: "'VT323', monospace", color: '#666' }}
+            style={{ fontFamily: "'Courier Prime', monospace", color: '#B8860B', opacity: 0.6 }}
           >
             A 阶段（加密）
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => switchPage('encryptor', 'encryptor')}
-              className="px-3 py-1 text-xs bg-[#1a1a1a] text-[#00ff88] border border-[#3d5544] rounded"
-              style={{ fontFamily: "'VT323', monospace" }}
+              className="px-3 py-1 text-xs rounded"
+              style={{ fontFamily: "'Courier Prime', monospace", background: '#0B1426', color: '#0E7C6B', border: '1px solid #0A5A4D' }}
             >
               过渡→A1加密
             </button>
             <button
               onClick={() => switchPage('teammate-waiting', 'teammate')}
-              className="px-3 py-1 text-xs bg-[#1a1a1a] text-[#00ff88] border border-[#3d5544] rounded"
-              style={{ fontFamily: "'VT323', monospace" }}
+              className="px-3 py-1 text-xs rounded"
+              style={{ fontFamily: "'Courier Prime', monospace", background: '#0B1426', color: '#0E7C6B', border: '1px solid #0A5A4D' }}
             >
               过渡→A2队友
             </button>
             <button
               onClick={() => switchPage('opponent-waiting', 'opponent')}
-              className="px-3 py-1 text-xs bg-[#1a1a1a] text-[#ff4444] border border-[#5a2020] rounded"
-              style={{ fontFamily: "'VT323', monospace" }}
+              className="px-3 py-1 text-xs rounded"
+              style={{ fontFamily: "'Courier Prime', monospace", background: '#0B1426', color: '#8B0000', border: '1px solid #5C0000' }}
             >
               过渡→A3对手
             </button>
           </div>
 
-          {/* B-phase transition buttons */}
+          {/* B-phase */}
           <div
             className="text-xs px-2 py-0.5 text-center mt-1"
-            style={{ fontFamily: "'VT323', monospace", color: '#666' }}
+            style={{ fontFamily: "'Courier Prime', monospace", color: '#B8860B', opacity: 0.6 }}
           >
             B 阶段（解码）
           </div>
           <div className="flex gap-2">
             <button
               onClick={() => switchPage('encryptor-watching', 'encryptor')}
-              className="px-3 py-1 text-xs bg-[#1a1a1a] text-[#00ff88] border border-[#3d5544] rounded"
-              style={{ fontFamily: "'VT323', monospace" }}
+              className="px-3 py-1 text-xs rounded"
+              style={{ fontFamily: "'Courier Prime', monospace", background: '#0B1426', color: '#0E7C6B', border: '1px solid #0A5A4D' }}
             >
               过渡→B1观看
             </button>
             <button
               onClick={() => switchPage('teammate-decoding', 'teammate')}
-              className="px-3 py-1 text-xs bg-[#1a1a1a] text-[#00ff88] border border-[#3d5544] rounded"
-              style={{ fontFamily: "'VT323', monospace" }}
+              className="px-3 py-1 text-xs rounded"
+              style={{ fontFamily: "'Courier Prime', monospace", background: '#0B1426', color: '#0E7C6B', border: '1px solid #0A5A4D' }}
             >
               过渡→B2解码
             </button>
             <button
               onClick={() => switchPage('opponent-analyzing', 'opponent')}
-              className="px-3 py-1 text-xs bg-[#1a1a1a] text-[#ff4444] border border-[#5a2020] rounded"
-              style={{ fontFamily: "'VT323', monospace" }}
+              className="px-3 py-1 text-xs rounded"
+              style={{ fontFamily: "'Courier Prime', monospace", background: '#0B1426', color: '#8B0000', border: '1px solid #5C0000' }}
             >
               过渡→B3分析
             </button>
@@ -146,8 +142,8 @@ export default function App() {
               <button
                 key={page}
                 onClick={() => setCurrentPage(page)}
-                className="px-2 py-0.5 text-xs bg-[#2a2a2a] text-[#ffaa00] border border-[#4a3a2a] rounded opacity-60"
-                style={{ fontFamily: "'VT323', monospace" }}
+                className="px-2 py-0.5 text-xs rounded opacity-60"
+                style={{ fontFamily: "'Courier Prime', monospace", background: '#142038', color: '#B8860B', border: '1px solid #8B6508' }}
               >
                 {label}
               </button>
@@ -159,10 +155,9 @@ export default function App() {
   }
 
   // Non-home pages: render with back button
-  const isOpponentPage =
-    currentPage === 'opponent-waiting' || currentPage === 'opponent-analyzing';
-  const backColor = isOpponentPage ? '#ff4444' : '#00ff88';
-  const backBorder = isOpponentPage ? '#5a2020' : '#3d5544';
+  const isOpponentPage = currentPage === 'opponent-waiting' || currentPage === 'opponent-analyzing';
+  const backColor = isOpponentPage ? '#8B0000' : '#0E7C6B';
+  const backBorder = isOpponentPage ? '#5C0000' : '#0A5A4D';
 
   return (
     <main className="w-full h-full relative">
@@ -170,11 +165,12 @@ export default function App() {
       <button
         onClick={() => switchPage('home', 'teammate')}
         aria-label="返回首页"
-        className="fixed top-4 right-4 z-50 px-3 py-1 text-xs bg-[#1a1a1a] rounded"
+        className="fixed top-4 right-4 z-50 px-3 py-1 text-xs rounded"
         style={{
-          fontFamily: "'VT323', monospace",
+          fontFamily: "'Courier Prime', monospace",
           color: backColor,
           border: `1px solid ${backBorder}`,
+          background: '#0B1426',
         }}
       >
         <span aria-hidden="true">←</span> BACK

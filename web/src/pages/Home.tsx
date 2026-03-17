@@ -1,172 +1,117 @@
-import { PhosphorText } from '../components/PhosphorText';
-import { colors, rawColors } from '../theme/colors';
+import { rawColors } from '../theme/colors';
+import { ManilaFolder, RubberStamp, TypewriterText, DossierButton, WaxSeal, DossierEffectLayer } from '../components/dossier';
 
 export default function Home() {
   return (
     <div
       className="relative w-full h-full overflow-hidden"
-      style={{ backgroundColor: colors.bgBase }}
+      style={{ backgroundColor: rawColors.bgBase }}
     >
-      {/* Main Panel */}
-      <div className="relative z-10 flex items-center justify-center h-full p-8">
-        {/* Device Frame */}
-        <div
-          className="rounded-lg p-6"
-          style={{
-            maxWidth: '800px',
-            width: '100%',
-            background: `linear-gradient(145deg, #2a2a2a, #1a1a1a)`,
-            border: `3px solid ${rawColors.teamFriendlyDim}`,
-          }}
-        >
-          {/* Device label plate */}
-          <div
-            className="mx-auto mb-6 px-4 py-1 rounded border text-center"
-            style={{
-              fontFamily: "'VT323', monospace",
-              backgroundColor: rawColors.deviceLabelBg,
-              borderColor: rawColors.deviceLabelBorder,
-              width: 'fit-content',
-            }}
-          >
-            <span
-              className="text-sm tracking-widest"
-              style={{ color: rawColors.crtAmber }}
-            >
-              MODEL DC-9000 // ENCRYPTION TERMINAL
-            </span>
+      <DossierEffectLayer />
+
+      {/* Desk surface gradient */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `linear-gradient(180deg, ${rawColors.navyDark} 0%, ${rawColors.navy} 30%, ${rawColors.deskWoodDark} 100%)`,
+        }}
+      />
+
+      {/* Main content */}
+      <div className="relative z-10 flex items-center justify-center h-full p-6">
+        <ManilaFolder tabLabel="CLASSIFIED" className="max-w-lg w-full">
+          {/* Top secret stamp */}
+          <div className="flex justify-between items-start mb-6">
+            <WaxSeal size="medium" />
+            <RubberStamp text="TOP SECRET" color="red" size="medium" rotation={-4} />
           </div>
 
-          {/* Main Content */}
-          <div className="flex flex-col items-center gap-8">
-            {/* Title */}
-            <div className="text-center">
-              <h1><PhosphorText text="DECRYPTO" size="large" color="green" /></h1>
-              <div
-                className="mt-2 font-mono"
-                style={{
-                  fontFamily: "'VT323', 'Courier New', monospace",
-                  color: rawColors.crtPhosphor,
-                }}
-              >
-                团队暗号破解通信系统
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row gap-6 mt-4">
-              <button
-                className="px-6 py-3 rounded font-bold text-lg transition-[filter,box-shadow] duration-200 hover:brightness-125"
-                style={{
-                  fontFamily: "'VT323', monospace",
-                  background: rawColors.teamFriendlyDim,
-                  color: rawColors.crtPhosphor,
-                  border: `2px solid ${rawColors.crtPhosphor}`,
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <span
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: rawColors.crtPhosphor }}
-                    aria-hidden="true"
-                  />
-                  CREATE ROOM
-                </span>
-              </button>
-
-              <button
-                className="px-6 py-3 rounded font-bold text-lg transition-[filter,box-shadow] duration-200 hover:brightness-125"
-                style={{
-                  fontFamily: "'VT323', monospace",
-                  background: rawColors.crtAmberDim,
-                  color: rawColors.crtAmber,
-                  border: `2px solid ${rawColors.crtAmber}`,
-                }}
-              >
-                <span className="flex items-center gap-2">
-                  <span
-                    className="w-2 h-2 rounded-full"
-                    style={{ backgroundColor: rawColors.crtAmber }}
-                    aria-hidden="true"
-                  />
-                  JOIN ROOM
-                </span>
-              </button>
-            </div>
-
-            {/* Status panel */}
+          {/* Title */}
+          <div className="text-center mb-6">
+            <TypewriterText text="OPERATION: DECRYPTO" size="large" color="dark" as="h1" />
             <div
-              className="flex items-center gap-4 mt-4 p-3 rounded border"
+              className="mt-2"
               style={{
-                backgroundColor: rawColors.bgDark,
-                borderColor: rawColors.teamFriendlyDim,
+                fontFamily: "'Noto Serif SC', serif",
+                fontSize: '1rem',
+                color: rawColors.inkBlack,
+                opacity: 0.7,
               }}
             >
-              <div className="flex items-center gap-2">
-                <span
-                  className="text-xs font-mono"
-                  style={{ color: rawColors.crtPhosphor }}
-                >
-                  STATUS:
-                </span>
-                <span
-                  className="text-xs font-mono"
-                  style={{ color: rawColors.statusConnected }}
-                >
-                  CONNECTED
-                </span>
-              </div>
-              <div
-                className="w-px h-4"
-                style={{ backgroundColor: rawColors.teamFriendlyDim }}
-              />
-              <div className="flex items-center gap-2">
-                <span
-                  className="text-xs font-mono"
-                  style={{ color: rawColors.crtAmber }}
-                >
-                  ENC:
-                </span>
-                <span
-                  className="text-xs font-mono"
-                  style={{ color: rawColors.crtAmber }}
-                >
-                  AES-256
-                </span>
-              </div>
-              <div
-                className="w-px h-4"
-                style={{ backgroundColor: rawColors.teamFriendlyDim }}
-              />
-              <div className="flex items-center gap-2">
-                <span
-                  className="text-xs font-mono"
-                  style={{ color: rawColors.crtAmber }}
-                >
-                  VER:
-                </span>
-                <span
-                  className="text-xs font-mono"
-                  style={{ color: rawColors.crtAmber }}
-                >
-                  2.0.1
-                </span>
-              </div>
+              团队暗号破解通信系统
             </div>
+          </div>
 
-            {/* Bottom prompt */}
-            <div className="mt-4">
+          {/* Divider */}
+          <div
+            className="mx-8 my-4 border-t border-dashed"
+            style={{ borderColor: rawColors.creamDark }}
+          />
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <DossierButton variant="primary" size="large">
+              CREATE ROOM
+            </DossierButton>
+
+            <DossierButton variant="secondary" size="large">
+              JOIN ROOM
+            </DossierButton>
+          </div>
+
+          {/* Status panel */}
+          <div
+            className="flex items-center justify-center gap-4 mt-6 p-3 rounded"
+            style={{
+              backgroundColor: rawColors.creamDark,
+              border: `1px solid ${rawColors.brass}40`,
+            }}
+          >
+            <div className="flex items-center gap-2">
               <span
-                className="text-sm font-mono"
-                style={{
-                  color: rawColors.crtAmber,
-                }}
+                className="text-xs"
+                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack }}
               >
-                Press any key to continue_
+                STATUS:
+              </span>
+              <span
+                className="text-xs font-bold"
+                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamFriendly }}
+              >
+                CONNECTED
+              </span>
+            </div>
+            <div className="w-px h-4" style={{ backgroundColor: rawColors.brass }} />
+            <div className="flex items-center gap-2">
+              <span
+                className="text-xs"
+                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack }}
+              >
+                CLEARANCE:
+              </span>
+              <span
+                className="text-xs font-bold"
+                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brass }}
+              >
+                LEVEL 5
               </span>
             </div>
           </div>
-        </div>
+
+          {/* Bottom prompt */}
+          <div className="mt-6 text-center">
+            <span
+              className="text-sm italic"
+              style={{
+                fontFamily: "'Courier Prime', monospace",
+                color: rawColors.inkBlack,
+                opacity: 0.5,
+              }}
+            >
+              Awaiting operative instructions...
+            </span>
+          </div>
+        </ManilaFolder>
       </div>
     </div>
   );

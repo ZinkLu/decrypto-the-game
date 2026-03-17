@@ -1,13 +1,6 @@
 import { useState, useEffect } from 'react';
-import { CountdownTimer } from '../components/CountdownTimer';
 import { TensionLevel, rawColors } from '../theme/colors';
-
-// Mock data
-interface TeammateData {
-  name: string;
-  avatar?: string;
-  isCurrentEncryptor: boolean;
-}
+import { DeskClockTimer, AgentPanel, DossierEffectLayer } from '../components/dossier';
 
 interface WaveformState {
   id: number;
@@ -25,311 +18,194 @@ export default function TeammateWaiting() {
     { id: 3, state: 'waiting', statusText: '等待中' },
   ]);
 
-  // Mock encryptor data
-  const encryptor: TeammateData = {
-    name: '小明',
-    isCurrentEncryptor: true,
-  };
+  const encryptorName = '小明';
 
-  // Calculate tension level
   useEffect(() => {
-    if (timeLeft > 30) {
-      setTension('normal');
-    } else if (timeLeft > 15) {
-      setTension('warning');
-    } else if (timeLeft > 5) {
-      setTension('tense');
-    } else {
-      setTension('critical');
-    }
+    if (timeLeft > 30) setTension('normal');
+    else if (timeLeft > 15) setTension('warning');
+    else if (timeLeft > 5) setTension('tense');
+    else setTension('critical');
   }, [timeLeft]);
 
-  // Countdown
   useEffect(() => {
     if (timeLeft <= 0) return;
-
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
+        if (prev <= 1) { clearInterval(timer); return 0; }
         return prev - 1;
       });
     }, 1000);
-
     return () => clearInterval(timer);
   }, [timeLeft]);
 
-  // Simulate waveform state changes
+  // Simulate mail slots receiving
   useEffect(() => {
     const timer1 = setTimeout(() => {
-      setWaveforms((prev) =>
-        prev.map((w) =>
-          w.id === 1 ? { ...w, state: 'completed' as const, statusText: '已完成' } : w
-        )
-      );
+      setWaveforms((prev) => prev.map((w) => w.id === 1 ? { ...w, state: 'completed' as const, statusText: '已接收' } : w));
       setCompletedCount(1);
     }, 5000);
-
     const timer2 = setTimeout(() => {
-      setWaveforms((prev) =>
-        prev.map((w) =>
-          w.id === 2 ? { ...w, state: 'completed' as const, statusText: '已完成' } : w
-        )
-      );
+      setWaveforms((prev) => prev.map((w) => w.id === 2 ? { ...w, state: 'completed' as const, statusText: '已接收' } : w));
       setCompletedCount(2);
     }, 10000);
-
     const timer3 = setTimeout(() => {
-      setWaveforms((prev) =>
-        prev.map((w) =>
-          w.id === 3 ? { ...w, state: 'completed' as const, statusText: '已完成' } : w
-        )
-      );
+      setWaveforms((prev) => prev.map((w) => w.id === 3 ? { ...w, state: 'completed' as const, statusText: '已接收' } : w));
       setCompletedCount(3);
     }, 15000);
-
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-      clearTimeout(timer3);
-    };
+    return () => { clearTimeout(timer1); clearTimeout(timer2); clearTimeout(timer3); };
   }, []);
 
-  // Get mascot message based on progress
   const getMascotMessage = () => {
-    if (completedCount === 0) return '等待加密中…';
-    if (completedCount === 1) return '收到第一条!';
-    if (completedCount === 2) return '快完成了!';
-    return '全部收到!';
+    if (completedCount === 0) return '等待情报传达…';
+    if (completedCount === 1) return '收到第一份情报!';
+    if (completedCount === 2) return '即将全部到达!';
+    return '情报全部就位!';
   };
 
   const getMascotEmoji = () => {
-    if (completedCount === 0) return '(・_・)';
-    if (completedCount === 1) return '(^_^)';
-    if (completedCount === 2) return '(^o^)';
-    return '\\(^o^)/';
+    if (completedCount === 0) return '📨';
+    if (completedCount === 1) return '📬';
+    if (completedCount === 2) return '📭';
+    return '✅';
   };
 
-  // Get raw bg color based on tension
   const getBgColor = () => {
     switch (tension) {
-      case 'normal':
-        return rawColors.tensionNormalBg;
-      case 'warning':
-        return rawColors.tensionWarningBg;
-      case 'tense':
-        return rawColors.tensionTenseBg;
-      case 'critical':
-        return rawColors.tensionCriticalBg;
-      default:
-        return rawColors.tensionNormalBg;
+      case 'normal': return rawColors.tensionNormalBg;
+      case 'warning': return rawColors.tensionWarningBg;
+      case 'tense': return rawColors.tensionTenseBg;
+      case 'critical': return rawColors.tensionCriticalBg;
     }
   };
 
   return (
     <div
       className="relative w-full h-full overflow-hidden transition-colors duration-1000"
-      style={{
-        background: `linear-gradient(180deg, ${getBgColor()} 0%, ${rawColors.bgDark} 100%)`,
-      }}
+      style={{ background: `linear-gradient(180deg, ${getBgColor()} 0%, ${rawColors.bgDark} 100%)` }}
     >
+      <DossierEffectLayer />
+
       <div className="relative z-10 h-full flex flex-col">
-        {/* Top area: countdown */}
+        {/* Countdown */}
         <div className="flex flex-col items-center pt-6">
-          <CountdownTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
+          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
         </div>
 
-        {/* Encryptor info area */}
+        {/* Encryptor info */}
         <div className="flex flex-col items-center mt-4">
           <div className="flex items-center gap-3">
-            {/* Avatar/icon */}
             <div
               className="w-10 h-10 rounded-full flex items-center justify-center"
               style={{
-                background: `linear-gradient(145deg, ${rawColors.teamFriendlyDim}, ${rawColors.crtScreenLight})`,
-                border: `2px solid ${rawColors.teamFriendly}`,
+                background: `radial-gradient(circle at 35% 35%, ${rawColors.brassLight}, ${rawColors.brass})`,
+                border: `2px solid ${rawColors.brassDim}`,
               }}
             >
-              <span className="text-xl" aria-hidden="true">🎧</span>
+              <span className="text-lg" style={{ color: rawColors.navyDark }}>🕵️</span>
             </div>
-
-            {/* Name and status */}
             <span
-              className="text-lg font-mono"
-              style={{
-                fontFamily: "'VT323', monospace",
-                color: rawColors.teamFriendly,
-              }}
+              className="text-lg"
+              style={{ fontFamily: "'Special Elite', cursive", color: rawColors.cream }}
             >
-              {encryptor.name} 正在加密…
+              {encryptorName} 正在编写情报…
             </span>
           </div>
         </div>
 
-        {/* Waveform indicator area */}
-        <div className="flex-1 flex flex-col items-center mt-6">
-          {/* Panel */}
+        {/* Mail slots area */}
+        <div className="flex-1 flex flex-col items-center mt-6 px-4">
           <div
-            className="w-full max-w-4xl mx-4 p-4 rounded-lg"
+            className="w-full max-w-4xl p-4 rounded-lg"
             style={{
-              background: rawColors.crtScreenLight,
-              border: `2px solid ${rawColors.teamFriendlyDim}`,
+              background: rawColors.navyLight,
+              border: `2px solid ${rawColors.brassDim}`,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             }}
           >
             {/* Desktop: 3 columns */}
             <div className="hidden lg:flex justify-center gap-8 py-4">
               {waveforms.map((waveform) => (
-                <StatusIndicator
-                  key={waveform.id}
-                  index={waveform.id}
-                  state={waveform.state}
-                  statusText={waveform.statusText}
-                />
+                <MailSlot key={waveform.id} index={waveform.id} state={waveform.state} statusText={waveform.statusText} />
               ))}
             </div>
 
             {/* Mobile: 2+1 layout */}
             <div className="lg:hidden flex flex-col items-center gap-4 py-4">
-              {/* First row: 2 indicators */}
               <div className="flex justify-center gap-4">
                 {waveforms.slice(0, 2).map((waveform) => (
-                  <StatusIndicator
-                    key={waveform.id}
-                    index={waveform.id}
-                    state={waveform.state}
-                    statusText={waveform.statusText}
-                  />
+                  <MailSlot key={waveform.id} index={waveform.id} state={waveform.state} statusText={waveform.statusText} />
                 ))}
               </div>
-
-              {/* Second row: 1 indicator */}
               <div className="flex justify-center">
                 {waveforms.slice(2, 3).map((waveform) => (
-                  <StatusIndicator
-                    key={waveform.id}
-                    index={waveform.id}
-                    state={waveform.state}
-                    statusText={waveform.statusText}
-                  />
+                  <MailSlot key={waveform.id} index={waveform.id} state={waveform.state} statusText={waveform.statusText} />
                 ))}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Bottom mascot area */}
-        <div className="h-32 flex items-end justify-center pb-4">
-          <div
-            className="w-full max-w-md mx-auto p-4 rounded-lg"
-            style={{
-              background: rawColors.bgDark,
-              border: `2px solid ${rawColors.teamFriendlyDim}`,
-            }}
-          >
-            <div className="flex flex-col items-center justify-center" aria-live="polite">
-              {/* Progress indicator */}
-              <div
-                className="text-xs font-mono mb-2"
-                style={{
-                  fontFamily: "'VT323', monospace",
-                  fontVariantNumeric: 'tabular-nums',
-                  color: rawColors.teamFriendlyDim,
-                }}
-              >
-                [{completedCount}/3]
-              </div>
-
-              {/* Expression */}
-              <div
-                className="text-2xl"
-                aria-hidden="true"
-                style={{
-                  fontFamily: "'VT323', monospace",
-                  color: rawColors.teamFriendly,
-                }}
-              >
-                {getMascotEmoji()}
-              </div>
-
-              {/* Status text */}
-              <span
-                className="text-sm mt-1 font-mono"
-                style={{
-                  fontFamily: "'VT323', monospace",
-                  color: rawColors.teamFriendly,
-                }}
-              >
-                {getMascotMessage()}
-              </span>
+        {/* Bottom agent panel */}
+        <div className="pb-4 px-4">
+          <AgentPanel emoji={getMascotEmoji()} message={getMascotMessage()} theme="friendly">
+            <div
+              className="text-xs mb-2"
+              style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim, fontVariantNumeric: 'tabular-nums' }}
+            >
+              [{completedCount}/3]
             </div>
-          </div>
+          </AgentPanel>
         </div>
       </div>
     </div>
   );
 }
 
-// Simple status indicator component to replace WaveformWindow
-interface StatusIndicatorProps {
-  index: number;
-  state: 'active' | 'completed' | 'waiting';
-  statusText: string;
-}
-
-function StatusIndicator({ index, state, statusText }: StatusIndicatorProps) {
-  const getColor = () => {
+// Mail slot component (replaces waveform status indicator)
+function MailSlot({ index, state, statusText }: { index: number; state: 'active' | 'completed' | 'waiting'; statusText: string }) {
+  const getStyles = () => {
     switch (state) {
-      case 'active':
-        return rawColors.crtPhosphor;
       case 'completed':
-        return rawColors.teamFriendlyDim;
+        return { bg: `${rawColors.teamFriendly}15`, border: rawColors.teamFriendly, icon: '✓', iconColor: rawColors.teamFriendly };
+      case 'active':
+        return { bg: `${rawColors.brass}10`, border: rawColors.brass, icon: '…', iconColor: rawColors.brass };
       case 'waiting':
-        return rawColors.tensionNormalBg;
       default:
-        return rawColors.teamFriendlyDim;
+        return { bg: rawColors.navyDark, border: rawColors.navyLight, icon: '—', iconColor: rawColors.navyLight };
     }
   };
 
-  const color = getColor();
+  const s = getStyles();
 
   return (
     <div className="flex flex-col items-center">
-      {/* Status box */}
+      {/* Slot */}
       <div
-        className="w-36 h-20 lg:w-48 lg:h-24 rounded flex items-center justify-center"
+        className="w-36 h-20 lg:w-48 lg:h-24 rounded flex items-center justify-center transition-all duration-500"
         style={{
-          background: rawColors.crtScreen,
-          border: `2px solid ${color}`,
+          background: s.bg,
+          border: `2px solid ${s.border}`,
+          boxShadow: state === 'completed' ? `0 0 10px ${rawColors.teamFriendly}30` : 'inset 0 2px 6px rgba(0,0,0,0.3)',
         }}
       >
-        <span
-          className="text-2xl"
-          style={{ color }}
-        >
-          {state === 'completed' ? '✓' : state === 'active' ? '…' : '—'}
-        </span>
+        {state === 'completed' ? (
+          <div className="flex flex-col items-center">
+            <span className="text-2xl" style={{ color: s.iconColor }}>📄</span>
+            <span className="text-xs mt-1" style={{ fontFamily: "'Courier Prime', monospace", color: s.iconColor }}>✓</span>
+          </div>
+        ) : state === 'active' ? (
+          <span className="text-2xl" style={{ color: s.iconColor, animation: 'pulse-red 2s ease-in-out infinite' }}>📨</span>
+        ) : (
+          <span className="text-2xl" style={{ color: s.iconColor }}>📪</span>
+        )}
       </div>
 
       {/* Label */}
       <div className="mt-2 text-center">
-        <div
-          className="text-sm font-mono"
-          style={{
-            fontFamily: "'VT323', monospace",
-            color,
-          }}
-        >
-          #{index} {state === 'completed' && '✓'}
+        <div className="text-sm" style={{ fontFamily: "'Bebas Neue', sans-serif", color: s.border, letterSpacing: '1px' }}>
+          #{index}
         </div>
-        <div
-          className="text-xs font-mono opacity-70"
-          style={{
-            fontFamily: "'VT323', monospace",
-            color,
-          }}
-        >
+        <div className="text-xs opacity-70" style={{ fontFamily: "'Courier Prime', monospace", color: s.border }}>
           {statusText}
         </div>
       </div>

@@ -1,40 +1,35 @@
 import { useEffect, useState } from 'react';
-import { transitionConfig, type TransitionRole } from '../theme/colors';
-import { rawColors } from '../theme/colors';
+import { transitionConfig, type TransitionRole } from '../../theme/colors';
+import { rawColors } from '../../theme/colors';
 
-// Re-export for backward compatibility
-export type { TransitionRole } from '../theme/colors';
+export type { TransitionRole } from '../../theme/colors';
 
-// Role stamp labels
 const roleLabels: Record<TransitionRole, string> = {
   encryptor: 'DISPATCHED',
   teammate: 'DECODING',
   opponent: 'INTERCEPTED',
 };
 
-interface TransitionOverlayProps {
+interface DossierTransitionProps {
   role: TransitionRole;
   duration?: number;
   onComplete?: () => void;
 }
 
-/**
- * Stamp-slam transition overlay
- * Shows a large rubber stamp effect then calls onComplete
- */
-export function TransitionOverlay({
+export function DossierTransition({
   role,
   duration = 800,
   onComplete,
-}: TransitionOverlayProps) {
+}: DossierTransitionProps) {
   const config = transitionConfig[role];
   const [isVisible, setIsVisible] = useState(true);
   const [stampVisible, setStampVisible] = useState(false);
   const label = roleLabels[role];
-  const isEnemy = role === 'opponent';
 
   useEffect(() => {
-    const stampTimer = setTimeout(() => setStampVisible(true), 100);
+    // Show stamp after a short delay
+    const stampTimer = setTimeout(() => setStampVisible(true), 150);
+
     const timer = setTimeout(() => {
       setIsVisible(false);
       onComplete?.();
@@ -48,12 +43,16 @@ export function TransitionOverlay({
 
   if (!isVisible) return null;
 
+  const isEnemy = role === 'opponent';
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden"
-      style={{ background: config.bgColor }}
+      style={{
+        background: config.bgColor,
+      }}
     >
-      {/* Radial ink effect */}
+      {/* Ink splatter / stamp effect background */}
       <div
         className="absolute inset-0 opacity-10"
         style={{
@@ -63,12 +62,12 @@ export function TransitionOverlay({
 
       {/* Main content */}
       <div className="text-center relative z-10">
-        {/* Stamp */}
+        {/* Stamp label */}
         {stampVisible && (
           <div
             className="inline-block mb-4"
             style={{
-              fontFamily: "'Bebas Neue', 'Impact', sans-serif",
+              fontFamily: "'Bebas Neue', sans-serif",
               fontSize: '3rem',
               letterSpacing: '8px',
               color: config.color,
@@ -83,7 +82,7 @@ export function TransitionOverlay({
           </div>
         )}
 
-        {/* Text */}
+        {/* Subtitle text */}
         <div
           className="text-lg"
           style={{
@@ -99,59 +98,4 @@ export function TransitionOverlay({
   );
 }
 
-/**
- * Transition controller Hook
- */
-export function useTransition(role: TransitionRole, onTransitionEnd?: () => void) {
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [targetPage, setTargetPage] = useState<string | null>(null);
-
-  const showTransition = () => {
-    setIsTransitioning(true);
-  };
-
-  const transitionTo = (page: string) => {
-    setTargetPage(page);
-    setIsTransitioning(true);
-  };
-
-  const handleComplete = () => {
-    onTransitionEnd?.();
-    if (targetPage) {
-      console.log('Transition to:', targetPage);
-    }
-  };
-
-  return {
-    isTransitioning,
-    showTransition,
-    transitionTo,
-    handleComplete,
-    role,
-  };
-}
-
-/**
- * Page container with transition
- */
-interface TransitionPageProps {
-  children: React.ReactNode;
-  isVisible: boolean;
-  bgColor?: string;
-}
-
-export function TransitionPage({
-  children,
-  isVisible,
-  bgColor = '#060A14',
-}: TransitionPageProps) {
-  if (!isVisible) return null;
-
-  return (
-    <div className="fixed inset-0" style={{ background: bgColor }}>
-      {children}
-    </div>
-  );
-}
-
-export default TransitionOverlay;
+export default DossierTransition;

@@ -1,5 +1,6 @@
 /**
  * Centralized theme color configuration
+ * Cold War Intelligence Dossier palette
  * All colors reference CSS variables defined in index.css @theme block
  */
 
@@ -8,38 +9,46 @@
 // ============================================================
 
 export const colors = {
-  // CRT Display
-  crtPhosphor: 'var(--color-crt-phosphor)',
-  crtPhosphorDim: 'var(--color-crt-phosphor-dim)',
-  crtAmber: 'var(--color-crt-amber)',
-  crtAmberDim: 'var(--color-crt-amber-dim)',
-  crtScreen: 'var(--color-crt-screen)',
-  crtScreenLight: 'var(--color-crt-screen-light)',
+  // Primary Palette
+  navy: 'var(--color-navy)',
+  navyLight: 'var(--color-navy-light)',
+  navyDark: 'var(--color-navy-dark)',
+  cream: 'var(--color-cream)',
+  creamDark: 'var(--color-cream-dark)',
+  creamLight: 'var(--color-cream-light)',
+  intelRed: 'var(--color-intel-red)',
+  intelRedDim: 'var(--color-intel-red-dim)',
+  brass: 'var(--color-brass)',
+  brassDim: 'var(--color-brass-dim)',
+  brassLight: 'var(--color-brass-light)',
 
   // Team Colors
   teamFriendly: 'var(--color-team-friendly)',
   teamFriendlyDim: 'var(--color-team-friendly-dim)',
+  teamFriendlyLight: 'var(--color-team-friendly-light)',
   teamEnemy: 'var(--color-team-enemy)',
   teamEnemyDim: 'var(--color-team-enemy-dim)',
+  teamEnemyLight: 'var(--color-team-enemy-light)',
 
-  // Base Grays
+  // Background
   bgBase: 'var(--color-bg-base)',
   bgDark: 'var(--color-bg-dark)',
-  bgDarkBlue: 'var(--color-bg-dark-blue)',
+  bgPaper: 'var(--color-bg-paper)',
+  bgPaperDark: 'var(--color-bg-paper-dark)',
 
-  // UI Metals
-  metal: 'var(--color-metal)',
-  metalLight: 'var(--color-metal-light)',
-  metalDark: 'var(--color-metal-dark)',
-  panel: 'var(--color-panel)',
+  // UI
+  deskWood: 'var(--color-desk-wood)',
+  deskWoodLight: 'var(--color-desk-wood-light)',
+  deskWoodDark: 'var(--color-desk-wood-dark)',
+  leather: 'var(--color-leather)',
+  inkBlack: 'var(--color-ink-black)',
+  inkBlue: 'var(--color-ink-blue)',
 
-  // Text
-  cream: 'var(--color-cream)',
-
-  // Waveform States
-  waveActive: 'var(--color-wave-active)',
-  waveCompleted: 'var(--color-wave-completed)',
-  waveWaiting: 'var(--color-wave-waiting)',
+  // Stamps
+  stampRed: 'var(--color-stamp-red)',
+  stampBlue: 'var(--color-stamp-blue)',
+  stampGreen: 'var(--color-stamp-green)',
+  waxRed: 'var(--color-wax-red)',
 
   // Transition Backgrounds
   transitionFriendlyBg: 'var(--color-transition-friendly-bg)',
@@ -49,57 +58,23 @@ export const colors = {
   statusConnected: 'var(--color-status-connected)',
   statusDisconnected: 'var(--color-status-disconnected)',
   statusPending: 'var(--color-status-pending)',
+
+  // Legacy aliases for old components
+  crtPhosphor: 'var(--color-team-friendly)',
+  crtPhosphorDim: 'var(--color-team-friendly-dim)',
+  crtAmber: 'var(--color-brass)',
+  crtAmberDim: 'var(--color-brass-dim)',
+  crtScreen: 'var(--color-bg-dark)',
+  crtScreenLight: 'var(--color-navy-light)',
+  bgDarkBlue: 'var(--color-bg-base)',
+  metal: 'var(--color-leather)',
+  metalLight: 'var(--color-desk-wood-light)',
+  metalDark: 'var(--color-desk-wood-dark)',
+  panel: 'var(--color-desk-wood)',
+  waveActive: 'var(--color-team-friendly)',
+  waveCompleted: 'var(--color-team-friendly-dim)',
+  waveWaiting: 'var(--color-navy-light)',
 } as const;
-
-// ============================================================
-// Device Appearance Colors
-// ============================================================
-
-export const deviceColors = {
-  frame: 'var(--color-device-frame)',
-  frameLight: 'var(--color-device-frame-light)',
-  frameDark: 'var(--color-device-frame-dark)',
-  labelBg: 'var(--color-device-label-bg)',
-  labelBorder: 'var(--color-device-label-border)',
-  screw: 'var(--color-device-screw)',
-  screwSlot: 'var(--color-device-screw-slot)',
-} as const;
-
-// ============================================================
-// Screen Effect Colors
-// ============================================================
-
-export const screenEffectColors = {
-  reflection: 'var(--color-screen-reflection)',
-  shadow: 'var(--color-screen-shadow)',
-  vignette: 'var(--color-screen-vignette)',
-  scanline: 'var(--color-screen-scanline)',
-} as const;
-
-// ============================================================
-// Spacing Tokens
-// ============================================================
-
-export const spacing = {
-  xs: 'var(--spacing-xs)',
-  sm: 'var(--spacing-sm)',
-  md: 'var(--spacing-md)',
-  lg: 'var(--spacing-lg)',
-  xl: 'var(--spacing-xl)',
-  '2xl': 'var(--spacing-2xl)',
-} as const;
-
-// ============================================================
-// Radius Tokens
-// ============================================================
-
-export const radius = {
-  sm: 'var(--radius-sm)',
-  md: 'var(--radius-md)',
-  lg: 'var(--radius-lg)',
-  xl: 'var(--radius-xl)',
-  full: 'var(--radius-full)',
-} as const
 
 // ============================================================
 // Tension Level Types
@@ -108,7 +83,7 @@ export const radius = {
 export type TensionLevel = 'normal' | 'warning' | 'tense' | 'critical';
 
 // ============================================================
-// Friendly View Tension Config (Green Theme)
+// Friendly View Tension Config (Teal/Brass/Red)
 // ============================================================
 
 export const tensionConfig = {
@@ -139,7 +114,7 @@ export const tensionConfig = {
 } as const;
 
 // ============================================================
-// Opponent View Tension Config (Blue Theme)
+// Opponent View Tension Config (Crimson)
 // ============================================================
 
 export const opponentTensionConfig = {
@@ -175,31 +150,32 @@ export const opponentTensionConfig = {
 
 // ============================================================
 // Encryptor Page Tension Config (with emoji/message)
+// Intelligence metaphors
 // ============================================================
 
 export const encryptorTensionConfig = {
   normal: {
     ...tensionConfig.normal,
-    emoji: '(\u2022\u203f\u2022)',
-    message: '\u4e13\u6ce8\u52a0\u5bc6\u4e2d...',
+    emoji: '🕵️',
+    message: '编写情报中...',
     glowIntensity: 1,
   },
   warning: {
     ...tensionConfig.warning,
-    emoji: '(\u2022_\u2022;)',
-    message: '\u65f6\u95f4\u4e0d\u591a\u4e86...',
+    emoji: '⏱️',
+    message: '窗口期即将关闭...',
     glowIntensity: 1.2,
   },
   tense: {
     ...tensionConfig.tense,
-    emoji: '(\u00b0\u25b3\u00b0;)',
-    message: '\u5feb\u5feb\u5feb\uff01',
+    emoji: '🚨',
+    message: '紧急情报！',
     glowIntensity: 1.5,
   },
   critical: {
     ...tensionConfig.critical,
-    emoji: '(\u00b0\u0414\u00b0;)',
-    message: '\uff01\uff01\uff01',
+    emoji: '⚠️',
+    message: '行动暴露风险！',
     glowIntensity: 2,
   },
 } as const;
@@ -210,20 +186,20 @@ export const encryptorTensionConfig = {
 
 export const opponentMascotConfig = {
   normal: {
-    emoji: '(\u00ac\u203f\u00ac)',
-    message: '\u76d1\u542c\u4e2d...',
+    emoji: '🔍',
+    message: '截获通讯中...',
   },
   warning: {
-    emoji: '(\u00ac\u03c9\u00ac)',
-    message: '\u4fe1\u53f7\u4e0d\u7a33\u5b9a...',
+    emoji: '📡',
+    message: '信号不稳定...',
   },
   tense: {
-    emoji: '(\u00ac\u25bd\u00ac)',
-    message: '\u5feb\u622a\u83b7\u4e86...',
+    emoji: '🎯',
+    message: '即将破译...',
   },
   critical: {
-    emoji: '(\u00b0\u0414\u00b0;)',
-    message: '\uff01\uff01\uff01',
+    emoji: '⚠️',
+    message: '紧急拦截！',
   },
 } as const;
 
@@ -232,98 +208,117 @@ export const opponentMascotConfig = {
 // ============================================================
 
 export const rawColors = {
-  // CRT Display
-  crtScreen: '#0a0f0a',
-  crtScreenLight: '#1a2a1a',
-  crtPhosphor: '#00ff88',
-  crtPhosphorDim: '#2a4a3a',
-  crtAmber: '#ffaa00',
-  crtAmberDim: '#4a3a2a',
+  // Primary Palette
+  navy: '#0B1426',
+  navyLight: '#142038',
+  navyDark: '#060A14',
+  cream: '#E8DCC8',
+  creamDark: '#D4C4A8',
+  creamLight: '#F2EBE0',
+  intelRed: '#C41E3A',
+  intelRedDim: '#7A1225',
+  brass: '#B8860B',
+  brassDim: '#8B6508',
+  brassLight: '#DAA520',
 
   // Team Colors
-  teamFriendly: '#00ff88',
-  teamFriendlyDim: '#3d5544',
-  teamEnemy: '#ff4444',
-  teamEnemyDim: '#442222',
+  teamFriendly: '#0E7C6B',
+  teamFriendlyDim: '#0A5A4D',
+  teamFriendlyLight: '#12A68E',
+  teamEnemy: '#8B0000',
+  teamEnemyDim: '#5C0000',
+  teamEnemyLight: '#B22222',
 
-  // Base Grays
-  bgBase: '#1a1a1a',
-  bgDark: '#0a0f0a',
-  bgDarkBlue: '#0a0f1a',
+  // Background
+  bgBase: '#0B1426',
+  bgDark: '#060A14',
+  bgPaper: '#E8DCC8',
+  bgPaperDark: '#D4C4A8',
 
-  // UI Metals
-  metal: '#4a4a4a',
-  metalLight: '#6a6a6a',
-  metalDark: '#2a2a2a',
-  panel: '#3a3a3a',
+  // UI
+  deskWood: '#3E2723',
+  deskWoodLight: '#5D4037',
+  deskWoodDark: '#2C1A12',
+  leather: '#4A3728',
+  inkBlack: '#1A1A1A',
+  inkBlue: '#1B3A5C',
 
-  // Text
-  cream: '#f5f0e6',
+  // Stamps
+  stampRed: '#C41E3A',
+  stampBlue: '#1B3A5C',
+  stampGreen: '#0E7C6B',
+  waxRed: '#8B0000',
 
-  // Device
-  deviceFrame: '#2a2a2a',
-  deviceFrameLight: '#3a3a3a',
-  deviceFrameDark: '#1a1a1a',
-  deviceLabelBg: '#1a1a1a',
-  deviceLabelBorder: '#3a3a3a',
-  deviceScrew: '#4a4a4a',
-  deviceScrewSlot: '#2a2a2a',
+  // Tension friendly
+  tensionNormalBg: '#0B1E2E',
+  tensionNormalText: '#0E7C6B',
+  tensionWarningBg: '#1A1A0A',
+  tensionWarningText: '#B8860B',
+  tensionTenseBg: '#2A0A0A',
+  tensionTenseText: '#C41E3A',
+  tensionCriticalBg: '#3A0808',
+  tensionCriticalText: '#FF2D2D',
 
-  // Status
-  statusConnected: '#00ff88',
-  statusDisconnected: '#ff4444',
-  statusPending: '#ffaa00',
-
-  // Opponent view colors (Red theme)
-  opponentNormalBorder: '#5a1a1a',
-  opponentNormalBg: '#1a0a0a',
-  opponentWarningBg: '#220a0a',
-  opponentTenseBg: '#2f0a0a',
-  opponentCriticalBg: '#3a1010',
-  opponentScreenBg: '#1a0a0a',
+  // Tension opponent
+  opponentNormalBg: '#1A0808',
+  opponentNormalBorder: '#5C0000',
+  opponentWarningBg: '#220A0A',
+  opponentTenseBg: '#2F0A0A',
+  opponentCriticalBg: '#3A0808',
+  opponentScreenBg: '#1A0808',
   opponentCrtScreen: '#0f0505',
 
-  // Tension colors
-  tensionNormalBg: '#1a2f1a',
-  tensionNormalText: '#00ff88',
-  tensionWarningBg: '#2f2a1a',
-  tensionWarningText: '#88ff00',
-  tensionTenseBg: '#2f1a1a',
-  tensionTenseText: '#ffaa00',
-  tensionCriticalBg: '#3a1010',
-  tensionCriticalText: '#ff4444',
+  // Status
+  statusConnected: '#0E7C6B',
+  statusDisconnected: '#C41E3A',
+  statusPending: '#B8860B',
+
+  // Legacy aliases for old components (CRTButton, NumberPad, CountdownTimer, etc.)
+  crtPhosphor: '#0E7C6B',
+  crtPhosphorDim: '#0A5A4D',
+  crtAmber: '#B8860B',
+  crtAmberDim: '#8B6508',
+  crtScreen: '#060A14',
+  crtScreenLight: '#142038',
+  metal: '#4A3728',
+  metalLight: '#5D4037',
+  metalDark: '#2C1A12',
+  panel: '#3E2723',
+  bgDarkBlue: '#0B1426',
+  deviceFrame: '#2C1A12',
+  deviceFrameLight: '#3E2723',
+  deviceFrameDark: '#1A1A1A',
+  deviceLabelBg: '#0B1426',
+  deviceLabelBorder: '#142038',
+  deviceScrew: '#5D4037',
+  deviceScrewSlot: '#2C1A12',
 } as const;
 
 // ============================================================
-// Waveform/Oscilloscope State Config
-// Note: Uses hex values for canvas 2D context compatibility
+// Legacy exports for old components
 // ============================================================
 
+export const deviceColors = {
+  frame: 'var(--color-desk-wood-dark)',
+  frameLight: 'var(--color-desk-wood)',
+  frameDark: 'var(--color-navy-dark)',
+  labelBg: 'var(--color-bg-base)',
+  labelBorder: 'var(--color-navy-light)',
+  screw: 'var(--color-desk-wood-light)',
+  screwSlot: 'var(--color-desk-wood-dark)',
+} as const;
+
+export const screenEffectColors = {
+  reflection: 'rgba(255, 255, 255, 0.08)',
+  shadow: 'rgba(0, 0, 0, 0.9)',
+  vignette: 'rgba(0, 0, 0, 0.4)',
+  scanline: 'rgba(0, 0, 0, 0.15)',
+} as const;
+
 export const waveConfig = {
-  active: {
-    color: '#00ff88',
-    borderColor: '#00ff88',
-    amplitude: 25,
-    frequency: 0.05,
-    speed: 1.5,
-    glowIntensity: 10,
-  },
-  completed: {
-    color: '#3d5544',
-    borderColor: '#3d5544',
-    amplitude: 8,
-    frequency: 0.02,
-    speed: 0.3,
-    glowIntensity: 3,
-  },
-  waiting: {
-    color: '#1a2f1a',
-    borderColor: '#1a2f1a',
-    amplitude: 2,
-    frequency: 0,
-    speed: 0,
-    glowIntensity: 0,
-  },
+  active: { color: '#0E7C6B', borderColor: '#0E7C6B', amplitude: 25, frequency: 0.05, speed: 1.5, glowIntensity: 10 },
+  completed: { color: '#0A5A4D', borderColor: '#0A5A4D', amplitude: 8, frequency: 0.02, speed: 0.3, glowIntensity: 3 },
+  waiting: { color: '#142038', borderColor: '#142038', amplitude: 2, frequency: 0, speed: 0, glowIntensity: 0 },
 } as const;
 
 export type WaveState = keyof typeof waveConfig;
@@ -336,18 +331,18 @@ export type TransitionRole = 'encryptor' | 'teammate' | 'opponent';
 
 export const transitionConfig: Record<TransitionRole, { text: string; color: string; bgColor: string }> = {
   encryptor: {
-    text: '\u52a0\u5bc6\u5df2\u53d1\u9001',
-    color: 'var(--color-team-friendly)',
-    bgColor: 'var(--color-transition-friendly-bg)',
+    text: '情报已发送',
+    color: '#0E7C6B',
+    bgColor: '#0B1E2E',
   },
   teammate: {
-    text: '\u51c6\u5907\u89e3\u7801',
-    color: 'var(--color-team-friendly)',
-    bgColor: 'var(--color-transition-friendly-bg)',
+    text: '准备解码',
+    color: '#0E7C6B',
+    bgColor: '#0B1E2E',
   },
   opponent: {
-    text: '\u4fe1\u53f7\u622a\u83b7',
-    color: 'var(--color-team-enemy)',
-    bgColor: 'var(--color-transition-enemy-bg)',
+    text: '通讯已截获',
+    color: '#8B0000',
+    bgColor: '#1A0808',
   },
 } as const;
