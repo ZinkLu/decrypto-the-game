@@ -75,11 +75,20 @@ func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
 		}
 	}
 	if hasAI {
-		if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-			provider := providers.NewClaudeProvider(key)
+		var provider ai.LLMProvider
+		if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+			baseURL := os.Getenv("OPENAI_BASE_URL")
+			model := os.Getenv("OPENAI_MODEL")
+			provider = providers.NewOpenAIProvider(key, baseURL, model)
+			log.Printf("bridge: using OpenAI-compatible provider (base=%s, model=%s)", baseURL, model)
+		} else if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+			provider = providers.NewClaudeProvider(key)
+			log.Printf("bridge: using Claude provider")
+		}
+		if provider != nil {
 			b.AIPlayer = ai.NewAIPlayer(provider)
 		} else {
-			log.Printf("bridge: ANTHROPIC_API_KEY not set; AI players will use fallback stubs")
+			log.Printf("bridge: no LLM API key set (OPENAI_API_KEY or ANTHROPIC_API_KEY); AI players will use fallback stubs")
 		}
 	}
 
