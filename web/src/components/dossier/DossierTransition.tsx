@@ -8,6 +8,10 @@ const roleLabels: Record<TransitionRole, string> = {
   encryptor: 'DISPATCHED',
   teammate: 'DECODING',
   opponent: 'INTERCEPTED',
+  alert: 'ALERT',
+  intercepting: 'INTERCEPTING',
+  secure: 'SECURE',
+  passed: 'PASSED',
 };
 
 interface DossierTransitionProps {
@@ -43,7 +47,7 @@ export function DossierTransition({
 
   if (!isVisible) return null;
 
-  const isEnemy = role === 'opponent';
+  const isEnemy = role === 'opponent' || role === 'alert' || role === 'intercepting' || role === 'passed';
 
   return (
     <div
@@ -73,7 +77,7 @@ export function DossierTransition({
               color: config.color,
               border: `4px solid ${config.color}`,
               padding: '8px 32px',
-              transform: `rotate(${isEnemy ? '3' : '-3'}deg)`,
+              transform: `rotate(${config.rotation}deg)`,
               opacity: 0.9,
               animation: 'stamp-press 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
             }}

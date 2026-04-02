@@ -289,7 +289,7 @@ export default function EncryptorWatching() {
         </div>
 
         {/* Divider */}
-        <div className="mx-8 mt-4 border-t" style={{ borderColor: rawColors.brassDim }} />
+        <div className="max-w-2xl mx-auto w-full mt-4 border-t" style={{ borderColor: rawColors.brassDim }} />
 
         {/* Real-time decode */}
         <div className="flex-1 px-4 mt-3 overflow-y-auto" aria-live="polite">

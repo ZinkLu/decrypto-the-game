@@ -264,22 +264,94 @@ export const rawColors = {
 // Transition Overlay Config
 // ============================================================
 
-export type TransitionRole = 'encryptor' | 'teammate' | 'opponent';
+export type TransitionRole =
+  | 'encryptor' | 'teammate' | 'opponent'
+  | 'alert' | 'intercepting' | 'secure' | 'passed';
 
-export const transitionConfig: Record<TransitionRole, { text: string; color: string; bgColor: string }> = {
+export const transitionConfig: Record<TransitionRole, { text: string; color: string; bgColor: string; rotation: number }> = {
+  // A2B transitions
   encryptor: {
     text: '情报已发送',
     color: '#0E7C6B',
     bgColor: '#0B1E2E',
+    rotation: -3,
   },
   teammate: {
     text: '准备解码',
     color: '#0E7C6B',
     bgColor: '#0B1E2E',
+    rotation: -3,
   },
   opponent: {
     text: '通讯已截获',
     color: '#8B0000',
     bgColor: '#1A0808',
+    rotation: 3,
+  },
+  // B2C transitions — Branch A: opponent intercepts
+  alert: {
+    text: '⚠️ 通讯被截获！',
+    color: '#8B0000',
+    bgColor: '#1A0808',
+    rotation: 3,
+  },
+  intercepting: {
+    text: '发起拦截行动',
+    color: '#8B0000',
+    bgColor: '#1A0808',
+    rotation: 3,
+  },
+  // B2C transitions — Branch B: opponent skips
+  secure: {
+    text: '通讯安全，未被拦截',
+    color: '#0E7C6B',
+    bgColor: '#0B1E2E',
+    rotation: -3,
+  },
+  passed: {
+    text: '放弃拦截',
+    color: '#5C0000',
+    bgColor: '#1A0808',
+    rotation: 3,
+  },
+} as const;
+
+// ============================================================
+// Alert Tension Config (C1 - being intercepted)
+// Mixed color: friendly base invaded by red
+// ============================================================
+
+export const alertTensionConfig = {
+  normal: {
+    bg: '#1A0E14',
+    text: rawColors.intelRed,
+    borderColor: rawColors.intelRed,
+    emoji: '😰',
+    message: '通讯暴露中…',
+    scanSpeed: 2,
+  },
+  warning: {
+    bg: '#250A12',
+    text: rawColors.intelRed,
+    borderColor: rawColors.intelRed,
+    emoji: '😓',
+    message: '他们在分析…',
+    scanSpeed: 1.5,
+  },
+  tense: {
+    bg: '#2A0A0A',
+    text: rawColors.teamEnemy,
+    borderColor: rawColors.teamEnemy,
+    emoji: '😤',
+    message: '坚持住！',
+    scanSpeed: 1,
+  },
+  critical: {
+    bg: '#3A0808',
+    text: rawColors.tensionCriticalText,
+    borderColor: rawColors.tensionCriticalText,
+    emoji: '🚨',
+    message: '紧急状态！',
+    scanSpeed: 0.6,
   },
 } as const;

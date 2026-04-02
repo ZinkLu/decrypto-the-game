@@ -3,7 +3,7 @@ import { rawColors } from '../../theme/colors';
 interface AgentPanelProps {
   emoji: string;
   message: string;
-  theme?: 'friendly' | 'enemy';
+  theme?: 'friendly' | 'enemy' | 'alert';
   className?: string;
   children?: React.ReactNode;
 }
@@ -15,10 +15,15 @@ export function AgentPanel({
   className = '',
   children,
 }: AgentPanelProps) {
-  const isFriendly = theme === 'friendly';
-  const bgColor = isFriendly ? rawColors.navyLight : rawColors.opponentCrtScreen;
-  const borderColor = isFriendly ? rawColors.teamFriendlyDim : rawColors.opponentNormalBorder;
-  const textColor = isFriendly ? rawColors.teamFriendly : rawColors.teamEnemy;
+  const bgColor = theme === 'friendly' ? rawColors.navyLight
+    : theme === 'alert' ? rawColors.opponentCrtScreen
+    : rawColors.opponentCrtScreen;
+  const borderColor = theme === 'friendly' ? rawColors.teamFriendlyDim
+    : theme === 'alert' ? rawColors.intelRed
+    : rawColors.opponentNormalBorder;
+  const textColor = theme === 'friendly' ? rawColors.teamFriendly
+    : theme === 'alert' ? rawColors.intelRed
+    : rawColors.teamEnemy;
 
   return (
     <div

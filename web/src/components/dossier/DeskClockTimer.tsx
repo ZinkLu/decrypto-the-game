@@ -7,7 +7,7 @@ interface DeskClockTimerProps {
   showProgressBar?: boolean;
   size?: 'small' | 'medium' | 'large';
   showMinutes?: boolean;
-  theme?: 'friendly' | 'opponent';
+  theme?: 'friendly' | 'opponent' | 'alert';
 }
 
 const sizeConfig = {
@@ -59,6 +59,14 @@ export function DeskClockTimer({
 
   const getColor = () => {
     if (theme === 'opponent') return rawColors.teamEnemy;
+    if (theme === 'alert') {
+      switch (tension) {
+        case 'normal': return rawColors.intelRed;
+        case 'warning': return rawColors.brass;
+        case 'tense': return rawColors.teamEnemy;
+        case 'critical': return rawColors.tensionCriticalText;
+      }
+    }
     switch (tension) {
       case 'normal': return rawColors.teamFriendly;
       case 'warning': return rawColors.brass;

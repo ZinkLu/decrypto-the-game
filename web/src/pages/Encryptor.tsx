@@ -121,13 +121,14 @@ export default function Encryptor() {
         </div>
       )}
 
+      <div className="relative z-10 h-full flex flex-col">
       {/* Top countdown */}
-      <div className="relative z-10 flex flex-col items-center pt-6">
+      <div className="flex flex-col items-center pt-6">
         <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
       </div>
 
       {/* Progress indicator */}
-      <div className="relative z-10 flex items-center justify-center gap-2 mt-3">
+      <div className="flex items-center justify-center gap-2 mt-3">
         {cards.map((card, index) => (
           <div key={card.id} className="flex items-center">
             {index > 0 && <span className="mx-1" style={{ color: rawColors.brassDim }}>·</span>}
@@ -150,7 +151,7 @@ export default function Encryptor() {
       </div>
 
       {/* Card area */}
-      <div className="relative z-10 flex items-center justify-center h-[55%] mt-4 overflow-hidden">
+      <div className="flex-1 flex items-center justify-center mt-4 overflow-hidden">
         {/* Left peek */}
         {currentCard > 0 && (
           <button
@@ -290,7 +291,7 @@ export default function Encryptor() {
 
       {/* Submit button */}
       {currentCard === 2 && allCluesFilled && !isSubmitted && (
-        <div className="relative z-10 flex justify-center mt-4">
+        <div className="flex justify-center mt-4">
           <DossierButton variant="stamp" team="friendly" size="large" onClick={handleSubmit}>
             DISPATCH INTEL
           </DossierButton>
@@ -339,8 +340,9 @@ export default function Encryptor() {
       )}
 
       {/* Bottom agent panel */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 pb-4 px-4">
+      <div className="pb-4 px-4">
         <AgentPanel emoji={config.emoji} message={config.message} theme="friendly" />
+      </div>
       </div>
     </div>
   );

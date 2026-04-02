@@ -6,6 +6,8 @@ import OpponentWaiting from './pages/OpponentWaiting';
 import EncryptorWatching from './pages/EncryptorWatching';
 import TeammateDecoding from './pages/TeammateDecoding';
 import OpponentAnalyzing from './pages/OpponentAnalyzing';
+import InterceptedWaiting from './pages/InterceptedWaiting';
+import OpponentIntercepting from './pages/OpponentIntercepting';
 import TransitionOverlay, { TransitionRole } from './components/TransitionOverlay';
 
 type PageType =
@@ -15,7 +17,9 @@ type PageType =
   | 'opponent-waiting'
   | 'encryptor-watching'
   | 'teammate-decoding'
-  | 'opponent-analyzing';
+  | 'opponent-analyzing'
+  | 'intercepted-waiting'
+  | 'opponent-intercepting';
 
 const pageComponents: Record<PageType, React.FC> = {
   home: Home,
@@ -25,6 +29,8 @@ const pageComponents: Record<PageType, React.FC> = {
   'encryptor-watching': EncryptorWatching,
   'teammate-decoding': TeammateDecoding,
   'opponent-analyzing': OpponentAnalyzing,
+  'intercepted-waiting': InterceptedWaiting,
+  'opponent-intercepting': OpponentIntercepting,
 };
 
 export default function App() {
@@ -127,6 +133,30 @@ export default function App() {
             </button>
           </div>
 
+          {/* C-phase */}
+          <div
+            className="text-xs px-2 py-0.5 text-center mt-1"
+            style={{ fontFamily: "'Courier Prime', monospace", color: '#B8860B', opacity: 0.6 }}
+          >
+            C 阶段（拦截）
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => switchPage('intercepted-waiting', 'alert')}
+              className="px-3 py-1 text-xs rounded"
+              style={{ fontFamily: "'Courier Prime', monospace", background: '#0B1426', color: '#8B0000', border: '1px solid #5C0000' }}
+            >
+              过渡→C1被截
+            </button>
+            <button
+              onClick={() => switchPage('opponent-intercepting', 'intercepting')}
+              className="px-3 py-1 text-xs rounded"
+              style={{ fontFamily: "'Courier Prime', monospace", background: '#0B1426', color: '#8B0000', border: '1px solid #5C0000' }}
+            >
+              过渡→C2拦截
+            </button>
+          </div>
+
           {/* Direct jump buttons */}
           <div className="flex gap-1 flex-wrap justify-end mt-1">
             {(
@@ -137,6 +167,8 @@ export default function App() {
                 ['encryptor-watching', 'B1'],
                 ['teammate-decoding', 'B2'],
                 ['opponent-analyzing', 'B3'],
+                ['intercepted-waiting', 'C1'],
+                ['opponent-intercepting', 'C2'],
               ] as [PageType, string][]
             ).map(([page, label]) => (
               <button
@@ -155,9 +187,10 @@ export default function App() {
   }
 
   // Non-home pages: render with back button
-  const isOpponentPage = currentPage === 'opponent-waiting' || currentPage === 'opponent-analyzing';
-  const backColor = isOpponentPage ? '#8B0000' : '#0E7C6B';
-  const backBorder = isOpponentPage ? '#5C0000' : '#0A5A4D';
+  const isOpponentPage = currentPage === 'opponent-waiting' || currentPage === 'opponent-analyzing' || currentPage === 'opponent-intercepting';
+  const isAlertPage = currentPage === 'intercepted-waiting';
+  const backColor = isOpponentPage || isAlertPage ? '#8B0000' : '#0E7C6B';
+  const backBorder = isOpponentPage || isAlertPage ? '#5C0000' : '#0A5A4D';
 
   return (
     <main className="w-full h-full relative">

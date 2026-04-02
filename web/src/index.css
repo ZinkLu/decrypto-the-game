@@ -156,9 +156,10 @@
   --stamp: var(--font-stamp);
 }
 
-* {
-  margin: 0;
-  padding: 0;
+/* box-sizing reset - margin/padding resets are handled by Tailwind v4 preflight within @layer */
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -453,4 +454,20 @@ button, [role="button"], a, input {
   30% { transform: rotate(3deg); }
   40% { transform: rotate(-3deg); }
   50% { transform: rotate(0deg); }
+}
+
+/* ============================================================ */
+/* C1 Intercepted waiting animations                             */
+/* ============================================================ */
+
+@keyframes scan-line {
+  0% { top: 0%; opacity: 0; }
+  10% { opacity: 0.6; }
+  90% { opacity: 0.6; }
+  100% { top: 100%; opacity: 0; }
+}
+
+@keyframes card-flash {
+  0%, 100% { border-color: var(--color-cream-dark); box-shadow: none; }
+  50% { border-color: var(--color-intel-red); box-shadow: 0 0 12px rgba(196, 30, 58, 0.3); }
 }

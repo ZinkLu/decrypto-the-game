@@ -10,6 +10,12 @@ const roleLabels: Record<TransitionRole, string> = {
   encryptor: 'DISPATCHED',
   teammate: 'DECODING',
   opponent: 'INTERCEPTED',
+  // B2C Branch A: opponent intercepts
+  alert: 'ALERT',
+  intercepting: 'INTERCEPTING',
+  // B2C Branch B: opponent skips
+  secure: 'SECURE',
+  passed: 'PASSED',
 };
 
 interface TransitionOverlayProps {
@@ -31,7 +37,7 @@ export function TransitionOverlay({
   const [isVisible, setIsVisible] = useState(true);
   const [stampVisible, setStampVisible] = useState(false);
   const label = roleLabels[role];
-  const isEnemy = role === 'opponent';
+  const isEnemy = role === 'opponent' || role === 'alert' || role === 'intercepting' || role === 'passed';
 
   useEffect(() => {
     const stampTimer = setTimeout(() => setStampVisible(true), 100);
@@ -74,7 +80,7 @@ export function TransitionOverlay({
               color: config.color,
               border: `4px solid ${config.color}`,
               padding: '8px 32px',
-              transform: `rotate(${isEnemy ? '3' : '-3'}deg)`,
+              transform: `rotate(${config.rotation}deg)`,
               opacity: 0.9,
               animation: 'stamp-press 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
             }}
