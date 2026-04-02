@@ -1,7 +1,29 @@
+import { useState } from 'react';
 import { rawColors } from '../theme/colors';
-import { ManilaFolder, RubberStamp, TypewriterText, DossierButton, WaxSeal, DossierEffectLayer } from '../components/dossier';
+import { ManilaFolder, RubberStamp, TypewriterText, DossierButton, WaxSeal, DossierEffectLayer, TypewriterInput } from '../components/dossier';
+import { useGameStore } from '../store/gameStore';
+
+type Mode = 'menu' | 'create' | 'join';
 
 export default function Home() {
+  const [mode, setMode] = useState<Mode>('menu');
+  const [nickname, setNickname] = useState('');
+  const [roomCode, setRoomCode] = useState('');
+
+  const { connected, createRoom, joinRoom } = useGameStore();
+
+  const handleCreate = () => {
+    if (nickname.trim()) {
+      createRoom(nickname.trim());
+    }
+  };
+
+  const handleJoin = () => {
+    if (nickname.trim() && roomCode.trim()) {
+      joinRoom(roomCode.trim(), nickname.trim());
+    }
+  };
+
   return (
     <div
       className="relative w-full h-full overflow-hidden"
@@ -48,16 +70,68 @@ export default function Home() {
             style={{ borderColor: rawColors.creamDark }}
           />
 
-          {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <DossierButton variant="primary" size="large">
-              CREATE ROOM
-            </DossierButton>
+          {/* Action area */}
+          {mode === 'menu' && (
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <DossierButton variant="primary" size="large" onClick={() => setMode('create')}>
+                CREATE ROOM
+              </DossierButton>
 
-            <DossierButton variant="secondary" size="large">
-              JOIN ROOM
-            </DossierButton>
-          </div>
+              <DossierButton variant="secondary" size="large" onClick={() => setMode('join')}>
+                JOIN ROOM
+              </DossierButton>
+            </div>
+          )}
+
+          {mode === 'create' && (
+            <div className="flex flex-col gap-4">
+              <TypewriterInput
+                value={nickname}
+                onChange={setNickname}
+                placeholder="ENTER CODENAME..."
+                maxLength={20}
+                color="dark"
+                aria-label="Nickname"
+              />
+              <div className="flex gap-3 justify-center">
+                <DossierButton variant="secondary" size="large" onClick={() => { setMode('menu'); setNickname(''); }}>
+                  BACK
+                </DossierButton>
+                <DossierButton variant="primary" size="large" onClick={handleCreate} disabled={!nickname.trim()}>
+                  CREATE
+                </DossierButton>
+              </div>
+            </div>
+          )}
+
+          {mode === 'join' && (
+            <div className="flex flex-col gap-4">
+              <TypewriterInput
+                value={nickname}
+                onChange={setNickname}
+                placeholder="ENTER CODENAME..."
+                maxLength={20}
+                color="dark"
+                aria-label="Nickname"
+              />
+              <TypewriterInput
+                value={roomCode}
+                onChange={setRoomCode}
+                placeholder="ENTER ROOM CODE..."
+                maxLength={10}
+                color="dark"
+                aria-label="Room code"
+              />
+              <div className="flex gap-3 justify-center">
+                <DossierButton variant="secondary" size="large" onClick={() => { setMode('menu'); setNickname(''); setRoomCode(''); }}>
+                  BACK
+                </DossierButton>
+                <DossierButton variant="primary" size="large" onClick={handleJoin} disabled={!nickname.trim() || !roomCode.trim()}>
+                  JOIN
+                </DossierButton>
+              </div>
+            </div>
+          )}
 
           {/* Status panel */}
           <div
@@ -76,24 +150,12 @@ export default function Home() {
               </span>
               <span
                 className="text-xs font-bold"
-                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamFriendly }}
+                style={{
+                  fontFamily: "'Courier Prime', monospace",
+                  color: connected ? rawColors.teamFriendly : rawColors.teamEnemy,
+                }}
               >
-                CONNECTED
-              </span>
-            </div>
-            <div className="w-px h-4" style={{ backgroundColor: rawColors.brass }} />
-            <div className="flex items-center gap-2">
-              <span
-                className="text-xs"
-                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack }}
-              >
-                CLEARANCE:
-              </span>
-              <span
-                className="text-xs font-bold"
-                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brass }}
-              >
-                LEVEL 5
+                {connected ? 'CONNECTED' : 'CONNECTING...'}
               </span>
             </div>
           </div>
