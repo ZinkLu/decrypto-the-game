@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { TensionLevel, rawColors } from '../theme/colors';
 import { DeskClockTimer, AgentPanel, DossierEffectLayer } from '../components/dossier';
 import { motion } from 'framer-motion';
+import { useGameStore } from '../store/gameStore';
 
 type SlotStatus = 'empty' | 'focused' | 'filled';
 
@@ -247,24 +248,33 @@ const mascotConfig = {
 };
 
 export default function OpponentIntercepting() {
+  const { clues: currentClues, history: gameHistory, submitIntercept } = useGameStore();
+
   const [timeLeft, setTimeLeft] = useState(45);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [focusedSlot, setFocusedSlot] = useState(1);
   const [submitted, setSubmitted] = useState(false);
   const [mascotState, setMascotState] = useState<keyof typeof mascotConfig>('targeting');
 
-  const currentClues = ['苦涩', '毛茸', '开门'];
+  const circledDigits = ['①', '②', '③', '④'];
+  const intelData: IntelRow[] = useMemo(() =>
+    gameHistory
+      .filter((row) => row.clues.length > 0)
+      .map((row) => ({
+        round: row.round,
+        clues: row.clues,
+        sequence: row.secret
+          ? row.secret.map((n) => circledDigits[n - 1] || String(n)).join(' ')
+          : '???',
+      })),
+    [gameHistory],
+  );
 
-  const intelData: IntelRow[] = [
-    { round: 1, clues: ['飞行', '自由', '羽毛'], sequence: '② ④ ①' },
-    { round: 2, clues: ['夜晚', '明亮', '银色'], sequence: '③ ① ②' },
-  ];
-
-  const [slots, setSlots] = useState<InterceptSlotData[]>([
-    { id: 1, clue: '苦涩', answer: null, status: 'empty' },
-    { id: 2, clue: '毛茸', answer: null, status: 'empty' },
-    { id: 3, clue: '开门', answer: null, status: 'empty' },
-  ]);
+  const [slots, setSlots] = useState<InterceptSlotData[]>(() =>
+    currentClues.map((clue, i) => ({
+      id: i + 1, clue, answer: null, status: 'empty' as SlotStatus,
+    }))
+  );
 
   useEffect(() => {
     if (timeLeft > 15) setTension('normal');
@@ -331,6 +341,8 @@ export default function OpponentIntercepting() {
     if (!allFilled || submitted) return;
     setSubmitted(true);
     setMascotState('waiting');
+    const guess = slots.map((s) => s.answer!) as [number, number, number];
+    submitIntercept(guess);
   };
 
   const getBgColor = () => {

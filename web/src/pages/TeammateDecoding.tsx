@@ -4,6 +4,7 @@ import {
   DeskClockTimer, BrassTokenPad, DossierButton,
   AgentPanel, DossierEffectLayer,
 } from '../components/dossier';
+import { useGameStore } from '../store/gameStore';
 
 type SlotStatus = 'empty' | 'focused' | 'filled' | 'correct' | 'wrong';
 
@@ -153,24 +154,21 @@ const mascotConfig = {
 };
 
 export default function TeammateDecoding() {
+  const { myWords, clues, submitDecrypt } = useGameStore();
+
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [focusedSlot, setFocusedSlot] = useState(1);
   const [submitted, setSubmitted] = useState(false);
   const [mascotState, setMascotState] = useState<keyof typeof mascotConfig>('thinking');
 
-  const codewords: CodeWord[] = [
-    { number: 1, word: '猫咪' },
-    { number: 2, word: '月亮' },
-    { number: 3, word: '咖啡' },
-    { number: 4, word: '钥匙' },
-  ];
+  const codewords: CodeWord[] = myWords.map((word, i) => ({ number: i + 1, word }));
 
-  const [slots, setSlots] = useState<ClueSlot[]>([
-    { id: 1, clue: '苦涩', answer: null, status: 'empty', correctAnswer: 3 },
-    { id: 2, clue: '毛茸', answer: null, status: 'empty', correctAnswer: 1 },
-    { id: 3, clue: '开门', answer: null, status: 'empty', correctAnswer: 4 },
-  ]);
+  const [slots, setSlots] = useState<ClueSlot[]>(() =>
+    clues.map((clue, i) => ({
+      id: i + 1, clue, answer: null, status: 'empty' as SlotStatus, correctAnswer: 0,
+    }))
+  );
 
   useEffect(() => {
     if (timeLeft > 30) setTension('normal');
@@ -236,14 +234,8 @@ export default function TeammateDecoding() {
     if (!allFilled || submitted) return;
     setSubmitted(true);
     setMascotState('waitingResult');
-    setTimeout(() => {
-      setSlots((prev) => prev.map((s) => ({
-        ...s,
-        status: (s.answer === s.correctAnswer ? 'correct' : 'wrong') as SlotStatus,
-      })));
-      const allCorrect = slots.every((s) => s.answer === s.correctAnswer);
-      setMascotState(allCorrect ? 'correct' : 'wrong');
-    }, 1500);
+    const guess = slots.map((s) => s.answer!) as [number, number, number];
+    submitDecrypt(guess);
   };
 
   const getBgColor = () => {

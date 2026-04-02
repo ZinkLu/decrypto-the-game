@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { TensionLevel, rawColors, opponentMascotConfig } from '../theme/colors';
 import { DeskClockTimer, RedactedText, RubberStamp, AgentPanel, DossierEffectLayer } from '../components/dossier';
+import { useGameStore } from '../store/gameStore';
 
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -95,6 +96,10 @@ function SignalStrengthMeter({ tension }: { tension: TensionLevel }) {
 }
 
 export default function OpponentWaiting() {
+  const { encryptor, round } = useGameStore();
+  void encryptor;
+  void round;
+
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
 

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { TensionLevel, encryptorTensionConfig, rawColors } from '../theme/colors';
 import {
   PaperCard, TypewriterInput, DeskClockTimer, DossierButton,
   AgentPanel, RubberStamp, DossierEffectLayer,
 } from '../components/dossier';
+import { useGameStore } from '../store/gameStore';
 
 interface SecretCard {
   id: number;
@@ -20,36 +21,35 @@ interface HistoryEntry {
 const tensionConfig = encryptorTensionConfig;
 
 export default function Encryptor() {
+  const { secretDigits, secretWords, myWords, history: gameHistory, submitClues } = useGameStore();
+
   const [currentCard, setCurrentCard] = useState(0);
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [showHistory, setShowHistory] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const [cards, setCards] = useState<SecretCard[]>([
-    { id: 1, number: 3, word: '咖啡', clue: '' },
-    { id: 2, number: 1, word: '猫咪', clue: '' },
-    { id: 3, number: 4, word: '钥匙', clue: '' },
-  ]);
+  const [cards, setCards] = useState<SecretCard[]>(() =>
+    secretDigits.map((num, i) => ({
+      id: i + 1,
+      number: num,
+      word: secretWords[i] || '',
+      clue: '',
+    }))
+  );
 
-  const [history] = useState<HistoryEntry[]>([
-    {
-      round: 1,
-      entries: [
-        { number: 3, word: '咖啡', clue: '苦涩' },
-        { number: 1, word: '猫咪', clue: '毛茸' },
-        { number: 4, word: '钥匙', clue: '开门' },
-      ],
-    },
-    {
-      round: 2,
-      entries: [
-        { number: 2, word: '月亮', clue: '银色' },
-        { number: 4, word: '钥匙', clue: '金属' },
-        { number: 1, word: '猫咪', clue: '喵' },
-      ],
-    },
-  ]);
+  const history = useMemo<HistoryEntry[]>(() => {
+    return gameHistory
+      .filter((row) => row.secret && row.clues.length > 0)
+      .map((row) => ({
+        round: row.round,
+        entries: row.clues.map((clue, i) => ({
+          number: row.secret ? row.secret[i] : 0,
+          word: myWords[row.secret ? row.secret[i] - 1 : 0] || '',
+          clue,
+        })),
+      }));
+  }, [gameHistory, myWords]);
 
   useEffect(() => {
     if (timeLeft > 30) setTension('normal');
@@ -83,7 +83,7 @@ export default function Encryptor() {
   const handleSubmit = () => {
     if (allCluesFilled) {
       setIsSubmitted(true);
-      console.log('Submitting clues:', cards.map((c) => c.clue));
+      submitClues(cards.map((c) => c.clue) as [string, string, string]);
     }
   };
 

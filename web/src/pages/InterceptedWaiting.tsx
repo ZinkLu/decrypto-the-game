@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { TensionLevel, rawColors, alertTensionConfig } from '../theme/colors';
 import { DeskClockTimer, RubberStamp, AgentPanel, DossierEffectLayer } from '../components/dossier';
+import { useGameStore } from '../store/gameStore';
 
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -113,6 +114,9 @@ function ThreatMeter({ level }: { level: number }) {
 }
 
 export default function InterceptedWaiting() {
+  const { myWords, round } = useGameStore();
+  void round;
+
   const [timeLeft, setTimeLeft] = useState(45);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [threatLevel, setThreatLevel] = useState(2);
@@ -120,12 +124,7 @@ export default function InterceptedWaiting() {
   const [opponentProgress, setOpponentProgress] = useState(0);
   const flashTimerRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
-  const codewords: CodeWord[] = [
-    { number: 1, word: '猫咪' },
-    { number: 2, word: '月亮' },
-    { number: 3, word: '咖啡' },
-    { number: 4, word: '钥匙' },
-  ];
+  const codewords: CodeWord[] = myWords.map((word, i) => ({ number: i + 1, word }));
 
   useEffect(() => {
     if (timeLeft > 15) setTension('normal');

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TensionLevel, rawColors } from '../theme/colors';
 import { DeskClockTimer, PaperCard, AgentPanel, DossierButton, DossierEffectLayer } from '../components/dossier';
+import { useGameStore } from '../store/gameStore';
 
 type GuessStatus = 'waiting' | 'correct' | 'wrong';
 
@@ -199,17 +200,24 @@ const mascotConfig = {
 };
 
 export default function EncryptorWatching() {
+  const { clues: storeClues, secretDigits, round } = useGameStore();
+  void round;
+
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [showSummary, setShowSummary] = useState(false);
   const [mascotState, setMascotState] = useState<keyof typeof mascotConfig>('waiting');
 
-  const correctAnswers = [3, 1, 4];
-  const [clues, setClues] = useState<ClueRow[]>([
-    { id: 1, clue: '苦涩', correctAnswer: 3, guess: null, status: 'waiting' },
-    { id: 2, clue: '毛茸', correctAnswer: 1, guess: null, status: 'waiting' },
-    { id: 3, clue: '开门', correctAnswer: 4, guess: null, status: 'waiting' },
-  ]);
+  const correctAnswers = secretDigits.length > 0 ? secretDigits : [0, 0, 0];
+  const [clues, setClues] = useState<ClueRow[]>(() =>
+    storeClues.map((clue, i) => ({
+      id: i + 1,
+      clue,
+      correctAnswer: secretDigits[i] || 0,
+      guess: null,
+      status: 'waiting' as GuessStatus,
+    }))
+  );
 
   useEffect(() => {
     if (timeLeft > 30) setTension('normal');

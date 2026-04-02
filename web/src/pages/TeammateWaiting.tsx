@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TensionLevel, rawColors } from '../theme/colors';
 import { DeskClockTimer, AgentPanel, DossierEffectLayer } from '../components/dossier';
+import { useGameStore } from '../store/gameStore';
 
 interface WaveformState {
   id: number;
@@ -9,6 +10,8 @@ interface WaveformState {
 }
 
 export default function TeammateWaiting() {
+  const { encryptor, round } = useGameStore();
+
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [completedCount, setCompletedCount] = useState(0);
@@ -18,7 +21,8 @@ export default function TeammateWaiting() {
     { id: 3, state: 'waiting', statusText: '等待中' },
   ]);
 
-  const encryptorName = '小明';
+  const encryptorName = encryptor || '队友';
+  void round;
 
   useEffect(() => {
     if (timeLeft > 30) setTension('normal');

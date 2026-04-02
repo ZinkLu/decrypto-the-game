@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { TensionLevel, rawColors } from '../theme/colors';
 import { DeskClockTimer, AgentPanel, RubberStamp, DossierEffectLayer } from '../components/dossier';
+import { useGameStore } from '../store/gameStore';
 
 interface IntelRow {
   round: number;
@@ -143,18 +144,38 @@ const mascotConfig = {
 };
 
 export default function OpponentAnalyzing() {
+  const { clues: storeClues, history: gameHistory, round } = useGameStore();
+
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [elapsed, setElapsed] = useState(0);
   const [highlightedWord, setHighlightedWord] = useState<string | null>(null);
 
-  const intelData: IntelRow[] = [
-    { round: 1, clues: ['飞行', '自由', '羽毛'], sequence: '② ④ ①', isCurrent: false },
-    { round: 2, clues: ['夜晚', '明亮', '银色'], sequence: '③ ① ②', isCurrent: false },
-    { round: 3, clues: ['苦涩', '毛茸', '开门'], sequence: '???', isCurrent: true },
-  ];
+  const circledDigits = ['①', '②', '③', '④'];
+  const intelData: IntelRow[] = useMemo(() => {
+    const historyRows: IntelRow[] = gameHistory
+      .filter((row) => row.clues.length > 0)
+      .map((row) => ({
+        round: row.round,
+        clues: row.clues,
+        sequence: row.secret
+          ? row.secret.map((n) => circledDigits[n - 1] || String(n)).join(' ')
+          : '???',
+        isCurrent: false,
+      }));
+    // Add current round
+    if (storeClues.length > 0) {
+      historyRows.push({
+        round,
+        clues: storeClues,
+        sequence: '???',
+        isCurrent: true,
+      });
+    }
+    return historyRows;
+  }, [gameHistory, storeClues, round]);
 
-  const currentClues = ['苦涩', '毛茸', '开门'];
+  const currentClues = storeClues;
 
   useEffect(() => {
     if (timeLeft > 30) setTension('normal');
