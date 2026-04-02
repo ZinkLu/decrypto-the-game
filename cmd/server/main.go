@@ -4,20 +4,25 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/api"
+	"github.com/ZinkLu/decrypto-the-game/internal/game"
+	"github.com/ZinkLu/decrypto-the-game/internal/room"
+	"github.com/ZinkLu/decrypto-the-game/internal/server"
+	"github.com/ZinkLu/decrypto-the-game/internal/ws"
 )
 
 func main() {
-	// Initialize game API
-	gameAPI := api.NewGameAPI()
+	game.RegisterHandlers()
+	roomManager := room.NewManager()
 
-	// Serve static files from web directory
-	http.Handle("/", http.FileServer(http.Dir("../web")))
+	// Handler needs hub reference. Create handler first with nil hub, then create hub, then set handler.Hub.
+	handler := server.NewHandler(roomManager, nil)
+	hub := ws.NewHub(handler.HandleMessage)
+	handler.Hub = hub
 
-	// Game API endpoints
-	http.HandleFunc("/api/game/create", gameAPI.HandleCreateGame)
-	http.HandleFunc("/api/game/join", gameAPI.HandleJoinGame)
-	http.HandleFunc("/api/game/status", gameAPI.HandleGameStatus)
+	go hub.Run()
+
+	http.Handle("/", http.FileServer(http.Dir("web/dist")))
+	http.HandleFunc("/ws", hub.ServeWS)
 
 	log.Println("Starting Decrypto server on http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
