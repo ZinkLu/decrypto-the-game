@@ -2,9 +2,13 @@ package game
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	"time"
 
+	"github.com/ZinkLu/decrypto-the-game/internal/ai"
+	"github.com/ZinkLu/decrypto-the-game/internal/ai/providers"
 	core "github.com/ZinkLu/decrypto-the-game/internal/core/api"
 	"github.com/ZinkLu/decrypto-the-game/internal/room"
 	"github.com/ZinkLu/decrypto-the-game/internal/ws"
@@ -20,7 +24,7 @@ type Bridge struct {
 	CluesCh     chan [3]string
 	InterceptCh chan [3]int
 	DecryptCh   chan [3]int
-	AIPlayer    interface{} // will be *ai.AIPlayer, nil for now
+	AIPlayer    *ai.AIPlayer
 	cancel      context.CancelFunc
 }
 
@@ -52,6 +56,31 @@ func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
 		CluesCh:     make(chan [3]string, 1),
 		InterceptCh: make(chan [3]int, 1),
 		DecryptCh:   make(chan [3]int, 1),
+	}
+
+	// Wire up AI player if any team has AI members.
+	hasAI := false
+	for _, p := range r.TeamA {
+		if p.IsAI {
+			hasAI = true
+			break
+		}
+	}
+	if !hasAI {
+		for _, p := range r.TeamB {
+			if p.IsAI {
+				hasAI = true
+				break
+			}
+		}
+	}
+	if hasAI {
+		if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+			provider := providers.NewClaudeProvider(key)
+			b.AIPlayer = ai.NewAIPlayer(provider)
+		} else {
+			log.Printf("bridge: ANTHROPIC_API_KEY not set; AI players will use fallback stubs")
+		}
 	}
 
 	RegisterBridge(session.SessionID(), b)
@@ -490,7 +519,7 @@ func (b *Bridge) isTeamAllAI(team *core.Team) bool {
 }
 
 // ---------------------------------------------------------------------------
-// AI stubs (will be replaced in Task 12)
+// AI player helpers
 // ---------------------------------------------------------------------------
 
 func isAI(uid string) bool {
@@ -498,27 +527,51 @@ func isAI(uid string) bool {
 }
 
 func handleAIEncrypt(ctx context.Context, b *Bridge, r *core.Round) [3]string {
-	select {
-	case <-time.After(2 * time.Second):
-	case <-ctx.Done():
+	if b.AIPlayer == nil {
+		time.Sleep(2 * time.Second)
+		return [3]string{"提示1", "提示2", "提示3"}
 	}
-	return [3]string{"提示1", "提示2", "提示3"}
+	words := r.GetCurrentTeam().GetWords()
+	history := formatHistoryForAI(b, r)
+	return b.AIPlayer.GenerateClues(ctx, r.GetSecretDigits(), words, history)
 }
 
 func handleAIIntercept(ctx context.Context, b *Bridge, r *core.Round) [3]int {
-	select {
-	case <-time.After(2 * time.Second):
-	case <-ctx.Done():
+	if b.AIPlayer == nil {
+		time.Sleep(2 * time.Second)
+		return [3]int{1, 2, 3}
 	}
-	return [3]int{1, 2, 3}
+	clues := r.GetEncryptedMessage()
+	// Opponent doesn't know the current team's words, so pass empty words.
+	var emptyWords [4]string
+	history := formatHistoryForAI(b, r)
+	return b.AIPlayer.GuessSequence(ctx, clues, emptyWords, true, history)
 }
 
 func handleAIDecrypt(ctx context.Context, b *Bridge, r *core.Round) [3]int {
-	select {
-	case <-time.After(2 * time.Second):
-	case <-ctx.Done():
+	if b.AIPlayer == nil {
+		time.Sleep(2 * time.Second)
+		return r.GetSecretDigits()
 	}
-	return r.GetSecretDigits()
+	clues := r.GetEncryptedMessage()
+	words := r.GetCurrentTeam().GetWords()
+	history := formatHistoryForAI(b, r)
+	return b.AIPlayer.GuessSequence(ctx, clues, words, false, history)
+}
+
+// formatHistoryForAI builds a human-readable history string from previous rounds.
+func formatHistoryForAI(b *Bridge, r *core.Round) string {
+	rows := b.buildHistory(r)
+	if len(rows) == 0 {
+		return "（暂无历史记录）"
+	}
+
+	result := ""
+	for _, row := range rows {
+		result += fmt.Sprintf("第%d轮（队伍%s）：线索=%v，密码=%v，拦截=%v，解密=%v\n",
+			row.Round, row.Team, row.Clues, row.Secret, row.Intercept, row.Decrypt)
+	}
+	return result
 }
 
 // ---------------------------------------------------------------------------
