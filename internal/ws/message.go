@@ -85,7 +85,8 @@ type SubmitGuessData struct {
 
 // RoomCreatedData is the data payload for MsgRoomCreated.
 type RoomCreatedData struct {
-	RoomCode string `json:"room_code"`
+	RoomCode   string `json:"room_code"`
+	MyPlayerID string `json:"my_player_id"`
 }
 
 // PlayerInfo represents a player in the room.
@@ -97,12 +98,13 @@ type PlayerInfo struct {
 
 // RoomStateData is the data payload for MsgRoomState.
 type RoomStateData struct {
-	RoomCode string       `json:"room_code"`
-	Players  []PlayerInfo `json:"players"`
-	TeamA    []PlayerInfo `json:"team_a"`
-	TeamB    []PlayerInfo `json:"team_b"`
-	OwnerID  string       `json:"owner_id"`
-	CanStart bool         `json:"can_start"`
+	RoomCode   string       `json:"room_code"`
+	Players    []PlayerInfo `json:"players"`
+	TeamA      []PlayerInfo `json:"team_a"`
+	TeamB      []PlayerInfo `json:"team_b"`
+	OwnerID    string       `json:"owner_id"`
+	CanStart   bool         `json:"can_start"`
+	MyPlayerID string       `json:"my_player_id,omitempty"`
 }
 
 // GameStartData is the data payload for MsgGameStart.

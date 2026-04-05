@@ -53,3 +53,9 @@ yarn-error.log*
 .cache/
 .parcel-cache/
 .eslintcache
+.agent/
+.agents/
+.claude/
+.continue/
+.kiro/
+.trae/

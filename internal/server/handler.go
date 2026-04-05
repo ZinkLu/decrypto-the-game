@@ -52,7 +52,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 
 		client.SendMessage(ws.ServerMessage{
 			Type: ws.MsgRoomCreated,
-			Data: ws.RoomCreatedData{RoomCode: r.Code},
+			Data: ws.RoomCreatedData{RoomCode: r.Code, MyPlayerID: client.PlayerID},
 		})
 
 	case ws.MsgJoinRoom:
@@ -248,6 +248,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 		syncData := &ws.FullSyncData{}
 		if r != nil {
 			syncData.Room = h.buildRoomStateData(r)
+			syncData.Room.MyPlayerID = client.PlayerID
 		}
 		if r != nil && r.SessionID != "" {
 			bridge, ok := game.GetBridge(r.SessionID)
@@ -278,12 +279,19 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 	}
 }
 
-// broadcastRoomState builds the current room state and broadcasts it to all room members.
+// broadcastRoomState sends a personalized room state to each client in the room,
+// so that each client receives their own my_player_id.
 func (h *Handler) broadcastRoomState(r *room.Room) {
-	h.Hub.BroadcastToRoom(r.Code, ws.ServerMessage{
-		Type: ws.MsgRoomState,
-		Data: h.buildRoomStateData(r),
-	})
+	base := h.buildRoomStateData(r)
+	clients := h.Hub.GetRoomClients(r.Code)
+	for _, c := range clients {
+		data := *base
+		data.MyPlayerID = c.PlayerID
+		c.SendMessage(ws.ServerMessage{
+			Type: ws.MsgRoomState,
+			Data: &data,
+		})
+	}
 }
 
 // buildRoomStateData converts a room into the wire-format RoomStateData.

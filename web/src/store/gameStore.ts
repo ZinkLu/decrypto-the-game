@@ -135,6 +135,7 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
     case 'room_created':
       set({
         roomCode: d.room_code as string,
+        myPlayerID: (d.my_player_id as string) ?? '',
         phase: 'room',
       });
       break;
@@ -155,9 +156,9 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
     case 'game_start':
       set({
         round: (d.round as number) ?? 0,
-        myRole: (d.my_role as PlayerRole) ?? '',
-        myTeam: (d.my_team as string) ?? '',
-        myWords: (d.my_words as string[]) ?? [],
+        myRole: (d.your_role as PlayerRole) ?? '',
+        myTeam: (d.your_team as string) ?? '',
+        myWords: (d.words as string[]) ?? [],
       });
       break;
 
@@ -166,7 +167,7 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
       if (newPhase === 'new_round') {
         set({
           round: (d.round as number) ?? get().round,
-          myRole: (d.my_role as PlayerRole) ?? get().myRole,
+          myRole: (d.your_role as PlayerRole) ?? get().myRole,
           encryptor: (d.encryptor as string) ?? '',
           secretDigits: (d.secret_digits as number[]) ?? [],
           secretWords: (d.secret_words as string[]) ?? [],
@@ -179,7 +180,7 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
         set({
           phase: newPhase as GamePhase,
           round: (d.round as number) ?? get().round,
-          myRole: (d.my_role as PlayerRole) ?? get().myRole,
+          myRole: (d.your_role as PlayerRole) ?? get().myRole,
           encryptor: (d.encryptor as string) ?? '',
           secretDigits: (d.secret_digits as number[]) ?? [],
           secretWords: (d.secret_words as string[]) ?? [],
@@ -236,9 +237,9 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
       if (gameData) {
         set({
           round: (gameData.round as number) ?? get().round,
-          myRole: (gameData.my_role as PlayerRole) ?? get().myRole,
-          myTeam: (gameData.my_team as string) ?? get().myTeam,
-          myWords: (gameData.my_words as string[]) ?? get().myWords,
+          myRole: (gameData.your_role as PlayerRole) ?? get().myRole,
+          myTeam: (gameData.your_team as string) ?? get().myTeam,
+          myWords: (gameData.words as string[]) ?? get().myWords,
           secretDigits: (gameData.secret_digits as number[]) ?? [],
           secretWords: (gameData.secret_words as string[]) ?? [],
           clues: (gameData.clues as string[]) ?? [],
