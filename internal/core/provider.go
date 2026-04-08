@@ -1,4 +1,4 @@
-package api
+package core
 
 import "github.com/ZinkLu/decrypto-the-game/internal/core/word_providers"
 

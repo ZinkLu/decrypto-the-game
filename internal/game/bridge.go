@@ -9,7 +9,7 @@ import (
 
 	"github.com/ZinkLu/decrypto-the-game/internal/ai"
 	"github.com/ZinkLu/decrypto-the-game/internal/ai/providers"
-	core "github.com/ZinkLu/decrypto-the-game/internal/core/api"
+	"github.com/ZinkLu/decrypto-the-game/internal/core"
 	"github.com/ZinkLu/decrypto-the-game/internal/room"
 	"github.com/ZinkLu/decrypto-the-game/internal/ws"
 )

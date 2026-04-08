@@ -1,4 +1,4 @@
-package api
+package core
 
 type Player struct {
 	UID      string

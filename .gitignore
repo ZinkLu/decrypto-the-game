@@ -27,6 +27,7 @@ node_modules/
 # Build outputs
 dist/
 build/
+/server
 
 # Environment files
 .env

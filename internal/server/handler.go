@@ -10,7 +10,7 @@ import (
 	"github.com/ZinkLu/decrypto-the-game/internal/room"
 	"github.com/ZinkLu/decrypto-the-game/internal/ws"
 
-	core "github.com/ZinkLu/decrypto-the-game/internal/core/api"
+	"github.com/ZinkLu/decrypto-the-game/internal/core"
 )
 
 // Handler is the central WebSocket message dispatcher.
