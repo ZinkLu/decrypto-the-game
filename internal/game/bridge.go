@@ -163,6 +163,8 @@ func encryptHandler(ctx context.Context, r *core.Round, t *core.Team, p *core.Pl
 		return [3]string{}, true
 	}
 
+	log.Printf("[PHASE] Round %d → ENCRYPTING | encryptor=%s (AI=%v) | team=%s",
+		r.GetNumberOfRounds(), p.NickName, isAI(p.UID), b.teamLabel(t))
 	b.broadcastPhaseChange("encrypting", r)
 
 	// Check if the encryptor is an AI player.
@@ -203,6 +205,8 @@ func interceptHandler(ctx context.Context, r *core.Round, opponent *core.Team, t
 		return [3]int{}, true
 	}
 
+	log.Printf("[PHASE] Round %d → INTERCEPT | opponent team=%s allAI=%v",
+		r.GetNumberOfRounds(), b.teamLabel(opponent), b.isTeamAllAI(opponent))
 	b.broadcastPhaseChange("intercept", r)
 
 	if b.isTeamAllAI(opponent) {
@@ -226,6 +230,7 @@ func interceptSuccessHandler(ctx context.Context, r *core.Round, opponent *core.
 		return false
 	}
 
+	log.Printf("[RESULT] Round %d | INTERCEPT SUCCESS by team %s", r.GetNumberOfRounds(), b.teamLabel(opponent))
 	b.broadcastRoundResult(r, boolPtr(true), nil)
 	return false
 }
@@ -236,6 +241,7 @@ func interceptFailHandler(ctx context.Context, r *core.Round, opponent *core.Tea
 		return false
 	}
 
+	log.Printf("[RESULT] Round %d | INTERCEPT FAILED by team %s", r.GetNumberOfRounds(), b.teamLabel(opponent))
 	b.broadcastRoundResult(r, boolPtr(false), nil)
 
 	select {
@@ -253,9 +259,13 @@ func decryptHandler(ctx context.Context, r *core.Round, t *core.Team, ts core.Te
 		return [3]int{}, true
 	}
 
+	encryptorUID := r.EncryptPlayer().UID
+	decryptorsAllAI := b.areDecryptorsAllAI(t, encryptorUID)
+	log.Printf("[PHASE] Round %d → DECRYPT | team=%s allAI=%v decryptorsAllAI=%v encryptor=%s",
+		r.GetNumberOfRounds(), b.teamLabel(t), b.isTeamAllAI(t), decryptorsAllAI, r.EncryptPlayer().NickName)
 	b.broadcastPhaseChange("decrypt", r)
 
-	if b.isTeamAllAI(t) {
+	if decryptorsAllAI {
 		return handleAIDecrypt(ctx, b, r), false
 	}
 
@@ -276,6 +286,7 @@ func decryptSuccessHandler(ctx context.Context, r *core.Round, t *core.Team, ts 
 		return false
 	}
 
+	log.Printf("[RESULT] Round %d | DECRYPT SUCCESS by team %s", r.GetNumberOfRounds(), b.teamLabel(t))
 	b.broadcastRoundResult(r, nil, boolPtr(true))
 	return false
 }
@@ -286,6 +297,7 @@ func decryptFailHandler(ctx context.Context, r *core.Round, t *core.Team, ts cor
 		return false
 	}
 
+	log.Printf("[RESULT] Round %d | DECRYPT FAILED by team %s", r.GetNumberOfRounds(), b.teamLabel(t))
 	b.broadcastRoundResult(r, nil, boolPtr(false))
 	return false
 }
@@ -465,7 +477,9 @@ func (b *Bridge) broadcastPhaseChange(phase string, round *core.Round) {
 				clues := round.GetEncryptedMessage()
 				data.Clues = clues[:]
 			} else if role == "encryptor" {
-				// Encryptor also sees clues but is waiting (they already know the answer).
+				// Encryptor watches teammates decode; they already know the answer.
+				digits := round.GetSecretDigits()
+				data.SecretDigits = digits[:]
 				data.Waiting = true
 			} else {
 				data.Waiting = true
@@ -527,6 +541,20 @@ func (b *Bridge) isTeamAllAI(team *core.Team) bool {
 	return true
 }
 
+// areDecryptorsAllAI returns true if every non-encryptor member of the team is AI.
+// During decrypt, the encryptor doesn't participate, so we only check teammates.
+func (b *Bridge) areDecryptorsAllAI(team *core.Team, encryptorUID string) bool {
+	for _, p := range team.Members() {
+		if p.UID == encryptorUID {
+			continue
+		}
+		if !isAI(p.UID) {
+			return false
+		}
+	}
+	return true
+}
+
 // ---------------------------------------------------------------------------
 // AI player helpers
 // ---------------------------------------------------------------------------
@@ -536,36 +564,56 @@ func isAI(uid string) bool {
 }
 
 func handleAIEncrypt(ctx context.Context, b *Bridge, r *core.Round) [3]string {
+	digits := r.GetSecretDigits()
+	words := r.GetCurrentTeam().GetWords()
+	log.Printf("[AI-ENCRYPT] Round %d | AI %s encrypting | secret digits=%v | words=%v",
+		r.GetNumberOfRounds(), r.EncryptPlayer().NickName, digits, words)
+
 	if b.AIPlayer == nil {
+		log.Printf("[AI-ENCRYPT] No LLM provider, using stub clues")
 		time.Sleep(2 * time.Second)
 		return [3]string{"提示1", "提示2", "提示3"}
 	}
-	words := r.GetCurrentTeam().GetWords()
 	history := formatHistoryForAI(b, r)
-	return b.AIPlayer.GenerateClues(ctx, r.GetSecretDigits(), words, history)
+	clues := b.AIPlayer.GenerateClues(ctx, digits, words, history)
+	log.Printf("[AI-ENCRYPT] Round %d | AI %s produced clues: %v",
+		r.GetNumberOfRounds(), r.EncryptPlayer().NickName, clues)
+	return clues
 }
 
 func handleAIIntercept(ctx context.Context, b *Bridge, r *core.Round) [3]int {
+	clues := r.GetEncryptedMessage()
+	log.Printf("[AI-INTERCEPT] Round %d | Opponent AI team intercepting | clues=%v",
+		r.GetNumberOfRounds(), clues)
+
 	if b.AIPlayer == nil {
+		log.Printf("[AI-INTERCEPT] No LLM provider, using stub guess [1,2,3]")
 		time.Sleep(2 * time.Second)
 		return [3]int{1, 2, 3}
 	}
-	clues := r.GetEncryptedMessage()
-	// Opponent doesn't know the current team's words, so pass empty words.
 	var emptyWords [4]string
 	history := formatHistoryForAI(b, r)
-	return b.AIPlayer.GuessSequence(ctx, clues, emptyWords, true, history)
+	guess := b.AIPlayer.GuessSequence(ctx, clues, emptyWords, true, history)
+	log.Printf("[AI-INTERCEPT] Round %d | AI intercept guess: %v", r.GetNumberOfRounds(), guess)
+	return guess
 }
 
 func handleAIDecrypt(ctx context.Context, b *Bridge, r *core.Round) [3]int {
+	clues := r.GetEncryptedMessage()
+	words := r.GetCurrentTeam().GetWords()
+	log.Printf("[AI-DECRYPT] Round %d | AI team decrypting | clues=%v | words=%v",
+		r.GetNumberOfRounds(), clues, words)
+
 	if b.AIPlayer == nil {
+		log.Printf("[AI-DECRYPT] No LLM provider, using secret digits as stub")
 		time.Sleep(2 * time.Second)
 		return r.GetSecretDigits()
 	}
-	clues := r.GetEncryptedMessage()
-	words := r.GetCurrentTeam().GetWords()
 	history := formatHistoryForAI(b, r)
-	return b.AIPlayer.GuessSequence(ctx, clues, words, false, history)
+	guess := b.AIPlayer.GuessSequence(ctx, clues, words, false, history)
+	log.Printf("[AI-DECRYPT] Round %d | AI decrypt guess: %v (actual secret: %v)",
+		r.GetNumberOfRounds(), guess, r.GetSecretDigits())
+	return guess
 }
 
 // formatHistoryForAI builds a human-readable history string from previous rounds.

@@ -271,7 +271,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   connect() {
     const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
     const url = `${protocol}://${window.location.host}/ws`;
-    const ws = new WebSocketService(url, (type, data) => {
+    const ws = new WebSocketService(url, (type: string, data: unknown) => {
       handleServerMessage(set, get, type, data);
     });
     set({ wsService: ws });

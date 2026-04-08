@@ -73,7 +73,7 @@ func (p *OpenAIProvider) Complete(ctx context.Context, messages []ai.Message) (s
 	reqBody := openaiRequest{
 		Model:     p.Model,
 		Messages:  chatMessages,
-		MaxTokens: 256,
+		MaxTokens: 2048,
 	}
 
 	bodyBytes, err := json.Marshal(reqBody)

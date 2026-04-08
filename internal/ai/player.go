@@ -61,10 +61,11 @@ func (a *AIPlayer) GenerateClues(ctx context.Context, secretDigits [3]int, words
 
 	resp, err := a.Provider.Complete(ctx, messages)
 	if err != nil {
-		log.Printf("ai: GenerateClues error: %v", err)
+		log.Printf("[AI] GenerateClues error: %v", err)
 		return [3]string{"提示1", "提示2", "提示3"}
 	}
 
+	log.Printf("[AI] GenerateClues raw LLM response: %q", resp)
 	clues := parseClues(resp)
 	return clues
 }
@@ -112,10 +113,11 @@ func (a *AIPlayer) GuessSequence(ctx context.Context, clues [3]string, words [4]
 
 	resp, err := a.Provider.Complete(ctx, messages)
 	if err != nil {
-		log.Printf("ai: GuessSequence error: %v", err)
+		log.Printf("[AI] GuessSequence error: %v", err)
 		return [3]int{1, 2, 3}
 	}
 
+	log.Printf("[AI] GuessSequence raw LLM response: %q", resp)
 	return parseGuess(resp)
 }
 
