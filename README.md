@@ -84,7 +84,8 @@ export OPENAI_MODEL=gpt-4o                         # 可选，默认 gpt-4o
 ```
 cmd/server/          # 入口
 internal/
-  core/api/          # 核心游戏逻辑（状态机、回合管理）
+  core/              # 核心游戏逻辑（状态机、回合管理）
+    word_providers/  # 词库抽象（基于 words.txt）
   ws/                # WebSocket 基础设施（Hub、Client、消息类型）
   room/              # 房间管理（创建、加入、队伍、AI 槽位）
   game/              # 桥接层（WebSocket <-> 游戏状态机）
@@ -119,7 +120,7 @@ React 19 + TypeScript + Tailwind CSS 4 + Framer Motion + Zustand
 go test ./internal/room/ ./internal/ws/
 
 # 核心游戏逻辑测试（需要在项目根目录运行，依赖 words.txt）
-go test ./internal/core/api/
+go test ./internal/core/
 ```
 
 ## License
