@@ -54,6 +54,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			Type: ws.MsgRoomCreated,
 			Data: ws.RoomCreatedData{RoomCode: r.Code, MyPlayerID: client.PlayerID},
 		})
+		h.broadcastRoomState(r)
 
 	case ws.MsgJoinRoom:
 		var data ws.JoinRoomData
