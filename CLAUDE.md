@@ -4,26 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A Go-based multi-platform bot for playing the board game "Decrypto" (谍报风云). Currently supports Discord, with deprecated QQ support (API changed, non-functional).
+A web-based implementation of the board game "Decrypto" (谍报风云), with real-time multiplayer via WebSocket and AI player support.
 
 ## Build & Run Commands
 
 ```bash
-# Build
-go build
+# Build backend
+go build -o server ./cmd/server
 
-# Run (requires BOT_SECRET environment variable)
-export BOT_SECRET="your-discord-token"
-./decrypto-the-game
+# Build frontend
+cd web && pnpm install && pnpm build && cd ..
 
-# Debug mode
-export DEBUG=true
+# Run (words.txt must exist in working directory)
+./server
+
+# Development (frontend hot reload)
+cd web && pnpm dev    # port 3000, proxies /ws and /api to 8080
 
 # Run tests
-go test ./...
+go test ./internal/room/ ./internal/ws/
 
-# Run tests with verbose output
-go test -v ./pkg/decrypto/api/
+# Core game logic tests (needs words.txt in cwd)
+go test ./internal/core/
 ```
 
 **Runtime dependency:** `words.txt` must exist in the working directory.
@@ -32,13 +34,18 @@ go test -v ./pkg/decrypto/api/
 
 ### Core Packages
 
-- **`pkg/decrypto/api/`** - Game logic (sessions, rounds, teams, players, state machine)
-- **`pkg/decrypto/fronts/`** - Bot platform implementations
-- **`pkg/decrypto/word_providers/`** - Word source abstraction (currently file-based from `words.txt`)
+- **`internal/core/`** — Game logic (sessions, rounds, teams, players, state machine)
+- **`internal/core/word_providers/`** — Word source abstraction (file-based from `words.txt`)
+- **`internal/ws/`** — WebSocket infrastructure (Hub, Client, message types)
+- **`internal/room/`** — Room management (create, join, teams, AI slots)
+- **`internal/game/`** — Bridge layer (WebSocket <-> game state machine)
+- **`internal/server/`** — Message dispatcher (routes WebSocket messages to room/game handlers)
+- **`internal/ai/`** — AI players (LLM Provider abstraction + Claude/OpenAI implementations)
+- **`web/`** — React frontend (pages, components, store, services)
 
 ### Key Architectural Patterns
 
-**Handler Registration (Observer Pattern):** Game events use registered handlers in `api/state.go`. Handlers are called at lifecycle events: INIT, ENCRYPTING, INTERCEPT, DECRYPT, DONE, GAMEOVER.
+**Handler Registration (Observer Pattern):** Game events use registered handlers in `internal/core/state.go`. Handlers are called at lifecycle events: INIT, ENCRYPTING, INTERCEPT, DECRYPT, DONE, GAMEOVER.
 
 ```go
 RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, ts TeamState) ([3]string, bool) {
@@ -48,14 +55,7 @@ RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, t
 
 **State Machine:** Rounds progress through states: NEW → INIT → ENCRYPTING → INTERCEPT → DECRYPT → DONE. `Round.AutoForward()` advances through all states by calling registered handlers.
 
-**Bot Interface:** All platform bots implement `BotInterface` with `Start()` method. Platform-agnostic `GamePool` in `fronts/common/game_pool/` manages sessions across platforms.
-
-### Adding a New Bot Platform
-
-1. Create `pkg/decrypto/fronts/new_platform/bot.go`
-2. Implement `BotInterface` with `Start()` method
-3. Create handlers in `handlers/` subdirectory
-4. Update `main.go` to instantiate new bot type
+**WebSocket Message Flow:** Client → `ws.Hub` → `server.Handler` → `room.Room` / `game.Bridge` → broadcast back to clients.
 
 ## Game Logic Summary
 

@@ -1,136 +1,128 @@
-# Decrypto The Game
+# Decrypto - 谍报风云
 
-## 这是什么？
+一个基于 Web 的 [Decrypto（谍报风云）](https://boardgamegeek.com/boardgame/225694/decrypto) 桌游实现，支持实时多人对战和 AI 玩家。
 
-这是一个可以借助机器人玩 [谍报风云](https://boardgamegeek.com/boardgame/225694/decrypto) 游戏的软件。
+游戏规则可参考 [B站桌游怪讲解视频](https://www.bilibili.com/video/BV1Pt411K7ro/)。
 
-> 目前只支持 QQ 频道机器人。
+![首页](docs/screenshot_home.png)
 
-**QQ 机器人最近进行了更新，目前机器人已经无法使用，等待使用其他 QQ 机器人的 API 或者替换成其他的机器人平台**
+## 功能特性
 
-![intro](docs/intro.gif)
+- **实时多人对战** — 基于 WebSocket，创建房间后分享房间码即可开始
+- **AI 玩家** — 支持 Claude、OpenAI 及兼容接口（DeepSeek、Ollama 等）作为 AI 队友/对手
+- **冷战情报风格 UI** — 打字机文字、蜡封、橡皮图章、机密文件夹等主题化组件
+- **角色视角分离** — 加密者、队友、对手各自看到不同的界面和信息
+- **断线重连** — WebSocket 自动重连并恢复游戏状态
 
-游戏规则与流程可以查看[B站桌游怪讲解视频](https://www.bilibili.com/video/BV1Pt411K7ro/)。
+## 快速开始
 
-## 如何使用
+### 环境要求
 
-### 加入我的频道
+- Go 1.20+
+- Node.js 18+（pnpm）
 
-你可以通过加入我的频道进行游戏，[频道链接](https://pd.qq.com/s/2f5oay2ts)。
+### 构建与运行
 
-你只需要在聊天室中 `@截码战猜词机器人` 然后再 @ 出和你一起玩的用户，机器人会为你们创建房间并主持游戏。
+```bash
+# 克隆仓库
+git clone https://github.com/ZinkLu/decrypto-the-game.git
+cd decrypto-the-game
 
-在游戏的过程中，你可以通过**命令**来让机器人告诉你当前的游戏状态，目前机器人支持的命令如下
+# 构建前端
+cd web && pnpm install && pnpm build && cd ..
 
-1. `/开始游戏`
-    
-    触发方式: 大厅@机器人
+# 构建后端
+go build -o server ./cmd/server
 
-    作用: 在大厅内艾特 3 人以上的偶数玩家，就可以开始游戏，同一个玩家无法身处两场不同的游戏。
+# 运行（words.txt 必须在工作目录下）
+./server
+```
 
-2. `/结束游戏`
+服务启动后访问 http://localhost:8080 即可开始游戏。
 
-    触发方式: 游戏房间@机器人
+### AI 玩家配置
 
-    作用: 结束当前房间的游戏进程，注意，为了让玩家更好的复盘，机器人不会关闭房间。
+AI 玩家功能需要设置 LLM API Key，支持以下两种方式（二选一）：
 
-1. `/关闭房间`
+```bash
+# 方式一：使用 Claude
+export ANTHROPIC_API_KEY=sk-ant-...
+./server
 
-    触发方式: 游戏房间@机器人
+# 方式二：使用 OpenAI 兼容接口（OpenAI / DeepSeek / Ollama 等）
+export OPENAI_API_KEY=sk-...
+export OPENAI_BASE_URL=https://api.openai.com/v1  # 可选，默认 OpenAI
+export OPENAI_MODEL=gpt-4o                         # 可选，默认 gpt-4o
+./server
+```
 
-    作用: 关闭该游戏房间，如果该房间中的游戏没有结束，则不允许关闭，特别的，在游戏结束后的一段时间内，机器人会主动关闭房间（暂时没有实现）。
+未设置 API Key 时，AI 玩家会使用固定的占位回复。
 
-1. `/词组`
+## 游戏流程
 
-    触发方式: 游戏中玩家私信机器人
+### 1. 创建/加入房间
 
-    作用: 机器人会返回我方的 4 组单词
+![房间大厅](docs/screenshot_room.png)
 
-2. `/进度`
+创建房间后获得 4 位房间码，分享给其他玩家加入。房主可以为任意队伍添加 AI 玩家。每队至少 2 人才能开始游戏。
 
-    触发方式: 游戏中玩家私信机器人
+### 2. 游戏进行
 
-    作用: 机器人会返回当前的轮次信息，以及每个轮次
+每局游戏最多 16 轮（每队各 8 轮作为加密方），每轮流程：
 
+1. **加密阶段** — 加密者收到 3 个密码序号（对应本队 4 个词中的 3 个），需要给出 3 条线索
+2. **拦截阶段**（第 3 轮起）— 对方队伍根据线索猜测密码序列
+3. **解密阶段** — 本队队友根据线索猜测密码序列
 
-1. `/密码`
+### 3. 胜负条件
 
-    触发方式: 当前轮次中加密的玩家私信机器人
+- 成功拦截对方 **2 次** 即获胜
+- 对方解密失败 **2 次** 也算己方获胜
 
-    作用: 机器人会返回当前的加密玩家需要加密的密码与词组
+## 技术架构
 
-1. `/我方`
+```
+cmd/server/          # 入口
+internal/
+  core/              # 核心游戏逻辑（状态机、回合管理）
+    word_providers/  # 词库抽象（基于 words.txt）
+  ws/                # WebSocket 基础设施（Hub、Client、消息类型）
+  room/              # 房间管理（创建、加入、队伍、AI 槽位）
+  game/              # 桥接层（WebSocket <-> 游戏状态机）
+  server/            # 消息分发（路由 WebSocket 消息到房间/游戏处理器）
+  ai/                # AI 玩家（LLM Provider 抽象 + Claude/OpenAI 实现）
+web/                 # React 前端
+  src/
+    pages/           # 11 个游戏阶段页面（角色视角分离）
+    components/      # 主题化 UI 组件库（dossier 风格）
+    store/           # Zustand 状态管理
+    services/        # WebSocket 客户端
+```
 
-    触发方式: 游戏中玩家私信机器人
+### 状态机
 
-    作用: 获取我方已使用的所有描述词
+游戏回合按以下状态推进：
 
-1. `/对方`
+```
+NEW → INIT → ENCRYPTING → INTERCEPT → DECRYPT → DONE
+```
 
-    触发方式: 游戏中
+通过 Handler 注册模式（Observer Pattern）驱动，`AutoForward()` 自动推进状态并在每个阶段调用注册的回调。
 
-    作用: 获取对方已使用的所有描述词
+### 前端技术栈
 
-### 自己部署机器人
+React 19 + TypeScript + Tailwind CSS 4 + Framer Motion + Zustand
 
-1. 编译
+## 测试
 
-    你也可以自己编译并运行自己的机器人。
+```bash
+# Go 测试（room + ws 消息格式）
+go test ./internal/room/ ./internal/ws/
 
-    这需要你安装 go > 1.20，然后可以自行编译
+# 核心游戏逻辑测试（需要在项目根目录运行，依赖 words.txt）
+go test ./internal/core/
+```
 
-    ```bash
-    git clone https://github.com/ZinkLu/decrypto-the-game.git && cd decrypto-the-game && go build
-    ```
+## License
 
-    上面的命令应该会编译出名为 `decrypto-the-game` 的二进制文件。
-
-2. 申请自己的机器人
-    
-    为了运行你自己的机器人，还需要在 [qq 开放平台](https://q.qq.com/#/app/bot) 申请自己的机器人。
-
-    你也可以为机器人先添加相关的功能，目前机器人支持以下功能:
-
-    ```text
-    /开始游戏
-    /结束游戏
-    /关闭房间
-    /词组
-    /进度
-    /密码
-    /我方
-    /对方
-    ```
-
-3. 运行
-
-    申请机器人过后，应该有了机器人的 id 和 secret 信息，此时需要先设置对应的环境变量
-
-    ```bash
-    export BOT_ID=xxxx,
-    export BOT_SECRET=xxx
-    ```
-
-    随后就可以运行机器人啦~
-
-    ```bash
-    ./decrypto-the-game
-    ```
-
-## 代码结构
-
-### api
-
-### fronts
-
-### word_providers
-
-## TODO & PR
-
-紧急: 添加其他平台 bot，现在 QQ 频道进行了更新，不分功能已经不可用，准备迁移至 dodo, kook 或者 discord
-
-1. 去除将 messages 包中所有的常量，使用 Function Call 作为获取信息的手段；
-2. 优化 message 的输出，如果能申请到 Markdown Template 是最好的（如果不是 QQ 平台的话就）；
-3. 添加基于 LLM 的 word provider；
-4. 添加基于 LLM 的陪玩机器人（需要额外开辟一个仓库）；
-5. 添加基于 LLM 的更加人性化的游戏流程回复？
+MIT

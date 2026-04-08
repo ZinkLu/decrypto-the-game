@@ -1,0 +1,473 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Bebas+Neue&family=Noto+Serif+SC:wght@400;700&display=swap');
+
+@theme {
+  /* Cold War Intelligence Dossier Theme */
+
+  /* === Primary Palette === */
+  --color-navy: #0B1426;
+  --color-navy-light: #142038;
+  --color-navy-dark: #060A14;
+  --color-cream: #E8DCC8;
+  --color-cream-dark: #D4C4A8;
+  --color-cream-light: #F2EBE0;
+  --color-intel-red: #C41E3A;
+  --color-intel-red-dim: #7A1225;
+  --color-brass: #B8860B;
+  --color-brass-dim: #8B6508;
+  --color-brass-light: #DAA520;
+
+  /* === Team Colors === */
+  --color-team-friendly: #0E7C6B;
+  --color-team-friendly-dim: #0A5A4D;
+  --color-team-friendly-light: #12A68E;
+  --color-team-enemy: #8B0000;
+  --color-team-enemy-dim: #5C0000;
+  --color-team-enemy-light: #B22222;
+
+  /* === Background Colors === */
+  --color-bg-base: #0B1426;
+  --color-bg-dark: #060A14;
+  --color-bg-paper: #E8DCC8;
+  --color-bg-paper-dark: #D4C4A8;
+
+  /* === UI Colors === */
+  --color-desk-wood: #3E2723;
+  --color-desk-wood-light: #5D4037;
+  --color-desk-wood-dark: #2C1A12;
+  --color-leather: #4A3728;
+  --color-ink-black: #1A1A1A;
+  --color-ink-blue: #1B3A5C;
+
+  /* === Tension - Friendly View (Teal/Brass) === */
+  --color-tension-normal-bg: #0B1E2E;
+  --color-tension-normal-text: #0E7C6B;
+  --color-tension-normal-border: #0A5A4D;
+
+  --color-tension-warning-bg: #1A1A0A;
+  --color-tension-warning-text: #B8860B;
+  --color-tension-warning-border: #8B6508;
+
+  --color-tension-tense-bg: #2A0A0A;
+  --color-tension-tense-text: #C41E3A;
+  --color-tension-tense-border: #7A1225;
+
+  --color-tension-critical-bg: #3A0808;
+  --color-tension-critical-text: #FF2D2D;
+  --color-tension-critical-border: #B22222;
+
+  /* === Tension - Opponent View (Crimson) === */
+  --color-opponent-normal-bg: #1A0808;
+  --color-opponent-normal-text: #8B0000;
+  --color-opponent-normal-border: #5C0000;
+
+  --color-opponent-warning-bg: #220A0A;
+  --color-opponent-warning-text: #A52A2A;
+  --color-opponent-warning-border: #6E1B1B;
+
+  --color-opponent-tense-bg: #2F0A0A;
+  --color-opponent-tense-text: #C41E3A;
+  --color-opponent-tense-border: #7A1225;
+
+  --color-opponent-critical-bg: #3A0808;
+  --color-opponent-critical-text: #FF2D2D;
+  --color-opponent-critical-border: #B22222;
+
+  /* === Paper/Dossier States === */
+  --color-stamp-red: #C41E3A;
+  --color-stamp-blue: #1B3A5C;
+  --color-stamp-green: #0E7C6B;
+  --color-wax-red: #8B0000;
+
+  /* === Transition Colors === */
+  --color-transition-friendly-bg: #0B1E2E;
+  --color-transition-enemy-bg: #1A0808;
+
+  /* === Status Indicators === */
+  --color-status-connected: #0E7C6B;
+  --color-status-disconnected: #C41E3A;
+  --color-status-pending: #B8860B;
+
+  /* === Fonts === */
+  --font-typewriter: 'Special Elite', 'Courier New', cursive;
+  --font-body: 'Courier Prime', 'Courier New', monospace;
+  --font-stamp: 'Bebas Neue', 'Impact', sans-serif;
+  --font-chinese: 'Noto Serif SC', 'SimSun', serif;
+
+  /* Animations */
+  --animate-stamp-press: stamp-press 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --animate-typewriter-key: typewriter-key 0.1s ease-out;
+  --animate-paper-curl: paper-curl 0.5s ease-in-out;
+  --animate-desk-lamp-flicker: desk-lamp-flicker 4s ease-in-out infinite;
+  --animate-urgent-stamp: urgent-stamp 0.5s ease-out;
+  --animate-paper-shuffle: paper-shuffle 0.3s ease-in-out;
+  --animate-wax-seal-press: wax-seal-press 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  @keyframes stamp-press {
+    0% { transform: scale(1.5) rotate(-5deg); opacity: 0; }
+    60% { transform: scale(0.95) rotate(0deg); opacity: 1; }
+    100% { transform: scale(1) rotate(-2deg); opacity: 1; }
+  }
+
+  @keyframes typewriter-key {
+    0% { transform: translateY(-2px); opacity: 0.5; }
+    100% { transform: translateY(0); opacity: 1; }
+  }
+
+  @keyframes paper-curl {
+    0% { transform: rotateX(10deg); }
+    50% { transform: rotateX(-2deg); }
+    100% { transform: rotateX(0); }
+  }
+
+  @keyframes desk-lamp-flicker {
+    0%, 100% { opacity: 1; }
+    92% { opacity: 1; }
+    93% { opacity: 0.85; }
+    94% { opacity: 1; }
+    95% { opacity: 0.9; }
+    96% { opacity: 1; }
+  }
+
+  @keyframes urgent-stamp {
+    0% { transform: scale(2) rotate(-10deg); opacity: 0; }
+    40% { transform: scale(0.9) rotate(0deg); opacity: 1; }
+    60% { transform: scale(1.05) rotate(-2deg); }
+    100% { transform: scale(1) rotate(-3deg); }
+  }
+
+  @keyframes paper-shuffle {
+    0% { transform: translateX(0) rotate(0); }
+    25% { transform: translateX(-3px) rotate(-1deg); }
+    75% { transform: translateX(3px) rotate(1deg); }
+    100% { transform: translateX(0) rotate(0); }
+  }
+
+  @keyframes wax-seal-press {
+    0% { transform: scale(1.3); opacity: 0; }
+    60% { transform: scale(0.95); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+}
+
+:root {
+  --typewriter: var(--font-typewriter);
+  --body: var(--font-body);
+  --stamp: var(--font-stamp);
+}
+
+/* box-sizing reset - margin/padding resets are handled by Tailwind v4 preflight within @layer */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--color-bg-base);
+  font-family: var(--font-body);
+  color: var(--color-cream);
+}
+
+/* ============================================================ */
+/* Paper Texture Backgrounds                                     */
+/* ============================================================ */
+
+.paper-texture {
+  background-color: var(--color-bg-paper);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  color: var(--color-ink-black);
+}
+
+.paper-texture-dark {
+  background-color: var(--color-bg-paper-dark);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  color: var(--color-ink-black);
+}
+
+/* ============================================================ */
+/* Typewriter Text Styles                                        */
+/* ============================================================ */
+
+.typewriter-text {
+  font-family: var(--font-typewriter);
+  color: var(--color-ink-black);
+  text-shadow: 0.5px 0.5px 0 rgba(0,0,0,0.3);
+  letter-spacing: 0.5px;
+}
+
+.typewriter-text-light {
+  font-family: var(--font-typewriter);
+  color: var(--color-cream);
+  text-shadow: 0.5px 0.5px 0 rgba(0,0,0,0.5);
+  letter-spacing: 0.5px;
+}
+
+/* ============================================================ */
+/* Stamp Effect                                                  */
+/* ============================================================ */
+
+.stamp-text {
+  font-family: var(--font-stamp);
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  opacity: 0.85;
+}
+
+.stamp-red {
+  color: var(--color-intel-red);
+  border: 3px solid var(--color-intel-red);
+  padding: 4px 16px;
+  transform: rotate(-3deg);
+}
+
+.stamp-blue {
+  color: var(--color-ink-blue);
+  border: 3px solid var(--color-ink-blue);
+  padding: 4px 16px;
+  transform: rotate(2deg);
+}
+
+/* ============================================================ */
+/* Desk Surface & Lamp                                           */
+/* ============================================================ */
+
+.desk-surface {
+  background: linear-gradient(180deg, var(--color-desk-wood) 0%, var(--color-desk-wood-dark) 100%);
+  box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+}
+
+.desk-lamp-spotlight {
+  position: fixed;
+  top: -20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120%;
+  height: 80%;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255, 235, 180, 0.08) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: 1;
+  animation: var(--animate-desk-lamp-flicker);
+}
+
+/* ============================================================ */
+/* Paper Grain Overlay                                           */
+/* ============================================================ */
+
+.paper-grain {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ============================================================ */
+/* Vignette Overlay                                              */
+/* ============================================================ */
+
+.vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9997;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0, 0, 0, 0.5) 100%);
+}
+
+/* ============================================================ */
+/* Brass Elements                                                */
+/* ============================================================ */
+
+.brass-accent {
+  background: linear-gradient(145deg, var(--color-brass-light), var(--color-brass), var(--color-brass-dim));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.brass-text {
+  color: var(--color-brass);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================ */
+/* Coffee Stain Decoration                                       */
+/* ============================================================ */
+
+.coffee-stain {
+  position: relative;
+}
+
+.coffee-stain::after {
+  content: '';
+  position: absolute;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, transparent 40%, rgba(139, 90, 43, 0.08) 50%, transparent 70%);
+  pointer-events: none;
+  top: -10px;
+  right: -10px;
+}
+
+/* ============================================================ */
+/* Torn Edge Effect (top)                                        */
+/* ============================================================ */
+
+.torn-edge-top::before {
+  content: '';
+  position: absolute;
+  top: -6px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 6'%3E%3Cpath d='M0,6 L3,2 L7,5 L12,1 L17,4 L22,2 L27,5 L32,1 L37,4 L42,2 L47,5 L52,1 L57,4 L62,2 L67,5 L72,1 L77,4 L82,2 L87,5 L92,1 L97,3 L100,6 Z' fill='%23E8DCC8'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+}
+
+/* ============================================================ */
+/* Redacted Text Bar                                             */
+/* ============================================================ */
+
+.redacted {
+  background: var(--color-ink-black);
+  color: transparent;
+  padding: 0 4px;
+  user-select: none;
+  position: relative;
+}
+
+/* ============================================================ */
+/* Cursor Styles                                                 */
+/* ============================================================ */
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.blink {
+  animation: blink 1s step-end infinite;
+}
+
+.typewriter-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: var(--color-ink-black);
+  animation: blink 0.8s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 1px;
+}
+
+.typewriter-cursor-light {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: var(--color-cream);
+  animation: blink 0.8s step-end infinite;
+  vertical-align: text-bottom;
+  margin-left: 1px;
+}
+
+/* ============================================================ */
+/* Focus Visible Styles                                          */
+/* ============================================================ */
+
+:focus-visible {
+  outline: 2px solid var(--color-brass);
+  outline-offset: 2px;
+}
+
+/* ============================================================ */
+/* Touch Optimization                                            */
+/* ============================================================ */
+
+button, [role="button"], a, input {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ============================================================ */
+/* Reduced Motion                                                */
+/* ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .typewriter-cursor,
+  .typewriter-cursor-light {
+    animation: none;
+    opacity: 1;
+  }
+
+  .blink {
+    animation: none;
+    opacity: 1;
+  }
+
+  .desk-lamp-spotlight {
+    animation: none;
+  }
+}
+
+/* ============================================================ */
+/* Pulse animations for opponent pages                           */
+/* ============================================================ */
+
+@keyframes pulse-red {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 1; }
+}
+
+@keyframes breathe-red {
+  0%, 100% { box-shadow: 0 0 10px rgba(139, 0, 0, 0.3); }
+  50% { box-shadow: 0 0 25px rgba(139, 0, 0, 0.6); }
+}
+
+@keyframes flash-red {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+@keyframes phone-ring {
+  0%, 100% { transform: rotate(0deg); }
+  10% { transform: rotate(5deg); }
+  20% { transform: rotate(-5deg); }
+  30% { transform: rotate(3deg); }
+  40% { transform: rotate(-3deg); }
+  50% { transform: rotate(0deg); }
+}
+
+/* ============================================================ */
+/* C1 Intercepted waiting animations                             */
+/* ============================================================ */
+
+@keyframes scan-line {
+  0% { top: 0%; opacity: 0; }
+  10% { opacity: 0.6; }
+  90% { opacity: 0.6; }
+  100% { top: 100%; opacity: 0; }
+}
+
+@keyframes card-flash {
+  0%, 100% { border-color: var(--color-cream-dark); box-shadow: none; }
+  50% { border-color: var(--color-intel-red); box-shadow: 0 0 12px rgba(196, 30, 58, 0.3); }
+}
