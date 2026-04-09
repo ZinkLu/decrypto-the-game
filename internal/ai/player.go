@@ -6,7 +6,6 @@ import (
 	"log"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const systemPrompt = `你是一个正在玩 Decrypto（谍报风云）桌游的 AI 玩家。
@@ -30,9 +29,15 @@ func NewAIPlayer(provider LLMProvider) *AIPlayer {
 	return &AIPlayer{Provider: provider}
 }
 
-// GenerateClues asks the AI to produce 3 clue words for the given secret digits and words.
-func (a *AIPlayer) GenerateClues(ctx context.Context, secretDigits [3]int, words [4]string, history string) [3]string {
-	time.Sleep(2 * time.Second)
+// GenerateSingleClue asks the AI to produce 1 clue word for a specific secret digit.
+// alreadyGenerated contains clues produced so far in this round (for context).
+func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digit int, words [4]string, history string, alreadyGenerated []string) string {
+	targetWord := words[digit-1]
+
+	var prevContext string
+	if len(alreadyGenerated) > 0 {
+		prevContext = fmt.Sprintf("\n你本轮已经给出的线索：%s\n请不要给出重复或相似的线索。", strings.Join(alreadyGenerated, ", "))
+	}
 
 	prompt := fmt.Sprintf(`你是加密者。你的队伍有 4 个密语词：
 1: %s
@@ -40,17 +45,16 @@ func (a *AIPlayer) GenerateClues(ctx context.Context, secretDigits [3]int, words
 3: %s
 4: %s
 
-本轮你需要为以下 3 个数字对应的密语词各给出一个线索词：
-密码序列：[%d, %d, %d]
-对应词语：%s, %s, %s
+请为密语词 #%d（%s）给出一个线索词。
+线索要让队友能猜到对应的编号，但不能太明显让对手也猜到。%s
 
 历史记录：
 %s
 
-请给出 3 个线索词（用逗号分隔，只输出线索词，不要其他内容），例如：苹果,天空,海洋`,
+请只输出一个线索词，不要其他内容。`,
 		words[0], words[1], words[2], words[3],
-		secretDigits[0], secretDigits[1], secretDigits[2],
-		words[secretDigits[0]-1], words[secretDigits[1]-1], words[secretDigits[2]-1],
+		digit, targetWord,
+		prevContext,
 		history,
 	)
 
@@ -61,32 +65,42 @@ func (a *AIPlayer) GenerateClues(ctx context.Context, secretDigits [3]int, words
 
 	resp, err := a.Provider.Complete(ctx, messages)
 	if err != nil {
-		log.Printf("[AI] GenerateClues error: %v", err)
-		return [3]string{"提示1", "提示2", "提示3"}
+		log.Printf("[AI] GenerateSingleClue error: %v", err)
+		return fmt.Sprintf("clue%d", digit)
 	}
 
-	log.Printf("[AI] GenerateClues raw LLM response: %q", resp)
-	clues := parseClues(resp)
-	return clues
+	clue := strings.TrimSpace(resp)
+	// Remove quotes if wrapped
+	clue = strings.Trim(clue, "\"'\u201c\u201d\u2018\u2019")
+	if clue == "" {
+		clue = fmt.Sprintf("clue%d", digit)
+	}
+	log.Printf("[AI] GenerateSingleClue digit=%d word=%s → %q", digit, targetWord, clue)
+	return clue
 }
 
-// GuessSequence asks the AI to guess the 3-digit sequence from the given clues.
-// If isIntercept is true, the AI is guessing without knowing the opponent's words.
-func (a *AIPlayer) GuessSequence(ctx context.Context, clues [3]string, words [4]string, isIntercept bool, history string) [3]int {
-	time.Sleep(2 * time.Second)
+// GuessSingleNumber asks the AI to guess the number (1-4) for a single clue.
+// alreadyGuessed contains numbers guessed so far in this round (for context).
+func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clue string, words [4]string, isIntercept bool, history string, alreadyGuessed []int) int {
+	var prevContext string
+	if len(alreadyGuessed) > 0 {
+		parts := make([]string, len(alreadyGuessed))
+		for i, n := range alreadyGuessed {
+			parts[i] = strconv.Itoa(n)
+		}
+		prevContext = fmt.Sprintf("\n你本轮已经猜测的编号：%s", strings.Join(parts, ", "))
+	}
 
 	var prompt string
 	if isIntercept {
 		prompt = fmt.Sprintf(`你是拦截者，你不知道对方的密语词。
-对方的加密线索为：%s, %s, %s
+当前需要猜测的线索词是："%s"%s
 
 历史记录：
 %s
 
-请根据以往的历史记录和线索，猜测对方的密码序列（每个数字在 1-4 之间，用逗号分隔，只输出数字，不要其他内容），例如：2,3,1`,
-			clues[0], clues[1], clues[2],
-			history,
-		)
+请根据历史记录和线索，猜测这个线索对应的编号（1-4 之间的一个数字），只输出数字，不要其他内容。`,
+			clue, prevContext, history)
 	} else {
 		prompt = fmt.Sprintf(`你是解密者。你的队伍有 4 个密语词：
 1: %s
@@ -94,16 +108,14 @@ func (a *AIPlayer) GuessSequence(ctx context.Context, clues [3]string, words [4]
 3: %s
 4: %s
 
-加密者给出的线索为：%s, %s, %s
+当前需要猜测的线索词是："%s"%s
 
 历史记录：
 %s
 
-请猜测密码序列（每个数字在 1-4 之间，用逗号分隔，只输出数字，不要其他内容），例如：2,3,1`,
+请猜测这个线索对应的编号（1-4 之间的一个数字），只输出数字，不要其他内容。`,
 			words[0], words[1], words[2], words[3],
-			clues[0], clues[1], clues[2],
-			history,
-		)
+			clue, prevContext, history)
 	}
 
 	messages := []Message{
@@ -113,12 +125,18 @@ func (a *AIPlayer) GuessSequence(ctx context.Context, clues [3]string, words [4]
 
 	resp, err := a.Provider.Complete(ctx, messages)
 	if err != nil {
-		log.Printf("[AI] GuessSequence error: %v", err)
-		return [3]int{1, 2, 3}
+		log.Printf("[AI] GuessSingleNumber error: %v", err)
+		return 1
 	}
 
-	log.Printf("[AI] GuessSequence raw LLM response: %q", resp)
-	return parseGuess(resp)
+	trimmed := strings.TrimSpace(resp)
+	n, err := strconv.Atoi(trimmed)
+	if err != nil || n < 1 || n > 4 {
+		log.Printf("[AI] GuessSingleNumber invalid response %q, fallback to 1", trimmed)
+		return 1
+	}
+	log.Printf("[AI] GuessSingleNumber clue=%q → %d", clue, n)
+	return n
 }
 
 // parseClues splits a comma-separated response into exactly 3 clue strings.
@@ -132,7 +150,7 @@ func parseClues(resp string) [3]string {
 		parts = strings.Split(resp, ",")
 	}
 
-	result := [3]string{"提示1", "提示2", "提示3"}
+	result := [3]string{"clue1", "clue2", "clue3"}
 	for i := 0; i < 3 && i < len(parts); i++ {
 		trimmed := strings.TrimSpace(parts[i])
 		if trimmed != "" {

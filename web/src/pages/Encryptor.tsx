@@ -21,7 +21,7 @@ interface HistoryEntry {
 const tensionConfig = encryptorTensionConfig;
 
 export default function Encryptor() {
-  const { secretDigits, secretWords, myWords, history: gameHistory, submitClues } = useGameStore();
+  const { secretDigits, secretWords, myWords, history: gameHistory, submitClues, sendProgress } = useGameStore();
 
   const [currentCard, setCurrentCard] = useState(0);
   const [timeLeft, setTimeLeft] = useState(90);
@@ -69,6 +69,13 @@ export default function Encryptor() {
     return () => clearInterval(timer);
   }, [isSubmitted]);
 
+  // Send progress when switching cards (card N done → moved to N+1)
+  useEffect(() => {
+    if (currentCard > 0 && !isSubmitted) {
+      sendProgress('encrypt', currentCard);
+    }
+  }, [currentCard]);
+
   const allCluesFilled = cards.every((card) => card.clue.trim() !== '');
 
   const handleClueChange = (cardId: number, value: string) => {
@@ -82,6 +89,7 @@ export default function Encryptor() {
 
   const handleSubmit = () => {
     if (allCluesFilled) {
+      sendProgress('encrypt', 3);
       setIsSubmitted(true);
       submitClues(cards.map((c) => c.clue) as [string, string, string]);
     }

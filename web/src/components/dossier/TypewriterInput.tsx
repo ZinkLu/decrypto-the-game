@@ -104,9 +104,20 @@ export function TypewriterInput({
             }}
             onClick={() => inputRef.current?.focus()}
           >
+            {!value && (
+              <span
+                className="inline-block align-middle mr-0.5"
+                style={{
+                  width: '2px',
+                  height: '1.2em',
+                  background: textColor,
+                  opacity: isFocused && cursorVisible ? 1 : 0,
+                  verticalAlign: 'text-bottom',
+                }}
+              />
+            )}
             {value || <span style={{ opacity: 0.4, fontStyle: 'italic' }}>{placeholder}</span>}
-
-            {isFocused && (
+            {value && isFocused && (
               <span
                 className="inline-block align-middle ml-0.5"
                 style={{

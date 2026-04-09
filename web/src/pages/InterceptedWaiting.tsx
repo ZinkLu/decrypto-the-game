@@ -114,7 +114,7 @@ function ThreatMeter({ level }: { level: number }) {
 }
 
 export default function InterceptedWaiting() {
-  const { myWords, round, aiStatus } = useGameStore();
+  const { myWords, round, aiStatus, playerProgress } = useGameStore();
   void round;
 
   const [timeLeft, setTimeLeft] = useState(45);
@@ -125,6 +125,15 @@ export default function InterceptedWaiting() {
   const flashTimerRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
   const codewords: CodeWord[] = myWords.map((word, i) => ({ number: i + 1, word }));
+
+  // Derive intercept progress from AI or human events
+  const interceptStep = (aiStatus?.action === 'intercept' ? aiStatus.step : 0)
+    || (playerProgress?.action === 'intercept' ? playerProgress.step : 0);
+
+  useEffect(() => {
+    setOpponentProgress((prev) => Math.max(prev, interceptStep));
+    setThreatLevel(2 + Math.max(opponentProgress, interceptStep) * 2);
+  }, [interceptStep]);
 
   useEffect(() => {
     if (timeLeft > 15) setTension('normal');
@@ -144,14 +153,6 @@ export default function InterceptedWaiting() {
     return () => clearInterval(timer);
   }, [timeLeft]);
 
-  // Simulate opponent progress
-  useEffect(() => {
-    const timer1 = setTimeout(() => { setOpponentProgress(1); setThreatLevel(4); }, 5000);
-    const timer2 = setTimeout(() => { setOpponentProgress(2); setThreatLevel(6); }, 12000);
-    const timer3 = setTimeout(() => { setOpponentProgress(3); setThreatLevel(8); }, 18000);
-    return () => { clearTimeout(timer1); clearTimeout(timer2); clearTimeout(timer3); };
-  }, []);
-
   // Random card flash effect
   useEffect(() => {
     const speed = tension === 'warning' || tension === 'tense' || tension === 'critical' ? 2000 : 3000;
@@ -168,7 +169,7 @@ export default function InterceptedWaiting() {
   const isAIThinking = aiStatus?.action === 'intercept';
 
   const getMascot = () => {
-    if (isAIThinking) return { emoji: '🤖', message: 'AI agent analyzing your intel...' };
+    if (isAIThinking) return { emoji: '🤖', message: `AI analyzing your intel... (${aiStatus!.step}/${aiStatus!.total})` };
     if (tension === 'critical') return { emoji: tensionCfg.emoji, message: tensionCfg.message };
     if (tension === 'tense') return { emoji: tensionCfg.emoji, message: tensionCfg.message };
     if (opponentProgress === 0) return { emoji: '😰', message: 'Comms exposed...' };

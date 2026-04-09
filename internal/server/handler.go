@@ -244,6 +244,29 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError("decrypt already submitted")
 		}
 
+	case ws.MsgProgress:
+		var data ws.ProgressData
+		if err := json.Unmarshal(msg.Data, &data); err != nil {
+			client.SendError("invalid progress data")
+			return
+		}
+		if data.Step < 1 || data.Step > 3 {
+			return // silently ignore invalid steps
+		}
+		r := h.RoomManager.GetRoom(client.RoomCode)
+		if r == nil {
+			return
+		}
+		h.Hub.BroadcastToRoom(r.Code, ws.ServerMessage{
+			Type: ws.MsgPlayerProgress,
+			Data: ws.PlayerProgressData{
+				Action: data.Action,
+				Player: client.Nickname,
+				Step:   data.Step,
+				Total:  3,
+			},
+		})
+
 	case ws.MsgRequestSync:
 		r := h.RoomManager.GetRoom(client.RoomCode)
 		syncData := &ws.FullSyncData{}

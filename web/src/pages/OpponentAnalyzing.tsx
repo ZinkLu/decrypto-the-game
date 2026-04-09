@@ -98,42 +98,6 @@ function IntelTable({ data, highlightedWord, onWordClick }: { data: IntelRow[]; 
   );
 }
 
-// Intercept button - red telephone receiver style
-function InterceptButton({ elapsed, tension, onClick }: { elapsed: number; tension: TensionLevel; onClick: () => void }) {
-  const brightness = Math.min(elapsed / 30, 1);
-  const isFullyLit = brightness >= 1;
-  const opacity = 0.3 + brightness * 0.7;
-  const glowIntensity = brightness * 15;
-
-  const label = isFullyLit ? '☎ INTERCEPT NOW ☎'
-    : brightness > 0.5 ? '☎ READY TO INTERCEPT'
-    : '☎ PREPARING...';
-
-  return (
-    <button
-      className="w-full max-w-xs mx-auto block py-3 px-6 rounded-lg font-bold text-sm uppercase transition-[opacity,box-shadow] duration-500"
-      style={{
-        fontFamily: "'Bebas Neue', sans-serif",
-        letterSpacing: '3px',
-        background: `linear-gradient(180deg, ${rawColors.teamEnemyLight} 0%, ${rawColors.teamEnemy} 50%, ${rawColors.teamEnemyDim} 100%)`,
-        border: `2px solid ${rawColors.teamEnemy}`,
-        color: rawColors.cream,
-        opacity,
-        boxShadow: `0 0 ${glowIntensity}px rgba(139, 0, 0, ${brightness * 0.5})`,
-        cursor: 'pointer',
-        animation: isFullyLit && tension !== 'critical'
-          ? 'breathe-red 2s ease-in-out infinite'
-          : tension === 'critical'
-            ? 'phone-ring 0.5s ease-in-out infinite'
-            : 'none',
-      }}
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  );
-}
-
 const mascotConfig = {
   analyzing: { emoji: '🔍', message: 'Reasoning...' },
   comparing: { emoji: '📊', message: 'Comparing data...' },
@@ -144,11 +108,10 @@ const mascotConfig = {
 };
 
 export default function OpponentAnalyzing() {
-  const { clues: storeClues, history: gameHistory, round, aiStatus } = useGameStore();
+  const { clues: storeClues, history: gameHistory, round, aiStatus, playerProgress } = useGameStore();
 
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
-  const [elapsed, setElapsed] = useState(0);
   const [highlightedWord, setHighlightedWord] = useState<string | null>(null);
 
   const circledDigits = ['①', '②', '③', '④'];
@@ -191,7 +154,6 @@ export default function OpponentAnalyzing() {
         if (prev <= 1) { clearInterval(timer); return 0; }
         return prev - 1;
       });
-      setElapsed((prev) => prev + 1);
     }, 1000);
     return () => clearInterval(timer);
   }, [timeLeft]);
@@ -208,9 +170,7 @@ export default function OpponentAnalyzing() {
   const getMascotState = (): keyof typeof mascotConfig => {
     if (tension === 'critical') return 'critical';
     if (tension === 'tense') return 'pressure';
-    if (elapsed >= 30) return 'ready';
-    if (elapsed >= 15) return 'progress';
-    if (elapsed >= 5) return 'comparing';
+    if (tension === 'warning') return 'progress';
     return 'analyzing';
   };
 
@@ -218,14 +178,14 @@ export default function OpponentAnalyzing() {
     setHighlightedWord((prev) => (prev === word ? null : word));
   };
 
-  const handleIntercept = () => {
-    alert('Intercept! (will navigate to intercept input page)');
-  };
-
   const isAIDecrypting = aiStatus?.action === 'decrypt';
+  const decryptStep = (aiStatus?.action === 'decrypt' ? aiStatus.step : 0)
+    || (playerProgress?.action === 'decrypt' ? playerProgress.step : 0);
   const mascot = isAIDecrypting
-    ? { emoji: '🤖', message: 'Enemy AI decoding...' }
-    : mascotConfig[getMascotState()];
+    ? { emoji: '🤖', message: `Enemy AI decoding... (${aiStatus!.step}/${aiStatus!.total})` }
+    : decryptStep > 0
+      ? { emoji: '👀', message: `Enemy decoding... (${decryptStep}/3)` }
+      : mascotConfig[getMascotState()];
 
   return (
     <div
@@ -286,17 +246,6 @@ export default function OpponentAnalyzing() {
               <IntelTable data={intelData} highlightedWord={highlightedWord} onWordClick={handleWordClick} />
             </div>
           </div>
-        </div>
-
-        {/* Intercept button */}
-        <div className="px-4 py-3 flex flex-col items-center gap-1">
-          <InterceptButton elapsed={elapsed} tension={tension} onClick={handleIntercept} />
-          <button
-            className="text-xs cursor-pointer"
-            style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim, background: 'none', border: 'none', padding: 0 }}
-          >
-            Skip this round
-          </button>
         </div>
 
         {/* Agent area */}

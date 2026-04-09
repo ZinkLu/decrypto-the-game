@@ -15,6 +15,7 @@ const (
 	MsgSubmitIntercept = "submit_intercept"
 	MsgSubmitDecrypt   = "submit_decrypt"
 	MsgRequestSync     = "request_sync"
+	MsgProgress        = "progress"
 )
 
 // Server -> Client message type constants
@@ -28,8 +29,9 @@ const (
 	MsgGameOver       = "game_over"
 	MsgFullSync       = "full_sync"
 	MsgAIThinking     = "ai_thinking"
-	MsgAIActed        = "ai_acted"
-	MsgError          = "error"
+	MsgAIActed          = "ai_acted"
+	MsgPlayerProgress   = "player_progress"
+	MsgError            = "error"
 )
 
 // ClientMessage is a message sent from client to server.
@@ -186,6 +188,23 @@ type FullSyncData struct {
 type AIStatusData struct {
 	Action string `json:"action"` // "encrypt", "intercept", "decrypt"
 	Player string `json:"player"` // AI player nickname
+	Step   int    `json:"step"`   // current step (1-based)
+	Total  int    `json:"total"`  // total steps
+}
+
+// ProgressData is the client payload for MsgProgress.
+type ProgressData struct {
+	Action string `json:"action"` // "encrypt", "intercept", "decrypt"
+	Step   int    `json:"step"`   // 1-based step number
+	Total  int    `json:"total"`  // total steps (always 3)
+}
+
+// PlayerProgressData is the server broadcast payload for MsgPlayerProgress.
+type PlayerProgressData struct {
+	Action string `json:"action"` // "encrypt", "intercept", "decrypt"
+	Player string `json:"player"` // player nickname
+	Step   int    `json:"step"`
+	Total  int    `json:"total"`
 }
 
 // ErrorData is the data payload for MsgError.

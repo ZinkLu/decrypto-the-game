@@ -42,8 +42,8 @@ func TestRoomTeamOperations(t *testing.T) {
 	if !aiA.IsAI {
 		t.Fatal("expected AI flag on added AI player")
 	}
-	if aiA.ID != "ai-A-1" {
-		t.Fatalf("unexpected AI ID: %s", aiA.ID)
+	if !strings.HasPrefix(aiA.ID, "ai-A-") {
+		t.Fatalf("unexpected AI ID prefix: %s", aiA.ID)
 	}
 
 	// Add AI to Team B.

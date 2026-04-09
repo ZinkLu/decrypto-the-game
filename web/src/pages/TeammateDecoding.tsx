@@ -154,7 +154,7 @@ const mascotConfig = {
 };
 
 export default function TeammateDecoding() {
-  const { myWords, clues, submitDecrypt } = useGameStore();
+  const { myWords, clues, submitDecrypt, sendProgress } = useGameStore();
 
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
@@ -211,6 +211,7 @@ export default function TeammateDecoding() {
 
   const handleNumberSelect = useCallback((num: number) => {
     if (submitted) return;
+    sendProgress('decrypt', focusedSlot);
     setSlots((prev) => {
       const newSlots = prev.map((s) =>
         s.id === focusedSlot ? { ...s, answer: num, status: 'filled' as const } : s
@@ -219,7 +220,7 @@ export default function TeammateDecoding() {
       if (nextEmpty) setFocusedSlot(nextEmpty.id);
       return newSlots;
     });
-  }, [focusedSlot, submitted]);
+  }, [focusedSlot, submitted, sendProgress]);
 
   const handleSlotClick = (slotId: number) => {
     if (submitted) return;

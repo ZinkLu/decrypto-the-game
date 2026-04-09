@@ -83,12 +83,19 @@ function ClueRowItem({ row }: { row: ClueRow }) {
           Guess:
         </span>
 
-        {row.guess !== null ? (
+        {row.guess !== null && row.guess > 0 ? (
           <span
             className="text-xl font-bold w-8 text-center"
             style={{ fontFamily: "'Bebas Neue', sans-serif", color: statusColor }}
           >
             {row.guess}
+          </span>
+        ) : row.guess === -1 ? (
+          <span
+            className="text-xl w-8 text-center"
+            style={{ color: rawColors.brass }}
+          >
+            🔒
           </span>
         ) : (
           <span
@@ -200,7 +207,7 @@ const mascotConfig = {
 };
 
 export default function EncryptorWatching() {
-  const { clues: storeClues, secretDigits, round, aiStatus } = useGameStore();
+  const { clues: storeClues, secretDigits, round, aiStatus, playerProgress } = useGameStore();
   void round;
 
   const [timeLeft, setTimeLeft] = useState(90);
@@ -218,6 +225,22 @@ export default function EncryptorWatching() {
       status: 'waiting' as GuessStatus,
     }))
   );
+
+  // Derive decode progress from AI or human events
+  const decryptProgress = (aiStatus?.action === 'decrypt' ? aiStatus.step : 0)
+    || (playerProgress?.action === 'decrypt' ? playerProgress.step : 0);
+  const [trackedProgress, setTrackedProgress] = useState(0);
+
+  useEffect(() => {
+    if (decryptProgress <= trackedProgress) return;
+    setTrackedProgress(decryptProgress);
+    // Mark the slot as "answered" (value unknown until round resolves)
+    setClues((prev) => prev.map((c) =>
+      c.id === decryptProgress ? { ...c, guess: -1, status: 'waiting' as const } : c
+    ));
+    setMascotState('correct');
+    setTimeout(() => setMascotState('waiting'), 2000);
+  }, [decryptProgress]);
 
   useEffect(() => {
     if (timeLeft > 30) setTension('normal');
@@ -237,29 +260,6 @@ export default function EncryptorWatching() {
     return () => clearInterval(timer);
   }, [timeLeft]);
 
-  // Simulate teammate guessing
-  useEffect(() => {
-    const timer1 = setTimeout(() => {
-      setClues((prev) => prev.map((c) => c.id === 1 ? { ...c, guess: 3, status: 'correct' as const } : c));
-      setMascotState('correct');
-      setTimeout(() => setMascotState('waiting'), 2000);
-    }, 4000);
-
-    const timer2 = setTimeout(() => {
-      setClues((prev) => prev.map((c) => c.id === 2 ? { ...c, guess: 2, status: 'wrong' as const } : c));
-      setMascotState('wrong');
-      setTimeout(() => setMascotState('waiting'), 2000);
-    }, 8000);
-
-    const timer3 = setTimeout(() => {
-      setClues((prev) => prev.map((c) => c.id === 3 ? { ...c, guess: 4, status: 'correct' as const } : c));
-      setMascotState('hasErrors');
-      setTimeout(() => setShowSummary(true), 1000);
-    }, 12000);
-
-    return () => { clearTimeout(timer1); clearTimeout(timer2); clearTimeout(timer3); };
-  }, []);
-
   const getBgColor = () => {
     switch (tension) {
       case 'normal': return rawColors.tensionNormalBg;
@@ -271,7 +271,7 @@ export default function EncryptorWatching() {
 
   const isAIDecrypting = aiStatus?.action === 'decrypt';
   const mascot = isAIDecrypting
-    ? { emoji: '🤖', message: 'AI teammate decoding...' }
+    ? { emoji: '🤖', message: `AI teammate decoding... (${aiStatus!.step}/${aiStatus!.total})` }
     : mascotConfig[mascotState];
 
   return (

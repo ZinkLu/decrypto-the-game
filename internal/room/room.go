@@ -2,8 +2,20 @@ package room
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
 )
+
+// Cold War themed AI codenames by faction.
+var aiNamesA = []string{
+	"Hudson", "Sterling", "Caldwell", "Bishop", "Mercer",
+	"Whitfield", "Donovan", "Fletcher", "Ashford", "Pemberton",
+}
+
+var aiNamesB = []string{
+	"Volkov", "Petrov", "Sokolov", "Kuznetsov", "Orlov",
+	"Ivanov", "Morozov", "Lebedev", "Kozlov", "Novikov",
+}
 
 // PlayerInfo holds basic info about a room participant.
 type PlayerInfo struct {
@@ -110,17 +122,38 @@ func (r *Room) AddAI(team string) error {
 		return fmt.Errorf("team %s is full (max %d players)", team, maxTeamSize)
 	}
 
-	// Determine the AI index by counting existing AIs on this team.
-	aiCount := 0
-	for _, p := range *target {
-		if p.IsAI {
-			aiCount++
+	// Collect all names already in use across both teams.
+	used := make(map[string]bool)
+	for _, p := range r.TeamA {
+		used[p.Nickname] = true
+	}
+	for _, p := range r.TeamB {
+		used[p.Nickname] = true
+	}
+
+	// Pick a random unused codename from the team's name pool.
+	pool := aiNamesA
+	if team == "B" {
+		pool = aiNamesB
+	}
+	candidates := make([]string, 0, len(pool))
+	for _, name := range pool {
+		if !used[name] {
+			candidates = append(candidates, name)
 		}
 	}
 
+	var nickname string
+	if len(candidates) > 0 {
+		nickname = candidates[rand.Intn(len(candidates))]
+	} else {
+		// Fallback if all names exhausted.
+		nickname = fmt.Sprintf("Agent-%s-%d", team, len(*target)+1)
+	}
+
 	ai := &PlayerInfo{
-		ID:       fmt.Sprintf("ai-%s-%d", team, aiCount+1),
-		Nickname: fmt.Sprintf("AI-%s-%d", team, aiCount+1),
+		ID:       fmt.Sprintf("ai-%s-%s", team, nickname),
+		Nickname: nickname,
 		IsAI:     true,
 	}
 	*target = append(*target, ai)

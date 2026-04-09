@@ -271,8 +271,26 @@ function TeamColumn({
         </div>
       </div>
 
+      {/* Join button */}
+      <DossierButton
+        variant="stamp"
+        size="small"
+        fullWidth
+        disabled={isOnThisTeam}
+        onClick={onJoin}
+        style={{
+          borderColor: accentColor,
+          color: isOnThisTeam ? rawColors.cream : accentColor,
+          background: isOnThisTeam
+            ? `linear-gradient(180deg, ${accentColor}, ${accentDimColor})`
+            : `${accentColor}12`,
+        }}
+      >
+        {isOnThisTeam ? '✓ JOINED' : 'JOIN'}
+      </DossierButton>
+
       {/* Player list */}
-      <div className="flex flex-col gap-1 min-h-[80px]">
+      <div className="flex-1 flex flex-col gap-1 min-h-[80px]">
         {players.length === 0 ? (
           <div
             className="flex-1 flex items-center justify-center"
@@ -302,20 +320,9 @@ function TeamColumn({
         )}
       </div>
 
-      {/* Action buttons */}
-      <div className="flex flex-col gap-1 pt-1">
-        {!isOnThisTeam && (
-          <DossierButton
-            variant="secondary"
-            size="small"
-            fullWidth
-            onClick={onJoin}
-            style={{ borderColor: accentColor, color: accentColor }}
-          >
-            JOIN
-          </DossierButton>
-        )}
-        {isOwner && (
+      {/* Add AI button (owner only) */}
+      {isOwner && (
+        <div className="pt-1">
           <DossierButton
             variant="stamp"
             size="small"
@@ -325,8 +332,8 @@ function TeamColumn({
           >
             + AI
           </DossierButton>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

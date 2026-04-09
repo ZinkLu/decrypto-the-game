@@ -62,7 +62,8 @@ interface GameStore {
   scoreB: ScoreInfo;
   roundResult: { intercept_success?: boolean; decrypt_success?: boolean } | null;
   gameOver: { winner: string | null } | null;
-  aiStatus: { action: string; player: string } | null;
+  aiStatus: { action: string; player: string; step: number; total: number } | null;
+  playerProgress: { action: string; player: string; step: number; total: number } | null;
 
   // Actions
   connect: () => void;
@@ -77,6 +78,7 @@ interface GameStore {
   submitClues: (clues: [string, string, string]) => void;
   submitIntercept: (guess: [number, number, number]) => void;
   submitDecrypt: (guess: [number, number, number]) => void;
+  sendProgress: (action: string, step: number) => void;
   requestSync: () => void;
   reset: () => void;
 }
@@ -106,7 +108,8 @@ const initialState = {
   scoreB: { interceptions: 0, decrypt_failures: 0 } as ScoreInfo,
   roundResult: null as { intercept_success?: boolean; decrypt_success?: boolean } | null,
   gameOver: null as { winner: string | null } | null,
-  aiStatus: null as { action: string; player: string } | null,
+  aiStatus: null as { action: string; player: string; step: number; total: number } | null,
+  playerProgress: null as { action: string; player: string; step: number; total: number } | null,
 };
 
 type SetFn = (
@@ -191,6 +194,7 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
           waiting: (d.waiting as boolean) ?? false,
           roundResult: null,
           aiStatus: null,
+          playerProgress: null,
         });
       }
       break;
@@ -264,12 +268,25 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
         aiStatus: {
           action: d.action as string,
           player: d.player as string,
+          step: (d.step as number) ?? 1,
+          total: (d.total as number) ?? 3,
         },
       });
       break;
 
     case 'ai_acted':
       set({ aiStatus: null });
+      break;
+
+    case 'player_progress':
+      set({
+        playerProgress: {
+          action: d.action as string,
+          player: d.player as string,
+          step: (d.step as number) ?? 1,
+          total: (d.total as number) ?? 3,
+        },
+      });
       break;
 
     case 'error':
@@ -337,6 +354,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   submitDecrypt(guess: [number, number, number]) {
     get().wsService?.send('submit_decrypt', { guess });
+  },
+
+  sendProgress(action: string, step: number) {
+    get().wsService?.send('progress', { action, step, total: 3 });
   },
 
   requestSync() {

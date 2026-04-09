@@ -248,7 +248,7 @@ const mascotConfig = {
 };
 
 export default function OpponentIntercepting() {
-  const { clues: currentClues, history: gameHistory, submitIntercept } = useGameStore();
+  const { clues: currentClues, history: gameHistory, submitIntercept, sendProgress } = useGameStore();
 
   const [timeLeft, setTimeLeft] = useState(45);
   const [tension, setTension] = useState<TensionLevel>('normal');
@@ -318,6 +318,7 @@ export default function OpponentIntercepting() {
 
   const handleNumberSelect = useCallback((num: number) => {
     if (submitted) return;
+    sendProgress('intercept', focusedSlot);
     setSlots((prev) => {
       const newSlots = prev.map((s) =>
         s.id === focusedSlot ? { ...s, answer: num, status: 'filled' as const } : s
@@ -326,7 +327,7 @@ export default function OpponentIntercepting() {
       if (nextEmpty) setFocusedSlot(nextEmpty.id);
       return newSlots;
     });
-  }, [focusedSlot, submitted]);
+  }, [focusedSlot, submitted, sendProgress]);
 
   const handleSlotClick = (slotId: number) => {
     if (submitted) return;

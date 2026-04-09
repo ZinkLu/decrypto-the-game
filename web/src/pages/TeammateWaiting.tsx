@@ -10,19 +10,29 @@ interface WaveformState {
 }
 
 export default function TeammateWaiting() {
-  const { encryptor, round, aiStatus } = useGameStore();
+  const { encryptor, round, aiStatus, playerProgress } = useGameStore();
 
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
-  const [completedCount, setCompletedCount] = useState(0);
-  const [waveforms, setWaveforms] = useState<WaveformState[]>([
-    { id: 1, state: 'active', statusText: 'Typing' },
-    { id: 2, state: 'waiting', statusText: 'Waiting' },
-    { id: 3, state: 'waiting', statusText: 'Waiting' },
-  ]);
 
   const encryptorName = encryptor || 'Teammate';
   void round;
+
+  // Derive progress from AI or human events
+  const progressStep = (aiStatus?.action === 'encrypt' ? aiStatus.step : 0)
+    || (playerProgress?.action === 'encrypt' ? playerProgress.step : 0);
+
+  const [completedCount, setCompletedCount] = useState(0);
+
+  useEffect(() => {
+    setCompletedCount((prev) => Math.max(prev, progressStep));
+  }, [progressStep]);
+
+  const waveforms: WaveformState[] = [1, 2, 3].map((id) => ({
+    id,
+    state: id <= completedCount ? 'completed' as const : id === completedCount + 1 ? 'active' as const : 'waiting' as const,
+    statusText: id <= completedCount ? 'Received' : id === completedCount + 1 ? 'Typing' : 'Waiting',
+  }));
 
   useEffect(() => {
     if (timeLeft > 30) setTension('normal');
@@ -42,27 +52,10 @@ export default function TeammateWaiting() {
     return () => clearInterval(timer);
   }, [timeLeft]);
 
-  // Simulate mail slots receiving
-  useEffect(() => {
-    const timer1 = setTimeout(() => {
-      setWaveforms((prev) => prev.map((w) => w.id === 1 ? { ...w, state: 'completed' as const, statusText: 'Received' } : w));
-      setCompletedCount(1);
-    }, 5000);
-    const timer2 = setTimeout(() => {
-      setWaveforms((prev) => prev.map((w) => w.id === 2 ? { ...w, state: 'completed' as const, statusText: 'Received' } : w));
-      setCompletedCount(2);
-    }, 10000);
-    const timer3 = setTimeout(() => {
-      setWaveforms((prev) => prev.map((w) => w.id === 3 ? { ...w, state: 'completed' as const, statusText: 'Received' } : w));
-      setCompletedCount(3);
-    }, 15000);
-    return () => { clearTimeout(timer1); clearTimeout(timer2); clearTimeout(timer3); };
-  }, []);
-
   const isAIThinking = aiStatus?.action === 'encrypt';
 
   const getMascotMessage = () => {
-    if (isAIThinking) return `${encryptorName} is thinking...`;
+    if (isAIThinking) return `${encryptorName} is thinking... (${aiStatus!.step}/${aiStatus!.total})`;
     if (completedCount === 0) return 'Waiting for intel...';
     if (completedCount === 1) return 'First intel received!';
     if (completedCount === 2) return 'Almost all received!';
