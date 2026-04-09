@@ -144,7 +144,7 @@ const mascotConfig = {
 };
 
 export default function OpponentAnalyzing() {
-  const { clues: storeClues, history: gameHistory, round } = useGameStore();
+  const { clues: storeClues, history: gameHistory, round, aiStatus } = useGameStore();
 
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
@@ -222,7 +222,10 @@ export default function OpponentAnalyzing() {
     alert('拦截！（将跳转到拦截输入页面）');
   };
 
-  const mascot = mascotConfig[getMascotState()];
+  const isAIDecrypting = aiStatus?.action === 'decrypt';
+  const mascot = isAIDecrypting
+    ? { emoji: '🤖', message: '敌方 AI 正在解码…' }
+    : mascotConfig[getMascotState()];
 
   return (
     <div

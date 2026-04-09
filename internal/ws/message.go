@@ -27,6 +27,8 @@ const (
 	MsgRoundResult    = "round_result"
 	MsgGameOver       = "game_over"
 	MsgFullSync       = "full_sync"
+	MsgAIThinking     = "ai_thinking"
+	MsgAIActed        = "ai_acted"
 	MsgError          = "error"
 )
 
@@ -178,6 +180,12 @@ type GameSyncData struct {
 type FullSyncData struct {
 	Room *RoomStateData `json:"room,omitempty"`
 	Game *GameSyncData  `json:"game,omitempty"`
+}
+
+// AIStatusData is the data payload for MsgAIThinking and MsgAIActed.
+type AIStatusData struct {
+	Action string `json:"action"` // "encrypt", "intercept", "decrypt"
+	Player string `json:"player"` // AI player nickname
 }
 
 // ErrorData is the data payload for MsgError.

@@ -200,7 +200,7 @@ const mascotConfig = {
 };
 
 export default function EncryptorWatching() {
-  const { clues: storeClues, secretDigits, round } = useGameStore();
+  const { clues: storeClues, secretDigits, round, aiStatus } = useGameStore();
   void round;
 
   const [timeLeft, setTimeLeft] = useState(90);
@@ -269,7 +269,10 @@ export default function EncryptorWatching() {
     }
   };
 
-  const mascot = mascotConfig[mascotState];
+  const isAIDecrypting = aiStatus?.action === 'decrypt';
+  const mascot = isAIDecrypting
+    ? { emoji: '🤖', message: 'AI 队友正在解码…' }
+    : mascotConfig[mascotState];
 
   return (
     <div

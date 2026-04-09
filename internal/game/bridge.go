@@ -511,6 +511,17 @@ func (b *Bridge) broadcastRoundResult(round *core.Round, interceptSuccess *bool,
 	})
 }
 
+// broadcastAIStatus sends an ai_thinking or ai_acted message to the room.
+func (b *Bridge) broadcastAIStatus(msgType, action, player string) {
+	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
+		Type: msgType,
+		Data: ws.AIStatusData{
+			Action: action,
+			Player: player,
+		},
+	})
+}
+
 // broadcastGameOver sends game_over to the room.
 func (b *Bridge) broadcastGameOver(winner *core.Team) {
 	scoreA, scoreB := b.buildScores()
@@ -566,18 +577,23 @@ func isAI(uid string) bool {
 func handleAIEncrypt(ctx context.Context, b *Bridge, r *core.Round) [3]string {
 	digits := r.GetSecretDigits()
 	words := r.GetCurrentTeam().GetWords()
+	playerName := r.EncryptPlayer().NickName
 	log.Printf("[AI-ENCRYPT] Round %d | AI %s encrypting | secret digits=%v | words=%v",
-		r.GetNumberOfRounds(), r.EncryptPlayer().NickName, digits, words)
+		r.GetNumberOfRounds(), playerName, digits, words)
+
+	b.broadcastAIStatus(ws.MsgAIThinking, "encrypt", playerName)
 
 	if b.AIPlayer == nil {
 		log.Printf("[AI-ENCRYPT] No LLM provider, using stub clues")
 		time.Sleep(2 * time.Second)
+		b.broadcastAIStatus(ws.MsgAIActed, "encrypt", playerName)
 		return [3]string{"提示1", "提示2", "提示3"}
 	}
 	history := formatHistoryForAI(b, r)
 	clues := b.AIPlayer.GenerateClues(ctx, digits, words, history)
 	log.Printf("[AI-ENCRYPT] Round %d | AI %s produced clues: %v",
-		r.GetNumberOfRounds(), r.EncryptPlayer().NickName, clues)
+		r.GetNumberOfRounds(), playerName, clues)
+	b.broadcastAIStatus(ws.MsgAIActed, "encrypt", playerName)
 	return clues
 }
 
@@ -586,15 +602,19 @@ func handleAIIntercept(ctx context.Context, b *Bridge, r *core.Round) [3]int {
 	log.Printf("[AI-INTERCEPT] Round %d | Opponent AI team intercepting | clues=%v",
 		r.GetNumberOfRounds(), clues)
 
+	b.broadcastAIStatus(ws.MsgAIThinking, "intercept", "AI 特工")
+
 	if b.AIPlayer == nil {
 		log.Printf("[AI-INTERCEPT] No LLM provider, using stub guess [1,2,3]")
 		time.Sleep(2 * time.Second)
+		b.broadcastAIStatus(ws.MsgAIActed, "intercept", "AI 特工")
 		return [3]int{1, 2, 3}
 	}
 	var emptyWords [4]string
 	history := formatHistoryForAI(b, r)
 	guess := b.AIPlayer.GuessSequence(ctx, clues, emptyWords, true, history)
 	log.Printf("[AI-INTERCEPT] Round %d | AI intercept guess: %v", r.GetNumberOfRounds(), guess)
+	b.broadcastAIStatus(ws.MsgAIActed, "intercept", "AI 特工")
 	return guess
 }
 
@@ -604,15 +624,19 @@ func handleAIDecrypt(ctx context.Context, b *Bridge, r *core.Round) [3]int {
 	log.Printf("[AI-DECRYPT] Round %d | AI team decrypting | clues=%v | words=%v",
 		r.GetNumberOfRounds(), clues, words)
 
+	b.broadcastAIStatus(ws.MsgAIThinking, "decrypt", "AI 特工")
+
 	if b.AIPlayer == nil {
 		log.Printf("[AI-DECRYPT] No LLM provider, using secret digits as stub")
 		time.Sleep(2 * time.Second)
+		b.broadcastAIStatus(ws.MsgAIActed, "decrypt", "AI 特工")
 		return r.GetSecretDigits()
 	}
 	history := formatHistoryForAI(b, r)
 	guess := b.AIPlayer.GuessSequence(ctx, clues, words, false, history)
 	log.Printf("[AI-DECRYPT] Round %d | AI decrypt guess: %v (actual secret: %v)",
 		r.GetNumberOfRounds(), guess, r.GetSecretDigits())
+	b.broadcastAIStatus(ws.MsgAIActed, "decrypt", "AI 特工")
 	return guess
 }
 

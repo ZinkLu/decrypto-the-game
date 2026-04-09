@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 
 	"github.com/ZinkLu/decrypto-the-game/internal/ai"
 )
@@ -40,8 +42,9 @@ type claudeRequest struct {
 }
 
 type claudeContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type     string `json:"type"` // "text" or "thinking"
+	Text     string `json:"text,omitempty"`
+	Thinking string `json:"thinking,omitempty"`
 }
 
 type claudeResponse struct {
@@ -52,6 +55,13 @@ type claudeResponse struct {
 func (p *ClaudeProvider) Complete(ctx context.Context, messages []ai.Message) (string, error) {
 	var system string
 	var chatMessages []claudeMessage
+	var baseURL string
+
+	if envBaseURL, ok := os.LookupEnv("ANTHROPIC_BASE_URL"); ok {
+		baseURL = envBaseURL
+	} else {
+		baseURL = claudeAPIURL
+	}
 
 	for _, m := range messages {
 		if m.Role == "system" {
@@ -66,7 +76,7 @@ func (p *ClaudeProvider) Complete(ctx context.Context, messages []ai.Message) (s
 
 	reqBody := claudeRequest{
 		Model:     p.Model,
-		MaxTokens: 256,
+		MaxTokens: 2048,
 		Messages:  chatMessages,
 		System:    system,
 	}
@@ -76,7 +86,7 @@ func (p *ClaudeProvider) Complete(ctx context.Context, messages []ai.Message) (s
 		return "", fmt.Errorf("claude: marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, claudeAPIURL, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("claude: create request: %w", err)
 	}
@@ -109,5 +119,15 @@ func (p *ClaudeProvider) Complete(ctx context.Context, messages []ai.Message) (s
 		return "", fmt.Errorf("claude: empty content in response")
 	}
 
-	return claudeResp.Content[0].Text, nil
+	var textResult string
+	for _, block := range claudeResp.Content {
+		switch block.Type {
+		case "thinking":
+			log.Printf("[AI] Claude thinking:\n%s", block.Thinking)
+		case "text":
+			textResult = block.Text
+		}
+	}
+
+	return textResult, nil
 }

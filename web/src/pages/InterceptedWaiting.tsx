@@ -114,7 +114,7 @@ function ThreatMeter({ level }: { level: number }) {
 }
 
 export default function InterceptedWaiting() {
-  const { myWords, round } = useGameStore();
+  const { myWords, round, aiStatus } = useGameStore();
   void round;
 
   const [timeLeft, setTimeLeft] = useState(45);
@@ -165,7 +165,10 @@ export default function InterceptedWaiting() {
 
   const tensionCfg = alertTensionConfig[tension];
 
+  const isAIThinking = aiStatus?.action === 'intercept';
+
   const getMascot = () => {
+    if (isAIThinking) return { emoji: '🤖', message: 'AI 特工正在分析你的情报…' };
     if (tension === 'critical') return { emoji: tensionCfg.emoji, message: tensionCfg.message };
     if (tension === 'tense') return { emoji: tensionCfg.emoji, message: tensionCfg.message };
     if (opponentProgress === 0) return { emoji: '😰', message: '通讯暴露中…' };

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -52,7 +53,8 @@ type openaiRequest struct {
 
 type openaiChoice struct {
 	Message struct {
-		Content string `json:"content"`
+		Content          string `json:"content"`
+		ReasoningContent string `json:"reasoning_content,omitempty"`
 	} `json:"message"`
 }
 
@@ -116,5 +118,10 @@ func (p *OpenAIProvider) Complete(ctx context.Context, messages []ai.Message) (s
 		return "", fmt.Errorf("openai: no choices in response")
 	}
 
-	return openaiResp.Choices[0].Message.Content, nil
+	choice := openaiResp.Choices[0]
+	if reasoning := choice.Message.ReasoningContent; reasoning != "" {
+		log.Printf("[AI] OpenAI reasoning_content:\n%s", reasoning)
+	}
+
+	return choice.Message.Content, nil
 }

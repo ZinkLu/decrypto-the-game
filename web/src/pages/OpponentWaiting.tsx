@@ -96,9 +96,11 @@ function SignalStrengthMeter({ tension }: { tension: TensionLevel }) {
 }
 
 export default function OpponentWaiting() {
-  const { encryptor, round } = useGameStore();
+  const { encryptor, round, aiStatus } = useGameStore();
   void encryptor;
   void round;
+
+  const isAIThinking = aiStatus?.action === 'encrypt';
 
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
@@ -139,7 +141,10 @@ export default function OpponentWaiting() {
     }
   };
 
-  const mascot = opponentMascotConfig[tension];
+  const defaultMascot = opponentMascotConfig[tension];
+  const mascot = isAIThinking
+    ? { emoji: '🤖', message: '敌方 AI 特工正在编写情报…' }
+    : defaultMascot;
 
   return (
     <div

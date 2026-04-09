@@ -62,6 +62,7 @@ interface GameStore {
   scoreB: ScoreInfo;
   roundResult: { intercept_success?: boolean; decrypt_success?: boolean } | null;
   gameOver: { winner: string | null } | null;
+  aiStatus: { action: string; player: string } | null;
 
   // Actions
   connect: () => void;
@@ -105,6 +106,7 @@ const initialState = {
   scoreB: { interceptions: 0, decrypt_failures: 0 } as ScoreInfo,
   roundResult: null as { intercept_success?: boolean; decrypt_success?: boolean } | null,
   gameOver: null as { winner: string | null } | null,
+  aiStatus: null as { action: string; player: string } | null,
 };
 
 type SetFn = (
@@ -188,6 +190,7 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
           history: (d.history as RoundHistoryRow[]) ?? get().history,
           waiting: (d.waiting as boolean) ?? false,
           roundResult: null,
+          aiStatus: null,
         });
       }
       break;
@@ -255,6 +258,19 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
       }
       break;
     }
+
+    case 'ai_thinking':
+      set({
+        aiStatus: {
+          action: d.action as string,
+          player: d.player as string,
+        },
+      });
+      break;
+
+    case 'ai_acted':
+      set({ aiStatus: null });
+      break;
 
     case 'error':
       console.error('Server error:', d);

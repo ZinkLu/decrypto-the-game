@@ -10,7 +10,7 @@ interface WaveformState {
 }
 
 export default function TeammateWaiting() {
-  const { encryptor, round } = useGameStore();
+  const { encryptor, round, aiStatus } = useGameStore();
 
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
@@ -59,7 +59,10 @@ export default function TeammateWaiting() {
     return () => { clearTimeout(timer1); clearTimeout(timer2); clearTimeout(timer3); };
   }, []);
 
+  const isAIThinking = aiStatus?.action === 'encrypt';
+
   const getMascotMessage = () => {
+    if (isAIThinking) return `${encryptorName} 正在思考线索…`;
     if (completedCount === 0) return '等待情报传达…';
     if (completedCount === 1) return '收到第一份情报!';
     if (completedCount === 2) return '即将全部到达!';
@@ -67,6 +70,7 @@ export default function TeammateWaiting() {
   };
 
   const getMascotEmoji = () => {
+    if (isAIThinking) return '🤖';
     if (completedCount === 0) return '📨';
     if (completedCount === 1) return '📬';
     if (completedCount === 2) return '📭';
