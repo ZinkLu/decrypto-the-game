@@ -143,7 +143,7 @@ export default function OpponentWaiting() {
 
   const defaultMascot = opponentMascotConfig[tension];
   const mascot = isAIThinking
-    ? { emoji: '🤖', message: '敌方 AI 特工正在编写情报…' }
+    ? { emoji: '🤖', message: 'Enemy AI agent composing intel...' }
     : defaultMascot;
 
   return (

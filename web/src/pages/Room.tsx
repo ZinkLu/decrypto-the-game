@@ -75,7 +75,7 @@ export default function Room() {
                 opacity: 0.65,
               }}
             >
-              任务简报室
+              Mission Briefing Room
             </div>
           </div>
 
@@ -114,7 +114,7 @@ export default function Room() {
               </span>
               <button
                 onClick={handleCopyCode}
-                title="复制房间码"
+                title="Copy room code"
                 style={{
                   background: copied ? `${rawColors.teamFriendly}20` : `${rawColors.brass}20`,
                   border: `1px solid ${copied ? rawColors.teamFriendly : rawColors.brass}`,
@@ -195,12 +195,12 @@ export default function Room() {
                     letterSpacing: '1px',
                   }}
                 >
-                  每队至少需要2名成员
+                  Each team needs at least 2 members
                 </span>
               )}
             </div>
           ) : (
-            <AgentPanel emoji="⏳" message="等待房主开始行动…" theme="friendly" />
+            <AgentPanel emoji="⏳" message="Waiting for host to start..." theme="friendly" />
           )}
         </ManilaFolder>
       </div>
@@ -285,7 +285,7 @@ function TeamColumn({
               fontStyle: 'italic',
             }}
           >
-            — 尚无成员 —
+            — No members —
           </div>
         ) : (
           players.map((player, idx) => (
@@ -312,7 +312,7 @@ function TeamColumn({
             onClick={onJoin}
             style={{ borderColor: accentColor, color: accentColor }}
           >
-            加入
+            JOIN
           </DossierButton>
         )}
         {isOwner && (
@@ -390,7 +390,7 @@ function PlayerRow({
       {isOwner && player.is_ai && onRemoveAI && (
         <button
           onClick={onRemoveAI}
-          title="移除AI"
+          title="Remove AI"
           style={{
             background: 'transparent',
             border: 'none',

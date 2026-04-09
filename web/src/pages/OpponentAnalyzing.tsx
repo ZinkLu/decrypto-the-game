@@ -18,7 +18,7 @@ function CurrentClues({ clues }: { clues: string[] }) {
       style={{ background: `${rawColors.teamEnemy}10`, border: `2px solid ${rawColors.opponentNormalBorder}` }}
     >
       <div className="text-xs mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
-        本轮线索
+        Current Clues
       </div>
       <div className="flex items-center justify-center gap-3">
         {clues.map((clue, i) => (
@@ -45,9 +45,9 @@ function IntelTable({ data, highlightedWord, onWordClick }: { data: IntelRow[]; 
         className="flex px-3 py-2 text-xs"
         style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim, borderBottom: `1px solid ${rawColors.opponentNormalBorder}` }}
       >
-        <span className="w-12">轮次</span>
-        <span className="flex-1">线索词</span>
-        <span className="w-24 text-right">已知顺序</span>
+        <span className="w-12">RND</span>
+        <span className="flex-1">Clues</span>
+        <span className="w-24 text-right">Known Order</span>
       </div>
 
       {data.map((row) => (
@@ -105,9 +105,9 @@ function InterceptButton({ elapsed, tension, onClick }: { elapsed: number; tensi
   const opacity = 0.3 + brightness * 0.7;
   const glowIntensity = brightness * 15;
 
-  const label = isFullyLit ? '☎ 立即拦截 ☎'
-    : brightness > 0.5 ? '☎ 准备拦截'
-    : '☎ 准备拦截…';
+  const label = isFullyLit ? '☎ INTERCEPT NOW ☎'
+    : brightness > 0.5 ? '☎ READY TO INTERCEPT'
+    : '☎ PREPARING...';
 
   return (
     <button
@@ -135,12 +135,12 @@ function InterceptButton({ elapsed, tension, onClick }: { elapsed: number; tensi
 }
 
 const mascotConfig = {
-  analyzing: { emoji: '🔍', message: '正在推理…' },
-  comparing: { emoji: '📊', message: '仔细对比中…' },
-  progress: { emoji: '💡', message: '有眉目了！' },
-  ready: { emoji: '🎯', message: '出手时机到！' },
-  pressure: { emoji: '⚠️', message: '快决定！' },
-  critical: { emoji: '🚨', message: '紧急！' },
+  analyzing: { emoji: '🔍', message: 'Reasoning...' },
+  comparing: { emoji: '📊', message: 'Comparing data...' },
+  progress: { emoji: '💡', message: 'Getting close!' },
+  ready: { emoji: '🎯', message: 'Time to strike!' },
+  pressure: { emoji: '⚠️', message: 'Decide now!' },
+  critical: { emoji: '🚨', message: 'Emergency!' },
 };
 
 export default function OpponentAnalyzing() {
@@ -219,12 +219,12 @@ export default function OpponentAnalyzing() {
   };
 
   const handleIntercept = () => {
-    alert('拦截！（将跳转到拦截输入页面）');
+    alert('Intercept! (will navigate to intercept input page)');
   };
 
   const isAIDecrypting = aiStatus?.action === 'decrypt';
   const mascot = isAIDecrypting
-    ? { emoji: '🤖', message: '敌方 AI 正在解码…' }
+    ? { emoji: '🤖', message: 'Enemy AI decoding...' }
     : mascotConfig[getMascotState()];
 
   return (
@@ -281,7 +281,7 @@ export default function OpponentAnalyzing() {
             {/* Historical intel */}
             <div className="mb-2">
               <div className="text-xs mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
-                历史情报
+                Historical Intel
               </div>
               <IntelTable data={intelData} highlightedWord={highlightedWord} onWordClick={handleWordClick} />
             </div>
@@ -295,7 +295,7 @@ export default function OpponentAnalyzing() {
             className="text-xs cursor-pointer"
             style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim, background: 'none', border: 'none', padding: 0 }}
           >
-            跳过本轮
+            Skip this round
           </button>
         </div>
 

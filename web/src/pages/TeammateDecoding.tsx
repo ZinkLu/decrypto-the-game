@@ -88,7 +88,7 @@ function AnswerSlot({ slot, isFocused, onClick }: { slot: ClueSlot; isFocused: b
     >
       <div className="flex-1">
         <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}>
-          线索 {slot.id}
+          Clue {slot.id}
         </span>
         <div className="text-lg" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.cream }}>
           "{slot.clue}"
@@ -136,7 +136,7 @@ function AnswerSlot({ slot, isFocused, onClick }: { slot: ClueSlot; isFocused: b
         <span className="flex items-center gap-1">
           <span className="text-lg" style={{ color: rawColors.intelRed }}>✗</span>
           <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.intelRedDim }}>
-            应为{slot.correctAnswer}
+            was {slot.correctAnswer}
           </span>
         </span>
       )}
@@ -145,12 +145,12 @@ function AnswerSlot({ slot, isFocused, onClick }: { slot: ClueSlot; isFocused: b
 }
 
 const mascotConfig = {
-  thinking: { emoji: '🤔', message: '认真分析中…' },
-  hasIdea: { emoji: '💡', message: '有思路了…' },
-  almostDone: { emoji: '📝', message: '感觉对了！' },
-  waitingResult: { emoji: '⏳', message: '等待判定…' },
-  correct: { emoji: '🎖️', message: '解码成功！' },
-  wrong: { emoji: '❌', message: '猜错了…' },
+  thinking: { emoji: '🤔', message: 'Analyzing...' },
+  hasIdea: { emoji: '💡', message: 'Got an idea...' },
+  almostDone: { emoji: '📝', message: 'Feels right!' },
+  waitingResult: { emoji: '⏳', message: 'Awaiting verdict...' },
+  correct: { emoji: '🎖️', message: 'Decoded!' },
+  wrong: { emoji: '❌', message: 'Wrong guess...' },
 };
 
 export default function TeammateDecoding() {
@@ -273,7 +273,7 @@ export default function TeammateDecoding() {
             }}
           >
             <div className="text-center text-xs mb-3" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}>
-              密语参照表
+              CODEWORD REFERENCE
             </div>
             <div className="flex justify-center gap-3 lg:gap-5">
               {codewords.map((cw) => (
@@ -290,7 +290,7 @@ export default function TeammateDecoding() {
             style={{ background: rawColors.navyLight, border: `1px solid ${rawColors.brassDim}` }}
           >
             <div className="text-center text-xs mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}>
-              本轮线索
+              CURRENT CLUES
             </div>
             <div className="space-y-2">
               {slots.map((slot) => (
@@ -311,7 +311,7 @@ export default function TeammateDecoding() {
             />
             {allFilled && (
               <DossierButton variant="stamp" team="friendly" size="medium" onClick={handleSubmit}>
-                提交解码
+                SUBMIT DECODE
               </DossierButton>
             )}
           </div>
@@ -320,7 +320,7 @@ export default function TeammateDecoding() {
         {/* Submitted waiting */}
         {submitted && mascotState === 'waitingResult' && (
           <div className="text-center py-3" style={{ fontFamily: "'Special Elite', cursive", color: rawColors.brass }}>
-            ════ 等待判定… ════
+            ════ Awaiting verdict... ════
           </div>
         )}
 

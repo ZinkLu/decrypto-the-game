@@ -155,7 +155,7 @@ export default function Encryptor() {
         {/* Left peek */}
         {currentCard > 0 && (
           <button
-            aria-label="上一张卡片"
+            aria-label="Previous card"
             className="absolute left-0 z-5 hidden lg:block cursor-pointer"
             style={{ width: '80px', height: '85%', background: 'none', padding: 0 }}
             onClick={() => setCurrentCard((prev) => Math.max(0, prev - 1))}
@@ -179,7 +179,7 @@ export default function Encryptor() {
         {/* Right peek */}
         {currentCard < cards.length - 1 && (
           <button
-            aria-label="下一张卡片"
+            aria-label="Next card"
             className="absolute right-0 z-5 hidden lg:block cursor-pointer"
             style={{ width: '80px', height: '85%', background: 'none', padding: 0 }}
             onClick={() => setCurrentCard((prev) => Math.min(cards.length - 1, prev + 1))}
@@ -211,7 +211,7 @@ export default function Encryptor() {
                     className="text-sm"
                     style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack, opacity: 0.5 }}
                   >
-                    情报 #{currentCard + 1}
+                    INTEL #{currentCard + 1}
                   </span>
                 </div>
 
@@ -254,8 +254,8 @@ export default function Encryptor() {
                 <TypewriterInput
                   value={cards[currentCard].clue}
                   onChange={(value) => handleClueChange(cards[currentCard].id, value)}
-                  placeholder="输入线索词…"
-                  aria-label={`情报 ${currentCard + 1} 线索词`}
+                  placeholder="Enter clue..."
+                  aria-label={`Intel ${currentCard + 1} clue`}
                   disabled={isSubmitted}
                   maxLength={8}
                   color="dark"
@@ -273,7 +273,7 @@ export default function Encryptor() {
                       background: rawColors.creamDark,
                     }}
                   >
-                    [历史情报记录]
+                    [PAST INTEL LOG]
                   </button>
                 </div>
               </div>
@@ -284,7 +284,7 @@ export default function Encryptor() {
         {/* Mobile swipe hint */}
         <div className="lg:hidden absolute bottom-2 left-0 right-0 text-center">
           <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}>
-            ← 点击两侧切换 →
+            ← Tap sides to switch →
           </span>
         </div>
       </div>
@@ -307,21 +307,21 @@ export default function Encryptor() {
               <div className="p-6 pb-8 max-h-80 overflow-y-auto">
                 <div className="flex justify-between items-center mb-4">
                   <span className="text-lg font-bold" style={{ fontFamily: "'Special Elite', cursive", color: rawColors.inkBlack }}>
-                    我的加密记录
+                    My Encryption Log
                   </span>
                   <button
                     className="text-sm"
                     style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack, opacity: 0.6 }}
                     onClick={() => setShowHistory(false)}
                   >
-                    [ 收起 ▼ ]
+                    [ CLOSE ▼ ]
                   </button>
                 </div>
                 <div className="space-y-4">
                   {history.map((round) => (
                     <div key={round.round}>
                       <span className="text-sm font-bold block mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack }}>
-                        第 {round.round} 轮
+                        Round {round.round}
                       </span>
                       <div className="space-y-1">
                         {round.entries.map((entry, idx) => (

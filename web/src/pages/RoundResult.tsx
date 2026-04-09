@@ -30,13 +30,13 @@ function ScoreBoard() {
           className="text-sm"
           style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.cream }}
         >
-          拦截 {scoreA.interceptions}/2
+          Intercept {scoreA.interceptions}/2
         </span>
         <span
           className="text-sm"
           style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.intelRedDim }}
         >
-          失误 {scoreA.decrypt_failures}/2
+          Errors {scoreA.decrypt_failures}/2
         </span>
       </div>
 
@@ -72,13 +72,13 @@ function ScoreBoard() {
           className="text-sm"
           style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.cream }}
         >
-          拦截 {scoreB.interceptions}/2
+          Intercept {scoreB.interceptions}/2
         </span>
         <span
           className="text-sm"
           style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.intelRedDim }}
         >
-          失误 {scoreB.decrypt_failures}/2
+          Errors {scoreB.decrypt_failures}/2
         </span>
       </div>
     </div>
@@ -93,36 +93,36 @@ function getStampConfig(roundResult: { intercept_success?: boolean; decrypt_succ
   agentTheme: 'friendly' | 'enemy' | 'alert';
 } {
   if (!roundResult) {
-    return { text: 'PROCESSING', color: 'red', agentEmoji: '⏳', agentMessage: '处理结果中…', agentTheme: 'friendly' };
+    return { text: 'PROCESSING', color: 'red', agentEmoji: '⏳', agentMessage: 'Processing...', agentTheme: 'friendly' };
   }
 
   const { intercept_success, decrypt_success } = roundResult;
 
   // Intercept succeeded (opponent broke the code)
   if (intercept_success === true) {
-    return { text: 'INTERCEPTED', color: 'red', agentEmoji: '🚨', agentMessage: '通讯已被截获！', agentTheme: 'alert' };
+    return { text: 'INTERCEPTED', color: 'red', agentEmoji: '🚨', agentMessage: 'Comms intercepted!', agentTheme: 'alert' };
   }
 
   // Decrypt failed (own team failed to decode)
   if (decrypt_success === false) {
-    return { text: 'DECRYPT FAIL', color: 'red', agentEmoji: '❌', agentMessage: '解密失败…', agentTheme: 'alert' };
+    return { text: 'DECRYPT FAIL', color: 'red', agentEmoji: '❌', agentMessage: 'Decryption failed...', agentTheme: 'alert' };
   }
 
   // Decrypt succeeded — at this point decrypt_success is true | undefined
   if (decrypt_success === true) {
     // If intercept was attempted and failed, emphasise SECURE
     if (intercept_success === false) {
-      return { text: 'SECURE', color: 'green', agentEmoji: '🛡️', agentMessage: '拦截失败，通讯安全', agentTheme: 'friendly' };
+      return { text: 'SECURE', color: 'green', agentEmoji: '🛡️', agentMessage: 'Intercept failed, comms secure', agentTheme: 'friendly' };
     }
-    return { text: 'DECODED', color: 'green', agentEmoji: '🎖️', agentMessage: '解码成功！', agentTheme: 'friendly' };
+    return { text: 'DECODED', color: 'green', agentEmoji: '🎖️', agentMessage: 'Decoded successfully!', agentTheme: 'friendly' };
   }
 
   // Fallback: intercept attempted but failed, decrypt result unknown
   if (intercept_success === false) {
-    return { text: 'SECURE', color: 'green', agentEmoji: '🛡️', agentMessage: '拦截失败，通讯安全', agentTheme: 'friendly' };
+    return { text: 'SECURE', color: 'green', agentEmoji: '🛡️', agentMessage: 'Intercept failed, comms secure', agentTheme: 'friendly' };
   }
 
-  return { text: 'PROCESSING', color: 'red', agentEmoji: '⏳', agentMessage: '处理结果中…', agentTheme: 'friendly' };
+  return { text: 'PROCESSING', color: 'red', agentEmoji: '⏳', agentMessage: 'Processing...', agentTheme: 'friendly' };
 }
 
 export default function RoundResult() {
@@ -149,7 +149,7 @@ export default function RoundResult() {
             letterSpacing: '3px',
           }}
         >
-          第 {round} 轮结果
+          Round {round} Result
         </p>
 
         {/* Result stamp */}
@@ -175,7 +175,7 @@ export default function RoundResult() {
             marginTop: '4px',
           }}
         >
-          下一轮即将开始…
+          Next round starting soon...
         </p>
 
         {/* Agent panel */}

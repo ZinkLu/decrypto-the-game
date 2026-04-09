@@ -58,7 +58,7 @@ export function BrassTokenPad({
         return (
           <motion.button
             key={num}
-            aria-label={`选择数字 ${num}`}
+            aria-label={`Select number ${num}`}
             className="relative rounded-full font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-brass)]"
             style={{
               width: config.buttonSize,

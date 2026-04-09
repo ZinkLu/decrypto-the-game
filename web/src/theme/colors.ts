@@ -142,25 +142,25 @@ export const encryptorTensionConfig = {
   normal: {
     ...tensionConfig.normal,
     emoji: '🕵️',
-    message: '编写情报中...',
+    message: 'Composing intel...',
     glowIntensity: 1,
   },
   warning: {
     ...tensionConfig.warning,
     emoji: '⏱️',
-    message: '窗口期即将关闭...',
+    message: 'Window closing...',
     glowIntensity: 1.2,
   },
   tense: {
     ...tensionConfig.tense,
     emoji: '🚨',
-    message: '紧急情报！',
+    message: 'Urgent intel!',
     glowIntensity: 1.5,
   },
   critical: {
     ...tensionConfig.critical,
     emoji: '⚠️',
-    message: '行动暴露风险！',
+    message: 'Cover at risk!',
     glowIntensity: 2,
   },
 } as const;
@@ -172,19 +172,19 @@ export const encryptorTensionConfig = {
 export const opponentMascotConfig = {
   normal: {
     emoji: '🔍',
-    message: '截获通讯中...',
+    message: 'Intercepting comms...',
   },
   warning: {
     emoji: '📡',
-    message: '信号不稳定...',
+    message: 'Signal unstable...',
   },
   tense: {
     emoji: '🎯',
-    message: '即将破译...',
+    message: 'Almost cracked...',
   },
   critical: {
     emoji: '⚠️',
-    message: '紧急拦截！',
+    message: 'Emergency intercept!',
   },
 } as const;
 
@@ -271,45 +271,45 @@ export type TransitionRole =
 export const transitionConfig: Record<TransitionRole, { text: string; color: string; bgColor: string; rotation: number }> = {
   // A2B transitions
   encryptor: {
-    text: '情报已发送',
+    text: 'INTEL DISPATCHED',
     color: '#0E7C6B',
     bgColor: '#0B1E2E',
     rotation: -3,
   },
   teammate: {
-    text: '准备解码',
+    text: 'READY TO DECODE',
     color: '#0E7C6B',
     bgColor: '#0B1E2E',
     rotation: -3,
   },
   opponent: {
-    text: '通讯已截获',
+    text: 'COMMS INTERCEPTED',
     color: '#8B0000',
     bgColor: '#1A0808',
     rotation: 3,
   },
   // B2C transitions — Branch A: opponent intercepts
   alert: {
-    text: '⚠️ 通讯被截获！',
+    text: 'COMMS COMPROMISED',
     color: '#8B0000',
     bgColor: '#1A0808',
     rotation: 3,
   },
   intercepting: {
-    text: '发起拦截行动',
+    text: 'INTERCEPT INITIATED',
     color: '#8B0000',
     bgColor: '#1A0808',
     rotation: 3,
   },
   // B2C transitions — Branch B: opponent skips
   secure: {
-    text: '通讯安全，未被拦截',
+    text: 'COMMS SECURE',
     color: '#0E7C6B',
     bgColor: '#0B1E2E',
     rotation: -3,
   },
   passed: {
-    text: '放弃拦截',
+    text: 'INTERCEPT PASSED',
     color: '#5C0000',
     bgColor: '#1A0808',
     rotation: 3,
@@ -327,7 +327,7 @@ export const alertTensionConfig = {
     text: rawColors.intelRed,
     borderColor: rawColors.intelRed,
     emoji: '😰',
-    message: '通讯暴露中…',
+    message: 'Comms exposed...',
     scanSpeed: 2,
   },
   warning: {
@@ -335,7 +335,7 @@ export const alertTensionConfig = {
     text: rawColors.intelRed,
     borderColor: rawColors.intelRed,
     emoji: '😓',
-    message: '他们在分析…',
+    message: 'They\'re analyzing...',
     scanSpeed: 1.5,
   },
   tense: {
@@ -343,7 +343,7 @@ export const alertTensionConfig = {
     text: rawColors.teamEnemy,
     borderColor: rawColors.teamEnemy,
     emoji: '😤',
-    message: '坚持住！',
+    message: 'Hold steady!',
     scanSpeed: 1,
   },
   critical: {
@@ -351,7 +351,7 @@ export const alertTensionConfig = {
     text: rawColors.tensionCriticalText,
     borderColor: rawColors.tensionCriticalText,
     emoji: '🚨',
-    message: '紧急状态！',
+    message: 'Emergency!',
     scanSpeed: 0.6,
   },
 } as const;

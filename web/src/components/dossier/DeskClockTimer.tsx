@@ -78,7 +78,7 @@ export function DeskClockTimer({
   const color = getColor();
 
   return (
-    <div className="flex flex-col items-center" role="timer" aria-live="polite" aria-label={`剩余时间 ${formatTime(timeLeft)}`}>
+    <div className="flex flex-col items-center" role="timer" aria-live="polite" aria-label={`Time remaining ${formatTime(timeLeft)}`}>
       {/* Clock face */}
       <div className="relative" style={{ width: config.clockSize, height: config.clockSize }}>
         <svg width={config.clockSize} height={config.clockSize} className="transform -rotate-90">

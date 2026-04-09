@@ -16,12 +16,12 @@ export default function TeammateWaiting() {
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [completedCount, setCompletedCount] = useState(0);
   const [waveforms, setWaveforms] = useState<WaveformState[]>([
-    { id: 1, state: 'active', statusText: '正在输入' },
-    { id: 2, state: 'waiting', statusText: '等待中' },
-    { id: 3, state: 'waiting', statusText: '等待中' },
+    { id: 1, state: 'active', statusText: 'Typing' },
+    { id: 2, state: 'waiting', statusText: 'Waiting' },
+    { id: 3, state: 'waiting', statusText: 'Waiting' },
   ]);
 
-  const encryptorName = encryptor || '队友';
+  const encryptorName = encryptor || 'Teammate';
   void round;
 
   useEffect(() => {
@@ -45,15 +45,15 @@ export default function TeammateWaiting() {
   // Simulate mail slots receiving
   useEffect(() => {
     const timer1 = setTimeout(() => {
-      setWaveforms((prev) => prev.map((w) => w.id === 1 ? { ...w, state: 'completed' as const, statusText: '已接收' } : w));
+      setWaveforms((prev) => prev.map((w) => w.id === 1 ? { ...w, state: 'completed' as const, statusText: 'Received' } : w));
       setCompletedCount(1);
     }, 5000);
     const timer2 = setTimeout(() => {
-      setWaveforms((prev) => prev.map((w) => w.id === 2 ? { ...w, state: 'completed' as const, statusText: '已接收' } : w));
+      setWaveforms((prev) => prev.map((w) => w.id === 2 ? { ...w, state: 'completed' as const, statusText: 'Received' } : w));
       setCompletedCount(2);
     }, 10000);
     const timer3 = setTimeout(() => {
-      setWaveforms((prev) => prev.map((w) => w.id === 3 ? { ...w, state: 'completed' as const, statusText: '已接收' } : w));
+      setWaveforms((prev) => prev.map((w) => w.id === 3 ? { ...w, state: 'completed' as const, statusText: 'Received' } : w));
       setCompletedCount(3);
     }, 15000);
     return () => { clearTimeout(timer1); clearTimeout(timer2); clearTimeout(timer3); };
@@ -62,11 +62,11 @@ export default function TeammateWaiting() {
   const isAIThinking = aiStatus?.action === 'encrypt';
 
   const getMascotMessage = () => {
-    if (isAIThinking) return `${encryptorName} 正在思考线索…`;
-    if (completedCount === 0) return '等待情报传达…';
-    if (completedCount === 1) return '收到第一份情报!';
-    if (completedCount === 2) return '即将全部到达!';
-    return '情报全部就位!';
+    if (isAIThinking) return `${encryptorName} is thinking...`;
+    if (completedCount === 0) return 'Waiting for intel...';
+    if (completedCount === 1) return 'First intel received!';
+    if (completedCount === 2) return 'Almost all received!';
+    return 'All intel received!';
   };
 
   const getMascotEmoji = () => {
@@ -115,7 +115,7 @@ export default function TeammateWaiting() {
               className="text-lg"
               style={{ fontFamily: "'Special Elite', cursive", color: rawColors.cream }}
             >
-              {encryptorName} 正在编写情报…
+              {encryptorName} is composing intel...
             </span>
           </div>
         </div>

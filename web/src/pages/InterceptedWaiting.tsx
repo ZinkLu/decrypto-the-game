@@ -49,7 +49,7 @@ function ScanningTarget({ scanSpeed }: { scanSpeed: number }) {
           color: rawColors.intelRed,
         }}
       >
-        正在被分析
+        Under Analysis
       </span>
     </div>
   );
@@ -168,13 +168,13 @@ export default function InterceptedWaiting() {
   const isAIThinking = aiStatus?.action === 'intercept';
 
   const getMascot = () => {
-    if (isAIThinking) return { emoji: '🤖', message: 'AI 特工正在分析你的情报…' };
+    if (isAIThinking) return { emoji: '🤖', message: 'AI agent analyzing your intel...' };
     if (tension === 'critical') return { emoji: tensionCfg.emoji, message: tensionCfg.message };
     if (tension === 'tense') return { emoji: tensionCfg.emoji, message: tensionCfg.message };
-    if (opponentProgress === 0) return { emoji: '😰', message: '通讯暴露中…' };
-    if (opponentProgress === 1) return { emoji: '😓', message: '他们在分析…' };
-    if (opponentProgress === 2) return { emoji: '😨', message: '快要被破译了…' };
-    return { emoji: '🫣', message: '等待拦截结果…' };
+    if (opponentProgress === 0) return { emoji: '😰', message: 'Comms exposed...' };
+    if (opponentProgress === 1) return { emoji: '😓', message: 'They\'re analyzing...' };
+    if (opponentProgress === 2) return { emoji: '😨', message: 'Almost cracked...' };
+    return { emoji: '🫣', message: 'Awaiting intercept result...' };
   };
 
   const mascot = getMascot();

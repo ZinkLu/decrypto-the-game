@@ -21,7 +21,7 @@ function AnswerNoteCard({ answers }: { answers: number[] }) {
         <div className="flex items-center justify-center gap-2 mb-1">
           <span className="text-sm">🔒</span>
           <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack, opacity: 0.6 }}>
-            正确答案（仅你可见）
+            Correct answers (only you)
           </span>
         </div>
         <div className="flex items-center justify-center gap-3">
@@ -71,7 +71,7 @@ function ClueRowItem({ row }: { row: ClueRow }) {
     >
       <div className="flex-1">
         <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}>
-          线索 {row.id}
+          Clue {row.id}
         </span>
         <div className="text-lg" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.cream }}>
           "{row.clue}"
@@ -80,7 +80,7 @@ function ClueRowItem({ row }: { row: ClueRow }) {
 
       <div className="flex items-center gap-2">
         <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}>
-          猜：
+          Guess:
         </span>
 
         {row.guess !== null ? (
@@ -100,13 +100,13 @@ function ClueRowItem({ row }: { row: ClueRow }) {
         )}
 
         {row.status === 'correct' && (
-          <span className="text-lg" aria-label="正确" style={{ color: rawColors.teamFriendly }}>✓</span>
+          <span className="text-lg" aria-label="Correct" style={{ color: rawColors.teamFriendly }}>✓</span>
         )}
         {row.status === 'wrong' && (
           <span className="flex items-center gap-1">
-            <span className="text-lg" aria-label="错误" style={{ color: rawColors.intelRed }}>✗</span>
+            <span className="text-lg" aria-label="Wrong" style={{ color: rawColors.intelRed }}>✗</span>
             <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.intelRedDim }}>
-              应为{row.correctAnswer}
+              was {row.correctAnswer}
             </span>
           </span>
         )}
@@ -145,7 +145,7 @@ function MissionReport({ clues, onContinue }: { clues: ClueRow[]; onContinue: ()
             className="text-center text-lg mb-4"
             style={{ fontFamily: "'Special Elite', cursive", color: rawColors.inkBlack }}
           >
-            ── 任务报告 ──
+            ── MISSION REPORT ──
           </div>
 
           <div className="space-y-2 mb-4">
@@ -164,7 +164,7 @@ function MissionReport({ clues, onContinue }: { clues: ClueRow[]; onContinue: ()
                 <span className="font-bold">{row.guess}</span>
                 <span>{row.status === 'correct' ? '✓' : '✗'}</span>
                 {row.status === 'wrong' && (
-                  <span className="text-xs" style={{ color: rawColors.intelRedDim }}>(应为{row.correctAnswer})</span>
+                  <span className="text-xs" style={{ color: rawColors.intelRedDim }}>(was {row.correctAnswer})</span>
                 )}
               </div>
             ))}
@@ -178,11 +178,11 @@ function MissionReport({ clues, onContinue }: { clues: ClueRow[]; onContinue: ()
               color: correctCount === 3 ? rawColors.teamFriendly : rawColors.brass,
             }}
           >
-            得分：{correctCount} / 3
+            Score: {correctCount} / 3
           </div>
 
           <DossierButton variant="secondary" size="medium" fullWidth onClick={onContinue}>
-            继续任务
+            CONTINUE
           </DossierButton>
         </div>
       </PaperCard>
@@ -192,11 +192,11 @@ function MissionReport({ clues, onContinue }: { clues: ClueRow[]; onContinue: ()
 }
 
 const mascotConfig = {
-  waiting: { emoji: '🕵️', message: '密切关注中…' },
-  correct: { emoji: '✅', message: '解码正确!' },
-  wrong: { emoji: '❌', message: '解码失误!' },
-  allCorrect: { emoji: '🎖️', message: '完美执行!' },
-  hasErrors: { emoji: '📋', message: '需要改进线索…' },
+  waiting: { emoji: '🕵️', message: 'Monitoring closely...' },
+  correct: { emoji: '✅', message: 'Decoded correctly!' },
+  wrong: { emoji: '❌', message: 'Decode error!' },
+  allCorrect: { emoji: '🎖️', message: 'Flawless execution!' },
+  hasErrors: { emoji: '📋', message: 'Clues need improvement...' },
 };
 
 export default function EncryptorWatching() {
@@ -271,7 +271,7 @@ export default function EncryptorWatching() {
 
   const isAIDecrypting = aiStatus?.action === 'decrypt';
   const mascot = isAIDecrypting
-    ? { emoji: '🤖', message: 'AI 队友正在解码…' }
+    ? { emoji: '🤖', message: 'AI teammate decoding...' }
     : mascotConfig[mascotState];
 
   return (
@@ -290,7 +290,7 @@ export default function EncryptorWatching() {
         {/* Status */}
         <div className="flex flex-col items-center mt-2">
           <span className="text-sm" style={{ fontFamily: "'Special Elite', cursive", color: rawColors.cream }}>
-            队友正在解码<span className="blink">…</span>
+            Teammate decoding<span className="blink">...</span>
           </span>
         </div>
 

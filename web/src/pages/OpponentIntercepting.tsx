@@ -27,7 +27,7 @@ function InterceptedClues({ clues }: { clues: string[] }) {
       style={{ background: `${rawColors.teamEnemy}10`, border: `2px solid ${rawColors.opponentNormalBorder}` }}
     >
       <div className="text-xs mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
-        截获线索
+        Intercepted Clues
       </div>
       <div className="flex items-center justify-center gap-3">
         {clues.map((clue, i) => (
@@ -62,7 +62,7 @@ function IntelSummary({ data }: { data: IntelRow[] }) {
         }}
         onClick={() => setExpanded((p) => !p)}
       >
-        已知情报速览 [{expanded ? '收起 ▼' : '展开 ▶'}]
+        Intel Summary [{expanded ? 'CLOSE ▼' : 'EXPAND ▶'}]
       </button>
 
       {expanded && (
@@ -79,9 +79,9 @@ function IntelSummary({ data }: { data: IntelRow[] }) {
               borderBottom: `1px solid ${rawColors.opponentNormalBorder}`,
             }}
           >
-            <span className="w-10">轮次</span>
-            <span className="flex-1">线索词</span>
-            <span className="w-20 text-right">已知顺序</span>
+            <span className="w-10">RND</span>
+            <span className="flex-1">Clues</span>
+            <span className="w-20 text-right">Known Order</span>
           </div>
 
           {data.map((row) => (
@@ -139,7 +139,7 @@ function InterceptSlot({
     >
       <div className="flex-1">
         <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
-          线索 {slot.id}
+          Clue {slot.id}
         </span>
         <div className="text-lg" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.cream }}>
           "{clue}"
@@ -209,7 +209,7 @@ function RedTokenPad({
         return (
           <motion.button
             key={num}
-            aria-label={`选择数字 ${num}`}
+            aria-label={`Select number ${num}`}
             className="relative rounded-full font-bold"
             style={{
               width: config.buttonSize,
@@ -241,10 +241,10 @@ function RedTokenPad({
 }
 
 const mascotConfig = {
-  targeting: { emoji: '🎯', message: '锁定目标…' },
-  hasIdea: { emoji: '💡', message: '有把握了…' },
-  ready: { emoji: '🔥', message: '准备出手！' },
-  waiting: { emoji: '⏳', message: '等待验证结果…' },
+  targeting: { emoji: '🎯', message: 'Locking target...' },
+  hasIdea: { emoji: '💡', message: 'Confident...' },
+  ready: { emoji: '🔥', message: 'Ready to strike!' },
+  waiting: { emoji: '⏳', message: 'Awaiting result...' },
 };
 
 export default function OpponentIntercepting() {
@@ -411,7 +411,7 @@ export default function OpponentIntercepting() {
             style={{ background: rawColors.navyDark, border: `1px solid ${rawColors.opponentNormalBorder}` }}
           >
             <div className="text-center text-xs mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
-              输入拦截密码
+              ENTER INTERCEPT CODE
             </div>
             <div className="space-y-2">
               {slots.map((slot) => (
@@ -449,7 +449,7 @@ export default function OpponentIntercepting() {
                 }}
                 onClick={handleSubmit}
               >
-                ☎ 确认拦截
+                ☎ CONFIRM INTERCEPT
               </button>
             )}
           </div>
@@ -459,7 +459,7 @@ export default function OpponentIntercepting() {
         {submitted && (
           <div className="text-center py-4 flex flex-col items-center gap-2">
             <span style={{ fontFamily: "'Special Elite', cursive", color: rawColors.teamEnemy }}>
-              ════ 拦截指令已发送… ════
+              ════ Intercept order sent... ════
             </span>
             <span
               className="inline-block w-3 h-3 rounded-full"

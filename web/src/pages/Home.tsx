@@ -60,7 +60,7 @@ export default function Home() {
                 opacity: 0.7,
               }}
             >
-              团队暗号破解通信系统
+              Team Code-Breaking Communication System
             </div>
           </div>
 

@@ -54,8 +54,8 @@ function TeamScoreCard({
       >
         {teamLabel}
       </p>
-      <FinalScoreRow label="拦截成功" value={interceptions} />
-      <FinalScoreRow label="解密失误" value={decryptFailures} />
+      <FinalScoreRow label="Interceptions" value={interceptions} />
+      <FinalScoreRow label="Decrypt Errors" value={decryptFailures} />
     </div>
   );
 }
@@ -91,10 +91,10 @@ function getTypewriterConfig(outcome: Outcome): { text: string; color: string } 
 }
 
 function getWinnerAnnouncement(winner: string | null): string {
-  if (winner === null) return '双方势均力敌，本局平局';
-  if (winner === 'A') return 'ALPHA 队获得胜利！';
-  if (winner === 'B') return 'BRAVO 队获得胜利！';
-  return `${winner} 队获得胜利！`;
+  if (winner === null) return 'Evenly matched — this round is a draw';
+  if (winner === 'A') return 'Team ALPHA wins!';
+  if (winner === 'B') return 'Team BRAVO wins!';
+  return `Team ${winner} wins!`;
 }
 
 export default function GameOver() {
@@ -138,7 +138,7 @@ export default function GameOver() {
               className="text-center mt-2"
             />
 
-            {/* Winner announcement in Chinese */}
+            {/* Winner announcement */}
             <p
               className="text-center text-base"
               style={{

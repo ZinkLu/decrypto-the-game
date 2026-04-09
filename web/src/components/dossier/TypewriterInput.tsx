@@ -18,7 +18,7 @@ interface TypewriterInputProps {
 export function TypewriterInput({
   value,
   onChange,
-  placeholder = '输入…',
+  placeholder = 'Type...',
   disabled = false,
   maxLength = 20,
   color = 'dark',
