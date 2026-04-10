@@ -23,6 +23,7 @@ go.work
 .vscode/
 # Dependencies
 node_modules/
+.vite/
 
 # Build outputs
 dist/
