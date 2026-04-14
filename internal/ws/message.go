@@ -193,17 +193,24 @@ type AIStatusData struct {
 }
 
 // ProgressData is the client payload for MsgProgress.
+// State distinguishes "idle" (user hasn't interacted yet), "editing" (actively
+// on slot Focus), and "submitted" (pressed dispatch). Step is the count of
+// completed items (0-3); Focus is the slot the user is on (1-3), 0 otherwise.
 type ProgressData struct {
-	Action string `json:"action"` // "encrypt", "intercept", "decrypt"
-	Step   int    `json:"step"`   // 1-based step number
-	Total  int    `json:"total"`  // total steps (always 3)
+	Action string `json:"action"`          // "encrypt", "intercept", "decrypt"
+	State  string `json:"state,omitempty"` // "idle" | "editing" | "submitted"
+	Step   int    `json:"step"`            // completed count (0-3)
+	Focus  int    `json:"focus,omitempty"` // active slot 1-3, 0 if none
+	Total  int    `json:"total"`           // total steps (always 3)
 }
 
 // PlayerProgressData is the server broadcast payload for MsgPlayerProgress.
 type PlayerProgressData struct {
 	Action string `json:"action"` // "encrypt", "intercept", "decrypt"
 	Player string `json:"player"` // player nickname
+	State  string `json:"state,omitempty"`
 	Step   int    `json:"step"`
+	Focus  int    `json:"focus,omitempty"`
 	Total  int    `json:"total"`
 }
 

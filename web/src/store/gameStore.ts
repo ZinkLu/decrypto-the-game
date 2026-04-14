@@ -63,7 +63,14 @@ interface GameStore {
   roundResult: { intercept_success?: boolean; decrypt_success?: boolean } | null;
   gameOver: { winner: string | null } | null;
   aiStatus: { action: string; player: string; step: number; total: number } | null;
-  playerProgress: { action: string; player: string; step: number; total: number } | null;
+  playerProgress: {
+    action: string;
+    player: string;
+    state?: 'idle' | 'editing' | 'submitted';
+    step: number;
+    focus?: number;
+    total: number;
+  } | null;
 
   // Actions
   connect: () => void;
@@ -78,7 +85,11 @@ interface GameStore {
   submitClues: (clues: [string, string, string]) => void;
   submitIntercept: (guess: [number, number, number]) => void;
   submitDecrypt: (guess: [number, number, number]) => void;
-  sendProgress: (action: string, step: number) => void;
+  sendProgress: (
+    action: string,
+    step: number,
+    opts?: { state?: 'idle' | 'editing' | 'submitted'; focus?: number }
+  ) => void;
   requestSync: () => void;
   reset: () => void;
 }
@@ -283,7 +294,9 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
         playerProgress: {
           action: d.action as string,
           player: d.player as string,
-          step: (d.step as number) ?? 1,
+          state: d.state as 'idle' | 'editing' | 'submitted' | undefined,
+          step: (d.step as number) ?? 0,
+          focus: (d.focus as number) ?? 0,
           total: (d.total as number) ?? 3,
         },
       });
@@ -321,7 +334,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   joinRoom(code: string, nickname: string) {
-    get().wsService?.send('join_room', { code, nickname });
+    get().wsService?.send('join_room', { room_code: code, nickname });
   },
 
   selectTeam(team: string) {
@@ -356,8 +369,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get().wsService?.send('submit_decrypt', { guess });
   },
 
-  sendProgress(action: string, step: number) {
-    get().wsService?.send('progress', { action, step, total: 3 });
+  sendProgress(action, step, opts) {
+    get().wsService?.send('progress', {
+      action,
+      step,
+      total: 3,
+      state: opts?.state,
+      focus: opts?.focus ?? 0,
+    });
   },
 
   requestSync() {

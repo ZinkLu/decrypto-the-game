@@ -88,7 +88,7 @@ export default function Home() {
               <TypewriterInput
                 value={nickname}
                 onChange={setNickname}
-                placeholder="ENTER CODENAME..."
+                placeholder="ENTER CODENAME (NICKNAME)..."
                 maxLength={20}
                 color="dark"
                 aria-label="Nickname"
@@ -109,7 +109,7 @@ export default function Home() {
               <TypewriterInput
                 value={nickname}
                 onChange={setNickname}
-                placeholder="ENTER CODENAME..."
+                placeholder="ENTER CODENAME (NICKNAME)..."
                 maxLength={20}
                 color="dark"
                 aria-label="Nickname"

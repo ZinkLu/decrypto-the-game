@@ -250,8 +250,16 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError("invalid progress data")
 			return
 		}
-		if data.Step < 1 || data.Step > 3 {
-			return // silently ignore invalid steps
+		if data.Step < 0 || data.Step > 3 {
+			return
+		}
+		if data.Focus < 0 || data.Focus > 3 {
+			return
+		}
+		switch data.State {
+		case "", "idle", "editing", "submitted":
+		default:
+			return
 		}
 		r := h.RoomManager.GetRoom(client.RoomCode)
 		if r == nil {
@@ -262,7 +270,9 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			Data: ws.PlayerProgressData{
 				Action: data.Action,
 				Player: client.Nickname,
+				State:  data.State,
 				Step:   data.Step,
+				Focus:  data.Focus,
 				Total:  3,
 			},
 		})

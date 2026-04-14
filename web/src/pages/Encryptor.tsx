@@ -1,42 +1,144 @@
 import { useState, useEffect, useMemo } from 'react';
 import { TensionLevel, encryptorTensionConfig, rawColors } from '../theme/colors';
 import {
-  PaperCard, TypewriterInput, DeskClockTimer, DossierButton,
-  AgentPanel, RubberStamp, DossierEffectLayer,
+  TypewriterInput, DeskClockTimer, DossierButton,
+  AgentPanel, RubberStamp, DossierEffectLayer, PaperCard,
 } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
 
-interface SecretCard {
-  id: number;
-  number: number;
-  word: string;
-  clue: string;
-}
-
+interface CodeWord { number: number; word: string; }
+interface ClueSlot { id: number; digit: number; word: string; clue: string; }
 interface HistoryEntry {
   round: number;
   entries: { number: number; word: string; clue: string }[];
 }
 
-const tensionConfig = encryptorTensionConfig;
+function CodeWordCard({ codeword, isHighlighted }: { codeword: CodeWord; isHighlighted: boolean }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center p-2 lg:p-3 rounded transition-[border-color,box-shadow] duration-300 relative shrink-0"
+      style={{
+        background: rawColors.bgPaper,
+        border: `2px solid ${isHighlighted ? rawColors.teamFriendly : rawColors.creamDark}`,
+        boxShadow: isHighlighted
+          ? `0 0 0 2px ${rawColors.teamFriendly}40, 0 0 12px ${rawColors.teamFriendly}60`
+          : '2px 2px 4px rgba(0,0,0,0.2)',
+        width: '72px',
+        color: rawColors.inkBlack,
+      }}
+    >
+      <div
+        className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full"
+        style={{
+          background: `radial-gradient(circle at 35% 35%, ${rawColors.intelRed}, ${rawColors.intelRedDim})`,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.5)',
+        }}
+      />
+      <span
+        className="text-xl lg:text-2xl font-bold mt-1"
+        style={{
+          fontFamily: "'Bebas Neue', sans-serif",
+          color: isHighlighted ? rawColors.teamFriendly : rawColors.brass,
+        }}
+      >
+        {codeword.number}
+      </span>
+      <span
+        className="text-sm lg:text-base mt-1"
+        style={{ fontFamily: "'Noto Serif SC', serif", color: rawColors.inkBlack }}
+      >
+        {codeword.word}
+      </span>
+    </div>
+  );
+}
+
+function ClueInputSlot({
+  slot, isFocused, disabled, onFocus, onChange,
+}: {
+  slot: ClueSlot;
+  isFocused: boolean;
+  disabled: boolean;
+  onFocus: () => void;
+  onChange: (value: string) => void;
+}) {
+  const filled = slot.clue.trim() !== '';
+  const borderColor = filled
+    ? rawColors.teamFriendly
+    : isFocused ? rawColors.brass : rawColors.brassDim;
+
+  return (
+    <div
+      className="flex items-center gap-3 py-2 px-3 rounded cursor-text transition-[background,border-color] duration-200"
+      style={{
+        background: filled
+          ? `${rawColors.teamFriendly}08`
+          : isFocused ? `${rawColors.brass}08` : 'transparent',
+        borderLeft: `3px solid ${borderColor}`,
+      }}
+      onClick={onFocus}
+    >
+      <div
+        className="flex flex-col items-start shrink-0"
+        style={{ width: '120px' }}
+      >
+        <span
+          className="text-xs"
+          style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}
+        >
+          INTEL #{slot.id}
+        </span>
+        <span
+          className="text-base truncate w-full"
+          style={{ fontFamily: "'Noto Serif SC', serif", color: rawColors.cream }}
+        >
+          <span style={{ color: rawColors.brass }}>{slot.digit}.</span> {slot.word}
+        </span>
+      </div>
+      <span className="text-sm shrink-0" style={{ color: rawColors.brassDim }}>→</span>
+      <div className="flex-1 min-w-0">
+        <TypewriterInput
+          value={slot.clue}
+          onChange={onChange}
+          placeholder="Enter clue..."
+          aria-label={`Intel ${slot.id} clue`}
+          disabled={disabled}
+          maxLength={8}
+          color="light"
+          autoFocus={isFocused}
+        />
+      </div>
+      {filled && (
+        <span className="text-lg" style={{ color: rawColors.teamFriendly }}>✓</span>
+      )}
+    </div>
+  );
+}
 
 export default function Encryptor() {
-  const { secretDigits, secretWords, myWords, history: gameHistory, submitClues, sendProgress } = useGameStore();
+  const {
+    secretDigits, secretWords, myWords,
+    history: gameHistory, submitClues, sendProgress,
+  } = useGameStore();
 
-  const [currentCard, setCurrentCard] = useState(0);
+  const [focusedClue, setFocusedClue] = useState(0);
+  const [hasInteracted, setHasInteracted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
   const [showHistory, setShowHistory] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const [cards, setCards] = useState<SecretCard[]>(() =>
+  const [slots, setSlots] = useState<ClueSlot[]>(() =>
     secretDigits.map((num, i) => ({
       id: i + 1,
-      number: num,
+      digit: num,
       word: secretWords[i] || '',
       clue: '',
     }))
   );
+
+  const codewords: CodeWord[] = myWords.map((word, i) => ({ number: i + 1, word }));
+  const highlightedDigit = slots.find((s) => s.id === focusedClue)?.digit ?? 0;
 
   const history = useMemo<HistoryEntry[]>(() => {
     return gameHistory
@@ -69,42 +171,42 @@ export default function Encryptor() {
     return () => clearInterval(timer);
   }, [isSubmitted]);
 
-  // Send progress when switching cards (card N done → moved to N+1)
+  const filledCount = slots.filter((s) => s.clue.trim() !== '').length;
+
+  // Broadcast initial idle state once on mount (teammate/opponent start cold)
   useEffect(() => {
-    if (currentCard > 0 && !isSubmitted) {
-      sendProgress('encrypt', currentCard);
-    }
-  }, [currentCard]);
+    sendProgress('encrypt', 0, { state: 'idle', focus: 0 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const allCluesFilled = cards.every((card) => card.clue.trim() !== '');
+  // Broadcast editing state when interacting — on focus change OR fill change
+  useEffect(() => {
+    if (isSubmitted || !hasInteracted) return;
+    sendProgress('encrypt', filledCount, { state: 'editing', focus: focusedClue });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedClue, filledCount, hasInteracted, isSubmitted]);
 
-  const handleClueChange = (cardId: number, value: string) => {
+  const allCluesFilled = filledCount === slots.length;
+
+  const handleClueChange = (slotId: number, value: string) => {
     const sanitized = value.replace(/[<>{}[\]|\\^`]/g, '').slice(0, 8);
-    setCards((prev) =>
-      prev.map((card) =>
-        card.id === cardId ? { ...card, clue: sanitized } : card
-      )
-    );
+    setSlots((prev) => prev.map((s) => s.id === slotId ? { ...s, clue: sanitized } : s));
   };
 
   const handleSubmit = () => {
     if (allCluesFilled) {
-      sendProgress('encrypt', 3);
+      sendProgress('encrypt', 3, { state: 'submitted', focus: 0 });
       setIsSubmitted(true);
-      submitClues(cards.map((c) => c.clue) as [string, string, string]);
+      submitClues(slots.map((s) => s.clue) as [string, string, string]);
     }
   };
 
-  const config = tensionConfig[tension];
-
-  const getTensionColor = () => {
-    switch (tension) {
-      case 'normal': return rawColors.teamFriendly;
-      case 'warning': return rawColors.brass;
-      case 'tense': return rawColors.intelRed;
-      case 'critical': return rawColors.tensionCriticalText;
-    }
+  const handleSlotFocus = (slotId: number) => {
+    if (!hasInteracted) setHasInteracted(true);
+    setFocusedClue(slotId);
   };
+
+  const config = encryptorTensionConfig[tension];
 
   const getBgColor = () => {
     switch (tension) {
@@ -122,7 +224,6 @@ export default function Encryptor() {
     >
       <DossierEffectLayer />
 
-      {/* URGENT stamp on critical */}
       {tension === 'critical' && (
         <div className="absolute top-8 right-8 z-20 pointer-events-none">
           <RubberStamp text="URGENT" color="red" size="large" rotation={-8} animated />
@@ -130,227 +231,135 @@ export default function Encryptor() {
       )}
 
       <div className="relative z-10 h-full flex flex-col">
-      {/* Top countdown */}
-      <div className="flex flex-col items-center pt-6">
-        <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
-      </div>
+        {/* Countdown */}
+        <div className="flex flex-col items-center pt-4">
+          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
+        </div>
 
-      {/* Progress indicator */}
-      <div className="flex items-center justify-center gap-2 mt-3">
-        {cards.map((card, index) => (
-          <div key={card.id} className="flex items-center">
-            {index > 0 && <span className="mx-1" style={{ color: rawColors.brassDim }}>·</span>}
-            <span
-              className="text-lg"
-              style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                color: index < currentCard ? rawColors.teamFriendly
-                  : index === currentCard ? getTensionColor()
-                  : rawColors.navyLight,
-              }}
+        {/* Codeword reference strip */}
+        <div className="px-4 mt-3">
+          <div
+            className="max-w-lg mx-auto p-3 rounded-lg"
+            style={{ background: rawColors.navyLight, border: `2px solid ${rawColors.brassDim}` }}
+          >
+            <div
+              className="text-center text-xs mb-3"
+              style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}
             >
-              {index < currentCard ? '✓' : index + 1}
-            </span>
+              CODEWORD REFERENCE
+            </div>
+            <div className="flex justify-center gap-3 lg:gap-5">
+              {codewords.map((cw) => (
+                <CodeWordCard
+                  key={cw.number}
+                  codeword={cw}
+                  isHighlighted={cw.number === highlightedDigit}
+                />
+              ))}
+            </div>
           </div>
-        ))}
-        <span className="text-sm ml-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}>
-          ({currentCard + 1}/{cards.length})
-        </span>
-      </div>
+        </div>
 
-      {/* Card area */}
-      <div className="flex-1 flex items-center justify-center mt-4 overflow-hidden">
-        {/* Left peek */}
-        {currentCard > 0 && (
-          <button
-            aria-label="Previous card"
-            className="absolute left-0 z-5 hidden lg:block cursor-pointer"
-            style={{ width: '80px', height: '85%', background: 'none', padding: 0 }}
-            onClick={() => setCurrentCard((prev) => Math.max(0, prev - 1))}
+        {/* Clue input slots */}
+        <div className="flex-1 px-4 mt-3 overflow-y-auto">
+          <div
+            className="max-w-lg mx-auto p-3 rounded-lg"
+            style={{ background: rawColors.navyLight, border: `1px solid ${rawColors.brassDim}` }}
           >
-            <div
-              className="h-full opacity-50 rounded-r"
-              style={{
-                background: `linear-gradient(90deg, transparent, ${rawColors.navyLight})`,
-                borderRight: `2px solid ${rawColors.brassDim}`,
-              }}
-            >
-              <div className="h-full flex items-center justify-center">
-                <span className="text-3xl" style={{ fontFamily: "'Bebas Neue', sans-serif", color: rawColors.brass, opacity: 0.4 }}>
-                  {cards[currentCard - 1].number}
-                </span>
-              </div>
+            <div className="flex items-center justify-between mb-2">
+              <span
+                className="text-xs"
+                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}
+              >
+                COMPOSE INTEL [{filledCount}/{slots.length}]
+              </span>
+              <button
+                className="text-xs"
+                onClick={() => setShowHistory(true)}
+                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}
+              >
+                [PAST INTEL LOG]
+              </button>
             </div>
-          </button>
+            <div className="space-y-2">
+              {slots.map((slot) => (
+                <ClueInputSlot
+                  key={slot.id}
+                  slot={slot}
+                  isFocused={focusedClue === slot.id && !isSubmitted}
+                  disabled={isSubmitted}
+                  onFocus={() => handleSlotFocus(slot.id)}
+                  onChange={(v) => handleClueChange(slot.id, v)}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Submit */}
+        {allCluesFilled && !isSubmitted && (
+          <div className="flex justify-center py-3">
+            <DossierButton variant="stamp" team="friendly" size="medium" onClick={handleSubmit}>
+              DISPATCH INTEL
+            </DossierButton>
+          </div>
         )}
 
-        {/* Right peek */}
-        {currentCard < cards.length - 1 && (
-          <button
-            aria-label="Next card"
-            className="absolute right-0 z-5 hidden lg:block cursor-pointer"
-            style={{ width: '80px', height: '85%', background: 'none', padding: 0 }}
-            onClick={() => setCurrentCard((prev) => Math.min(cards.length - 1, prev + 1))}
-          >
-            <div
-              className="h-full opacity-50 rounded-l"
-              style={{
-                background: `linear-gradient(-90deg, transparent, ${rawColors.navyLight})`,
-                borderLeft: `2px solid ${rawColors.brassDim}`,
-              }}
-            >
-              <div className="h-full flex items-center justify-center">
-                <span className="text-3xl" style={{ fontFamily: "'Bebas Neue', sans-serif", color: rawColors.brass, opacity: 0.4 }}>
-                  {cards[currentCard + 1].number}
-                </span>
-              </div>
-            </div>
-          </button>
-        )}
-
-        {/* Main card */}
-        <div className="relative w-full max-w-md mx-16 lg:mx-24 h-full">
-          <div className="absolute inset-0">
-            <PaperCard showPaperClip showCoffeeStain className="h-full">
-              <div className="p-6 flex flex-col h-full">
-                {/* Card header */}
-                <div className="text-center">
-                  <span
-                    className="text-sm"
-                    style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack, opacity: 0.5 }}
-                  >
-                    INTEL #{currentCard + 1}
-                  </span>
-                </div>
-
-                {/* Secret number - brass token style */}
-                <div className="flex-1 flex items-center justify-center">
-                  <div
-                    className="w-20 h-20 rounded-full flex items-center justify-center"
-                    style={{
-                      background: `radial-gradient(circle at 35% 35%, ${rawColors.brassLight}, ${rawColors.brass}, ${rawColors.brassDim})`,
-                      boxShadow: `inset 0 2px 4px rgba(255,255,255,0.15), 0 3px 8px rgba(0,0,0,0.4)`,
-                      border: `3px solid ${rawColors.brassDim}`,
-                    }}
-                  >
+        {/* History drawer */}
+        {showHistory && (
+          <>
+            <div className="absolute inset-0 bg-black/50 z-40" onClick={() => setShowHistory(false)} />
+            <div className="absolute bottom-0 left-0 right-0 z-50">
+              <PaperCard variant="index" className="mx-4 rounded-t-lg">
+                <div className="p-6 pb-8 max-h-80 overflow-y-auto">
+                  <div className="flex justify-between items-center mb-4">
                     <span
-                      className="text-4xl font-bold"
-                      style={{
-                        fontFamily: "'Bebas Neue', sans-serif",
-                        color: rawColors.navyDark,
-                      }}
+                      className="text-lg font-bold"
+                      style={{ fontFamily: "'Special Elite', cursive", color: rawColors.inkBlack }}
                     >
-                      {cards[currentCard].number}
+                      My Encryption Log
                     </span>
+                    <button
+                      className="text-sm"
+                      style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack, opacity: 0.6 }}
+                      onClick={() => setShowHistory(false)}
+                    >
+                      [ CLOSE ▼ ]
+                    </button>
+                  </div>
+                  <div className="space-y-4">
+                    {history.map((round) => (
+                      <div key={round.round}>
+                        <span
+                          className="text-sm font-bold block mb-2"
+                          style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack }}
+                        >
+                          Round {round.round}
+                        </span>
+                        <div className="space-y-1">
+                          {round.entries.map((entry, idx) => (
+                            <div
+                              key={idx}
+                              className="text-sm"
+                              style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack }}
+                            >
+                              {entry.number} {entry.word} → &quot;{entry.clue}&quot;
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
+              </PaperCard>
+            </div>
+          </>
+        )}
 
-                {/* Secret word */}
-                <div className="text-center mb-4">
-                  <span
-                    className="text-xl"
-                    style={{
-                      fontFamily: "'Noto Serif SC', serif",
-                      color: rawColors.inkBlack,
-                    }}
-                  >
-                    {cards[currentCard].word}
-                  </span>
-                </div>
-
-                {/* Input */}
-                <TypewriterInput
-                  value={cards[currentCard].clue}
-                  onChange={(value) => handleClueChange(cards[currentCard].id, value)}
-                  placeholder="Enter clue..."
-                  aria-label={`Intel ${currentCard + 1} clue`}
-                  disabled={isSubmitted}
-                  maxLength={8}
-                  color="dark"
-                />
-
-                {/* History button */}
-                <div className="mt-auto pt-4">
-                  <button
-                    className="w-full py-2 rounded text-sm transition-colors"
-                    onClick={() => setShowHistory(true)}
-                    style={{
-                      fontFamily: "'Courier Prime', monospace",
-                      color: rawColors.inkBlack,
-                      border: `1px solid ${rawColors.creamDark}`,
-                      background: rawColors.creamDark,
-                    }}
-                  >
-                    [PAST INTEL LOG]
-                  </button>
-                </div>
-              </div>
-            </PaperCard>
-          </div>
+        {/* Bottom agent */}
+        <div className="pb-4 px-4">
+          <AgentPanel emoji={config.emoji} message={config.message} theme="friendly" />
         </div>
-
-        {/* Mobile swipe hint */}
-        <div className="lg:hidden absolute bottom-2 left-0 right-0 text-center">
-          <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}>
-            ← Tap sides to switch →
-          </span>
-        </div>
-      </div>
-
-      {/* Submit button */}
-      {currentCard === 2 && allCluesFilled && !isSubmitted && (
-        <div className="flex justify-center mt-4">
-          <DossierButton variant="stamp" team="friendly" size="large" onClick={handleSubmit}>
-            DISPATCH INTEL
-          </DossierButton>
-        </div>
-      )}
-
-      {/* History drawer */}
-      {showHistory && (
-        <>
-          <div className="absolute inset-0 bg-black/50 z-40" onClick={() => setShowHistory(false)} />
-          <div className="absolute bottom-0 left-0 right-0 z-50">
-            <PaperCard variant="index" className="mx-4 rounded-t-lg">
-              <div className="p-6 pb-8 max-h-80 overflow-y-auto">
-                <div className="flex justify-between items-center mb-4">
-                  <span className="text-lg font-bold" style={{ fontFamily: "'Special Elite', cursive", color: rawColors.inkBlack }}>
-                    My Encryption Log
-                  </span>
-                  <button
-                    className="text-sm"
-                    style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack, opacity: 0.6 }}
-                    onClick={() => setShowHistory(false)}
-                  >
-                    [ CLOSE ▼ ]
-                  </button>
-                </div>
-                <div className="space-y-4">
-                  {history.map((round) => (
-                    <div key={round.round}>
-                      <span className="text-sm font-bold block mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack }}>
-                        Round {round.round}
-                      </span>
-                      <div className="space-y-1">
-                        {round.entries.map((entry, idx) => (
-                          <div key={idx} className="text-sm" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.inkBlack }}>
-                            {entry.number} {entry.word} → &quot;{entry.clue}&quot;
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </PaperCard>
-          </div>
-        </>
-      )}
-
-      {/* Bottom agent panel */}
-      <div className="pb-4 px-4">
-        <AgentPanel emoji={config.emoji} message={config.message} theme="friendly" />
-      </div>
       </div>
     </div>
   );
