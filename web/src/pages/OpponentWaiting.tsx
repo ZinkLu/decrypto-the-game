@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { TensionLevel, rawColors } from '../theme/colors';
-import { DeskClockTimer, RedactedText, RubberStamp, AgentPanel, DossierEffectLayer } from '../components/dossier';
+import { DeskClockTimer, RedactedText, RubberStamp, AgentPanel, DossierEffectLayer, SignalOscilloscope } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
 
 type SlotState = 'waiting' | 'active' | 'completed';
@@ -38,21 +38,18 @@ function deriveSlotState(index1: number, progress: DerivedProgress): SlotState {
 
 const STATE_CONFIG = {
   waiting: {
-    emoji: '🔍',
     label: 'Scanning',
     border: rawColors.opponentNormalBorder,
     bg: 'transparent',
     textColor: rawColors.teamEnemyDim,
   },
   active: {
-    emoji: '📡',
     label: 'Incoming',
     border: rawColors.intelRed,
     bg: `${rawColors.intelRed}12`,
     textColor: rawColors.tensionCriticalText,
   },
   completed: {
-    emoji: '🔒',
     label: 'Captured',
     border: rawColors.teamEnemyLight,
     bg: `${rawColors.intelRed}18`,
@@ -62,14 +59,6 @@ const STATE_CONFIG = {
 
 function InterceptRow({ index, state }: { index: number; state: SlotState }) {
   const cfg = STATE_CONFIG[state];
-
-  const iconAnim = prefersReducedMotion
-    ? undefined
-    : state === 'waiting'
-      ? 'slot-idle-breathe 2.4s ease-in-out infinite'
-      : state === 'active'
-        ? 'slot-active-jiggle 0.9s ease-in-out infinite'
-        : 'slot-completed-seal 0.6s ease-out 1';
 
   const rowAnim = prefersReducedMotion
     ? undefined
@@ -87,7 +76,7 @@ function InterceptRow({ index, state }: { index: number; state: SlotState }) {
         animation: rowAnim,
       }}
     >
-      <div className="flex flex-col items-start shrink-0" style={{ width: '96px' }}>
+      <div className="flex flex-col items-start shrink-0" style={{ width: '88px' }}>
         <span
           className="text-xs"
           style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}
@@ -106,20 +95,7 @@ function InterceptRow({ index, state }: { index: number; state: SlotState }) {
         </span>
       </div>
 
-      <span className="text-sm shrink-0" style={{ color: rawColors.teamEnemyDim }}>→</span>
-
-      <div
-        className="flex items-center justify-center rounded shrink-0"
-        style={{
-          width: '48px',
-          height: '48px',
-          background: rawColors.opponentCrtScreen,
-          border: `1px solid ${cfg.border}`,
-          boxShadow: state === 'active' ? 'inset 0 0 10px rgba(196,30,58,0.3)' : undefined,
-        }}
-      >
-        <span className="text-2xl" style={{ animation: iconAnim }}>{cfg.emoji}</span>
-      </div>
+      <SignalOscilloscope state={state} theme="enemy" width={104} height={48} />
 
       <div className="flex-1 min-w-0 flex items-center gap-2">
         {state === 'active' && !prefersReducedMotion ? (

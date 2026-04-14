@@ -12,3 +12,5 @@ export { DossierEffectLayer } from './DossierEffectLayer';
 export { AgentPanel } from './AgentPanel';
 export { DossierTransition } from './DossierTransition';
 export type { TransitionRole } from './DossierTransition';
+export { SignalOscilloscope } from './SignalOscilloscope';
+export type { SignalState, SignalTheme } from './SignalOscilloscope';

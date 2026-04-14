@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { TensionLevel, rawColors } from '../theme/colors';
-import { DeskClockTimer, AgentPanel, DossierEffectLayer } from '../components/dossier';
+import { DeskClockTimer, AgentPanel, DossierEffectLayer, SignalOscilloscope } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
 
 type SlotState = 'waiting' | 'active' | 'completed';
@@ -38,21 +38,18 @@ function deriveSlotState(index1: number, progress: DerivedProgress): SlotState {
 
 const STATE_CONFIG = {
   waiting: {
-    emoji: '📪',
     label: 'Waiting',
     border: rawColors.brassDim,
     bg: 'transparent',
     textColor: rawColors.brassDim,
   },
   active: {
-    emoji: '📨',
     label: 'Incoming',
     border: rawColors.brass,
     bg: `${rawColors.brass}10`,
     textColor: rawColors.brass,
   },
   completed: {
-    emoji: '📄',
     label: 'Received',
     border: rawColors.teamFriendly,
     bg: `${rawColors.teamFriendly}10`,
@@ -62,14 +59,6 @@ const STATE_CONFIG = {
 
 function IntelStatusRow({ index, state }: { index: number; state: SlotState }) {
   const cfg = STATE_CONFIG[state];
-
-  const iconAnim = prefersReducedMotion
-    ? undefined
-    : state === 'waiting'
-      ? 'slot-idle-breathe 2.4s ease-in-out infinite'
-      : state === 'active'
-        ? 'slot-active-jiggle 0.9s ease-in-out infinite'
-        : 'slot-completed-seal 0.6s ease-out 1';
 
   const rowAnim = prefersReducedMotion
     ? undefined
@@ -89,7 +78,7 @@ function IntelStatusRow({ index, state }: { index: number; state: SlotState }) {
         animation: rowAnim,
       }}
     >
-      <div className="flex flex-col items-start shrink-0" style={{ width: '96px' }}>
+      <div className="flex flex-col items-start shrink-0" style={{ width: '88px' }}>
         <span
           className="text-xs"
           style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}
@@ -104,19 +93,7 @@ function IntelStatusRow({ index, state }: { index: number; state: SlotState }) {
         </span>
       </div>
 
-      <span className="text-sm shrink-0" style={{ color: rawColors.brassDim }}>→</span>
-
-      <div
-        className="flex items-center justify-center rounded shrink-0"
-        style={{
-          width: '48px',
-          height: '48px',
-          background: rawColors.navyDark,
-          border: `1px solid ${cfg.border}`,
-        }}
-      >
-        <span className="text-2xl" style={{ animation: iconAnim }}>{cfg.emoji}</span>
-      </div>
+      <SignalOscilloscope state={state} theme="friendly" width={104} height={48} />
 
       <div className="flex-1 min-w-0 flex items-center gap-2">
         {state === 'active' && !prefersReducedMotion ? (

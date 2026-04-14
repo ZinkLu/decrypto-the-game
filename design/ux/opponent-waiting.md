@@ -29,9 +29,11 @@
 
 | 槽位状态 | 判定 | 视觉 |
 |---|---|---|
-| `waiting` | 非正在编辑、未被完成 | 🔍 放大镜，`slot-idle-breathe` 呼吸；暗红左边框 `opponentNormalBorder`；"listening..." 斜体 |
-| `active` | `editing` 且 `index === focus` | 📡 天线 `slot-active-jiggle` 抖动；红色 `intercept-alarm` 1s 报警边框；内嵌红色阴影；三点 `typing-dot` + `TRACKING` 标签 |
-| `completed` | `submitted` 或 `index <= step` | 🔒 锁 `slot-completed-seal` 一次性盖章；红色偏亮边框；"INTERCEPTED" 大写电报字样；右侧红色 ◉ |
+| `waiting` | 非正在编辑、未被完成 | 示波器（红磷）近平线 + 微噪点 + 偶发 blip，`NO SIG` 角标；暗红左边框 `opponentNormalBorder`；"listening..." 斜体 |
+| `active` | `editing` 且 `index === focus` | 示波器显示数据包正弦 + 横扫光束 + 色差，`TRACK` 角标；`intercept-alarm` 1s 报警红边；三点 `typing-dot` + `TRACKING` 标签 |
+| `completed` | `submitted` 或 `index <= step` | 示波器显示冻结捕获波形 + 中心脉冲锁定环 + `LOCK` 角标；亮红边；"INTERCEPTED" 电报字样；右侧红色 `◉` |
+
+状态图示由共享组件 `SignalOscilloscope` 渲染（Canvas 2D，`theme="enemy"` 红磷光），含 phosphor 余晖、scanlines、色差、vignette。与友方页面共用同一组件，仅切换主题色。
 
 ## AI 兼容
 
@@ -55,6 +57,3 @@ AI 加密者通过 `ai_thinking` 事件广播 `step=N`。前端 `useEncryptProgr
 - 读取: `encryptor`, `round`, `aiStatus`, `playerProgress`
 - 写入: 无
 
-## 后续优化（未实施）
-
-当前状态图示使用 emoji 做过渡方案，后续计划替换为共享的 `<SignalOscilloscope>` Canvas 2D 组件（CRT 磷光示波器），通过三态波形（无信号/入站信号/锁定）强化冷战谍战氛围。届时 `TeammateWaiting` 会共用同一组件，仅切换主题色（友方绿磷 / 敌方琥珀）。

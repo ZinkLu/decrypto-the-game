@@ -28,9 +28,11 @@
 
 | 槽位状态 | 判定 | 视觉 |
 |---|---|---|
-| `waiting` | 非正在编辑、未填写（`idle` 阶段全部） | 📪 灰暗信箱；`slot-idle-breathe` 2.4s 呼吸；暗 brass 左边框；"awaiting transmission" 斜体 |
-| `active` | `editing` 且 `index === focus` | 📨 信封 `slot-active-jiggle` 抖动；brass 左边框；整行 `slot-active-glow` 1.2s 脉冲；三点 `typing-dot` 指示 |
-| `completed` | `submitted` 或 `index <= step` | 📄 文件 `slot-completed-seal` 一次性盖章；绿边；一次性 `slot-completed-glow`；"intel secured" + 右侧 ✓ |
+| `waiting` | 非正在编辑、未填写（`idle` 阶段全部） | 示波器（绿磷）显示近平线 + 微噪点 + 偶发小 blip，`NO SIG` 角标；暗 brass 左边框；"awaiting transmission" 斜体 |
+| `active` | `editing` 且 `index === focus` | 示波器显示包络化数据包正弦 + 横扫光束 + 色差 + 余晖，`TRACK` 角标；brass 左边框；整行 `slot-active-glow` 1.2s 脉冲；三点 `typing-dot` 指示 |
+| `completed` | `submitted` 或 `index <= step` | 示波器显示冻结的钟形捕获波形 + 中心脉冲锁定环 + `LOCK` 角标 + `◉` 徽标；绿边；一次性 `slot-completed-glow`；"intel secured" + 右侧 ✓ |
+
+状态图示由共享组件 `SignalOscilloscope` 渲染（Canvas 2D，`theme="friendly"` 绿磷光），含 phosphor 余晖、scanlines、色差、vignette。零依赖。
 
 ## AI 兼容
 
