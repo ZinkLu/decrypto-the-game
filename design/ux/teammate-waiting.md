@@ -6,25 +6,31 @@
 
 ## 页面用途
 
-加密者正在编写线索时，队友在此等待。页面通过 3 个信箱格实时映射加密者每个线索槽的状态（闲置 / 正在输入 / 已完成），把"干等"变成"能看到对方在动"，缓解等待焦虑。
+加密者正在编写线索时，队友在此等待。页面以 **3 行列表** 形式逐一映射加密者的 3 个线索槽——每行一个状态（闲置 / 正在输入 / 已完成），在空间上与 `Encryptor` 的线索列表 1:1 对应，便于玩家快速建立位置映射、缓解等待焦虑。
 
 ## 页面信息
 
 - **倒计时** — 90 秒（与加密者共享同一计时）
 - **加密者信息** — 显示加密者昵称，标注「正在编写情报」
-- **3 个信箱格** — 逐一对应加密者的 3 个线索槽，按当前状态展示不同视觉（见下方"槽位三态"）
-- **完成计数** — 底部小字显示 `[n/3]`
-- **状态文字** — 根据当前阶段更新 Agent 面板文案（`Awaiting transmission...` → `<name> is drafting...` → `First intel received!` → ... → `All intel received!`）
+- **情报状态列表** —`max-w-lg` 容器内 3 行：
+  - 左 3px 彩色边框（按三态换色）
+  - 标签列 `INTEL #N` + 状态大写字样（`WAITING` / `INCOMING` / `RECEIVED`）
+  - 箭头 `→`
+  - 48×48 状态方框，内嵌 emoji 状态图示
+  - 状态文字或打字中三点指示器
+  - completed 行末尾绿色 `✓`
+- **完成计数** — 列表顶部右侧 `INCOMING INTEL [n/3]`
+- **Agent 面板** — 底部 mascot emoji + 文案（随阶段变化）
 
 ## 槽位三态
 
-槽位状态由加密者广播的 `player_progress` 推导（`state` / `step` / `focus`）：
+由加密者广播的 `player_progress` 推导（`state` / `step` / `focus`）：
 
 | 槽位状态 | 判定 | 视觉 |
 |---|---|---|
-| `waiting` | 当前未被编辑、尚未填写（`idle` 阶段全部；`editing` 阶段非 focus 非已填写） | 📪 灰色闭合信箱，`slot-idle-breathe` 2.4s 呼吸透明度；深 navy 底 |
-| `active` | `editing` 且 `index === focus` | 📨 brass 边框，`slot-active-jiggle` 轻微抖动，`slot-active-glow` 1.2s 脉冲光晕；下方三点 `typing-dot` 错相位跳动 |
-| `completed` | `submitted`，或 `index <= step` | 📄 + 绿色 ✓，进入时一次性 `slot-completed-seal`（0.6s 盖章）+ `slot-completed-glow`（1.4s 光晕），之后静止 |
+| `waiting` | 非正在编辑、未填写（`idle` 阶段全部） | 📪 灰暗信箱；`slot-idle-breathe` 2.4s 呼吸；暗 brass 左边框；"awaiting transmission" 斜体 |
+| `active` | `editing` 且 `index === focus` | 📨 信封 `slot-active-jiggle` 抖动；brass 左边框；整行 `slot-active-glow` 1.2s 脉冲；三点 `typing-dot` 指示 |
+| `completed` | `submitted` 或 `index <= step` | 📄 文件 `slot-completed-seal` 一次性盖章；绿边；一次性 `slot-completed-glow`；"intel secured" + 右侧 ✓ |
 
 ## AI 兼容
 
@@ -41,5 +47,5 @@ AI 加密者通过 `ai_thinking` 事件广播 `step=N`（"正在处理第 N 个"
 
 ## Store 交互
 
-- 读取: `encryptor`（昵称）, `round`, `aiStatus`, `playerProgress`
+- 读取: `encryptor`, `round`, `aiStatus`, `playerProgress`
 - 写入: 无

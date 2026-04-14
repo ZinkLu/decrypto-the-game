@@ -10,15 +10,12 @@ const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)
 
 interface DerivedProgress {
   phase: PhaseState;
-  step: number;   // completed count 0-3
-  focus: number;  // 1-3 if editing, 0 otherwise
+  step: number;
+  focus: number;
 }
 
-// Merge human playerProgress and AI aiStatus into a single view-model
 function useEncryptProgress(): DerivedProgress {
   const { aiStatus, playerProgress } = useGameStore();
-
-  // AI fires ai_thinking with step=N meaning "working on slot N"
   if (aiStatus?.action === 'encrypt' && aiStatus.step >= 1 && aiStatus.step <= 3) {
     return { phase: 'editing', step: aiStatus.step - 1, focus: aiStatus.step };
   }
@@ -37,6 +34,119 @@ function deriveSlotState(index1: number, progress: DerivedProgress): SlotState {
   if (progress.phase === 'submitted' || index1 <= progress.step) return 'completed';
   if (progress.phase === 'editing' && index1 === progress.focus) return 'active';
   return 'waiting';
+}
+
+const STATE_CONFIG = {
+  waiting: {
+    emoji: '📪',
+    label: 'Waiting',
+    border: rawColors.brassDim,
+    bg: 'transparent',
+    textColor: rawColors.brassDim,
+  },
+  active: {
+    emoji: '📨',
+    label: 'Incoming',
+    border: rawColors.brass,
+    bg: `${rawColors.brass}10`,
+    textColor: rawColors.brass,
+  },
+  completed: {
+    emoji: '📄',
+    label: 'Received',
+    border: rawColors.teamFriendly,
+    bg: `${rawColors.teamFriendly}10`,
+    textColor: rawColors.teamFriendly,
+  },
+} as const;
+
+function IntelStatusRow({ index, state }: { index: number; state: SlotState }) {
+  const cfg = STATE_CONFIG[state];
+
+  const iconAnim = prefersReducedMotion
+    ? undefined
+    : state === 'waiting'
+      ? 'slot-idle-breathe 2.4s ease-in-out infinite'
+      : state === 'active'
+        ? 'slot-active-jiggle 0.9s ease-in-out infinite'
+        : 'slot-completed-seal 0.6s ease-out 1';
+
+  const rowAnim = prefersReducedMotion
+    ? undefined
+    : state === 'active'
+      ? 'slot-active-glow 1.2s ease-in-out infinite'
+      : state === 'completed'
+        ? 'slot-completed-glow 1.4s ease-out 1'
+        : undefined;
+
+  return (
+    <div
+      key={state}
+      className="flex items-center gap-3 py-2 px-3 rounded transition-[background,border-color] duration-300"
+      style={{
+        background: cfg.bg,
+        borderLeft: `3px solid ${cfg.border}`,
+        animation: rowAnim,
+      }}
+    >
+      <div className="flex flex-col items-start shrink-0" style={{ width: '96px' }}>
+        <span
+          className="text-xs"
+          style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}
+        >
+          INTEL #{index}
+        </span>
+        <span
+          className="text-base"
+          style={{ fontFamily: "'Bebas Neue', sans-serif", color: cfg.textColor, letterSpacing: '1px' }}
+        >
+          {cfg.label.toUpperCase()}
+        </span>
+      </div>
+
+      <span className="text-sm shrink-0" style={{ color: rawColors.brassDim }}>→</span>
+
+      <div
+        className="flex items-center justify-center rounded shrink-0"
+        style={{
+          width: '48px',
+          height: '48px',
+          background: rawColors.navyDark,
+          border: `1px solid ${cfg.border}`,
+        }}
+      >
+        <span className="text-2xl" style={{ animation: iconAnim }}>{cfg.emoji}</span>
+      </div>
+
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        {state === 'active' && !prefersReducedMotion ? (
+          <span className="flex gap-0.5" aria-label="typing">
+            <span className="text-xl" style={{ color: cfg.textColor, animation: 'typing-dot 1.2s infinite 0s' }}>·</span>
+            <span className="text-xl" style={{ color: cfg.textColor, animation: 'typing-dot 1.2s infinite 0.2s' }}>·</span>
+            <span className="text-xl" style={{ color: cfg.textColor, animation: 'typing-dot 1.2s infinite 0.4s' }}>·</span>
+          </span>
+        ) : state === 'completed' ? (
+          <span
+            className="text-sm"
+            style={{ fontFamily: "'Courier Prime', monospace", color: cfg.textColor }}
+          >
+            intel secured
+          </span>
+        ) : (
+          <span
+            className="text-sm italic"
+            style={{ fontFamily: "'Courier Prime', monospace", color: cfg.textColor, opacity: 0.7 }}
+          >
+            awaiting transmission
+          </span>
+        )}
+      </div>
+
+      {state === 'completed' && (
+        <span className="text-lg shrink-0" style={{ color: cfg.textColor }}>✓</span>
+      )}
+    </div>
+  );
 }
 
 export default function TeammateWaiting() {
@@ -134,152 +244,31 @@ export default function TeammateWaiting() {
           </div>
         </div>
 
-        {/* Mail slots */}
-        <div className="flex-1 flex flex-col items-center mt-6 px-4">
+        {/* Intel status list */}
+        <div className="flex-1 px-4 mt-4 overflow-y-auto">
           <div
-            className="w-full max-w-4xl p-4 rounded-lg"
-            style={{
-              background: rawColors.navyLight,
-              border: `2px solid ${rawColors.brassDim}`,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            }}
+            className="max-w-lg mx-auto p-3 rounded-lg"
+            style={{ background: rawColors.navyLight, border: `1px solid ${rawColors.brassDim}` }}
           >
-            <div className="hidden lg:flex justify-center gap-8 py-4">
-              {slotStates.map((state, idx) => (
-                <MailSlot key={idx} index={idx + 1} state={state} />
-              ))}
+            <div className="flex items-center justify-between mb-2">
+              <span
+                className="text-xs"
+                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.brassDim }}
+              >
+                INCOMING INTEL [{completedCount}/3]
+              </span>
             </div>
-            <div className="lg:hidden flex flex-col items-center gap-4 py-4">
-              <div className="flex justify-center gap-4">
-                {slotStates.slice(0, 2).map((state, idx) => (
-                  <MailSlot key={idx} index={idx + 1} state={state} />
-                ))}
-              </div>
-              <div className="flex justify-center">
-                <MailSlot index={3} state={slotStates[2]} />
-              </div>
+            <div className="space-y-2">
+              {slotStates.map((state, idx) => (
+                <IntelStatusRow key={idx} index={idx + 1} state={state} />
+              ))}
             </div>
           </div>
         </div>
 
         {/* Bottom agent panel */}
         <div className="pb-4 px-4">
-          <AgentPanel emoji={getMascotEmoji()} message={getMascotMessage()} theme="friendly">
-            <div
-              className="text-xs mb-2"
-              style={{
-                fontFamily: "'Courier Prime', monospace",
-                color: rawColors.brassDim,
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              [{completedCount}/3]
-            </div>
-          </AgentPanel>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MailSlot({ index, state }: { index: number; state: SlotState }) {
-  const styleByState = {
-    waiting: {
-      bg: rawColors.navyDark,
-      border: rawColors.navyLight,
-      icon: '📪',
-      iconColor: rawColors.navyLight,
-      label: 'Waiting',
-      labelColor: rawColors.navyLight,
-    },
-    active: {
-      bg: `${rawColors.brass}10`,
-      border: rawColors.brass,
-      icon: '📨',
-      iconColor: rawColors.brass,
-      label: 'Typing',
-      labelColor: rawColors.brass,
-    },
-    completed: {
-      bg: `${rawColors.teamFriendly}15`,
-      border: rawColors.teamFriendly,
-      icon: '📄',
-      iconColor: rawColors.teamFriendly,
-      label: 'Received',
-      labelColor: rawColors.teamFriendly,
-    },
-  }[state];
-
-  const animations = prefersReducedMotion
-    ? {}
-    : {
-        waiting: { animation: 'slot-idle-breathe 2.4s ease-in-out infinite' },
-        active: { animation: 'slot-active-glow 1.2s ease-in-out infinite' },
-        completed: { animation: 'slot-completed-glow 1.4s ease-out 1' },
-      }[state];
-
-  const iconAnim = prefersReducedMotion
-    ? undefined
-    : state === 'active'
-      ? 'slot-active-jiggle 0.9s ease-in-out infinite'
-      : state === 'completed'
-        ? 'slot-completed-seal 0.6s ease-out 1'
-        : undefined;
-
-  return (
-    <div className="flex flex-col items-center">
-      <div
-        key={state /* remount on state change → re-run one-shot animations */}
-        className="w-36 h-20 lg:w-48 lg:h-24 rounded flex items-center justify-center transition-[background,border-color] duration-500 relative"
-        style={{
-          background: styleByState.bg,
-          border: `2px solid ${styleByState.border}`,
-          ...animations,
-        }}
-      >
-        <div className="flex flex-col items-center">
-          <span
-            className="text-2xl"
-            style={{ color: styleByState.iconColor, animation: iconAnim }}
-          >
-            {styleByState.icon}
-          </span>
-          {state === 'active' && !prefersReducedMotion && (
-            <span
-              className="text-base mt-1 flex gap-0.5"
-              aria-hidden
-            >
-              <span style={{ color: rawColors.brass, animation: 'typing-dot 1.2s infinite 0s' }}>·</span>
-              <span style={{ color: rawColors.brass, animation: 'typing-dot 1.2s infinite 0.2s' }}>·</span>
-              <span style={{ color: rawColors.brass, animation: 'typing-dot 1.2s infinite 0.4s' }}>·</span>
-            </span>
-          )}
-          {state === 'completed' && (
-            <span
-              className="text-xs mt-1"
-              style={{ fontFamily: "'Courier Prime', monospace", color: styleByState.iconColor }}
-            >
-              ✓
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="mt-2 text-center">
-        <div
-          className="text-sm"
-          style={{
-            fontFamily: "'Bebas Neue', sans-serif",
-            color: styleByState.border,
-            letterSpacing: '1px',
-          }}
-        >
-          #{index}
-        </div>
-        <div
-          className="text-xs opacity-70"
-          style={{ fontFamily: "'Courier Prime', monospace", color: styleByState.labelColor }}
-        >
-          {styleByState.label}
+          <AgentPanel emoji={getMascotEmoji()} message={getMascotMessage()} theme="friendly" />
         </div>
       </div>
     </div>

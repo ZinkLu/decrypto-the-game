@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { TensionLevel, rawColors, opponentMascotConfig } from '../theme/colors';
+import { useState, useEffect, useMemo } from 'react';
+import { TensionLevel, rawColors } from '../theme/colors';
 import { DeskClockTimer, RedactedText, RubberStamp, AgentPanel, DossierEffectLayer } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
 
@@ -36,148 +36,124 @@ function deriveSlotState(index1: number, progress: DerivedProgress): SlotState {
   return 'waiting';
 }
 
-// Scrambled doc — refresh speed and visual varies by state
-function ScrambledDocument({ index, state, tension }: { index: number; state: SlotState; tension: TensionLevel }) {
-  const CHARS = ['█', '▓', '░', '▒', '▮', '▯'];
-  const ROWS = 3;
-  const COLS = 10;
-  const [grid, setGrid] = useState<string[][]>([]);
+const STATE_CONFIG = {
+  waiting: {
+    emoji: '🔍',
+    label: 'Scanning',
+    border: rawColors.opponentNormalBorder,
+    bg: 'transparent',
+    textColor: rawColors.teamEnemyDim,
+  },
+  active: {
+    emoji: '📡',
+    label: 'Incoming',
+    border: rawColors.intelRed,
+    bg: `${rawColors.intelRed}12`,
+    textColor: rawColors.tensionCriticalText,
+  },
+  completed: {
+    emoji: '🔒',
+    label: 'Captured',
+    border: rawColors.teamEnemyLight,
+    bg: `${rawColors.intelRed}18`,
+    textColor: rawColors.tensionCriticalText,
+  },
+} as const;
 
-  const generate = useCallback(() => {
-    const g: string[][] = [];
-    for (let r = 0; r < ROWS; r++) {
-      const row: string[] = [];
-      for (let c = 0; c < COLS; c++) row.push(CHARS[Math.floor(Math.random() * CHARS.length)]);
-      g.push(row);
-    }
-    return g;
-  }, []);
+function InterceptRow({ index, state }: { index: number; state: SlotState }) {
+  const cfg = STATE_CONFIG[state];
 
-  // refresh interval: active = fast, waiting = slow, completed = frozen
-  const refreshInterval = useMemo(() => {
-    if (state === 'completed') return 0;
-    if (state === 'active') return tension === 'critical' ? 60 : 90;
-    // waiting:
-    return tension === 'critical' ? 300 : tension === 'tense' ? 400 : 500;
-  }, [state, tension]);
+  const iconAnim = prefersReducedMotion
+    ? undefined
+    : state === 'waiting'
+      ? 'slot-idle-breathe 2.4s ease-in-out infinite'
+      : state === 'active'
+        ? 'slot-active-jiggle 0.9s ease-in-out infinite'
+        : 'slot-completed-seal 0.6s ease-out 1';
 
-  useEffect(() => {
-    setGrid(generate());
-    if (prefersReducedMotion || refreshInterval === 0) return;
-    const timer = setInterval(() => setGrid(generate()), refreshInterval);
-    return () => clearInterval(timer);
-  }, [generate, refreshInterval]);
-
-  // border / label per state
-  const stateStyle = {
-    waiting: {
-      border: rawColors.opponentNormalBorder,
-      textColor: rawColors.teamEnemy,
-      label: 'SCANNING',
-      animation: undefined,
-    },
-    active: {
-      border: rawColors.teamEnemyLight,
-      textColor: rawColors.tensionCriticalText,
-      label: 'INCOMING',
-      animation: prefersReducedMotion ? undefined : 'intercept-alarm 1s ease-in-out infinite',
-    },
-    completed: {
-      border: rawColors.intelRed,
-      textColor: rawColors.tensionCriticalText,
-      label: 'CAPTURED',
-      animation: undefined,
-    },
-  }[state];
+  const rowAnim = prefersReducedMotion
+    ? undefined
+    : state === 'active'
+      ? 'intercept-alarm 1s ease-in-out infinite'
+      : undefined;
 
   return (
-    <div className="flex flex-col items-center">
-      <div
-        key={state}
-        className="w-36 h-20 lg:w-48 lg:h-24 rounded flex items-center justify-center overflow-hidden relative transition-[border-color] duration-300"
-        style={{
-          background: rawColors.opponentCrtScreen,
-          border: `2px solid ${stateStyle.border}`,
-          boxShadow: 'inset 0 0 15px rgba(139, 0, 0, 0.1)',
-          animation: stateStyle.animation,
-        }}
-      >
-        <pre
-          className="text-xs leading-tight select-none"
+    <div
+      key={state}
+      className="flex items-center gap-3 py-2 px-3 rounded transition-[background,border-color] duration-300"
+      style={{
+        background: cfg.bg,
+        borderLeft: `3px solid ${cfg.border}`,
+        animation: rowAnim,
+      }}
+    >
+      <div className="flex flex-col items-start shrink-0" style={{ width: '96px' }}>
+        <span
+          className="text-xs"
+          style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}
+        >
+          INTERCEPT #{index}
+        </span>
+        <span
+          className="text-base"
           style={{
-            fontFamily: "'Courier Prime', monospace",
-            color: stateStyle.textColor,
-            opacity: state === 'completed' ? 0.4 : state === 'active' ? 1 : 0.7,
+            fontFamily: "'Bebas Neue', sans-serif",
+            color: cfg.textColor,
+            letterSpacing: '2px',
           }}
         >
-          {grid.map((row, i) => (
-            <span key={i}>
-              {row.join('')}
-              {i < ROWS - 1 && '\n'}
-            </span>
-          ))}
-        </pre>
-        {state === 'completed' && !prefersReducedMotion && (
-          <div
-            className="absolute inset-0 flex items-center justify-center pointer-events-none"
-            style={{ animation: 'intercept-stamp 0.55s ease-out 1' }}
-          >
+          {cfg.label.toUpperCase()}
+        </span>
+      </div>
+
+      <span className="text-sm shrink-0" style={{ color: rawColors.teamEnemyDim }}>→</span>
+
+      <div
+        className="flex items-center justify-center rounded shrink-0"
+        style={{
+          width: '48px',
+          height: '48px',
+          background: rawColors.opponentCrtScreen,
+          border: `1px solid ${cfg.border}`,
+          boxShadow: state === 'active' ? 'inset 0 0 10px rgba(196,30,58,0.3)' : undefined,
+        }}
+      >
+        <span className="text-2xl" style={{ animation: iconAnim }}>{cfg.emoji}</span>
+      </div>
+
+      <div className="flex-1 min-w-0 flex items-center gap-2">
+        {state === 'active' && !prefersReducedMotion ? (
+          <span className="flex gap-0.5" aria-label="tracking">
+            <span className="text-xl" style={{ color: cfg.textColor, animation: 'typing-dot 1.2s infinite 0s' }}>·</span>
+            <span className="text-xl" style={{ color: cfg.textColor, animation: 'typing-dot 1.2s infinite 0.2s' }}>·</span>
+            <span className="text-xl" style={{ color: cfg.textColor, animation: 'typing-dot 1.2s infinite 0.4s' }}>·</span>
             <span
-              className="px-2 py-0.5 text-xs font-bold"
-              style={{
-                fontFamily: "'Bebas Neue', sans-serif",
-                color: rawColors.intelRed,
-                background: 'rgba(0,0,0,0.55)',
-                border: `1.5px solid ${rawColors.intelRed}`,
-                letterSpacing: '2px',
-                transform: 'rotate(-4deg)',
-              }}
+              className="text-xs ml-1 tracking-wider"
+              style={{ fontFamily: "'Courier Prime', monospace", color: cfg.textColor }}
             >
-              INTERCEPTED
+              TRACKING
             </span>
-          </div>
+          </span>
+        ) : state === 'completed' ? (
+          <span
+            className="text-sm tracking-widest"
+            style={{ fontFamily: "'Courier Prime', monospace", color: cfg.textColor }}
+          >
+            INTERCEPTED
+          </span>
+        ) : (
+          <span
+            className="text-sm italic"
+            style={{ fontFamily: "'Courier Prime', monospace", color: cfg.textColor, opacity: 0.7 }}
+          >
+            listening...
+          </span>
         )}
       </div>
-      <div className="mt-2 text-center">
-        <div
-          className="text-sm"
-          style={{ fontFamily: "'Bebas Neue', sans-serif", color: stateStyle.border, letterSpacing: '1px' }}
-        >
-          #{index}
-        </div>
-        <div
-          className="text-xs"
-          style={{ fontFamily: "'Courier Prime', monospace", color: stateStyle.textColor }}
-        >
-          {stateStyle.label}
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// Signal strength — reflects activity level; stronger when encryptor editing
-function SignalStrengthMeter({ activity }: { activity: 'low' | 'mid' | 'high' }) {
-  const BARS = ['▂', '▄', '▆', '█'];
-  const [bars, setBars] = useState<string[]>([]);
-
-  useEffect(() => {
-    const gen = () => Array.from({ length: 10 }, () => BARS[Math.floor(Math.random() * BARS.length)]);
-    setBars(gen());
-    if (prefersReducedMotion) return;
-    const speed = activity === 'high' ? 100 : activity === 'mid' ? 250 : 500;
-    const timer = setInterval(() => setBars(gen()), speed);
-    return () => clearInterval(timer);
-  }, [activity]);
-
-  return (
-    <div className="flex items-center justify-center gap-2">
-      <span
-        className="text-lg tracking-wider"
-        style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemy }}
-      >
-        {bars.join('')}
-      </span>
+      {state === 'completed' && (
+        <span className="text-lg shrink-0" style={{ color: cfg.textColor }}>◉</span>
+      )}
     </div>
   );
 }
@@ -229,20 +205,15 @@ export default function OpponentWaiting() {
     }
   };
 
-  const activity: 'low' | 'mid' | 'high' =
-    progress.phase === 'idle' ? 'low'
-      : progress.phase === 'editing' ? 'high'
-        : 'mid';
-
   const isAIThinking = aiStatus?.action === 'encrypt';
-  const defaultMascot = opponentMascotConfig[tension];
-  void defaultMascot;
+  const capturedCount = slotStates.filter((s) => s === 'completed').length;
+
   const mascot = isAIThinking
     ? { emoji: '🤖', message: `Enemy AI composing intel... (${aiStatus!.step}/${aiStatus!.total})` }
     : progress.phase === 'idle'
       ? { emoji: '📡', message: 'Signal quiet... standing by' }
       : progress.phase === 'editing'
-        ? { emoji: '⚠️', message: `Enemy drafting #${progress.focus} (${progress.step}/3 sent)` }
+        ? { emoji: '⚠️', message: `Enemy drafting #${progress.focus} (${progress.step}/3 captured)` }
         : { emoji: '🚨', message: 'Transmission complete. Analyzing...' };
 
   return (
@@ -264,65 +235,53 @@ export default function OpponentWaiting() {
           <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" theme="opponent" />
         </div>
 
-        <div className="flex flex-col items-center mt-4 gap-2">
+        <div className="flex flex-col items-center mt-3 gap-1">
           <RubberStamp text="INTERCEPTED TRANSMISSION" color="red" size="small" rotation={-2} />
 
-          <div
-            className="w-16 h-16 rounded-lg flex items-center justify-center"
-            style={{
-              background: rawColors.opponentCrtScreen,
-              border: `2px solid ${rawColors.opponentNormalBorder}`,
-              boxShadow: '0 0 10px rgba(139, 0, 0, 0.2)',
-            }}
-          >
-            <div className="flex flex-col items-center">
-              <span className="text-xl" style={{ color: rawColors.teamEnemy }}>?</span>
-              <span
-                className="text-[8px]"
-                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}
-              >
-                UNKNOWN
-              </span>
+          <div className="flex items-center gap-3 mt-1">
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center"
+              style={{
+                background: rawColors.opponentCrtScreen,
+                border: `2px solid ${rawColors.opponentNormalBorder}`,
+                boxShadow: '0 0 10px rgba(139, 0, 0, 0.2)',
+              }}
+            >
+              <span className="text-lg" style={{ color: rawColors.teamEnemy }}>?</span>
             </div>
+            <span
+              className="text-sm tracking-widest"
+              style={{ fontFamily: "'Bebas Neue', sans-serif", color: rawColors.teamEnemy, letterSpacing: '4px' }}
+            >
+              <RedactedText length={10} glitchSpeed={getNoiseSpeed()} />
+            </span>
           </div>
-
-          <span
-            className="text-sm tracking-widest"
-            style={{ fontFamily: "'Bebas Neue', sans-serif", color: rawColors.teamEnemy, letterSpacing: '4px' }}
-          >
-            <RedactedText length={12} glitchSpeed={getNoiseSpeed()} />
-          </span>
         </div>
 
-        <div className="flex-1 flex flex-col items-center mt-4 px-4">
+        {/* Intercept status list */}
+        <div className="flex-1 px-4 mt-4 overflow-y-auto">
           <div
-            className="w-full max-w-4xl p-4 rounded-lg"
+            className="max-w-lg mx-auto p-3 rounded-lg"
             style={{
               background: rawColors.opponentScreenBg,
-              border: `2px solid ${rawColors.opponentNormalBorder}`,
-              boxShadow: 'inset 0 0 30px rgba(0, 0, 0, 0.8)',
+              border: `1px solid ${rawColors.opponentNormalBorder}`,
+              boxShadow: 'inset 0 0 20px rgba(0, 0, 0, 0.7)',
             }}
           >
-            <div className="hidden lg:flex justify-center gap-8 py-4">
+            <div className="flex items-center justify-between mb-2">
+              <span
+                className="text-xs tracking-widest"
+                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}
+              >
+                INTERCEPT FEED [{capturedCount}/3]
+              </span>
+            </div>
+            <div className="space-y-2">
               {slotStates.map((state, idx) => (
-                <ScrambledDocument key={idx} index={idx + 1} state={state} tension={tension} />
+                <InterceptRow key={idx} index={idx + 1} state={state} />
               ))}
             </div>
-            <div className="lg:hidden flex flex-col items-center gap-4 py-4">
-              <div className="flex justify-center gap-4">
-                {slotStates.slice(0, 2).map((state, idx) => (
-                  <ScrambledDocument key={idx} index={idx + 1} state={state} tension={tension} />
-                ))}
-              </div>
-              <div className="flex justify-center">
-                <ScrambledDocument index={3} state={slotStates[2]} tension={tension} />
-              </div>
-            </div>
           </div>
-        </div>
-
-        <div className="py-2">
-          <SignalStrengthMeter activity={activity} />
         </div>
 
         <div className="pb-4 px-4">

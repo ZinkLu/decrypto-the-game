@@ -6,25 +6,32 @@
 
 ## 页面用途
 
-加密阶段中，对方队伍处于"窃听"状态。页面营造紧张的截获氛围——3 个乱码文档实时镜像加密者的 3 个线索槽（闲置扫描 / 正在截获 / 已捕获），辅以身份未知提示和信号强度计，暗示正在拦截对方通讯。
+加密阶段中，对方队伍处于"窃听"状态。页面以 **3 行截获列表** 形式逐一映射加密者的 3 个线索槽——每行一个状态（扫描中 / 截获中 / 已截获），在空间上与 `Encryptor` 和 `TeammateWaiting` 1:1 对应，保持三页视觉节奏一致。
 
 ## 页面信息
 
-- **倒计时** — 90 秒（与加密者共享同一计时）
-- **截获标记** — 页面顶部显示「INTERCEPTED TRANSMISSION」标记
-- **未知身份** — 加密者身份显示为「?」和「UNKNOWN」，附带随时间变化的乱码文字
-- **3 个乱码文档** — 逐一对应加密者的 3 个线索槽，按当前状态展示不同视觉（见下方"槽位三态"）
-- **信号强度计** — 底部随机信号条，`activity = low / mid / high` 随加密者三态调整刷新速度
+- **倒计时** — 90 秒（与加密者共享同一计时），`theme="opponent"`（红色 CRT）
+- **截获标记** — 顶部 `INTERCEPTED TRANSMISSION` 红色印章
+- **未知身份 (紧凑横排)** — 小型 CRT 方框 `?` + `RedactedText` 乱码身份，横向并列
+- **截获状态列表** — `max-w-lg` 容器内 3 行：
+  - 左 3px 彩色边框（按三态换色）
+  - 标签列 `INTERCEPT #N` + 状态大写字样（`SCANNING` / `INCOMING` / `CAPTURED`）
+  - 箭头 `→`
+  - 48×48 CRT 风格方框，内嵌 emoji 状态图示
+  - 状态文字（斜体/打字点 / `INTERCEPTED` 大写 / `tracking` 等）
+  - completed 行末尾红色 `◉` 锁定标
+- **计数** — 列表顶部 `INTERCEPT FEED [n/3]`
+- **Agent 面板** — 底部敌方 mascot 文案
 
 ## 槽位三态
 
-槽位状态由加密者广播的 `player_progress` 推导（`state` / `step` / `focus`）：
+由加密者广播的 `player_progress` 推导（`state` / `step` / `focus`）：
 
 | 槽位状态 | 判定 | 视觉 |
 |---|---|---|
-| `waiting` | 当前未被编辑、尚未被完成 | 字符缓慢刷新（400–500ms），暗红边 `opponentNormalBorder`，标签 `SCANNING` |
-| `active` | `editing` 且 `index === focus` | 字符快速刷新（60–90ms），红边 `intercept-alarm` 1s 报警闪烁 + 内外红光，标签 `INCOMING` |
-| `completed` | `submitted`，或 `index <= step` | 字符冻结，半透明暗色覆盖，中心一次性 `intercept-stamp`（0.55s）盖章显示 `INTERCEPTED`；边框红，标签 `CAPTURED` |
+| `waiting` | 非正在编辑、未被完成 | 🔍 放大镜，`slot-idle-breathe` 呼吸；暗红左边框 `opponentNormalBorder`；"listening..." 斜体 |
+| `active` | `editing` 且 `index === focus` | 📡 天线 `slot-active-jiggle` 抖动；红色 `intercept-alarm` 1s 报警边框；内嵌红色阴影；三点 `typing-dot` + `TRACKING` 标签 |
+| `completed` | `submitted` 或 `index <= step` | 🔒 锁 `slot-completed-seal` 一次性盖章；红色偏亮边框；"INTERCEPTED" 大写电报字样；右侧红色 ◉ |
 
 ## AI 兼容
 
@@ -32,7 +39,7 @@ AI 加密者通过 `ai_thinking` 事件广播 `step=N`。前端 `useEncryptProgr
 
 ## 张力变化
 
-外层页面仍保留 4 级张力（normal → warning → tense → critical）随倒计时推进；张力只影响 waiting 状态的字符刷新节奏和整体配色，不覆盖槽位三态。
+外层页面保留 4 级张力（normal → warning → tense → critical）随倒计时推进；张力影响背景色和 `RedactedText` 乱码刷新速度，不覆盖槽位三态。
 
 ## 用户操作
 
@@ -47,3 +54,7 @@ AI 加密者通过 `ai_thinking` 事件广播 `step=N`。前端 `useEncryptProgr
 
 - 读取: `encryptor`, `round`, `aiStatus`, `playerProgress`
 - 写入: 无
+
+## 后续优化（未实施）
+
+当前状态图示使用 emoji 做过渡方案，后续计划替换为共享的 `<SignalOscilloscope>` Canvas 2D 组件（CRT 磷光示波器），通过三态波形（无信号/入站信号/锁定）强化冷战谍战氛围。届时 `TeammateWaiting` 会共用同一组件，仅切换主题色（友方绿磷 / 敌方琥珀）。
