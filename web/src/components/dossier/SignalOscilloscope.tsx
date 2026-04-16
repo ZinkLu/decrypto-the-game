@@ -359,19 +359,90 @@ export function SignalOscilloscope({
         ctx.shadowBlur = 0;
       }
 
-      // Completed: center pulsing lock ring (after intro)
+      // Completed: corner brackets + playback sweep head + bottom data ticker
       if (state === 'completed' && sinceStart >= 0.5) {
-        const cx = width / 2;
-        const cy = height / 2;
-        const r = 5 + Math.sin(sinceStart * 2.6) * 1.3;
+        // (a) Corner lock brackets — breathing opacity, 1.2s period
+        const bracketAlpha = 0.55 + 0.25 * Math.sin(sinceStart * 2 * Math.PI / 1.2);
+        ctx.save();
         ctx.strokeStyle = pal.phosphor;
-        ctx.lineWidth = 0.8;
-        ctx.shadowBlur = 6;
+        ctx.globalAlpha = bracketAlpha;
+        ctx.lineWidth = 1.1;
+        ctx.shadowBlur = 5;
         ctx.shadowColor = pal.shadow;
+        const bl = 5; // bracket arm length
+        const pad = 3;
+        // top-left
         ctx.beginPath();
-        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.moveTo(pad, pad + bl);
+        ctx.lineTo(pad, pad);
+        ctx.lineTo(pad + bl, pad);
+        // top-right
+        ctx.moveTo(width - pad - bl, pad);
+        ctx.lineTo(width - pad, pad);
+        ctx.lineTo(width - pad, pad + bl);
+        // bottom-left
+        ctx.moveTo(pad, height - pad - bl);
+        ctx.lineTo(pad, height - pad);
+        ctx.lineTo(pad + bl, height - pad);
+        // bottom-right
+        ctx.moveTo(width - pad - bl, height - pad);
+        ctx.lineTo(width - pad, height - pad);
+        ctx.lineTo(width - pad, height - pad - bl);
         ctx.stroke();
-        ctx.shadowBlur = 0;
+        ctx.restore();
+
+        // (b) Playback sweep — bright dot traces waveform L→R every 2.8s
+        const SWEEP_CYCLE = 2.8;
+        const SWEEP_DUR = 0.85;
+        const sweepT = (sinceStart - 0.5) % SWEEP_CYCLE;
+        if (sweepT < SWEEP_DUR) {
+          const progress = sweepT / SWEEP_DUR;
+          const idx = Math.floor(progress * (BUFFER_SIZE - 1));
+          const headX = idx;
+          const headY = (buffer[idx] + 0.5) * height;
+          // Short trail behind the head
+          ctx.save();
+          ctx.strokeStyle = pal.phosphor;
+          ctx.lineWidth = 1.4;
+          ctx.shadowBlur = 10;
+          ctx.shadowColor = pal.shadow;
+          ctx.beginPath();
+          const trailStart = Math.max(0, idx - 14);
+          for (let i = trailStart; i <= idx; i++) {
+            const y = (buffer[i] + 0.5) * height;
+            if (i === trailStart) ctx.moveTo(i, y);
+            else ctx.lineTo(i, y);
+          }
+          ctx.stroke();
+          // Head dot
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.arc(headX, headY, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // (c) Bottom data ticker — 6 pseudo-random hex chars scrolling left
+        const TICKER_SPEED = 20; // px/s
+        const tickerOffset = (sinceStart * TICKER_SPEED) % 24;
+        // deterministic hex stream from integer bucket index
+        const bucketStart = Math.floor(sinceStart * TICKER_SPEED / 24);
+        const charsVisible = 12;
+        ctx.save();
+        ctx.font = '6px "Courier Prime", ui-monospace, monospace';
+        ctx.fillStyle = pal.label;
+        ctx.globalAlpha = 0.7;
+        ctx.textBaseline = 'bottom';
+        let hex = '';
+        for (let i = 0; i < charsVisible; i++) {
+          // simple hash → hex char
+          const seed = (bucketStart + i) * 2654435761 >>> 0;
+          const c = (seed & 0xf).toString(16).toUpperCase();
+          hex += c + ((i % 2) ? ' ' : '');
+        }
+        ctx.fillText(hex, width - tickerOffset - 70, height - 1);
+        ctx.restore();
       }
 
       drawLabel();
