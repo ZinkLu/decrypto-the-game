@@ -144,19 +144,19 @@ function activeEnemySignal(t: number): number {
   return base + noise;
 }
 
-// Frozen lock signature — bell curve with two side lobes, decaying exponential
-function lockSignature(xNormalized: number): number {
-  // xNormalized: 0..1 across the buffer (oldest→newest)
-  const x = xNormalized - 0.5; // center at 0
-  const d = Math.abs(x);
-  return Math.cos(d * Math.PI * 4) * 0.4 * Math.exp(-d * 3.2);
+// Locked carrier — clean continuous sine with tiny breath envelope.
+// Semantically: "we're holding the signal steady".
+function lockedSignal(t: number): number {
+  const breath = 1 + 0.06 * Math.sin(t * 0.9);
+  const base = Math.sin(t * 7.2) * 0.34 * breath;
+  const noise = smoothNoise(t) * 0.008;
+  return base + noise;
 }
 
 function signalFor(state: SignalState, theme: SignalTheme, t: number): number {
   if (state === 'waiting') return waitingSignal(t);
   if (state === 'active') return theme === 'enemy' ? activeEnemySignal(t) : activeFriendlySignal(t);
-  // completed uses frozen buffer instead; return 0 to be safe
-  return 0;
+  return lockedSignal(t);
 }
 
 export function SignalOscilloscope({
@@ -223,11 +223,11 @@ export function SignalOscilloscope({
     const BUFFER_SIZE = Math.max(2, Math.floor(width));
     const buffer = new Float32Array(BUFFER_SIZE);
 
-    // Seed waiting/active with a short history so it doesn't start from zero
+    // Seed with a short history so it doesn't start from zero
     const seedStart = -BUFFER_SIZE / SAMPLE_RATE;
     for (let i = 0; i < BUFFER_SIZE; i++) {
       const t = seedStart + i / SAMPLE_RATE;
-      buffer[i] = state === 'completed' ? lockSignature(i / (BUFFER_SIZE - 1)) : signalFor(state, theme, t);
+      buffer[i] = signalFor(state, theme, t);
     }
 
     let sampleTime = 0;            // virtual seconds of signal pushed
@@ -293,47 +293,29 @@ export function SignalOscilloscope({
       lastT = now;
       const sinceStart = (now - startT) / 1000;
 
-      if (state !== 'completed') {
-        // Advance scrolling buffer with time-continuous samples
-        sampleAccumulator += dt * SAMPLE_RATE;
-        const advance = Math.floor(sampleAccumulator);
-        sampleAccumulator -= advance;
-        if (advance > 0) {
-          // Shift left by `advance` positions
-          if (advance < BUFFER_SIZE) {
-            buffer.copyWithin(0, advance);
-          }
-          const n = Math.min(advance, BUFFER_SIZE);
-          for (let i = 0; i < n; i++) {
-            const t = sampleTime + (i + 1) / SAMPLE_RATE;
-            buffer[BUFFER_SIZE - n + i] = signalFor(state, theme, t);
-          }
-          sampleTime += advance / SAMPLE_RATE;
+      // Advance scrolling buffer with time-continuous samples (all states scroll)
+      sampleAccumulator += dt * SAMPLE_RATE;
+      const advance = Math.floor(sampleAccumulator);
+      sampleAccumulator -= advance;
+      if (advance > 0) {
+        if (advance < BUFFER_SIZE) {
+          buffer.copyWithin(0, advance);
         }
+        const n = Math.min(advance, BUFFER_SIZE);
+        for (let i = 0; i < n; i++) {
+          const t = sampleTime + (i + 1) / SAMPLE_RATE;
+          buffer[BUFFER_SIZE - n + i] = signalFor(state, theme, t);
+        }
+        sampleTime += advance / SAMPLE_RATE;
       }
 
       // Persistence — fade prior frame with theme bg at low alpha
       ctx.fillStyle = pal.bg;
-      ctx.globalAlpha = state === 'completed' ? 0.6 : 0.38;
+      ctx.globalAlpha = 0.38;
       ctx.fillRect(0, 0, width, height);
       ctx.globalAlpha = 1;
 
       ctx.drawImage(grat, 0, 0, width, height);
-
-      // Dramatic intro burst when entering `completed` — one-shot spike, first 0.5s
-      // Additive on top of the frozen lock signature, so we overwrite the middle
-      // few buffer cells briefly.
-      if (state === 'completed' && sinceStart < 0.5) {
-        const k = 1 - sinceStart / 0.5;
-        // overwrite a central slice with a spiky kick that decays
-        for (let i = 0; i < BUFFER_SIZE; i++) {
-          const x = i / (BUFFER_SIZE - 1);
-          const base = lockSignature(x);
-          const kick = blip(sinceStart, 0.06, 0.08, 42) * 0.9 * Math.exp(-sinceStart * 6);
-          const pos = Math.exp(-Math.pow((x - 0.5) * 10, 2));
-          buffer[i] = base + kick * pos * k;
-        }
-      }
 
       // Chromatic aberration — two offset faint traces, additive
       ctx.globalCompositeOperation = 'lighter';
@@ -347,8 +329,8 @@ export function SignalOscilloscope({
       drawTrace(buffer, 0, pal.phosphor, 1.2, 5);
       ctx.shadowBlur = 0;
 
-      // Active: rightmost "write head" dot (where fresh signal is being drawn)
-      if (state === 'active') {
+      // Rightmost write-head dot (active + completed — shows fresh signal still arriving)
+      if (state === 'active' || state === 'completed') {
         const lastY = (buffer[BUFFER_SIZE - 1] + 0.5) * height;
         ctx.fillStyle = pal.phosphor;
         ctx.shadowBlur = 10;
@@ -359,8 +341,8 @@ export function SignalOscilloscope({
         ctx.shadowBlur = 0;
       }
 
-      // Completed: corner brackets + playback sweep head + bottom data ticker
-      if (state === 'completed' && sinceStart >= 0.5) {
+      // Completed: corner brackets + bottom data ticker
+      if (state === 'completed') {
         // (a) Corner lock brackets — breathing opacity, 1.2s period
         const bracketAlpha = 0.55 + 0.25 * Math.sin(sinceStart * 2 * Math.PI / 1.2);
         ctx.save();
@@ -391,39 +373,7 @@ export function SignalOscilloscope({
         ctx.stroke();
         ctx.restore();
 
-        // (b) Playback sweep — bright dot traces waveform L→R every 2.8s
-        const SWEEP_CYCLE = 2.8;
-        const SWEEP_DUR = 0.85;
-        const sweepT = (sinceStart - 0.5) % SWEEP_CYCLE;
-        if (sweepT < SWEEP_DUR) {
-          const progress = sweepT / SWEEP_DUR;
-          const idx = Math.floor(progress * (BUFFER_SIZE - 1));
-          const headX = idx;
-          const headY = (buffer[idx] + 0.5) * height;
-          // Short trail behind the head
-          ctx.save();
-          ctx.strokeStyle = pal.phosphor;
-          ctx.lineWidth = 1.4;
-          ctx.shadowBlur = 10;
-          ctx.shadowColor = pal.shadow;
-          ctx.beginPath();
-          const trailStart = Math.max(0, idx - 14);
-          for (let i = trailStart; i <= idx; i++) {
-            const y = (buffer[i] + 0.5) * height;
-            if (i === trailStart) ctx.moveTo(i, y);
-            else ctx.lineTo(i, y);
-          }
-          ctx.stroke();
-          // Head dot
-          ctx.fillStyle = '#ffffff';
-          ctx.shadowBlur = 12;
-          ctx.beginPath();
-          ctx.arc(headX, headY, 1.8, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-        }
-
-        // (c) Bottom data ticker — 6 pseudo-random hex chars scrolling left
+        // (b) Bottom data ticker — pseudo-random hex chars scrolling left
         const TICKER_SPEED = 20; // px/s
         const tickerOffset = (sinceStart * TICKER_SPEED) % 24;
         // deterministic hex stream from integer bucket index
