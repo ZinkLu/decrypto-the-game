@@ -13,10 +13,10 @@
 - **倒计时** — 90 秒
 - **INTELLIGENCE ANALYSIS** 标题字
 - **当前线索** — 本轮加密者给出的 3 条线索词
-- **Enemy Decode Feed**（新）— 一排 3 个**敌方主题**的 `<SelectorOscilloscope>`，每个对应一条线索，实时反映敌队解码者的选择：
-  - waiting: 光束在 4 行间漂移，`SCAN` 角标
-  - thinking: 快速跳跃，`EVAL` 角标
-  - locked: 稳定在所选行，红粉色，`LOCK` 角标 + 左侧数字
+- **Enemy Decode Feed**（新）— 一排 3 个**敌方主题**的 `<SelectorOscilloscope>`（琥珀辉光管风格），每个对应一条线索，实时反映敌队解码者的选择：
+  - waiting: 水平扫描线漂移，`SCAN` 角标
+  - thinking: 数字 1→2→3→4 循环切换，`EVAL` 角标
+  - locked: 琥珀辉光数字稳定显示，`LOCK` 角标
   - 顶部计数 `n/3 LOCKED`
 - **情报表** — 历史轮次汇总表格，每行包含：
   - 轮次编号
