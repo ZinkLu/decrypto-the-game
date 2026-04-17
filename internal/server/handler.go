@@ -268,12 +268,13 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 		h.Hub.BroadcastToRoom(r.Code, ws.ServerMessage{
 			Type: ws.MsgPlayerProgress,
 			Data: ws.PlayerProgressData{
-				Action: data.Action,
-				Player: client.Nickname,
-				State:  data.State,
-				Step:   data.Step,
-				Focus:  data.Focus,
-				Total:  3,
+				Action:  data.Action,
+				Player:  client.Nickname,
+				State:   data.State,
+				Step:    data.Step,
+				Focus:   data.Focus,
+				Guesses: data.Guesses,
+				Total:   3,
 			},
 		})
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { TensionLevel, rawColors } from '../theme/colors';
-import { DeskClockTimer, AgentPanel, RubberStamp, DossierEffectLayer } from '../components/dossier';
+import { DeskClockTimer, AgentPanel, RubberStamp, DossierEffectLayer, SelectorOscilloscope } from '../components/dossier';
+import type { SelectorStatus } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
 
 interface IntelRow {
@@ -187,6 +188,22 @@ export default function OpponentAnalyzing() {
       ? { emoji: '👀', message: `Enemy decoding... (${decryptStep}/3)` }
       : mascotConfig[getMascotState()];
 
+  // Live decode feed — derive per-slot state for the enemy team's decrypting
+  const decryptProgress = playerProgress?.action === 'decrypt' ? playerProgress : null;
+  const decryptGuesses = decryptProgress?.guesses ?? [0, 0, 0];
+  const decryptFocus = decryptProgress?.focus ?? 0;
+  const aiDecryptStep = aiStatus?.action === 'decrypt' ? aiStatus.step : 0;
+
+  const slotLiveState = (i: number): { status: SelectorStatus; digit: number | null } => {
+    const slotNum = i + 1;
+    const g = decryptGuesses[i] ?? 0;
+    if (g > 0) return { status: 'locked', digit: g };
+    if (decryptFocus === slotNum || aiDecryptStep === slotNum || (aiDecryptStep > 0 && aiDecryptStep > slotNum)) {
+      return { status: 'thinking', digit: null };
+    }
+    return { status: 'waiting', digit: null };
+  };
+
   return (
     <div
       className="relative w-full h-full overflow-hidden transition-colors duration-1000"
@@ -233,6 +250,39 @@ export default function OpponentAnalyzing() {
             {/* Current clues */}
             <div className="mt-2">
               <CurrentClues clues={currentClues} />
+            </div>
+
+            {/* Live decode feed — three selector scopes mirroring enemy decoder */}
+            <div className="mt-3">
+              <div
+                className="text-xs mb-2 flex items-center justify-between"
+                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}
+              >
+                <span>Enemy Decode Feed</span>
+                <span>{decryptGuesses.filter((g) => g > 0).length}/3 LOCKED</span>
+              </div>
+              <div className="flex justify-center gap-3">
+                {[0, 1, 2].map((i) => {
+                  const live = slotLiveState(i);
+                  return (
+                    <div key={i} className="flex flex-col items-center">
+                      <span
+                        className="text-xs mb-1"
+                        style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}
+                      >
+                        C{i + 1} "{currentClues[i] ?? '...'}"
+                      </span>
+                      <SelectorOscilloscope
+                        digit={live.digit}
+                        status={live.status}
+                        theme="enemy"
+                        width={104}
+                        height={48}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Divider */}

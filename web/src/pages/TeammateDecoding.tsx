@@ -158,7 +158,8 @@ export default function TeammateDecoding() {
 
   const [timeLeft, setTimeLeft] = useState(90);
   const [tension, setTension] = useState<TensionLevel>('normal');
-  const [focusedSlot, setFocusedSlot] = useState(1);
+  const [focusedSlot, setFocusedSlot] = useState(0);
+  const [hasInteracted, setHasInteracted] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [mascotState, setMascotState] = useState<keyof typeof mascotConfig>('thinking');
 
@@ -209,9 +210,28 @@ export default function TeammateDecoding() {
     else if (filledCount >= 2) setMascotState('almostDone');
   }, [slots, submitted]);
 
+  // Broadcast initial idle state — observer pages render empty selector scopes
+  useEffect(() => {
+    sendProgress('decrypt', 0, { state: 'idle', focus: 0, guesses: [0, 0, 0] });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Broadcast editing state on any focus/slots change
+  useEffect(() => {
+    if (!hasInteracted || submitted) return;
+    const guesses = slots.map((s) => s.answer ?? 0);
+    const filledCount = slots.filter((s) => s.answer !== null).length;
+    sendProgress('decrypt', filledCount, {
+      state: 'editing',
+      focus: focusedSlot,
+      guesses,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedSlot, slots, hasInteracted, submitted]);
+
   const handleNumberSelect = useCallback((num: number) => {
-    if (submitted) return;
-    sendProgress('decrypt', focusedSlot);
+    if (submitted || focusedSlot === 0) return;
+    if (!hasInteracted) setHasInteracted(true);
     setSlots((prev) => {
       const newSlots = prev.map((s) =>
         s.id === focusedSlot ? { ...s, answer: num, status: 'filled' as const } : s
@@ -220,10 +240,11 @@ export default function TeammateDecoding() {
       if (nextEmpty) setFocusedSlot(nextEmpty.id);
       return newSlots;
     });
-  }, [focusedSlot, submitted, sendProgress]);
+  }, [focusedSlot, submitted, hasInteracted]);
 
   const handleSlotClick = (slotId: number) => {
     if (submitted) return;
+    if (!hasInteracted) setHasInteracted(true);
     const slot = slots.find((s) => s.id === slotId);
     if (slot?.answer !== null) {
       setSlots((prev) => prev.map((s) => s.id === slotId ? { ...s, answer: null, status: 'empty' as const } : s));
@@ -233,9 +254,10 @@ export default function TeammateDecoding() {
 
   const handleSubmit = () => {
     if (!allFilled || submitted) return;
+    const guess = slots.map((s) => s.answer!) as [number, number, number];
+    sendProgress('decrypt', 3, { state: 'submitted', focus: 0, guesses: guess });
     setSubmitted(true);
     setMascotState('waitingResult');
-    const guess = slots.map((s) => s.answer!) as [number, number, number];
     submitDecrypt(guess);
   };
 

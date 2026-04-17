@@ -69,6 +69,7 @@ interface GameStore {
     state?: 'idle' | 'editing' | 'submitted';
     step: number;
     focus?: number;
+    guesses?: number[];
     total: number;
   } | null;
 
@@ -88,7 +89,11 @@ interface GameStore {
   sendProgress: (
     action: string,
     step: number,
-    opts?: { state?: 'idle' | 'editing' | 'submitted'; focus?: number }
+    opts?: {
+      state?: 'idle' | 'editing' | 'submitted';
+      focus?: number;
+      guesses?: number[];
+    }
   ) => void;
   requestSync: () => void;
   reset: () => void;
@@ -297,6 +302,7 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
           state: d.state as 'idle' | 'editing' | 'submitted' | undefined,
           step: (d.step as number) ?? 0,
           focus: (d.focus as number) ?? 0,
+          guesses: (d.guesses as number[]) ?? undefined,
           total: (d.total as number) ?? 3,
         },
       });
@@ -376,6 +382,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       total: 3,
       state: opts?.state,
       focus: opts?.focus ?? 0,
+      guesses: opts?.guesses,
     });
   },
 

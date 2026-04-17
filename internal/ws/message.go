@@ -196,22 +196,26 @@ type AIStatusData struct {
 // State distinguishes "idle" (user hasn't interacted yet), "editing" (actively
 // on slot Focus), and "submitted" (pressed dispatch). Step is the count of
 // completed items (0-3); Focus is the slot the user is on (1-3), 0 otherwise.
+// Guesses carries the current per-slot choice for decrypt/intercept actions
+// (0 for unfilled); used to light up selector oscilloscopes on observer pages.
 type ProgressData struct {
-	Action string `json:"action"`          // "encrypt", "intercept", "decrypt"
-	State  string `json:"state,omitempty"` // "idle" | "editing" | "submitted"
-	Step   int    `json:"step"`            // completed count (0-3)
-	Focus  int    `json:"focus,omitempty"` // active slot 1-3, 0 if none
-	Total  int    `json:"total"`           // total steps (always 3)
+	Action  string `json:"action"`            // "encrypt", "intercept", "decrypt"
+	State   string `json:"state,omitempty"`   // "idle" | "editing" | "submitted"
+	Step    int    `json:"step"`              // completed count (0-3)
+	Focus   int    `json:"focus,omitempty"`   // active slot 1-3, 0 if none
+	Guesses []int  `json:"guesses,omitempty"` // per-slot digits 1-4, 0 unfilled
+	Total   int    `json:"total"`             // total steps (always 3)
 }
 
 // PlayerProgressData is the server broadcast payload for MsgPlayerProgress.
 type PlayerProgressData struct {
-	Action string `json:"action"` // "encrypt", "intercept", "decrypt"
-	Player string `json:"player"` // player nickname
-	State  string `json:"state,omitempty"`
-	Step   int    `json:"step"`
-	Focus  int    `json:"focus,omitempty"`
-	Total  int    `json:"total"`
+	Action  string `json:"action"` // "encrypt", "intercept", "decrypt"
+	Player  string `json:"player"` // player nickname
+	State   string `json:"state,omitempty"`
+	Step    int    `json:"step"`
+	Focus   int    `json:"focus,omitempty"`
+	Guesses []int  `json:"guesses,omitempty"`
+	Total   int    `json:"total"`
 }
 
 // ErrorData is the data payload for MsgError.

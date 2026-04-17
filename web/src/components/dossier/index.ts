@@ -14,3 +14,5 @@ export { DossierTransition } from './DossierTransition';
 export type { TransitionRole } from './DossierTransition';
 export { SignalOscilloscope } from './SignalOscilloscope';
 export type { SignalState, SignalTheme } from './SignalOscilloscope';
+export { SelectorOscilloscope } from './SelectorOscilloscope';
+export type { SelectorStatus, SelectorResult, SelectorTheme } from './SelectorOscilloscope';
