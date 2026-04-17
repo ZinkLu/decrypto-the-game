@@ -196,30 +196,20 @@ export function SelectorOscilloscope({
       }
     };
 
-    // Scanning pattern for waiting — horizontal sweep line
-    const drawScan = (t: number) => {
-      const y = (Math.sin(t / 700) * 0.45 + 0.5) * height;
-      const grad = ctx.createLinearGradient(0, y - 3, 0, y + 3);
-      grad.addColorStop(0, 'rgba(0,0,0,0)');
-      grad.addColorStop(0.5, pal.bloom);
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, y - 3, width, 6);
-      // small noise blip
-      ctx.strokeStyle = pal.phosphor;
-      ctx.globalAlpha = 0.5;
-      ctx.lineWidth = 0.8;
-      ctx.shadowBlur = 6;
-      ctx.shadowColor = pal.shadow;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      for (let i = 0; i <= width; i += 3) {
-        const noise = Math.sin((i + t * 0.02) * 0.35) * 1.2;
-        ctx.lineTo(i, y + noise);
-      }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.globalAlpha = 1;
+    // Cycling nixie digits for waiting/thinking — same visual, unifies both states
+    const drawCyclingDigits = (t: number) => {
+      const period = 220;
+      const phase = (t % period) / period; // 0..1
+      const activeIdx = Math.floor(t / period) % 4;
+      const nextIdx = (activeIdx + 1) % 4;
+      const active = activeIdx + 1;
+      const next = nextIdx + 1;
+      const fadeIn = Math.max(0, (phase - 0.7) / 0.3);
+      const cx = width / 2;
+      const cy = height / 2 + 1;
+      drawDigitStack(active, pal.phosphor, pal.shadow, cx, cy, 32, t);
+      drawDigit(String(active), pal.phosphor, pal.shadow, cx, cy, 32, 1 - fadeIn);
+      if (fadeIn > 0) drawDigit(String(next), pal.phosphor, pal.shadow, cx, cy, 32, fadeIn);
     };
 
     // Reduced motion static frame
@@ -254,21 +244,9 @@ export function SelectorOscilloscope({
       const cx = width / 2;
       const cy = height / 2 + 1;
 
-      if (status === 'waiting') {
-        drawScan(t);
-      } else if (status === 'thinking') {
-        // Cycle digits 1-4 every 220ms with soft crossfade
-        const period = 220;
-        const phase = (t % period) / period; // 0..1
-        const activeIdx = Math.floor(t / period) % 4;
-        const nextIdx = (activeIdx + 1) % 4;
-        const active = activeIdx + 1;
-        const next = nextIdx + 1;
-        // Crossfade in last 30% of period
-        const fadeIn = Math.max(0, (phase - 0.7) / 0.3);
-        drawDigitStack(active, pal.phosphor, pal.shadow, cx, cy, 32, t);
-        drawDigit(String(active), pal.phosphor, pal.shadow, cx, cy, 32, 1 - fadeIn);
-        if (fadeIn > 0) drawDigit(String(next), pal.phosphor, pal.shadow, cx, cy, 32, fadeIn);
+      if (status === 'waiting' || status === 'thinking') {
+        // Unified: cycle digits 1→2→3→4 for any non-locked state
+        drawCyclingDigits(t);
       } else if (status === 'locked' && digit) {
         // Subtle nixie flicker
         const flicker = 0.015 + (Math.sin(t * 0.018) + Math.sin(t * 0.043)) * 0.01;
