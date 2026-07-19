@@ -12,14 +12,18 @@ A web-based implementation of the board game "Decrypto" (谍报风云), with rea
 # Build backend
 go build -o server ./cmd/server
 
-# Build frontend
-cd web && pnpm install && pnpm build && cd ..
+# Build frontend (webgl/ — three.js, outputs to web/dist which the Go server hosts)
+cd webgl && pnpm install && pnpm build && cd ..
 
 # Run (words.txt must exist in working directory)
 ./server
 
 # Development (frontend hot reload)
-cd web && pnpm dev    # port 3000, proxies /ws and /api to 8080
+cd webgl && pnpm dev   # port 3001, proxies /ws and /api to 8080
+
+# Frontend protocol smoke tests (server must be running)
+node webgl/scripts/smoke-e2e.mjs      # two scripted WS clients + AI, full game
+node webgl/scripts/browser-e2e.mjs    # drives headless Chrome through a full game
 
 # Run tests
 go test ./internal/room/ ./internal/ws/
@@ -29,6 +33,7 @@ go test ./internal/core/
 ```
 
 **Runtime dependency:** `words.txt` must exist in the working directory.
+**Legacy frontend:** `web/` is the old React frontend, kept for reference only — do not build it; both packages output to `web/dist`, and `webgl/` owns it now.
 
 ## Architecture
 
@@ -41,7 +46,8 @@ go test ./internal/core/
 - **`internal/game/`** — Bridge layer (WebSocket <-> game state machine)
 - **`internal/server/`** — Message dispatcher (routes WebSocket messages to room/game handlers)
 - **`internal/ai/`** — AI players (LLM Provider abstraction + Claude/OpenAI implementations)
-- **`web/`** — React frontend (pages, components, store, services)
+- **`webgl/`** — Active frontend: three.js + vanilla TypeScript (Vite). Full-screen WebGL war-room scene (grid, radar, wire globe, oscilloscope) with a DOM overlay for the information-dense panels. `src/protocol.ts` mirrors `internal/ws/message.go`; `src/store.ts` is the protocol state machine; `src/scene.ts` the render stage; `src/ui/` the view layer. `web/src/store/gameStore.ts` remains the protocol reference implementation.
+- **`web/`** — Legacy React frontend (deprecated, kept for reference)
 
 ### Key Architectural Patterns
 
