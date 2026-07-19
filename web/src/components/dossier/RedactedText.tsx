@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { rawColors } from '../../theme/colors';
-
-const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 
 interface RedactedTextProps {
   length?: number;
@@ -18,6 +17,7 @@ export function RedactedText({
   glitch = true,
   glitchSpeed = 150,
 }: RedactedTextProps) {
+  const prefersReducedMotion = useReducedMotion();
   const [text, setText] = useState('█'.repeat(length));
 
   useEffect(() => {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { transitionConfig, type TransitionRole } from '../../theme/colors';
 import { rawColors } from '../../theme/colors';
 
@@ -30,20 +30,24 @@ export function DossierTransition({
   const [stampVisible, setStampVisible] = useState(false);
   const label = roleLabels[role];
 
+  // Stable ref for onComplete — prevents effect re-runs when parent
+  // passes a new arrow function each render.
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
   useEffect(() => {
-    // Show stamp after a short delay
     const stampTimer = setTimeout(() => setStampVisible(true), 150);
 
     const timer = setTimeout(() => {
       setIsVisible(false);
-      onComplete?.();
+      onCompleteRef.current?.();
     }, duration);
 
     return () => {
       clearTimeout(timer);
       clearTimeout(stampTimer);
     };
-  }, [duration, onComplete]);
+  }, [duration]);
 
   if (!isVisible) return null;
 

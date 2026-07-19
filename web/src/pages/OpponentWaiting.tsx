@@ -1,12 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
-import { TensionLevel, rawColors } from '../theme/colors';
+import { useMemo } from 'react';
+import { rawColors } from '../theme/colors';
 import { DeskClockTimer, RedactedText, RubberStamp, AgentPanel, DossierEffectLayer, SignalOscilloscope } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
+import { useCountdown } from '../hooks/useCountdown';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 type SlotState = 'waiting' | 'active' | 'completed';
 type PhaseState = 'idle' | 'editing' | 'submitted';
-
-const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 interface DerivedProgress {
   phase: PhaseState;
@@ -58,6 +58,7 @@ const STATE_CONFIG = {
 } as const;
 
 function InterceptRow({ index, state }: { index: number; state: SlotState }) {
+  const prefersReducedMotion = useReducedMotion();
   const cfg = STATE_CONFIG[state];
 
   const rowAnim = prefersReducedMotion
@@ -135,9 +136,7 @@ function InterceptRow({ index, state }: { index: number; state: SlotState }) {
 }
 
 export default function OpponentWaiting() {
-  const { encryptor, round, aiStatus } = useGameStore();
-  void encryptor;
-  void round;
+  const { aiStatus } = useGameStore();
 
   const progress = useEncryptProgress();
   const slotStates: SlotState[] = useMemo(
@@ -145,23 +144,7 @@ export default function OpponentWaiting() {
     [progress]
   );
 
-  const [timeLeft, setTimeLeft] = useState(90);
-  const [tension, setTension] = useState<TensionLevel>('normal');
-
-  useEffect(() => {
-    if (timeLeft > 30) setTension('normal');
-    else if (timeLeft > 15) setTension('warning');
-    else if (timeLeft > 5) setTension('tense');
-    else setTension('critical');
-  }, [timeLeft]);
-
-  useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => { if (prev <= 1) { clearInterval(timer); return 0; } return prev - 1; });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
+  const { timeLeft, tension } = useCountdown({ totalSeconds: 90 });
 
   const getNoiseSpeed = () => {
     switch (tension) {
@@ -208,7 +191,7 @@ export default function OpponentWaiting() {
 
       <div className="relative z-10 h-full flex flex-col">
         <div className="flex flex-col items-center pt-4">
-          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" theme="opponent" />
+          <DeskClockTimer timeLeft={timeLeft} totalSeconds={90} tension={tension} showProgressBar={true} size="medium" theme="opponent" />
         </div>
 
         <div className="flex flex-col items-center mt-3 gap-1">

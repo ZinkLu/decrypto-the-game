@@ -34,7 +34,7 @@ export function AgentPanel({
         boxShadow: `0 2px 8px rgba(0,0,0,0.3)`,
       }}
     >
-      <div className="flex flex-col items-center justify-center" aria-live="polite">
+      <div className="flex flex-col items-center justify-center">
         {children}
 
         {/* Emoji */}
@@ -42,9 +42,10 @@ export function AgentPanel({
           {emoji}
         </div>
 
-        {/* Status text */}
+        {/* Status text — aria-live scoped to message only */}
         <span
           className="text-sm mt-1"
+          aria-live="polite"
           style={{
             fontFamily: "'Special Elite', cursive",
             color: textColor,

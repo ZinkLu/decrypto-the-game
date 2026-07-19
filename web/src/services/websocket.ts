@@ -6,6 +6,7 @@ export class WebSocketService {
   private handler: MessageHandler;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
+  private intentionalDisconnect = false;
 
   constructor(url: string, handler: MessageHandler) {
     this.url = url;
@@ -13,6 +14,7 @@ export class WebSocketService {
   }
 
   connect() {
+    this.intentionalDisconnect = false;
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
@@ -22,7 +24,10 @@ export class WebSocketService {
 
     this.ws.onclose = () => {
       this.handler('_disconnected', {});
-      this.scheduleReconnect();
+      // Only auto-reconnect if the close was NOT intentional
+      if (!this.intentionalDisconnect) {
+        this.scheduleReconnect();
+      }
     };
 
     this.ws.onerror = () => {
@@ -48,6 +53,7 @@ export class WebSocketService {
   }
 
   disconnect() {
+    this.intentionalDisconnect = true;
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

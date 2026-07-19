@@ -1,8 +1,9 @@
-import { useState, useEffect, useMemo } from 'react';
-import { TensionLevel, rawColors } from '../theme/colors';
+import { useState, useMemo } from 'react';
+import { rawColors } from '../theme/colors';
 import { DeskClockTimer, AgentPanel, RubberStamp, DossierEffectLayer, SelectorOscilloscope } from '../components/dossier';
 import type { SelectorStatus } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
+import { useCountdown } from '../hooks/useCountdown';
 
 interface IntelRow {
   round: number;
@@ -11,28 +12,80 @@ interface IntelRow {
   isCurrent: boolean;
 }
 
-// Current round clues display
-function CurrentClues({ clues }: { clues: string[] }) {
+interface DecodeRowState {
+  status: SelectorStatus;
+  digit: number | null;
+}
+
+const ROW_CONFIG: Record<SelectorStatus, { border: string; bg: string; textColor: string; statusText: string; italic: boolean }> = {
+  waiting: {
+    border: rawColors.opponentNormalBorder,
+    bg: 'transparent',
+    textColor: rawColors.teamEnemyDim,
+    statusText: 'scanning...',
+    italic: true,
+  },
+  thinking: {
+    border: rawColors.intelRed,
+    bg: `${rawColors.intelRed}12`,
+    textColor: rawColors.tensionCriticalText,
+    statusText: 'evaluating...',
+    italic: false,
+  },
+  locked: {
+    border: rawColors.teamEnemyLight,
+    bg: `${rawColors.intelRed}18`,
+    textColor: rawColors.tensionCriticalText,
+    statusText: 'INTERCEPTED',
+    italic: false,
+  },
+};
+
+// One row of the enemy decode feed — mirrors OpponentWaiting's InterceptRow shape.
+function DecodeFeedRow({ index, clue, state }: { index: number; clue: string; state: DecodeRowState }) {
+  const cfg = ROW_CONFIG[state.status];
+  const animation = state.status === 'thinking' ? 'intercept-alarm 1s ease-in-out infinite' : undefined;
   return (
     <div
-      className="px-4 py-3 rounded-lg"
-      style={{ background: `${rawColors.teamEnemy}10`, border: `2px solid ${rawColors.opponentNormalBorder}` }}
+      className="flex items-center gap-3 py-2 px-3 rounded transition-[background,border-color] duration-300"
+      style={{
+        background: cfg.bg,
+        borderLeft: `3px solid ${cfg.border}`,
+        animation,
+      }}
     >
-      <div className="text-xs mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
-        Current Clues
+      <div className="flex flex-col items-start shrink-0" style={{ width: '110px' }}>
+        <span
+          className="text-xs"
+          style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}
+        >
+          CLUE #{index}
+        </span>
+        <span
+          className="text-base truncate w-full"
+          style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemy }}
+        >
+          "{clue || '...'}"
+        </span>
       </div>
-      <div className="flex items-center justify-center gap-3">
-        {clues.map((clue, i) => (
-          <span key={i} className="flex items-center gap-3">
-            <span className="text-lg font-bold" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemy }}>
-              "{clue}"
-            </span>
-            {i < clues.length - 1 && (
-              <span className="text-sm" style={{ color: rawColors.teamEnemyDim }}>/</span>
-            )}
-          </span>
-        ))}
+
+      <SelectorOscilloscope
+        digit={state.digit}
+        status={state.status}
+        theme="enemy"
+        width={104}
+        height={48}
+      />
+
+      <div className="flex-1 min-w-0 text-sm" style={{ fontFamily: "'Courier Prime', monospace", color: cfg.textColor }}>
+        <span className={cfg.italic ? 'italic' : 'tracking-widest'} style={cfg.italic ? { opacity: 0.7 } : undefined}>
+          {cfg.statusText}
+        </span>
       </div>
+
+      {state.status === 'locked' && (
+        <span className="text-lg shrink-0" style={{ color: cfg.textColor }}>◉</span>
+      )}
     </div>
   );
 }
@@ -108,14 +161,13 @@ const mascotConfig = {
   critical: { emoji: '🚨', message: 'Emergency!' },
 };
 
+const CIRCLED_DIGITS = ['①', '②', '③', '④'];
+
 export default function OpponentAnalyzing() {
   const { clues: storeClues, history: gameHistory, round, aiStatus, playerProgress } = useGameStore();
 
-  const [timeLeft, setTimeLeft] = useState(90);
-  const [tension, setTension] = useState<TensionLevel>('normal');
+  const { timeLeft, tension } = useCountdown({ totalSeconds: 90 });
   const [highlightedWord, setHighlightedWord] = useState<string | null>(null);
-
-  const circledDigits = ['①', '②', '③', '④'];
   const intelData: IntelRow[] = useMemo(() => {
     const historyRows: IntelRow[] = gameHistory
       .filter((row) => row.clues.length > 0)
@@ -123,7 +175,7 @@ export default function OpponentAnalyzing() {
         round: row.round,
         clues: row.clues,
         sequence: row.secret
-          ? row.secret.map((n) => circledDigits[n - 1] || String(n)).join(' ')
+          ? row.secret.map((n) => CIRCLED_DIGITS[n - 1] || String(n)).join(' ')
           : '???',
         isCurrent: false,
       }));
@@ -140,24 +192,6 @@ export default function OpponentAnalyzing() {
   }, [gameHistory, storeClues, round]);
 
   const currentClues = storeClues;
-
-  useEffect(() => {
-    if (timeLeft > 30) setTension('normal');
-    else if (timeLeft > 15) setTension('warning');
-    else if (timeLeft > 5) setTension('tense');
-    else setTension('critical');
-  }, [timeLeft]);
-
-  useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) { clearInterval(timer); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
 
   const getBgColor = () => {
     switch (tension) {
@@ -229,7 +263,7 @@ export default function OpponentAnalyzing() {
       <div className="relative z-10 h-full flex flex-col">
         {/* Countdown */}
         <div className="flex flex-col items-center pt-4">
-          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" theme="opponent" />
+          <DeskClockTimer timeLeft={timeLeft} totalSeconds={90} tension={tension} showProgressBar={true} size="medium" theme="opponent" />
         </div>
 
         {/* Title */}
@@ -238,63 +272,49 @@ export default function OpponentAnalyzing() {
         </div>
 
         {/* Main content */}
-        <div className="flex-1 px-4 mt-3 overflow-y-auto">
+        <div className="flex-1 px-4 mt-3 overflow-y-auto space-y-3">
+          {/* Enemy decode feed — 3-row vertical list, layout mirrors OpponentWaiting */}
           <div
-            className="max-w-2xl mx-auto p-4 rounded-lg"
+            className="max-w-lg mx-auto p-3 rounded-lg"
             style={{
               background: rawColors.opponentScreenBg,
-              border: `2px solid ${rawColors.opponentNormalBorder}`,
-              boxShadow: 'inset 0 0 30px rgba(0, 0, 0, 0.8)',
+              border: `1px solid ${rawColors.opponentNormalBorder}`,
+              boxShadow: 'inset 0 0 20px rgba(0, 0, 0, 0.7)',
             }}
           >
-            {/* Current clues */}
-            <div className="mt-2">
-              <CurrentClues clues={currentClues} />
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs tracking-widest" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
+                ENEMY DECODE FEED
+              </span>
+              <span className="text-xs" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
+                {decryptGuesses.filter((g) => g > 0).length}/3 LOCKED
+              </span>
             </div>
-
-            {/* Live decode feed — three selector scopes mirroring enemy decoder */}
-            <div className="mt-3">
-              <div
-                className="text-xs mb-2 flex items-center justify-between"
-                style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}
-              >
-                <span>Enemy Decode Feed</span>
-                <span>{decryptGuesses.filter((g) => g > 0).length}/3 LOCKED</span>
-              </div>
-              <div className="flex justify-center gap-3">
-                {[0, 1, 2].map((i) => {
-                  const live = slotLiveState(i);
-                  return (
-                    <div key={i} className="flex flex-col items-center">
-                      <span
-                        className="text-xs mb-1"
-                        style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}
-                      >
-                        C{i + 1} "{currentClues[i] ?? '...'}"
-                      </span>
-                      <SelectorOscilloscope
-                        digit={live.digit}
-                        status={live.status}
-                        theme="enemy"
-                        width={104}
-                        height={48}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+            <div className="space-y-2">
+              {[0, 1, 2].map((i) => (
+                <DecodeFeedRow
+                  key={i}
+                  index={i + 1}
+                  clue={currentClues[i] ?? ''}
+                  state={slotLiveState(i)}
+                />
+              ))}
             </div>
+          </div>
 
-            {/* Divider */}
-            <div className="my-3 border-t" style={{ borderColor: rawColors.opponentNormalBorder }} />
-
-            {/* Historical intel */}
-            <div className="mb-2">
-              <div className="text-xs mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
-                Historical Intel
-              </div>
-              <IntelTable data={intelData} highlightedWord={highlightedWord} onWordClick={handleWordClick} />
+          {/* Historical intel */}
+          <div
+            className="max-w-lg mx-auto p-3 rounded-lg"
+            style={{
+              background: rawColors.opponentScreenBg,
+              border: `1px solid ${rawColors.opponentNormalBorder}`,
+              boxShadow: 'inset 0 0 20px rgba(0, 0, 0, 0.7)',
+            }}
+          >
+            <div className="text-xs mb-2" style={{ fontFamily: "'Courier Prime', monospace", color: rawColors.teamEnemyDim }}>
+              Historical Intel
             </div>
+            <IntelTable data={intelData} highlightedWord={highlightedWord} onWordClick={handleWordClick} />
           </div>
         </div>
 

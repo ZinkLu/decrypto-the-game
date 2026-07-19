@@ -524,6 +524,26 @@ func (b *Bridge) broadcastAIStatus(msgType, action, player string, step, total i
 	})
 }
 
+// broadcastAIProgress mirrors a human player's player_progress stream for AI
+// players, so observer pages light up the selector oscilloscopes with AI's
+// chosen digits just like they do for humans.
+func (b *Bridge) broadcastAIProgress(action, player, state string, step, focus int, guesses []int) {
+	padded := make([]int, 3)
+	copy(padded, guesses)
+	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
+		Type: ws.MsgPlayerProgress,
+		Data: ws.PlayerProgressData{
+			Action:  action,
+			Player:  player,
+			State:   state,
+			Step:    step,
+			Focus:   focus,
+			Guesses: padded,
+			Total:   3,
+		},
+	})
+}
+
 // broadcastGameOver sends game_over to the room.
 func (b *Bridge) broadcastGameOver(winner *core.Team) {
 	scoreA, scoreB := b.buildScores()
@@ -644,12 +664,16 @@ func handleAIDecrypt(ctx context.Context, b *Bridge, r *core.Round) [3]int {
 	var guessed []int
 
 	for i := 0; i < 3; i++ {
+		// Mirror human's "editing + focus=i+1" broadcast so observers see this
+		// slot enter `thinking` state on their selector oscilloscopes.
+		b.broadcastAIProgress("decrypt", "AI Agent", "editing", len(guessed), i+1, guessed)
 		b.broadcastAIStatus(ws.MsgAIThinking, "decrypt", "AI Agent", i+1, 3)
 
 		if b.AIPlayer == nil {
 			time.Sleep(2 * time.Second)
 			digits := r.GetSecretDigits()
 			guess[i] = digits[i]
+			guessed = append(guessed, guess[i])
 		} else {
 			guess[i] = b.AIPlayer.GuessSingleNumber(ctx, clues[i], words, false, history, guessed)
 			guessed = append(guessed, guess[i])
@@ -657,8 +681,12 @@ func handleAIDecrypt(ctx context.Context, b *Bridge, r *core.Round) [3]int {
 
 		log.Printf("[AI-DECRYPT] Round %d | step %d/3 | guess → %d",
 			r.GetNumberOfRounds(), i+1, guess[i])
+		// Broadcast the freshly chosen digit so the oscilloscope "locks" onto it.
+		b.broadcastAIProgress("decrypt", "AI Agent", "editing", len(guessed), 0, guessed)
 		b.broadcastAIStatus(ws.MsgAIActed, "decrypt", "AI Agent", i+1, 3)
 	}
+	// Final submit-state marker so observers know the AI's sequence is sealed.
+	b.broadcastAIProgress("decrypt", "AI Agent", "submitted", 3, 0, guessed)
 	return guess
 }
 

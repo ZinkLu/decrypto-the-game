@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { TensionLevel, rawColors } from '../theme/colors';
+import { rawColors } from '../theme/colors';
 import {
   DeskClockTimer,
   PaperCard,
@@ -10,6 +10,7 @@ import {
 } from '../components/dossier';
 import type { SelectorStatus, SelectorResult } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
+import { useCountdown } from '../hooks/useCountdown';
 
 type GuessStatus = 'waiting' | 'correct' | 'wrong';
 
@@ -201,11 +202,9 @@ const mascotConfig = {
 };
 
 export default function EncryptorWatching() {
-  const { clues: storeClues, secretDigits, round, aiStatus, playerProgress } = useGameStore();
-  void round;
+  const { clues: storeClues, secretDigits, aiStatus, playerProgress } = useGameStore();
 
-  const [timeLeft, setTimeLeft] = useState(90);
-  const [tension, setTension] = useState<TensionLevel>('normal');
+  const { timeLeft, tension } = useCountdown({ totalSeconds: 90 });
   const [showSummary, setShowSummary] = useState(false);
   const [mascotState, setMascotState] = useState<keyof typeof mascotConfig>('waiting');
 
@@ -262,24 +261,6 @@ export default function EncryptorWatching() {
     }
   }, [clues]);
 
-  useEffect(() => {
-    if (timeLeft > 30) setTension('normal');
-    else if (timeLeft > 15) setTension('warning');
-    else if (timeLeft > 5) setTension('tense');
-    else setTension('critical');
-  }, [timeLeft]);
-
-  useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) { clearInterval(timer); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
-
   const getBgColor = () => {
     switch (tension) {
       case 'normal': return rawColors.tensionNormalBg;
@@ -304,7 +285,7 @@ export default function EncryptorWatching() {
       <div className="relative z-10 h-full flex flex-col">
         {/* Countdown */}
         <div className="flex flex-col items-center pt-4">
-          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
+          <DeskClockTimer timeLeft={timeLeft} totalSeconds={90} tension={tension} showProgressBar={true} size="medium" />
         </div>
 
         {/* Status */}

@@ -125,7 +125,15 @@ const initialState = {
   roundResult: null as { intercept_success?: boolean; decrypt_success?: boolean } | null,
   gameOver: null as { winner: string | null } | null,
   aiStatus: null as { action: string; player: string; step: number; total: number } | null,
-  playerProgress: null as { action: string; player: string; step: number; total: number } | null,
+  playerProgress: null as {
+    action: string;
+    player: string;
+    state?: 'idle' | 'editing' | 'submitted';
+    step: number;
+    focus?: number;
+    guesses?: number[];
+    total: number;
+  } | null,
 };
 
 type SetFn = (
@@ -186,9 +194,16 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
     case 'phase_change': {
       const newPhase = d.phase as string;
       if (newPhase === 'new_round') {
+        // Map new_round to the correct GamePhase based on role
+        const role = (d.your_role as PlayerRole) ?? get().myRole;
+        const nextPhase: GamePhase =
+          role === 'encryptor' ? 'encrypting'
+          : (d.waiting as boolean) ? 'intercept'
+          : 'decrypt';
         set({
+          phase: nextPhase,
           round: (d.round as number) ?? get().round,
-          myRole: (d.your_role as PlayerRole) ?? get().myRole,
+          myRole: role,
           encryptor: (d.encryptor as string) ?? '',
           secretDigits: (d.secret_digits as number[]) ?? [],
           secretWords: (d.secret_words as string[]) ?? [],
@@ -196,6 +211,8 @@ function handleServerMessage(set: SetFn, get: GetFn, type: string, data: unknown
           history: (d.history as RoundHistoryRow[]) ?? get().history,
           waiting: (d.waiting as boolean) ?? false,
           roundResult: null,
+          aiStatus: null,
+          playerProgress: null,
         });
       } else {
         set({

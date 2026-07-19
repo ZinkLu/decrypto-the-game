@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { TensionLevel, encryptorTensionConfig, rawColors } from '../theme/colors';
+import { encryptorTensionConfig, rawColors } from '../theme/colors';
 import {
   TypewriterInput, DeskClockTimer, DossierButton,
   AgentPanel, RubberStamp, DossierEffectLayer, PaperCard,
 } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
+import { useCountdown } from '../hooks/useCountdown';
 
 interface CodeWord { number: number; word: string; }
 interface ClueSlot { id: number; digit: number; word: string; clue: string; }
@@ -123,10 +124,9 @@ export default function Encryptor() {
 
   const [focusedClue, setFocusedClue] = useState(0);
   const [hasInteracted, setHasInteracted] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(90);
-  const [tension, setTension] = useState<TensionLevel>('normal');
-  const [showHistory, setShowHistory] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const { timeLeft, tension } = useCountdown({ totalSeconds: 90, paused: isSubmitted });
+  const [showHistory, setShowHistory] = useState(false);
 
   const [slots, setSlots] = useState<ClueSlot[]>(() =>
     secretDigits.map((num, i) => ({
@@ -136,6 +136,17 @@ export default function Encryptor() {
       clue: '',
     }))
   );
+
+  // Re-sync slots if secretDigits changes (e.g. full_sync after reconnect)
+  useEffect(() => {
+    if (secretDigits.length === 0) return;
+    setSlots(secretDigits.map((num, i) => ({
+      id: i + 1,
+      digit: num,
+      word: secretWords[i] || '',
+      clue: '',
+    })));
+  }, [secretDigits, secretWords]);
 
   const codewords: CodeWord[] = myWords.map((word, i) => ({ number: i + 1, word }));
   const highlightedDigit = slots.find((s) => s.id === focusedClue)?.digit ?? 0;
@@ -152,24 +163,6 @@ export default function Encryptor() {
         })),
       }));
   }, [gameHistory, myWords]);
-
-  useEffect(() => {
-    if (timeLeft > 30) setTension('normal');
-    else if (timeLeft > 15) setTension('warning');
-    else if (timeLeft > 5) setTension('tense');
-    else setTension('critical');
-  }, [timeLeft]);
-
-  useEffect(() => {
-    if (isSubmitted) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) { clearInterval(timer); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [isSubmitted]);
 
   const filledCount = slots.filter((s) => s.clue.trim() !== '').length;
 
@@ -233,7 +226,7 @@ export default function Encryptor() {
       <div className="relative z-10 h-full flex flex-col">
         {/* Countdown */}
         <div className="flex flex-col items-center pt-4">
-          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
+          <DeskClockTimer timeLeft={timeLeft} totalSeconds={90} tension={tension} showProgressBar={true} size="medium" />
         </div>
 
         {/* Codeword reference strip */}

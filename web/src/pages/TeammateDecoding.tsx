@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { TensionLevel, rawColors } from '../theme/colors';
+import { rawColors } from '../theme/colors';
 import {
   DeskClockTimer, BrassTokenPad, DossierButton,
   AgentPanel, DossierEffectLayer,
 } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
+import { useCountdown } from '../hooks/useCountdown';
 
 type SlotStatus = 'empty' | 'focused' | 'filled' | 'correct' | 'wrong';
 
@@ -156,8 +157,7 @@ const mascotConfig = {
 export default function TeammateDecoding() {
   const { myWords, clues, submitDecrypt, sendProgress } = useGameStore();
 
-  const [timeLeft, setTimeLeft] = useState(90);
-  const [tension, setTension] = useState<TensionLevel>('normal');
+  const { timeLeft, tension } = useCountdown({ totalSeconds: 90 });
   const [focusedSlot, setFocusedSlot] = useState(0);
   const [hasInteracted, setHasInteracted] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -171,23 +171,18 @@ export default function TeammateDecoding() {
     }))
   );
 
-  useEffect(() => {
-    if (timeLeft > 30) setTension('normal');
-    else if (timeLeft > 15) setTension('warning');
-    else if (timeLeft > 5) setTension('tense');
-    else setTension('critical');
-  }, [timeLeft]);
-
-  useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) { clearInterval(timer); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
+  const handleNumberSelect = useCallback((num: number) => {
+    if (submitted || focusedSlot === 0) return;
+    if (!hasInteracted) setHasInteracted(true);
+    setSlots((prev) => {
+      const newSlots = prev.map((s) =>
+        s.id === focusedSlot ? { ...s, answer: num, status: 'filled' as const } : s
+      );
+      const nextEmpty = newSlots.find((s) => s.answer === null);
+      if (nextEmpty) setFocusedSlot(nextEmpty.id);
+      return newSlots;
+    });
+  }, [focusedSlot, submitted, hasInteracted]);
 
   useEffect(() => {
     if (submitted) return;
@@ -197,7 +192,7 @@ export default function TeammateDecoding() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  });
+  }, [submitted, handleNumberSelect]);
 
   const usedNumbers = slots.map((s) => s.answer).filter((a): a is number => a !== null);
   const allFilled = slots.every((s) => s.answer !== null);
@@ -228,19 +223,6 @@ export default function TeammateDecoding() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusedSlot, slots, hasInteracted, submitted]);
-
-  const handleNumberSelect = useCallback((num: number) => {
-    if (submitted || focusedSlot === 0) return;
-    if (!hasInteracted) setHasInteracted(true);
-    setSlots((prev) => {
-      const newSlots = prev.map((s) =>
-        s.id === focusedSlot ? { ...s, answer: num, status: 'filled' as const } : s
-      );
-      const nextEmpty = newSlots.find((s) => s.answer === null);
-      if (nextEmpty) setFocusedSlot(nextEmpty.id);
-      return newSlots;
-    });
-  }, [focusedSlot, submitted, hasInteracted]);
 
   const handleSlotClick = (slotId: number) => {
     if (submitted) return;
@@ -283,7 +265,7 @@ export default function TeammateDecoding() {
       <div className="relative z-10 h-full flex flex-col">
         {/* Countdown */}
         <div className="flex flex-col items-center pt-4">
-          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
+          <DeskClockTimer timeLeft={timeLeft} totalSeconds={90} tension={tension} showProgressBar={true} size="medium" />
         </div>
 
         {/* Corkboard reference */}

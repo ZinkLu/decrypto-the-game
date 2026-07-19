@@ -58,7 +58,8 @@ export function BrassTokenPad({
         return (
           <motion.button
             key={num}
-            aria-label={`Select number ${num}`}
+            aria-label={isSelected ? `Number ${num} selected` : isDisabled ? `Number ${num} unavailable` : `Select number ${num}`}
+            aria-disabled={!isAvailable}
             className="relative rounded-full font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-brass)]"
             style={{
               width: config.buttonSize,

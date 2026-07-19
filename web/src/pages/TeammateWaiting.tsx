@@ -1,12 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
-import { TensionLevel, rawColors } from '../theme/colors';
+import { useMemo } from 'react';
+import { rawColors } from '../theme/colors';
 import { DeskClockTimer, AgentPanel, DossierEffectLayer, SignalOscilloscope } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
+import { useCountdown } from '../hooks/useCountdown';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 type SlotState = 'waiting' | 'active' | 'completed';
 type PhaseState = 'idle' | 'editing' | 'submitted';
-
-const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 interface DerivedProgress {
   phase: PhaseState;
@@ -58,6 +58,7 @@ const STATE_CONFIG = {
 } as const;
 
 function IntelStatusRow({ index, state }: { index: number; state: SlotState }) {
+  const prefersReducedMotion = useReducedMotion();
   const cfg = STATE_CONFIG[state];
 
   const rowAnim = prefersReducedMotion
@@ -127,11 +128,9 @@ function IntelStatusRow({ index, state }: { index: number; state: SlotState }) {
 }
 
 export default function TeammateWaiting() {
-  const { encryptor, round, aiStatus } = useGameStore();
-  void round;
+  const { encryptor, aiStatus } = useGameStore();
 
-  const [timeLeft, setTimeLeft] = useState(90);
-  const [tension, setTension] = useState<TensionLevel>('normal');
+  const { timeLeft, tension } = useCountdown({ totalSeconds: 90 });
 
   const encryptorName = encryptor || 'Teammate';
   const progress = useEncryptProgress();
@@ -140,21 +139,6 @@ export default function TeammateWaiting() {
     () => [1, 2, 3].map((i) => deriveSlotState(i, progress)),
     [progress]
   );
-
-  useEffect(() => {
-    if (timeLeft > 30) setTension('normal');
-    else if (timeLeft > 15) setTension('warning');
-    else if (timeLeft > 5) setTension('tense');
-    else setTension('critical');
-  }, [timeLeft]);
-
-  useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => { if (prev <= 1) { clearInterval(timer); return 0; } return prev - 1; });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
 
   const isAIThinking = aiStatus?.action === 'encrypt';
   const completedCount = slotStates.filter((s) => s === 'completed').length;
@@ -197,7 +181,7 @@ export default function TeammateWaiting() {
       <div className="relative z-10 h-full flex flex-col">
         {/* Countdown */}
         <div className="flex flex-col items-center pt-6">
-          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" />
+          <DeskClockTimer timeLeft={timeLeft} totalSeconds={90} tension={tension} showProgressBar={true} size="medium" />
         </div>
 
         {/* Encryptor info */}

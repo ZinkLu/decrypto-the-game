@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { rawColors } from '../../theme/colors';
 
 interface RubberStampProps {
@@ -29,6 +30,7 @@ export function RubberStamp({
   className = '',
   animated = false,
 }: RubberStampProps) {
+  const filterId = useId();
   const resolvedColor = colorMap[color];
   const sizeStyle = sizeMap[size];
 
@@ -45,15 +47,13 @@ export function RubberStamp({
         letterSpacing: sizeStyle.letterSpacing,
         transform: `rotate(${rotation}deg)`,
         opacity: 0.85,
-        // Rough stamp edge effect via SVG filter
-        filter: 'url(#stamp-rough)',
+        filter: `url(#stamp-rough-${filterId})`,
         animation: animated ? 'stamp-press 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)' : 'none',
       }}
     >
-      {/* SVG filter for rough edges */}
       <svg width="0" height="0" style={{ position: 'absolute' }}>
         <defs>
-          <filter id="stamp-rough">
+          <filter id={`stamp-rough-${filterId}`}>
             <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="4" result="noise" />
             <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.5" xChannelSelector="R" yChannelSelector="G" />
           </filter>

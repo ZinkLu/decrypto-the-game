@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { TensionLevel, rawColors } from '../theme/colors';
+import { rawColors } from '../theme/colors';
 import { DeskClockTimer, AgentPanel, DossierEffectLayer } from '../components/dossier';
 import { motion } from 'framer-motion';
 import { useGameStore } from '../store/gameStore';
+import { useCountdown } from '../hooks/useCountdown';
 
 type SlotStatus = 'empty' | 'focused' | 'filled';
 
@@ -247,16 +248,19 @@ const mascotConfig = {
   waiting: { emoji: '⏳', message: 'Awaiting result...' },
 };
 
+const CIRCLED_DIGITS = ['①', '②', '③', '④'];
+
 export default function OpponentIntercepting() {
   const { clues: currentClues, history: gameHistory, submitIntercept, sendProgress } = useGameStore();
 
-  const [timeLeft, setTimeLeft] = useState(45);
-  const [tension, setTension] = useState<TensionLevel>('normal');
   const [focusedSlot, setFocusedSlot] = useState(1);
   const [submitted, setSubmitted] = useState(false);
   const [mascotState, setMascotState] = useState<keyof typeof mascotConfig>('targeting');
 
-  const circledDigits = ['①', '②', '③', '④'];
+  const { timeLeft, tension } = useCountdown({
+    totalSeconds: 45,
+    thresholds: { warning: 15, tense: 8, critical: 3 },
+  });
   const intelData: IntelRow[] = useMemo(() =>
     gameHistory
       .filter((row) => row.clues.length > 0)
@@ -264,7 +268,7 @@ export default function OpponentIntercepting() {
         round: row.round,
         clues: row.clues,
         sequence: row.secret
-          ? row.secret.map((n) => circledDigits[n - 1] || String(n)).join(' ')
+          ? row.secret.map((n) => CIRCLED_DIGITS[n - 1] || String(n)).join(' ')
           : '???',
       })),
     [gameHistory],
@@ -276,45 +280,11 @@ export default function OpponentIntercepting() {
     }))
   );
 
+  // Broadcast initial idle state — ensures InterceptedWaiting starts clean
   useEffect(() => {
-    if (timeLeft > 15) setTension('normal');
-    else if (timeLeft > 8) setTension('warning');
-    else if (timeLeft > 3) setTension('tense');
-    else setTension('critical');
-  }, [timeLeft]);
-
-  useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) { clearInterval(timer); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
-
-  // Keyboard shortcut
-  useEffect(() => {
-    if (submitted) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const num = parseInt(e.key);
-      if (num >= 1 && num <= 4) handleNumberSelect(num);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  });
-
-  const usedNumbers = slots.map((s) => s.answer).filter((a): a is number => a !== null);
-  const allFilled = slots.every((s) => s.answer !== null);
-
-  useEffect(() => {
-    if (submitted) return;
-    const filledCount = slots.filter((s) => s.answer !== null).length;
-    if (filledCount === 0) setMascotState('targeting');
-    else if (filledCount === 1) setMascotState('hasIdea');
-    else if (filledCount >= 2) setMascotState('ready');
-  }, [slots, submitted]);
+    sendProgress('intercept', 0, { state: 'idle' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleNumberSelect = useCallback((num: number) => {
     if (submitted) return;
@@ -328,6 +298,28 @@ export default function OpponentIntercepting() {
       return newSlots;
     });
   }, [focusedSlot, submitted, sendProgress]);
+
+  // Keyboard shortcut
+  useEffect(() => {
+    if (submitted) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const num = parseInt(e.key);
+      if (num >= 1 && num <= 4) handleNumberSelect(num);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [submitted, handleNumberSelect]);
+
+  const usedNumbers = slots.map((s) => s.answer).filter((a): a is number => a !== null);
+  const allFilled = slots.every((s) => s.answer !== null);
+
+  useEffect(() => {
+    if (submitted) return;
+    const filledCount = slots.filter((s) => s.answer !== null).length;
+    if (filledCount === 0) setMascotState('targeting');
+    else if (filledCount === 1) setMascotState('hasIdea');
+    else if (filledCount >= 2) setMascotState('ready');
+  }, [slots, submitted]);
 
   const handleSlotClick = (slotId: number) => {
     if (submitted) return;
@@ -343,6 +335,7 @@ export default function OpponentIntercepting() {
     setSubmitted(true);
     setMascotState('waiting');
     const guess = slots.map((s) => s.answer!) as [number, number, number];
+    sendProgress('intercept', 3, { state: 'submitted' });
     submitIntercept(guess);
   };
 
@@ -375,7 +368,7 @@ export default function OpponentIntercepting() {
       <div className="relative z-10 h-full flex flex-col">
         {/* Countdown */}
         <div className="flex flex-col items-center pt-4">
-          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" theme="opponent" />
+          <DeskClockTimer timeLeft={timeLeft} totalSeconds={45} tension={tension} showProgressBar={true} size="medium" theme="opponent" />
         </div>
 
         {/* Title */}

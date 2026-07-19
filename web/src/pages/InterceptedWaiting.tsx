@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { TensionLevel, rawColors, alertTensionConfig } from '../theme/colors';
+import { rawColors, alertTensionConfig } from '../theme/colors';
 import { DeskClockTimer, RubberStamp, AgentPanel, DossierEffectLayer } from '../components/dossier';
 import { useGameStore } from '../store/gameStore';
-
-const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+import { useCountdown } from '../hooks/useCountdown';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 
 interface CodeWord {
   number: number;
@@ -11,7 +11,7 @@ interface CodeWord {
 }
 
 // Scanning target with crosshair lock and sweep line
-function ScanningTarget({ scanSpeed }: { scanSpeed: number }) {
+function ScanningTarget({ scanSpeed, prefersReducedMotion }: { scanSpeed: number; prefersReducedMotion: boolean }) {
   return (
     <div className="flex flex-col items-center gap-2">
       <div
@@ -56,7 +56,7 @@ function ScanningTarget({ scanSpeed }: { scanSpeed: number }) {
 }
 
 // Code word slot showing the team's words under threat
-function CodeWordSlot({ codeword, isFlashing }: { codeword: CodeWord; isFlashing: boolean }) {
+function CodeWordSlot({ codeword, isFlashing, prefersReducedMotion }: { codeword: CodeWord; isFlashing: boolean; prefersReducedMotion: boolean }) {
   return (
     <div
       className="flex flex-col items-center p-2 lg:p-3 rounded relative"
@@ -114,11 +114,13 @@ function ThreatMeter({ level }: { level: number }) {
 }
 
 export default function InterceptedWaiting() {
-  const { myWords, round, aiStatus, playerProgress } = useGameStore();
-  void round;
+  const { myWords, aiStatus, playerProgress } = useGameStore();
+  const prefersReducedMotion = useReducedMotion();
 
-  const [timeLeft, setTimeLeft] = useState(45);
-  const [tension, setTension] = useState<TensionLevel>('normal');
+  const { timeLeft, tension } = useCountdown({
+    totalSeconds: 45,
+    thresholds: { warning: 15, tense: 8, critical: 3 },
+  });
   const [threatLevel, setThreatLevel] = useState(2);
   const [flashingCard, setFlashingCard] = useState(-1);
   const [opponentProgress, setOpponentProgress] = useState(0);
@@ -131,38 +133,28 @@ export default function InterceptedWaiting() {
     || (playerProgress?.action === 'intercept' ? playerProgress.step : 0);
 
   useEffect(() => {
-    setOpponentProgress((prev) => Math.max(prev, interceptStep));
-    setThreatLevel(2 + Math.max(opponentProgress, interceptStep) * 2);
+    setOpponentProgress((prev) => {
+      const newProgress = Math.max(prev, interceptStep);
+      setThreatLevel(2 + Math.max(newProgress, interceptStep) * 2);
+      return newProgress;
+    });
   }, [interceptStep]);
 
+  // Random card flash effect — inner timeouts tracked for cleanup
   useEffect(() => {
-    if (timeLeft > 15) setTension('normal');
-    else if (timeLeft > 8) setTension('warning');
-    else if (timeLeft > 3) setTension('tense');
-    else setTension('critical');
-  }, [timeLeft]);
-
-  useEffect(() => {
-    if (timeLeft <= 0) return;
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) { clearInterval(timer); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft]);
-
-  // Random card flash effect
-  useEffect(() => {
+    const pendingTimeouts: ReturnType<typeof setTimeout>[] = [];
     const speed = tension === 'warning' || tension === 'tense' || tension === 'critical' ? 2000 : 3000;
     flashTimerRef.current = setInterval(() => {
       const idx = Math.floor(Math.random() * codewords.length);
       setFlashingCard(idx);
-      setTimeout(() => setFlashingCard(-1), 1500);
+      const tid = setTimeout(() => setFlashingCard(-1), 1500);
+      pendingTimeouts.push(tid);
     }, speed);
-    return () => clearInterval(flashTimerRef.current);
-  }, [tension]);
+    return () => {
+      clearInterval(flashTimerRef.current);
+      pendingTimeouts.forEach(clearTimeout);
+    };
+  }, [tension, codewords.length]);
 
   const tensionCfg = alertTensionConfig[tension];
 
@@ -198,7 +190,7 @@ export default function InterceptedWaiting() {
       <div className="relative z-10 h-full flex flex-col">
         {/* Countdown */}
         <div className="flex flex-col items-center pt-4">
-          <DeskClockTimer totalSeconds={timeLeft} showProgressBar={true} size="medium" theme="alert" />
+          <DeskClockTimer timeLeft={timeLeft} totalSeconds={45} tension={tension} showProgressBar={true} size="medium" theme="alert" />
         </div>
 
         {/* Warning stamp */}
@@ -218,25 +210,25 @@ export default function InterceptedWaiting() {
           >
             {/* Scanning target */}
             <div className="flex justify-center py-3">
-              <ScanningTarget scanSpeed={tensionCfg.scanSpeed} />
+              <ScanningTarget scanSpeed={tensionCfg.scanSpeed} prefersReducedMotion={prefersReducedMotion} />
             </div>
 
             {/* Code word slots - Desktop: 3+1 */}
             <div className="hidden lg:flex flex-col items-center gap-4 py-3">
               <div className="flex justify-center gap-6">
                 {codewords.slice(0, 3).map((cw, i) => (
-                  <CodeWordSlot key={cw.number} codeword={cw} isFlashing={flashingCard === i} />
+                  <CodeWordSlot key={cw.number} codeword={cw} isFlashing={flashingCard === i} prefersReducedMotion={prefersReducedMotion} />
                 ))}
               </div>
               <div className="flex justify-center">
-                <CodeWordSlot codeword={codewords[3]} isFlashing={flashingCard === 3} />
+                <CodeWordSlot codeword={codewords[3]} isFlashing={flashingCard === 3} prefersReducedMotion={prefersReducedMotion} />
               </div>
             </div>
 
             {/* Code word slots - Mobile: 2×2 */}
             <div className="lg:hidden grid grid-cols-2 gap-3 py-3 max-w-xs mx-auto">
               {codewords.map((cw, i) => (
-                <CodeWordSlot key={cw.number} codeword={cw} isFlashing={flashingCard === i} />
+                <CodeWordSlot key={cw.number} codeword={cw} isFlashing={flashingCard === i} prefersReducedMotion={prefersReducedMotion} />
               ))}
             </div>
           </div>

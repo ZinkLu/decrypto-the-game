@@ -94,7 +94,7 @@ export default function Home() {
                 aria-label="Nickname"
               />
               <div className="flex gap-3 justify-center">
-                <DossierButton variant="secondary" size="large" onClick={() => { setMode('menu'); setNickname(''); }}>
+                <DossierButton variant="secondary" size="large" onClick={() => { setMode('menu'); setNickname(''); setRoomCode(''); }}>
                   BACK
                 </DossierButton>
                 <DossierButton variant="primary" size="large" onClick={handleCreate} disabled={!nickname.trim()}>

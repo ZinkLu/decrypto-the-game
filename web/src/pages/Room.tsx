@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { rawColors } from '../theme/colors';
 import {
   ManilaFolder,
@@ -29,12 +29,19 @@ export default function Room() {
   const isOwner = myPlayerID === ownerID;
 
   const [copied, setCopied] = useState(false);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  // Cleanup copy timer on unmount
+  useEffect(() => {
+    return () => { if (copyTimerRef.current) clearTimeout(copyTimerRef.current); };
+  }, []);
 
   const handleCopyCode = () => {
     if (roomCode) {
       navigator.clipboard.writeText(roomCode).then(() => {
         setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = setTimeout(() => setCopied(false), 2000);
       });
     }
   };
