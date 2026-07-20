@@ -108,6 +108,7 @@ const stateExpr = `JSON.stringify({
   canStart: !![...document.querySelectorAll('.btn-start')].find(b=>!b.disabled),
   clueInputs: [...document.querySelectorAll('.clue-inputs input')].filter(i=>!i.disabled).length,
   digits: !!document.querySelector('.digit-selector:not(.disabled)'),
+  assign: !!document.querySelector('.word-assign:not(.disabled)'),
   actionBtn: (()=>{const b=[...document.querySelectorAll('.action-panel .btn')].find(x=>!x.disabled && !x.textContent.includes('放弃')); return b?b.textContent.trim():null})(),
   title: document.querySelector('.view-title')?.textContent ?? null,
   banner: document.querySelector('.result-banner-title')?.textContent ?? null,
@@ -158,7 +159,7 @@ while (Date.now() < deadline) {
   await sleep(700);
   st = JSON.parse(await evalJS(stateExpr));
 
-  const sig = `${st.title}|${st.banner}|${st.clueInputs}|${st.digits}|${st.over}`;
+  const sig = `${st.title}|${st.banner}|${st.clueInputs}|${st.digits}|${st.assign}|${st.over}`;
   if (sig !== lastSig) {
     lastSig = sig;
     if (st.over && !seen.has('over')) {
@@ -173,8 +174,8 @@ while (Date.now() < deadline) {
     } else if (st.clueInputs > 0 && !seen.has('encrypt')) {
       seen.add('encrypt');
       await shot('10-encrypt');
-    } else if (st.digits && !seen.has(`digits-${st.title}`)) {
-      seen.add(`digits-${st.title}`);
+    } else if ((st.digits || st.assign) && !seen.has(`input-${st.title}`)) {
+      seen.add(`input-${st.title}`);
       await shot(`20-input-${st.title?.replace(/\W+/g, '_')}`);
     } else if (st.title && !seen.has(`wait-${st.title}`)) {
       seen.add(`wait-${st.title}`);
@@ -188,7 +189,7 @@ while (Date.now() < deadline) {
     log('browser submitted clues');
     continue;
   }
-  // act: pick digits (confirm button enables only after 3 picks)
+  // act: pick digits (intercept — confirm button enables only after 3 picks)
   if (st.digits) {
     await evalJS(`(()=>{const keys=[...document.querySelectorAll('.digit-selector:not(.disabled) .digit-key')].filter(k=>/^\\d$/.test(k.textContent)); keys[0]?.click(); return 1})()`);
     await sleep(150);
@@ -198,6 +199,17 @@ while (Date.now() < deadline) {
     await sleep(200);
     await evalJS(`(()=>{const b=[...document.querySelectorAll('.action-panel .btn')].find(x=>!x.disabled && !x.textContent.includes('放弃')); b?.click(); return 1})()`);
     log(`browser submitted guess (${st.actionBtn ?? 'digits'})`);
+    continue;
+  }
+  // act: assign words to clues (decrypt — click 3 chips then confirm)
+  if (st.assign) {
+    for (let i = 0; i < 3; i++) {
+      await evalJS(`(()=>{const chips=[...document.querySelectorAll('.word-assign:not(.disabled) .word-chip')]; chips[${i}]?.click(); return 1})()`);
+      await sleep(150);
+    }
+    await sleep(200);
+    await evalJS(`(()=>{const b=[...document.querySelectorAll('.action-panel .btn')].find(x=>!x.disabled); b?.click(); return 1})()`);
+    log(`browser assigned words (${st.actionBtn ?? 'assign'})`);
   }
 }
 

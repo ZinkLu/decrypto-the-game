@@ -1,13 +1,16 @@
 // View implementations — one per UI state listed in HANDOFF_THREEJS.md §6.
+// All views render inside the room's main screen; the archive (history)
+// lives in the side screen and is owned by the app shell, not by views.
 
-import type { AIStatus, GameState, Phase, Store } from '../store';
-import type { PlayerInfo, PlayerProgressData } from '../protocol';
+import type { GameState, Phase, Store } from '../store';
+import type { PlayerInfo } from '../protocol';
 import {
   CountdownRing,
   DigitSelector,
+  WordAssign,
   clueBoard,
   el,
-  historyPanel,
+  phaseStrip,
   scorePips,
   thinkingDots,
   wordsStrip,
@@ -55,54 +58,71 @@ function phaseLabel(phase: Phase): string {
   }
 }
 
-/** Live monitor card: latest other-player progress + AI status for an action. */
-function monitorCard(
-  s: GameState,
-  action: string,
-): HTMLElement {
-  const box = el('div', 'panel monitor');
+function roleLabel(role: string): string {
+  switch (role) {
+    case 'encryptor':
+      return '你是本回合加密者';
+    case 'teammate':
+      return '你是解密方（加密者队友）';
+    case 'opponent':
+      return '你是拦截方（敌方全员）';
+    default:
+      return '';
+  }
+}
+
+/** Live monitor card: latest other-player progress + AI status for an action.
+ *  Re-renders only when the underlying data changes (signature guard). */
+function monitorCard(s: GameState, action: string): HTMLElement {
+  const box = el('div', 'monitor');
   box.append(el('div', 'panel-title', '实时监控'));
   const rows = el('div', 'monitor-rows');
-
-  const render = (p: PlayerProgressData | null, ai: AIStatus | null): void => {
-    rows.textContent = '';
-    let any = false;
-    if (ai && ai.action === action) {
-      any = true;
-      const row = el('div', 'monitor-row');
-      row.append(el('span', 'monitor-name monitor-ai', `◈ ${ai.player}`));
-      row.append(el('span', 'monitor-state', `${ACTION_LABEL[ai.action] ?? ai.action} ${ai.step}/${ai.total}`));
-      rows.append(row);
-    }
-    if (p && p.action === action && p.player !== s.myNickname) {
-      any = true;
-      const row = el('div', 'monitor-row');
-      row.append(el('span', 'monitor-name', p.player));
-      const dots = el('span', 'monitor-dots');
-      for (let i = 0; i < 3; i++) {
-        const on = p.guesses ? (p.guesses[i] ?? 0) > 0 : i < p.step;
-        dots.append(el('span', `monitor-dot${on ? ' on' : ''}${p.focus === i + 1 ? ' focus' : ''}`, '●'));
-      }
-      row.append(dots);
-      const stateText =
-        p.state === 'submitted' ? '已提交' : p.state === 'editing' ? '输入中' : '待命';
-      row.append(el('span', `monitor-state${p.state === 'submitted' ? ' submitted' : ''}`, stateText));
-      rows.append(row);
-    }
-    if (!any) rows.append(el('div', 'monitor-empty', '频道静默…'));
-  };
-
-  render(s.progress, s.aiStatus);
   box.append(rows);
   box.dataset.action = action;
+  paintMonitor(box, s);
   return box;
 }
 
-/** Update an existing monitor card in place. */
+function paintMonitor(box: HTMLElement, s: GameState): void {
+  const action = box.dataset.action ?? '';
+  const p = s.progress && s.progress.action === action && s.progress.player !== s.myNickname
+    ? s.progress
+    : null;
+  const ai = s.aiStatus && s.aiStatus.action === action ? s.aiStatus : null;
+  const sig = JSON.stringify([p, ai]);
+  if (sig === box.dataset.sig) return;
+  box.dataset.sig = sig;
+
+  const rows = box.querySelector('.monitor-rows') as HTMLElement;
+  rows.textContent = '';
+  let any = false;
+  if (ai) {
+    any = true;
+    const row = el('div', 'monitor-row');
+    row.append(el('span', 'monitor-name monitor-ai', `◈ ${ai.player}`));
+    row.append(el('span', 'monitor-state', `${ACTION_LABEL[ai.action] ?? ai.action} ${ai.step}/${ai.total}`));
+    rows.append(row);
+  }
+  if (p) {
+    any = true;
+    const row = el('div', 'monitor-row');
+    row.append(el('span', 'monitor-name', p.player));
+    const dots = el('span', 'monitor-dots');
+    for (let i = 0; i < 3; i++) {
+      const on = p.guesses ? (p.guesses[i] ?? 0) > 0 : i < p.step;
+      dots.append(el('span', `monitor-dot${on ? ' on' : ''}${p.focus === i + 1 ? ' focus' : ''}`, '●'));
+    }
+    row.append(dots);
+    const stateText =
+      p.state === 'submitted' ? '已提交' : p.state === 'editing' ? '输入中' : '待命';
+    row.append(el('span', `monitor-state${p.state === 'submitted' ? ' submitted' : ''}`, stateText));
+    rows.append(row);
+  }
+  if (!any) rows.append(el('div', 'monitor-empty', '频道静默…'));
+}
+
 function refreshMonitor(card: HTMLElement, s: GameState): void {
-  const action = card.dataset.action ?? '';
-  const fresh = monitorCard(s, action);
-  card.replaceWith(fresh);
+  paintMonitor(card, s);
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +150,14 @@ export class HomeView extends BaseView {
     brand.append(el('div', 'brand-sub', 'DECRYPTO · 冷战密码战'));
     wrap.append(brand);
 
-    const card = el('div', 'panel home-card');
+    const brief = el('div', 'brief');
+    brief.append(el('div', 'brief-title', '—— 任务简报 ——'));
+    brief.append(el('div', 'brief-line', '① 加密：用 3 条线索把密码讲给队友 —— 但别教会敌人'));
+    brief.append(el('div', 'brief-line', '② 拦截：盯着敌方的每一条线索，推理词序、截下密码'));
+    brief.append(el('div', 'brief-line', '③ 获胜：拦截成功两次，或逼对方两次解密失误'));
+    wrap.append(brief);
+
+    const card = el('div', 'home-card');
     card.append(el('div', 'panel-title', '建立加密频道'));
 
     const nickField = el('label', 'field');
@@ -183,9 +210,6 @@ export class HomeView extends BaseView {
     conn.append(this.connDot, this.connText);
     wrap.append(conn);
 
-    const hint = el('div', 'home-hint', '两支情报机构 · 各持 4 个秘密词 · 让队友听懂，让敌人迷路');
-    wrap.append(hint);
-
     this.el.append(wrap);
   }
 
@@ -211,11 +235,12 @@ export class HomeView extends BaseView {
 }
 
 // ---------------------------------------------------------------------------
-// 2. Lobby
+// 2. Lobby — signature-guarded: progress broadcasts don't repaint the room
 // ---------------------------------------------------------------------------
 
 export class LobbyView extends BaseView {
   readonly id = 'lobby';
+  private seen = '';
 
   constructor(store: Store) {
     super(store);
@@ -223,8 +248,20 @@ export class LobbyView extends BaseView {
   }
 
   update(s: GameState): void {
+    const sig = JSON.stringify([
+      s.roomCode,
+      s.players,
+      s.teamA,
+      s.teamB,
+      s.ownerID,
+      s.canStart,
+      s.myPlayerID,
+    ]);
+    if (sig === this.seen) return;
+    this.seen = sig;
+
     this.el.textContent = '';
-    const wrap = el('div', 'lobby-wrap panel');
+    const wrap = el('div', 'lobby-wrap');
     const head = el('div', 'lobby-head');
     head.append(el('div', 'panel-title', '行动集结点'));
     const code = el('button', 'lobby-code', s.roomCode ?? '····');
@@ -332,21 +369,8 @@ export class LobbyView extends BaseView {
 }
 
 // ---------------------------------------------------------------------------
-// Shared game-view layout helpers
+// Shared game-view helpers
 // ---------------------------------------------------------------------------
-
-function gameShell(center: HTMLElement, side?: HTMLElement): HTMLElement {
-  const wrap = el('div', 'game-grid');
-  const mid = el('div', 'game-center');
-  mid.append(center);
-  wrap.append(mid);
-  if (side) {
-    const right = el('div', 'game-side');
-    right.append(side);
-    wrap.append(right);
-  }
-  return wrap;
-}
 
 function viewHeader(title: string, sub: string, countdown?: CountdownRing): HTMLElement {
   const head = el('div', 'view-header');
@@ -358,8 +382,16 @@ function viewHeader(title: string, sub: string, countdown?: CountdownRing): HTML
   return head;
 }
 
+/** Round guidance: flow strip + role banner, on top of every game view. */
+function guidance(s: GameState): HTMLElement {
+  const box = el('div', 'guidance');
+  box.append(phaseStrip(s.phase, s.round));
+  box.append(el('div', 'role-line', roleLabel(s.myRole)));
+  return box;
+}
+
 function codeCards(digits: number[], words: string[], title: string): HTMLElement {
-  const box = el('div', 'panel code-cards');
+  const box = el('div', 'code-cards');
   box.append(el('div', 'panel-title', title));
   const row = el('div', 'code-card-row');
   for (let i = 0; i < 3; i++) {
@@ -391,17 +423,19 @@ export class EncryptView extends BaseView {
     const ring = new CountdownRing(90, '出题剩余');
     this.disposables.push(ring);
 
-    const center = el('div', 'panel action-panel');
+    const center = el('div', 'action-panel');
+    center.append(guidance(s));
     center.append(
       viewHeader(`第 ${s.round} 回合 · 你是加密者`, '按密码顺序给出 3 条线索：队友要懂，敌人要懵', ring),
     );
     center.append(codeCards(s.secretDigits, s.secretWords, '本轮密码 · 绝密'));
-    center.append(wordsStrip(s.myWords));
 
     const clueBox = el('div', 'clue-inputs');
     for (let i = 0; i < 3; i++) {
       const field = el('label', 'field field-clue');
-      field.append(el('span', 'field-label', `线索 0${i + 1} → 词位 ${s.secretDigits[i] ?? '?'}`));
+      const digit = s.secretDigits[i] ?? 0;
+      const word = digit > 0 ? (s.myWords[digit - 1] ?? '?') : '?';
+      field.append(el('span', 'field-label', `线索 0${i + 1} → 词位 ${digit} · ${word}`));
       const input = el('input', 'input');
       input.placeholder = '一句话暗示，别说漏嘴';
       input.maxLength = 24;
@@ -422,7 +456,7 @@ export class EncryptView extends BaseView {
     this.submitState = el('div', 'submit-state');
     center.append(this.submitState);
 
-    this.el.append(gameShell(center, historyPanel(s.history, s.myTeam)));
+    this.el.append(center);
     this.refreshSubmitBtn();
     this.inputs[0]?.focus();
     this.emitProgress('idle', 0);
@@ -481,7 +515,8 @@ export class WaitCluesView extends BaseView {
     const ring = new CountdownRing(90, '出题剩余');
     this.disposables.push(ring);
 
-    const center = el('div', 'panel action-panel');
+    const center = el('div', 'action-panel');
+    center.append(guidance(s));
     const title = isOpponent
       ? `敌方加密者 ${s.encryptor} 正在出题`
       : `${s.encryptor} 正在编制密电`;
@@ -498,12 +533,11 @@ export class WaitCluesView extends BaseView {
     this.monitor = monitorCard(s, 'encrypt');
     center.append(this.monitor);
 
-    this.el.append(gameShell(center, historyPanel(s.history, s.myTeam)));
+    this.el.append(center);
   }
 
   update(s: GameState): void {
     refreshMonitor(this.monitor, s);
-    this.monitor = this.el.querySelector('.monitor') as HTMLElement;
   }
 }
 
@@ -518,6 +552,7 @@ export class InterceptInputView extends BaseView {
   private abortBtn: HTMLButtonElement;
   private submitted = false;
   private submitState: HTMLElement;
+  private echo: HTMLElement;
 
   constructor(store: Store) {
     super(store);
@@ -527,7 +562,8 @@ export class InterceptInputView extends BaseView {
     const ring = new CountdownRing(60, '拦截窗口');
     this.disposables.push(ring);
 
-    const center = el('div', 'panel action-panel alert');
+    const center = el('div', 'action-panel alert');
+    center.append(guidance(s));
     center.append(
       viewHeader(
         `第 ${s.round} 回合 · 拦截行动`,
@@ -539,15 +575,19 @@ export class InterceptInputView extends BaseView {
 
     this.selector = new DigitSelector();
     this.disposables.push(this.selector);
+    this.echo = el('div', 'digit-echo');
     this.selector.onChange = (guesses, filled, focus) => {
       this.store.sendProgress('intercept', filled, {
         state: 'editing',
         focus,
         guesses,
       });
+      this.paintEcho(guesses);
       this.refreshBtns();
     };
     center.append(this.selector.el);
+    center.append(this.echo);
+    this.paintEcho([0, 0, 0]);
 
     const btnRow = el('div', 'btn-row');
     this.submitBtn = el('button', 'btn btn-danger', '发出拦截');
@@ -562,8 +602,14 @@ export class InterceptInputView extends BaseView {
     this.submitState = el('div', 'submit-state');
     center.append(this.submitState);
 
-    this.el.append(gameShell(center, historyPanel(s.history, s.myTeam)));
+    this.el.append(center);
     this.store.sendProgress('intercept', 0, { state: 'idle', guesses: [0, 0, 0] });
+  }
+
+  private paintEcho(guesses: number[]): void {
+    this.echo.textContent = guesses
+      .map((g, i) => `线索 0${i + 1} → ${g > 0 ? `第 ${g} 位` : '？'}`)
+      .join('　·　');
   }
 
   private refreshBtns(): void {
@@ -604,7 +650,8 @@ export class InterceptWatchView extends BaseView {
     const ring = new CountdownRing(60, '拦截窗口');
     this.disposables.push(ring);
 
-    const center = el('div', 'panel action-panel alert');
+    const center = el('div', 'action-panel alert');
+    center.append(guidance(s));
     center.append(
       viewHeader(
         `第 ${s.round} 回合 · 警报`,
@@ -617,22 +664,21 @@ export class InterceptWatchView extends BaseView {
     this.monitor = monitorCard(s, 'intercept');
     center.append(this.monitor);
 
-    this.el.append(gameShell(center, historyPanel(s.history, s.myTeam)));
+    this.el.append(center);
   }
 
   update(s: GameState): void {
     refreshMonitor(this.monitor, s);
-    this.monitor = this.el.querySelector('.monitor') as HTMLElement;
   }
 }
 
 // ---------------------------------------------------------------------------
-// 7. Decrypt input view (teammate during DECRYPT)
+// 7. Decrypt input view (teammate during DECRYPT) — click words, not digits
 // ---------------------------------------------------------------------------
 
 export class DecryptInputView extends BaseView {
   readonly id = 'decrypt-input';
-  private selector: DigitSelector;
+  private assign: WordAssign;
   private submitBtn: HTMLButtonElement;
   private submitted = false;
   private submitState: HTMLElement;
@@ -645,24 +691,23 @@ export class DecryptInputView extends BaseView {
     const ring = new CountdownRing(60, '解密窗口');
     this.disposables.push(ring);
 
-    const center = el('div', 'panel action-panel');
+    const center = el('div', 'action-panel');
+    center.append(guidance(s));
     center.append(
       viewHeader(
         `第 ${s.round} 回合 · 解密行动`,
-        '把每条线索对到我方密码本中的词位（1–4）',
+        '给每条线索点选我方密码本中的词 —— 词位即密码',
         ring,
       ),
     );
-    center.append(clueBoard(s.clues, '我方收到的线索'));
-    center.append(wordsStrip(s.myWords));
 
-    this.selector = new DigitSelector();
-    this.disposables.push(this.selector);
-    this.selector.onChange = (guesses, filled, focus) => {
+    this.assign = new WordAssign(s.clues, s.myWords);
+    this.disposables.push(this.assign);
+    this.assign.onChange = (guesses, filled, focus) => {
       this.store.sendProgress('decrypt', filled, { state: 'editing', focus, guesses });
       this.submitBtn.disabled = this.submitted || filled < 3;
     };
-    center.append(this.selector.el);
+    center.append(this.assign.el);
 
     const btnRow = el('div', 'btn-row');
     this.submitBtn = el('button', 'btn btn-primary', '确认密码');
@@ -674,17 +719,17 @@ export class DecryptInputView extends BaseView {
     this.submitState = el('div', 'submit-state');
     center.append(this.submitState);
 
-    this.el.append(gameShell(center, historyPanel(s.history, s.myTeam)));
+    this.el.append(center);
     this.store.sendProgress('decrypt', 0, { state: 'idle', guesses: [0, 0, 0] });
   }
 
   private submit(): void {
-    if (this.submitted || this.selector.filled < 3) return;
+    if (this.submitted || this.assign.filled < 3) return;
     this.submitted = true;
-    const guess = this.selector.guesses as [number, number, number];
+    const guess = this.assign.guesses as [number, number, number];
     this.store.submitDecrypt(guess);
     this.store.sendProgress('decrypt', 3, { state: 'submitted', guesses: guess });
-    this.selector.setDisabled(true);
+    this.assign.setDisabled(true);
     this.submitBtn.disabled = true;
     this.submitState.textContent = '密码已提交 · 等待核对…';
     this.submitState.classList.add('show');
@@ -709,21 +754,19 @@ export class DecryptWatchView extends BaseView {
     const ring = new CountdownRing(60, '解密窗口');
     this.disposables.push(ring);
 
-    const center = el('div', 'panel action-panel');
-    center.append(
-      viewHeader(`第 ${s.round} 回合 · 队友正在解密`, '你知道答案 —— 保持沉默，静观其变', ring),
-    );
+    const center = el('div', 'action-panel');
+    center.append(guidance(s));
+    center.append(viewHeader(`第 ${s.round} 回合 · 队友正在解密`, '你知道答案 —— 保持沉默，静观其变', ring));
     center.append(codeCards(s.secretDigits, s.secretWords, '本轮密码 · 答案'));
     center.append(clueBoard(s.clues, '你已发出的线索'));
     this.monitor = monitorCard(s, 'decrypt');
     center.append(this.monitor);
 
-    this.el.append(gameShell(center, historyPanel(s.history, s.myTeam)));
+    this.el.append(center);
   }
 
   update(s: GameState): void {
     refreshMonitor(this.monitor, s);
-    this.monitor = this.el.querySelector('.monitor') as HTMLElement;
   }
 }
 
@@ -743,7 +786,8 @@ export class DecryptStandbyView extends BaseView {
     const ring = new CountdownRing(60, '解密窗口');
     this.disposables.push(ring);
 
-    const center = el('div', 'panel action-panel');
+    const center = el('div', 'action-panel');
+    center.append(guidance(s));
     center.append(
       viewHeader(
         `第 ${s.round} 回合 · 待命`,
@@ -756,12 +800,11 @@ export class DecryptStandbyView extends BaseView {
     this.monitor = monitorCard(s, 'decrypt');
     center.append(this.monitor);
 
-    this.el.append(gameShell(center, historyPanel(s.history, s.myTeam)));
+    this.el.append(center);
   }
 
   update(s: GameState): void {
     refreshMonitor(this.monitor, s);
-    this.monitor = this.el.querySelector('.monitor') as HTMLElement;
   }
 }
 
@@ -814,7 +857,7 @@ export class ResultView extends BaseView {
       );
     }
 
-    const recap = el('div', 'panel result-recap');
+    const recap = el('div', 'result-recap');
     recap.append(clueBoard(s.clues, '本轮线索'));
     if (s.secretDigits.length === 3 && s.secretDigits.some((d) => d > 0)) {
       recap.append(codeCards(s.secretDigits, s.secretWords, '本轮密码'));
@@ -881,7 +924,7 @@ export class GameOverView extends BaseView {
     );
     wrap.append(banner);
 
-    const scores = el('div', 'panel result-final');
+    const scores = el('div', 'result-final');
     scores.append(el('div', 'panel-title', '最终战果'));
     for (const [team, score] of [
       ['A', s.scoreA],

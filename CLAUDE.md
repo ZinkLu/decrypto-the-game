@@ -46,7 +46,7 @@ go test ./internal/core/
 - **`internal/game/`** — Bridge layer (WebSocket <-> game state machine)
 - **`internal/server/`** — Message dispatcher (routes WebSocket messages to room/game handlers)
 - **`internal/ai/`** — AI players (LLM Provider abstraction + Claude/OpenAI implementations)
-- **`webgl/`** — Active frontend: three.js + vanilla TypeScript (Vite). Retro analog spy-radio console theme (Decrypto box-art palette: cream enamel panels with screws, navy/red team colors, CRT phosphor readouts). The WebGL stage is the box's radio console rebuilt in 3D (round oscilloscope, VU meter, knobs, keypad, fader, lamps) in a dark navy room. `src/protocol.ts` mirrors `internal/ws/message.go`; `src/store.ts` is the protocol state machine; `src/scene.ts` the render stage; `src/ui/` the view layer. `web/src/store/gameStore.ts` remains the protocol reference implementation.
+- **`webgl/`** — Active frontend: three.js + vanilla TypeScript (Vite). "Listening Room" concept: a fixed-camera signals post where every screen carries real UI — the DOM overlay is pixel-locked onto the 3D CRTs via projected CSS variables (main tube = game views, side tube = round archive); desk displays show your 4 code words, the VU meter is the phase countdown, wall lamps are the score. `src/protocol.ts` mirrors `internal/ws/message.go`; `src/store.ts` is the protocol state machine; `src/scene.ts` the render stage; `src/ui/` the view layer. `web/src/store/gameStore.ts` remains the protocol reference implementation.
 - **`web/`** — Legacy React frontend (deprecated, kept for reference)
 
 ### Key Architectural Patterns

@@ -1,5 +1,7 @@
-// App shell: routes GameState -> views, renders the persistent HUD, status
-// strip and toasts, and drives the three.js stage (moods, pulses, activity).
+// App shell: routes GameState -> views inside the room's main screen, owns
+// the persistent archive panel in the side screen, renders the minimal HUD,
+// and drives the three.js stage (moods, pulses, activity, codebook, score,
+// VU countdown).
 
 import type { GameState, Phase, Store } from '../store';
 import type { Mood, StageAPI } from '../scene';
@@ -17,7 +19,7 @@ import {
   View,
   WaitCluesView,
 } from './views';
-import { Toasts, el, scorePips } from './widgets';
+import { CountdownRing, HistoryPanel, Toasts, el, scorePips } from './widgets';
 
 const PHASE_ACTION: Partial<Record<Phase, string>> = {
   encrypting: 'encrypt',
@@ -52,11 +54,15 @@ const MOOD_BY_PHASE: Record<Phase, Mood> = {
 export class App {
   private hud: HTMLElement;
   private hudLeft: HTMLElement;
-  private hudCenter: HTMLElement;
   private hudRight: HTMLElement;
+  private chrome: HTMLElement;
+  private chromeRight: HTMLElement;
+  private screenMain: HTMLElement;
+  private screenSide: HTMLElement;
   private viewRoot: HTMLElement;
   private strip: HTMLElement;
   private toasts = new Toasts();
+  private history = new HistoryPanel();
 
   private view: View | null = null;
   private viewId = '';
@@ -65,6 +71,7 @@ export class App {
   private lastResult: GameState['result'] = null;
   private lastProgress: GameState['progress'] = null;
   private lastAI: GameState['aiStatus'] = null;
+  private lastWordsKey = '';
 
   constructor(
     private readonly store: Store,
@@ -73,12 +80,29 @@ export class App {
   ) {
     this.hud = el('div', 'hud');
     this.hudLeft = el('div', 'hud-left');
-    this.hudCenter = el('div', 'hud-center');
     this.hudRight = el('div', 'hud-right');
-    this.hud.append(this.hudLeft, this.hudCenter, this.hudRight);
+    this.hud.append(this.hudLeft, this.hudRight);
+
+    // the room's two screens: main carries the views, side the archive
+    this.screenMain = el('div', 'screen screen-main');
+    // terminal chrome: the screen's own title bar (round / phase / encryptor)
+    this.chrome = el('div', 'screen-chrome');
+    this.chrome.append(el('span', 'chrome-left', '监听终端 K-3 · DECRYPTO'));
+    this.chromeRight = el('span', 'chrome-right');
+    this.chrome.append(this.chromeRight);
     this.viewRoot = el('div', 'view-root');
+    this.screenMain.append(this.chrome, this.viewRoot);
+    this.screenSide = el('div', 'screen screen-side hidden');
+    this.screenSide.append(this.history.el);
+
     this.strip = el('div', 'status-strip');
-    root.append(this.hud, this.viewRoot, this.strip, this.toasts.el);
+    this.screenMain.append(this.strip);
+    this.screenMain.append(this.toasts.el);
+
+    root.append(this.hud, this.screenMain, this.screenSide);
+
+    // the room's VU meter mirrors the active countdown
+    CountdownRing.onChange = (seconds, deadline) => this.stage.setCountdown(seconds, deadline);
 
     store.subscribe((s) => this.render(s));
     this.render(store.state);
@@ -94,6 +118,16 @@ export class App {
     // scene mood
     const mood = MOOD_BY_PHASE[s.phase];
     this.stage.setMood(mood);
+
+    // desk displays: your 4 code words during a match, blank outside
+    const inGame = s.phase !== 'home' && s.phase !== 'room';
+    const wordsKey = inGame ? s.myWords.join('|') : '';
+    if (wordsKey !== this.lastWordsKey) {
+      this.lastWordsKey = wordsKey;
+      this.stage.setCodebook(inGame && s.myWords.length === 4 ? s.myWords : null);
+    }
+    // score lamps on the wall strip
+    this.stage.setScore(s.scoreA, s.scoreB);
 
     // scene pulses on fresh results
     if (s.phase === 'round_result' && s.result) {
@@ -134,6 +168,11 @@ export class App {
       this.viewRoot.append(this.view.el);
     }
     this.view?.update(s);
+
+    // archive side screen: visible during a match, hidden otherwise (the
+    // room shows a standby readout on that tube)
+    this.screenSide.classList.toggle('hidden', !inGame);
+    if (inGame) this.history.update(s.history, s.myTeam, s.myWords);
 
     this.renderHud(s);
     this.renderStrip(s);
@@ -203,22 +242,22 @@ export class App {
       this.hudLeft.append(el('span', `team-badge team-${s.myTeam.toLowerCase()}`, `我方 ${s.myTeam} 队`));
     }
 
-    this.hudCenter.textContent = '';
-    if (s.phase !== 'room' && s.round > 0) {
-      this.hudCenter.append(el('span', 'hud-round', `回合 ${s.round}/16`));
-      const label = PHASE_LABEL[s.phase];
-      if (label) this.hudCenter.append(el('span', 'hud-phase', label));
-      if (s.encryptor && s.phase !== 'game_over') {
-        this.hudCenter.append(el('span', 'hud-encryptor', `加密者 ${s.encryptor}`));
-      }
-    } else if (s.phase === 'room') {
-      this.hudCenter.append(el('span', 'hud-phase', '集结待命'));
-    }
-
     this.hudRight.textContent = '';
     if (s.phase !== 'room') {
       this.hudRight.append(this.hudScore('A', s.scoreA));
       this.hudRight.append(this.hudScore('B', s.scoreB));
+    }
+
+    // terminal chrome inside the main screen: round / phase / encryptor
+    this.chromeRight.textContent = '';
+    if (s.phase !== 'room' && s.round > 0) {
+      const parts = [`回合 ${s.round}/16`];
+      const label = PHASE_LABEL[s.phase];
+      if (label) parts.push(label);
+      if (s.encryptor && s.phase !== 'game_over') parts.push(`加密者 ${s.encryptor}`);
+      this.chromeRight.append(el('span', 'chrome-status', parts.join(' · ')));
+    } else if (s.phase === 'room') {
+      this.chromeRight.append(el('span', 'chrome-status', '集结待命'));
     }
   }
 
