@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/internal/ai"
@@ -26,6 +27,10 @@ type Bridge struct {
 	DecryptCh   chan [3]int
 	AIPlayer    *ai.AIPlayer
 	cancel      context.CancelFunc
+	// phaseDeadline is the current timed phase's timeout, unix milliseconds;
+	// 0 means no timed phase is active. Written before each phase broadcast,
+	// read by full_sync resyncs.
+	phaseDeadline atomic.Int64
 }
 
 // NewBridge creates a Bridge from room data, initialises the core Session,
@@ -114,6 +119,18 @@ func (b *Bridge) Stop() {
 	}
 }
 
+// setPhaseDeadline records the current phase's timeout so it can be
+// broadcast with phase_change and replayed by full_sync.
+func (b *Bridge) setPhaseDeadline(d time.Duration) {
+	b.phaseDeadline.Store(time.Now().Add(d).UnixMilli())
+}
+
+// PhaseDeadline returns the current phase timeout as unix milliseconds,
+// or 0 when no timed phase is active.
+func (b *Bridge) PhaseDeadline() int64 {
+	return b.phaseDeadline.Load()
+}
+
 // ---------------------------------------------------------------------------
 // RegisterHandlers registers all core handlers. Call ONCE at server startup.
 // ---------------------------------------------------------------------------
@@ -165,6 +182,8 @@ func encryptHandler(ctx context.Context, r *core.Round, t *core.Team, p *core.Pl
 
 	log.Printf("[PHASE] Round %d → ENCRYPTING | encryptor=%s (AI=%v) | team=%s",
 		r.GetNumberOfRounds(), p.NickName, isAI(p.UID), b.teamLabel(t))
+	b.setPhaseDeadline(90 * time.Second)
+	defer b.phaseDeadline.Store(0)
 	b.broadcastPhaseChange("encrypting", r)
 
 	// Check if the encryptor is an AI player.
@@ -173,6 +192,8 @@ func encryptHandler(ctx context.Context, r *core.Round, t *core.Team, p *core.Pl
 	}
 
 	// Block on channel waiting for player input.
+	timer := time.NewTimer(90 * time.Second)
+	defer timer.Stop()
 	select {
 	case clues := <-b.CluesCh:
 		// Broadcast clues_submitted to the room.
@@ -190,7 +211,7 @@ func encryptHandler(ctx context.Context, r *core.Round, t *core.Team, p *core.Pl
 		_ = scoreA
 		_ = scoreB
 		return clues, false
-	case <-time.After(90 * time.Second):
+	case <-timer.C:
 		log.Printf("bridge: encryptHandler: timeout waiting for clues in session %s", r.GetGameSession().SessionID())
 		return [3]string{"...", "...", "..."}, false
 	case <-ctx.Done():
@@ -207,16 +228,20 @@ func interceptHandler(ctx context.Context, r *core.Round, opponent *core.Team, t
 
 	log.Printf("[PHASE] Round %d → INTERCEPT | opponent team=%s allAI=%v",
 		r.GetNumberOfRounds(), b.teamLabel(opponent), b.isTeamAllAI(opponent))
+	b.setPhaseDeadline(60 * time.Second)
+	defer b.phaseDeadline.Store(0)
 	b.broadcastPhaseChange("intercept", r)
 
 	if b.isTeamAllAI(opponent) {
 		return handleAIIntercept(ctx, b, r), false
 	}
 
+	timer := time.NewTimer(60 * time.Second)
+	defer timer.Stop()
 	select {
 	case guess := <-b.InterceptCh:
 		return guess, false
-	case <-time.After(60 * time.Second):
+	case <-timer.C:
 		log.Printf("bridge: interceptHandler: timeout waiting for intercept in session %s", r.GetGameSession().SessionID())
 		return [3]int{0, 0, 0}, false
 	case <-ctx.Done():
@@ -263,16 +288,20 @@ func decryptHandler(ctx context.Context, r *core.Round, t *core.Team, ts core.Te
 	decryptorsAllAI := b.areDecryptorsAllAI(t, encryptorUID)
 	log.Printf("[PHASE] Round %d → DECRYPT | team=%s allAI=%v decryptorsAllAI=%v encryptor=%s",
 		r.GetNumberOfRounds(), b.teamLabel(t), b.isTeamAllAI(t), decryptorsAllAI, r.EncryptPlayer().NickName)
+	b.setPhaseDeadline(60 * time.Second)
+	defer b.phaseDeadline.Store(0)
 	b.broadcastPhaseChange("decrypt", r)
 
 	if decryptorsAllAI {
 		return handleAIDecrypt(ctx, b, r), false
 	}
 
+	timer := time.NewTimer(60 * time.Second)
+	defer timer.Stop()
 	select {
 	case guess := <-b.DecryptCh:
 		return guess, false
-	case <-time.After(60 * time.Second):
+	case <-timer.C:
 		log.Printf("bridge: decryptHandler: timeout waiting for decrypt in session %s", r.GetGameSession().SessionID())
 		return [3]int{0, 0, 0}, false
 	case <-ctx.Done():
@@ -451,6 +480,7 @@ func (b *Bridge) broadcastPhaseChange(phase string, round *core.Round) {
 			YourRole:  role,
 			Encryptor: encryptor.NickName,
 			History:   b.buildHistory(round),
+			Deadline:  b.phaseDeadline.Load(),
 		}
 
 		switch phase {

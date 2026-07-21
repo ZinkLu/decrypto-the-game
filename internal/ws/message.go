@@ -140,6 +140,9 @@ type PhaseChangeData struct {
 	Clues        []string          `json:"clues,omitempty"`
 	History      []RoundHistoryRow `json:"history,omitempty"`
 	Waiting      bool              `json:"waiting,omitempty"`
+	// Deadline is the server-side phase timeout as unix milliseconds;
+	// 0 (omitted) means the phase is not timed.
+	Deadline int64 `json:"deadline,omitempty"`
 }
 
 // ScoreInfo holds scoring information for a team.
@@ -176,6 +179,8 @@ type GameSyncData struct {
 	History      []RoundHistoryRow `json:"history,omitempty"`
 	ScoreA       ScoreInfo         `json:"score_a"`
 	ScoreB       ScoreInfo         `json:"score_b"`
+	// Deadline mirrors PhaseChangeData.Deadline for clients resyncing mid-phase.
+	Deadline int64 `json:"deadline,omitempty"`
 }
 
 // FullSyncData is the data payload for MsgFullSync.

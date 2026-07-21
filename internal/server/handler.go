@@ -432,6 +432,12 @@ func (h *Handler) buildGameSyncData(client *ws.Client, bridge *game.Bridge) *ws.
 		ScoreB:   scoreB,
 	}
 
+	// Replay the server-side countdown for clients resyncing mid-phase.
+	switch phase {
+	case "encrypting", "intercept", "decrypt":
+		syncData.Deadline = bridge.PhaseDeadline()
+	}
+
 	// Include clues if they are available (encrypting phase done or later).
 	encryptedMsg := round.GetEncryptedMessage()
 	if encryptedMsg[0] != "" {
