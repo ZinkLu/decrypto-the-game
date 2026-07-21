@@ -10,6 +10,10 @@
 // the room; results flash it.
 
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 export type Mood = 'idle' | 'lobby' | 'encrypt' | 'intercept' | 'decrypt' | 'result';
 
@@ -113,6 +117,8 @@ function canvasTexture(
 
 export class Stage implements StageAPI {
   private renderer: THREE.WebGLRenderer;
+  private composer!: EffectComposer;
+  private bloom!: UnrealBloomPass;
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private clock = new THREE.Clock();
@@ -165,6 +171,9 @@ export class Stage implements StageAPI {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // shadows are what ground the props — without them everything is cardboard
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     // Fixed camera: you are seated at the desk. Nothing moves the camera;
     // the room stays alive through its contents (reels, scope, lamps, VU).
@@ -180,10 +189,21 @@ export class Stage implements StageAPI {
     this.scene.background = this.bgColor;
     this.scene.fog = new THREE.Fog(this.bgColor.getHex(), 18, 55);
 
-    this.scene.add(new THREE.HemisphereLight(0x33415f, 0x3a2f22, 0.85));
-    const key = new THREE.DirectionalLight(0xffe9c4, 1.1);
+    this.scene.add(new THREE.HemisphereLight(0x33415f, 0x3a2f22, 0.5));
+    const key = new THREE.DirectionalLight(0xffe9c4, 1.7);
     key.position.set(5, 12, 6);
-    this.scene.add(key);
+    key.target.position.set(0, 2, -8);
+    key.castShadow = true;
+    key.shadow.mapSize.set(1024, 1024);
+    key.shadow.camera.left = -16;
+    key.shadow.camera.right = 16;
+    key.shadow.camera.top = 14;
+    key.shadow.camera.bottom = -8;
+    key.shadow.camera.near = 2;
+    key.shadow.camera.far = 35;
+    key.shadow.bias = -0.0004;
+    key.shadow.normalBias = 0.02;
+    this.scene.add(key, key.target);
     this.moodLight = new THREE.PointLight(this.lightColor.getHex(), 70, 50, 1.8);
     this.moodLight.position.set(0, 7, -2);
     this.scene.add(this.moodLight);
@@ -196,6 +216,28 @@ export class Stage implements StageAPI {
     this.buildScreens();
     this.buildDeskProps();
     this.buildDust();
+
+    // shadows: opaque props cast, everything receives (glow/glass panes are
+    // transparent and skip casting so they can't smear the desk)
+    this.scene.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        const mat = obj.material as THREE.Material;
+        obj.castShadow = !mat.transparent;
+        obj.receiveShadow = true;
+      }
+    });
+
+    // bloom: phosphor, lamps and traces actually glow
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.bloom = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.4, // strength
+      0.5, // radius
+      0.82, // threshold — only hot emitters bloom
+    );
+    this.composer.addPass(this.bloom);
+    this.composer.addPass(new OutputPass());
 
     window.addEventListener('resize', this.onResize);
     // first projection after everything is in place
@@ -326,13 +368,51 @@ export class Stage implements StageAPI {
     floor.position.set(0, -2.2, -4);
     this.scene.add(floor);
 
-    // desk slab (dark walnut with a front edge)
-    const desk = new THREE.Mesh(new THREE.BoxGeometry(26, 0.5, 9), stdMat('#2e2119', 0.42, 0.15));
+    // desk slab: dark walnut with canvas-drawn grain
+    const woodTex = canvasTexture(512, 512, (g) => {
+      g.fillStyle = '#2e2119';
+      g.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 90; i++) {
+        const y = Math.random() * 512;
+        const r = 18 + (Math.random() * 26) | 0;
+        const gg = 12 + (Math.random() * 18) | 0;
+        const b = 8 + (Math.random() * 10) | 0;
+        g.strokeStyle = `rgba(${r},${gg},${b},${0.25 + Math.random() * 0.3})`;
+        g.lineWidth = 1 + Math.random() * 3;
+        g.beginPath();
+        g.moveTo(0, y);
+        for (let x = 0; x <= 512; x += 32) g.lineTo(x, y + Math.sin(x * 0.02 + i) * 3);
+        g.stroke();
+      }
+      for (let x = 0; x < 512; x += 128) {
+        g.strokeStyle = 'rgba(0,0,0,0.35)';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.moveTo(x, 0);
+        g.lineTo(x, 512);
+        g.stroke();
+      }
+    });
+    woodTex.wrapS = THREE.RepeatWrapping;
+    woodTex.wrapT = THREE.RepeatWrapping;
+    woodTex.repeat.set(3, 1);
+    const desk = new THREE.Mesh(
+      new THREE.BoxGeometry(26, 0.5, 9),
+      new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.5, metalness: 0.1 }),
+    );
     desk.position.set(0, 0.05, -7.2);
     this.scene.add(desk);
     const deskFront = new THREE.Mesh(new THREE.BoxGeometry(26, 2.2, 0.4), stdMat('#241a13', 0.6, 0.1));
     deskFront.position.set(0, -1.25, -3.0);
     this.scene.add(deskFront);
+
+    // wainscot rail + skirting give the wall structure
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(44, 0.28, 0.16), stdMat('#1c2338', 0.8, 0.1));
+    rail.position.set(0, 3.0, -13.9);
+    this.scene.add(rail);
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(44, 0.5, 0.2), stdMat('#171d30', 0.8, 0.1));
+    skirt.position.set(0, -1.95, -13.9);
+    this.scene.add(skirt);
 
     // acoustic foam tiles on the upper wall (canvas texture)
     const foamTex = canvasTexture(512, 256, (g) => {
@@ -398,7 +478,7 @@ export class Stage implements StageAPI {
       new THREE.PlaneGeometry(3.4, 4.25),
       new THREE.MeshStandardMaterial({ map: posterTex, roughness: 0.85 }),
     );
-    poster.position.set(10.6, 6.2, -13.85);
+    poster.position.set(11.9, 5.7, -13.85);
     poster.rotation.z = 0.02;
     this.scene.add(poster);
 
@@ -454,7 +534,7 @@ export class Stage implements StageAPI {
       // cream enamel housing + dark bezel — the box art's monitor
       const housing = new THREE.Mesh(
         new THREE.BoxGeometry(w + 1.0, h + 1.0, 0.9),
-        stdMat('#e9e1cc', 0.5, 0.12),
+        stdMat('#dcd4bf', 0.62, 0.1),
       );
       housing.position.z = -0.5;
       grp.add(housing);
@@ -554,7 +634,7 @@ export class Stage implements StageAPI {
     // VU countdown meter (left), nameplate (center), power/alert lamps (right)
     const deckStrip = new THREE.Group();
     deckStrip.position.set(-1.1, 0.78, -9.5);
-    const stripBox = new THREE.Mesh(new THREE.BoxGeometry(10.6, 0.9, 0.9), stdMat('#e9e1cc', 0.5, 0.12));
+    const stripBox = new THREE.Mesh(new THREE.BoxGeometry(10.6, 0.9, 0.9), stdMat('#dcd4bf', 0.62, 0.1));
     deckStrip.add(stripBox);
     // VU meter on the strip
     const vuTex = this.vuTexture();
@@ -586,10 +666,10 @@ export class Stage implements StageAPI {
       g.fillText('监听终端 · LISTENING POST K-3', 256, 52);
     });
     const plate = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.2, 0.5),
+      new THREE.PlaneGeometry(3.0, 0.5),
       new THREE.MeshBasicMaterial({ map: plateTex }),
     );
-    plate.position.set(-0.2, 0, 0.46);
+    plate.position.set(-0.6, 0, 0.46);
     deckStrip.add(plate);
     // power + alert lamps on the strip
     const mkStripLamp = (x: number, color: string): THREE.MeshStandardMaterial => {
@@ -615,7 +695,7 @@ export class Stage implements StageAPI {
     // + 2 failure (red), with tiny enamel labels
     const strip = new THREE.Group();
     strip.position.set(-1.1, 8.45, -9.6);
-    const stripBack = new THREE.Mesh(new THREE.BoxGeometry(8.2, 1.0, 0.4), stdMat('#e9e1cc', 0.5, 0.12));
+    const stripBack = new THREE.Mesh(new THREE.BoxGeometry(8.2, 1.0, 0.4), stdMat('#dcd4bf', 0.62, 0.1));
     stripBack.position.z = -0.2;
     strip.add(stripBack);
     const mkLampRow = (team: 'A' | 'B', yOff: number, startX: number): void => {
@@ -726,23 +806,21 @@ export class Stage implements StageAPI {
     // desk oscilloscope (activity waveform)
     this.buildScopeModule();
 
-    // keypad on the desk, lying flat
-    const pad = new THREE.Group();
-    pad.position.set(5.3, 0.42, -5.2);
-    pad.rotation.x = -Math.PI / 2 + 0.35;
-    pad.rotation.z = -0.12;
-    const padBack = new THREE.Mesh(new THREE.BoxGeometry(3.6, 3.6, 0.3), stdMat('#3f382c', 0.7, 0.3));
-    padBack.position.z = -0.2;
-    pad.add(padBack);
-    pad.add(new THREE.Mesh(new THREE.BoxGeometry(3.2, 3.2, 0.24), stdMat('#2b3040', 0.5, 0.4)));
+    // a proper low keyboard in front of the main CRT (replaces the old
+    // floating keypad — it read as a waffle, not an instrument)
+    const kbd = new THREE.Group();
+    kbd.position.set(1.5, 0.42, -3.9);
+    kbd.rotation.x = -0.1;
+    const kbdBase = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.22, 1.8), stdMat('#2b3040', 0.5, 0.4));
+    kbd.add(kbdBase);
     for (let r = 0; r < 3; r++) {
-      for (let c = 0; c < 3; c++) {
-        const key = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.3), stdMat('#f3ecd9', 0.5, 0.05));
-        key.position.set(-0.95 + c * 0.95, 0.95 - r * 0.95, 0.24);
-        pad.add(key);
+      for (let c = 0; c < 12; c++) {
+        const key = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.12, 0.3), stdMat('#f3ecd9', 0.55, 0.05));
+        key.position.set(-2.05 + c * 0.375, 0.16, -0.55 + r * 0.55);
+        kbd.add(key);
       }
     }
-    this.scene.add(pad);
+    this.scene.add(kbd);
 
     // headphones on a stand
     const phones = new THREE.Group();
@@ -778,10 +856,10 @@ export class Stage implements StageAPI {
       this.scene.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.06, 6), cableMat));
     };
     link([-1.1, 0.4, -9.5], [-1.1, 0.3, -7.5], 0.4); // console strip → desk
-    link([6.6, 0.9, -10.2], [5.3, 0.4, -6.2], 0.8); // archive CRT → keypad
+    link([6.6, 0.9, -10.2], [6.0, 0.3, -7.0], 0.8); // archive CRT → desk
     link([-10.2, 1.4, -6.8], [-7.2, 0.6, -5.6], 0.5); // scope → tape deck
     link([-5.5, 0.7, -9.5], [-4.4, 0.3, -7.2], 0.5); // strip → desk behind
-    link([2.2, 0.7, -9.5], [5.3, 0.3, -5.2], 0.6); // strip → keypad
+    link([2.2, 0.7, -9.5], [1.5, 0.4, -4.2], 0.6); // strip → keyboard
   }
 
   private buildScopeModule(): void {
@@ -1003,13 +1081,14 @@ export class Stage implements StageAPI {
     this.dust.rotation.y = t * 0.015;
     this.dust.position.y = Math.sin(t * 0.4) * 0.3;
 
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   };
 
   private onResize = (): void => {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.composer.setSize(window.innerWidth, window.innerHeight);
     this.projectScreens();
   };
 }
