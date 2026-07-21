@@ -118,7 +118,16 @@ function paintMonitor(box: HTMLElement, s: GameState): void {
     row.append(el('span', `monitor-state${p.state === 'submitted' ? ' submitted' : ''}`, stateText));
     rows.append(row);
   }
-  if (!any) rows.append(el('div', 'monitor-empty', '频道静默…'));
+  if (!any) {
+    // say who we're waiting for — never a bare "silence"
+    const waiting =
+      action === 'encrypt'
+        ? `等待 ${s.encryptor || '加密者'} 动笔…`
+        : action === 'intercept'
+          ? '等待拦截方落子…'
+          : '等待解密方核对…';
+    rows.append(el('div', 'monitor-empty', waiting));
+  }
 }
 
 function refreshMonitor(card: HTMLElement, s: GameState): void {
@@ -133,11 +142,14 @@ export class HomeView extends BaseView {
   readonly id = 'home';
   private nickInput: HTMLInputElement;
   private codeInput: HTMLInputElement;
-  private createBtn: HTMLButtonElement;
-  private joinBtn: HTMLButtonElement;
+  private submitBtn: HTMLButtonElement;
   private notice: HTMLElement;
   private connDot: HTMLElement;
   private connText: HTMLElement;
+  private tabCreate: HTMLButtonElement;
+  private tabJoin: HTMLButtonElement;
+  private codeField: HTMLElement;
+  private tab: 'create' | 'join' = 'create';
 
   constructor(store: Store) {
     super(store);
@@ -151,54 +163,55 @@ export class HomeView extends BaseView {
     wrap.append(brand);
 
     const brief = el('div', 'brief');
-    brief.append(el('div', 'brief-title', '—— 任务简报 ——'));
-    brief.append(el('div', 'brief-line', '① 加密：用 3 条线索把密码讲给队友 —— 但别教会敌人'));
-    brief.append(el('div', 'brief-line', '② 拦截：盯着敌方的每一条线索，推理词序、截下密码'));
-    brief.append(el('div', 'brief-line', '③ 获胜：拦截成功两次，或逼对方两次解密失误'));
+    brief.append(el('div', 'brief-line', '用线索传递密码：让队友听懂，让敌人迷路。'));
+    const meta = el('div', 'brief-meta');
+    meta.append(el('span', '', '4–8 人 · 约 30 分钟 · 人手不足可 AI 补位'));
+    const howto = el('button', 'brief-howto', '怎么玩？');
+    howto.type = 'button';
+    howto.addEventListener('click', () => window.dispatchEvent(new CustomEvent('decrypto:howto')));
+    meta.append(howto);
+    brief.append(meta);
     wrap.append(brief);
 
     const card = el('div', 'home-card');
-    card.append(el('div', 'panel-title', '建立加密频道'));
 
+    // two clearly separated paths: start a new operation vs. answer a call
+    const tabs = el('div', 'home-tabs');
+    this.tabCreate = el('button', 'home-tab active', '新建行动');
+    this.tabCreate.type = 'button';
+    this.tabCreate.addEventListener('click', () => this.setTab('create'));
+    this.tabJoin = el('button', 'home-tab', '应召加入');
+    this.tabJoin.type = 'button';
+    this.tabJoin.addEventListener('click', () => this.setTab('join'));
+    tabs.append(this.tabCreate, this.tabJoin);
+    card.append(tabs);
+
+    const form = el('form', 'home-form') as HTMLFormElement;
     const nickField = el('label', 'field');
-    nickField.append(el('span', 'field-label', '代号'));
+    nickField.append(el('span', 'field-label', '你的代号（其他玩家看到的名字）'));
     this.nickInput = el('input', 'input');
-    this.nickInput.placeholder = '输入你的特工代号';
+    this.nickInput.placeholder = '夜莺';
     this.nickInput.maxLength = 16;
     this.nickInput.value = window.localStorage.getItem('decrypto-nick') ?? '';
     nickField.append(this.nickInput);
-    card.append(nickField);
+    form.append(nickField);
 
-    const codeField = el('label', 'field');
-    codeField.append(el('span', 'field-label', '频道代码（加入已有房间时填写）'));
+    this.codeField = el('label', 'field hidden');
+    this.codeField.append(el('span', 'field-label', '频道代码（朋友分享给你的）'));
     this.codeInput = el('input', 'input input-mono');
     this.codeInput.placeholder = '例如 X7K2';
     this.codeInput.maxLength = 8;
-    codeField.append(this.codeInput);
-    card.append(codeField);
+    this.codeField.append(this.codeInput);
+    form.append(this.codeField);
 
-    const btnRow = el('div', 'btn-row');
-    this.createBtn = el('button', 'btn btn-primary', '创建新频道');
-    this.createBtn.type = 'button';
-    this.createBtn.addEventListener('click', () => {
-      const nick = this.nickname();
-      if (!nick) return;
-      this.store.createRoom(nick);
+    this.submitBtn = el('button', 'btn btn-primary btn-block', '创建新频道');
+    this.submitBtn.type = 'submit';
+    form.append(this.submitBtn);
+    form.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      this.submit();
     });
-    this.joinBtn = el('button', 'btn', '加入频道');
-    this.joinBtn.type = 'button';
-    this.joinBtn.addEventListener('click', () => {
-      const nick = this.nickname();
-      const code = this.codeInput.value.trim().toUpperCase();
-      if (!nick) return;
-      if (!code) {
-        this.store.showToast('请填写频道代码');
-        return;
-      }
-      this.store.joinRoom(code, nick);
-    });
-    btnRow.append(this.createBtn, this.joinBtn);
-    card.append(btnRow);
+    card.append(form);
 
     this.notice = el('div', 'home-notice');
     card.append(this.notice);
@@ -206,11 +219,21 @@ export class HomeView extends BaseView {
 
     const conn = el('div', 'home-conn');
     this.connDot = el('span', 'conn-dot');
-    this.connText = el('span', '', '连接中…');
+    this.connText = el('span', '', '接通线路中…');
     conn.append(this.connDot, this.connText);
     wrap.append(conn);
 
     this.el.append(wrap);
+  }
+
+  private setTab(tab: 'create' | 'join'): void {
+    this.tab = tab;
+    this.tabCreate.classList.toggle('active', tab === 'create');
+    this.tabJoin.classList.toggle('active', tab === 'join');
+    this.codeField.classList.toggle('hidden', tab === 'create');
+    this.submitBtn.textContent = tab === 'create' ? '创建新频道' : '加入频道';
+    if (tab === 'join') this.codeInput.focus();
+    else this.nickInput.focus();
   }
 
   private nickname(): string {
@@ -224,11 +247,26 @@ export class HomeView extends BaseView {
     return nick;
   }
 
+  private submit(): void {
+    const nick = this.nickname();
+    if (!nick) return;
+    if (this.tab === 'create') {
+      this.store.createRoom(nick);
+      return;
+    }
+    const code = this.codeInput.value.trim().toUpperCase();
+    if (!code) {
+      this.store.showToast('请填写频道代码');
+      this.codeInput.focus();
+      return;
+    }
+    this.store.joinRoom(code, nick);
+  }
+
   update(s: GameState): void {
-    this.createBtn.disabled = !s.connected;
-    this.joinBtn.disabled = !s.connected;
+    this.submitBtn.disabled = !s.connected;
     this.connDot.className = `conn-dot${s.connected ? ' on' : ''}`;
-    this.connText.textContent = s.connected ? '频道在线' : '连接中断 · 重连中…';
+    this.connText.textContent = s.connected ? '线路已接通' : '线路中断 · 重连中…';
     this.notice.textContent = s.notice ?? '';
     this.notice.classList.toggle('show', !!s.notice);
   }
@@ -420,13 +458,17 @@ export class EncryptView extends BaseView {
     this.el.classList.add('view-game');
     const s = store.state;
 
-    const ring = new CountdownRing(90, '出题剩余');
+    const ring = new CountdownRing(90, '出题剩余', s.phaseDeadline);
     this.disposables.push(ring);
 
     const center = el('div', 'action-panel');
     center.append(guidance(s));
     center.append(
-      viewHeader(`第 ${s.round} 回合 · 你是加密者`, '按密码顺序给出 3 条线索：队友要懂，敌人要懵', ring),
+      viewHeader(
+        '你的回合 · 你是加密者',
+        `第 ${s.round} 回合 · 为 ${s.secretDigits.join('-')} 各写一条线索：队友要懂，敌人要懵`,
+        ring,
+      ),
     );
     center.append(codeCards(s.secretDigits, s.secretWords, '本轮密码 · 绝密'));
 
@@ -441,6 +483,13 @@ export class EncryptView extends BaseView {
       input.maxLength = 24;
       input.addEventListener('focus', () => this.emitProgress('editing', i + 1));
       input.addEventListener('input', () => this.emitProgress('editing', i + 1));
+      // Enter hops to the next clue; on the last one it sends the wire
+      input.addEventListener('keydown', (ev) => {
+        if (ev.key !== 'Enter') return;
+        ev.preventDefault();
+        if (i < 2) this.inputs[i + 1].focus();
+        else this.submit();
+      });
       this.inputs.push(input);
       field.append(input);
       clueBox.append(field);
@@ -512,7 +561,7 @@ export class WaitCluesView extends BaseView {
     const s = store.state;
     const isOpponent = s.myRole === 'opponent';
 
-    const ring = new CountdownRing(90, '出题剩余');
+    const ring = new CountdownRing(90, '出题剩余', s.phaseDeadline);
     this.disposables.push(ring);
 
     const center = el('div', 'action-panel');
@@ -528,7 +577,7 @@ export class WaitCluesView extends BaseView {
     center.append(viewHeader(`第 ${s.round} 回合 · ${phaseLabel('encrypting')}`, sub, ring));
     const titleRow = el('div', 'wait-title', title);
     center.append(titleRow);
-    center.append(thinkingDots('监听加密频道'));
+    center.append(thinkingDots(`等待 ${s.encryptor} 发出线索`));
     center.append(wordsStrip(s.myWords));
     this.monitor = monitorCard(s, 'encrypt');
     center.append(this.monitor);
@@ -559,15 +608,15 @@ export class InterceptInputView extends BaseView {
     this.el.classList.add('view-game');
     const s = store.state;
 
-    const ring = new CountdownRing(60, '拦截窗口');
+    const ring = new CountdownRing(60, '拦截窗口', s.phaseDeadline);
     this.disposables.push(ring);
 
     const center = el('div', 'action-panel alert');
     center.append(guidance(s));
     center.append(
       viewHeader(
-        `第 ${s.round} 回合 · 拦截行动`,
-        '对方 4 个词不可见 —— 推理每条线索对应的词位（1–4）',
+        '你的回合 · 拦截破译',
+        `第 ${s.round} 回合 · 对方 4 个词不可见 —— 推理每条线索对应的词位（1–4）`,
         ring,
       ),
     );
@@ -647,7 +696,7 @@ export class InterceptWatchView extends BaseView {
     this.el.classList.add('view-game');
     const s = store.state;
 
-    const ring = new CountdownRing(60, '拦截窗口');
+    const ring = new CountdownRing(60, '拦截窗口', s.phaseDeadline);
     this.disposables.push(ring);
 
     const center = el('div', 'action-panel alert');
@@ -688,15 +737,15 @@ export class DecryptInputView extends BaseView {
     this.el.classList.add('view-game');
     const s = store.state;
 
-    const ring = new CountdownRing(60, '解密窗口');
+    const ring = new CountdownRing(60, '解密窗口', s.phaseDeadline);
     this.disposables.push(ring);
 
     const center = el('div', 'action-panel');
     center.append(guidance(s));
     center.append(
       viewHeader(
-        `第 ${s.round} 回合 · 解密行动`,
-        '给每条线索点选我方密码本中的词 —— 词位即密码',
+        '你的回合 · 解密核对',
+        `第 ${s.round} 回合 · 给每条线索点选我方密码本中的词 —— 词位即密码`,
         ring,
       ),
     );
@@ -751,7 +800,7 @@ export class DecryptWatchView extends BaseView {
     this.el.classList.add('view-game');
     const s = store.state;
 
-    const ring = new CountdownRing(60, '解密窗口');
+    const ring = new CountdownRing(60, '解密窗口', s.phaseDeadline);
     this.disposables.push(ring);
 
     const center = el('div', 'action-panel');
@@ -783,7 +832,7 @@ export class DecryptStandbyView extends BaseView {
     this.el.classList.add('view-game');
     const s = store.state;
 
-    const ring = new CountdownRing(60, '解密窗口');
+    const ring = new CountdownRing(60, '解密窗口', s.phaseDeadline);
     this.disposables.push(ring);
 
     const center = el('div', 'action-panel');

@@ -14,8 +14,12 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { ScreenPainter } from './ui3d/painter';
 
 export type Mood = 'idle' | 'lobby' | 'encrypt' | 'intercept' | 'decrypt' | 'result';
+
+export type PickKind = 'click' | 'hover' | 'leave' | 'outside';
 
 export interface ScoreLike {
   interceptions: number;
@@ -33,18 +37,56 @@ export interface StageAPI {
   setScore(a: ScoreLike, b: ScoreLike): void;
   /** Phase countdown mirrored on the VU meter (null parks the needle). */
   setCountdown(seconds: number | null, deadline?: number): void;
+  /** Power the instruments up (match running) or down (menu/lobby standby). */
+  setPowered(on: boolean): void;
+  /** Sink a random desk-keyboard key — mirrors real DOM typing. */
+  keyPress(): void;
+  /** Fired when the desk codebook prop is clicked. */
+  onCodebookClick: (() => void) | null;
+
+  /** Main CRT canvas the UI is painted into (1536×936). */
+  readonly mainPainter: ScreenPainter;
+  /** Paper overlay canvas (1024×1280, portrait). */
+  readonly paperPainter: ScreenPainter;
+  /** Raise/lower the paper sheet in front of the camera. */
+  setPaperOpen(open: boolean): void;
+  /** UV picks on the main CRT (uv in 0..1, origin bottom-left). */
+  onScreenPick: ((u: number, v: number, kind: PickKind) => void) | null;
+  /** Project a main-screen UV point to client pixel coords (e2e/tests). */
+  screenUvToClient(u: number, v: number): { x: number; y: number } | null;
+  /** Project the codebook prop's center to client pixel coords (e2e/tests). */
+  codebookClient(): { x: number; y: number } | null;
+  /** UV picks on the paper sheet; 'outside' = click missed the sheet. */
+  onPaperPick: ((u: number, v: number, kind: PickKind) => void) | null;
+  /** Small readout plate under the score board (channel code / score text). */
+  setStatus(line1: string, line2: string): void;
   start(): void;
   dispose(): void;
 }
 
 /** No-op fallback when WebGL is unavailable: UI keeps working, canvas stays dark. */
 export class NullStage implements StageAPI {
+  onCodebookClick: (() => void) | null = null;
+  readonly mainPainter = new ScreenPainter(1536, 936);
+  readonly paperPainter = new ScreenPainter(1024, 1280);
+  onScreenPick: ((u: number, v: number, kind: PickKind) => void) | null = null;
+  onPaperPick: ((u: number, v: number, kind: PickKind) => void) | null = null;
+  screenUvToClient(): { x: number; y: number } | null {
+    return null;
+  }
+  codebookClient(): { x: number; y: number } | null {
+    return null;
+  }
   setMood(): void {}
   pulse(): void {}
   activity(): void {}
   setCodebook(): void {}
   setScore(): void {}
   setCountdown(): void {}
+  setPowered(): void {}
+  keyPress(): void {}
+  setPaperOpen(): void {}
+  setStatus(): void {}
   start(): void {}
   dispose(): void {}
 }
@@ -100,6 +142,36 @@ const SCOPE_POINTS = 140;
 const stdMat = (color: string, roughness = 0.6, metalness = 0.2): THREE.MeshStandardMaterial =>
   new THREE.MeshStandardMaterial({ color, roughness, metalness });
 
+let enamelRough: THREE.CanvasTexture | null = null;
+/** Cream enamel housing material: subtle noise roughness so large shells
+ *  don't read as flat cardboard under the key light. */
+const enamelMat = (): THREE.MeshStandardMaterial => {
+  if (!enamelRough) {
+    const cv = document.createElement('canvas');
+    cv.width = 256;
+    cv.height = 256;
+    const g = cv.getContext('2d');
+    if (g) {
+      g.fillStyle = '#9a9a9a';
+      g.fillRect(0, 0, 256, 256);
+      for (let i = 0; i < 2600; i++) {
+        const v = 120 + ((Math.random() * 90) | 0);
+        g.fillStyle = `rgb(${v},${v},${v})`;
+        g.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+      }
+    }
+    enamelRough = new THREE.CanvasTexture(cv);
+    enamelRough.wrapS = THREE.RepeatWrapping;
+    enamelRough.wrapT = THREE.RepeatWrapping;
+  }
+  return new THREE.MeshStandardMaterial({
+    color: '#dcd4bf',
+    roughness: 0.85,
+    metalness: 0.08,
+    roughnessMap: enamelRough,
+  });
+};
+
 function canvasTexture(
   w: number,
   h: number,
@@ -138,6 +210,24 @@ export class Stage implements StageAPI {
   private energy = 0.18;
   private energyTarget = 0.18;
   private slotBoost = [0, 0, 0];
+  private powered = false;
+  private powerBlend = 0; // 0 = standby dark, 1 = fully lit (lerped)
+  private reducedMotion =
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
+
+  onCodebookClick: (() => void) | null = null;
+  private raycaster = new THREE.Raycaster();
+  private pointer = new THREE.Vector2();
+  private codebookGrp: THREE.Group | null = null;
+  private codebookHover = 0;
+  private keyMeshes: THREE.Mesh[] = [];
+  private keySink: number[] = [];
+  private kbdKeyMat!: THREE.MeshStandardMaterial;
+  private wordPlateMats: THREE.MeshBasicMaterial[] = [];
+  private scoreLevels: number[] = new Array(8).fill(0);
+  private minuteHand!: THREE.Mesh;
+  private hourHand!: THREE.Mesh;
 
   private moodLight!: THREE.PointLight;
   private spillLight!: THREE.PointLight;
@@ -159,6 +249,22 @@ export class Stage implements StageAPI {
   private screenMeshes: Record<string, THREE.Mesh> = {};
   private dust!: THREE.Points;
 
+  // canvas-UI plumbing
+  readonly mainPainter = new ScreenPainter(1536, 936);
+  readonly paperPainter = new ScreenPainter(1024, 1280);
+  onScreenPick: ((u: number, v: number, kind: PickKind) => void) | null = null;
+  onPaperPick: ((u: number, v: number, kind: PickKind) => void) | null = null;
+  private mainGlass: THREE.Mesh | null = null;
+  private paperGrp: THREE.Group | null = null;
+  private paperMesh: THREE.Mesh | null = null;
+  private paperOpen = false;
+  private paperT = 0; // 0 closed .. 1 fully raised
+  private statusTex: { tex: THREE.CanvasTexture; cv: HTMLCanvasElement } | null = null;
+  private zoomed = false;
+  private camPosTarget = new THREE.Vector3(0, 3.9, 4.3);
+  private camLookTarget = new THREE.Vector3(0, 3.0, -12);
+  private camLookCur = new THREE.Vector3(0, 3.0, -12);
+
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({
       canvas,
@@ -177,14 +283,16 @@ export class Stage implements StageAPI {
 
     // Fixed camera: you are seated at the desk. Nothing moves the camera;
     // the room stays alive through its contents (reels, scope, lamps, VU).
+    // 46° vFOV + a closer seat make the main CRT the dominant surface
+    // (~55-60% of the viewport) while keeping the desk props in frame.
     this.camera = new THREE.PerspectiveCamera(
-      42,
+      46,
       window.innerWidth / window.innerHeight,
       0.1,
       200,
     );
-    this.camera.position.set(0, 3.8, 5.9);
-    this.camera.lookAt(0, 3.15, -12);
+    this.camera.position.set(0, 3.9, 4.3);
+    this.camera.lookAt(0, 3.0, -12);
 
     this.scene.background = this.bgColor;
     this.scene.fog = new THREE.Fog(this.bgColor.getHex(), 18, 55);
@@ -215,7 +323,21 @@ export class Stage implements StageAPI {
     this.buildRoom();
     this.buildScreens();
     this.buildDeskProps();
+    this.buildCodebook();
     this.buildDust();
+    this.buildPaperSheet();
+    this.buildStatusPlate();
+
+    // main CRT glass carries the canvas-painted UI
+    this.mainGlass = this.screenMeshes.main;
+    const glassMat = this.mainGlass.material as THREE.MeshBasicMaterial;
+    glassMat.map = this.mainPainter.tex;
+    glassMat.color.set('#ffffff');
+    glassMat.needsUpdate = true;
+
+    // picking: codebook prop + screen UV + paper sheet
+    this.renderer.domElement.addEventListener('pointermove', this.onPointerMove);
+    this.renderer.domElement.addEventListener('click', this.onCanvasClick);
 
     // shadows: opaque props cast, everything receives (glow/glass panes are
     // transparent and skip casting so they can't smear the desk)
@@ -240,8 +362,8 @@ export class Stage implements StageAPI {
     this.composer.addPass(new OutputPass());
 
     window.addEventListener('resize', this.onResize);
-    // first projection after everything is in place
-    this.projectScreens();
+    // initial camera mode (zoomed on narrow windows)
+    this.updateZoom();
   }
 
   // ---- public controls -----------------------------------------------------
@@ -291,24 +413,37 @@ export class Stage implements StageAPI {
         }
         g.fillText(w, cv.width / 2 + 14, cv.height / 2 + size * 0.35);
       } else {
+        // standby: a dark dormant plate, no giant fake digits
+        g.fillStyle = 'rgba(255,180,94,0.18)';
+        g.font = '400 22px "PingFang SC", sans-serif';
+        g.fillText('待 命', cv.width / 2, cv.height / 2 + 4);
         g.fillStyle = 'rgba(255,180,94,0.3)';
-        g.font = '700 44px "SF Mono", ui-monospace, monospace';
-        g.fillText(String(i + 1), cv.width / 2, cv.height / 2 + 16);
+        g.font = '700 18px "SF Mono", ui-monospace, monospace';
+        g.fillText(`0${i + 1}`, cv.width / 2, cv.height / 2 + 34);
       }
       tex.needsUpdate = true;
     });
   }
 
   setScore(a: ScoreLike, b: ScoreLike): void {
-    const levels = [
-      ...[...Array(2)].map((_, i) => (a.interceptions > i ? 1.6 : 0.12)),
-      ...[...Array(2)].map((_, i) => (a.decrypt_failures > i ? 1.6 : 0.12)),
-      ...[...Array(2)].map((_, i) => (b.interceptions > i ? 1.6 : 0.12)),
-      ...[...Array(2)].map((_, i) => (b.decrypt_failures > i ? 1.6 : 0.12)),
+    this.scoreLevels = [
+      ...[...Array(2)].map((_, i) => (a.interceptions > i ? 1 : 0)),
+      ...[...Array(2)].map((_, i) => (a.decrypt_failures > i ? 1 : 0)),
+      ...[...Array(2)].map((_, i) => (b.interceptions > i ? 1 : 0)),
+      ...[...Array(2)].map((_, i) => (b.decrypt_failures > i ? 1 : 0)),
     ];
-    this.scoreLamps.forEach((m, i) => {
-      m.emissiveIntensity = levels[i] ?? 0.12;
-    });
+  }
+
+  /** Menu/lobby = standby: instruments dark. Match = powered on. */
+  setPowered(on: boolean): void {
+    this.powered = on;
+  }
+
+  /** Sink a random keyboard key — called when the player types in the DOM. */
+  keyPress(): void {
+    if (this.keyMeshes.length === 0) return;
+    const i = (Math.random() * this.keyMeshes.length) | 0;
+    this.keySink[i] = 1;
   }
 
   setCountdown(seconds: number | null, deadline?: number): void {
@@ -323,36 +458,164 @@ export class Stage implements StageAPI {
   dispose(): void {
     this.renderer.setAnimationLoop(null);
     window.removeEventListener('resize', this.onResize);
+    this.renderer.domElement.removeEventListener('pointermove', this.onPointerMove);
+    this.renderer.domElement.removeEventListener('click', this.onCanvasClick);
     this.renderer.dispose();
   }
 
   // ---- DOM screen mounting -------------------------------------------------
 
-  /** Project the 3D screen rectangles to pixel coordinates and publish them
-   *  as CSS variables, so the DOM UI renders exactly inside the screens. */
-  private projectScreens(): void {
-    // force the whole graph (parents included) — mesh.updateMatrixWorld alone
-    // uses stale parent matrices, especially before the first render
+  // ---- camera zoom (narrow windows) ----------------------------------------
+
+  /** Projected pixel width of the main CRT glass at the current camera. */
+  private mainScreenWidth(): number {
+    const mesh = this.screenMeshes.main;
+    if (!mesh) return Infinity;
     this.scene.updateMatrixWorld(true);
     this.camera.updateMatrixWorld(true);
-    const root = document.documentElement.style;
-    for (const [id, mesh] of Object.entries(this.screenMeshes)) {
-      mesh.updateMatrixWorld();
-      const hw = mesh.userData.w / 2;
-      const hh = mesh.userData.h / 2;
-      const tl = new THREE.Vector3(-hw, hh, 0).applyMatrix4(mesh.matrixWorld).project(this.camera);
-      const br = new THREE.Vector3(hw, -hh, 0).applyMatrix4(mesh.matrixWorld).project(this.camera);
-      const x = ((tl.x + br.x) * 0.25 + 0.5) * window.innerWidth;
-      const y = ((-tl.y - br.y) * 0.25 + 0.5) * window.innerHeight;
-      const w = ((br.x - tl.x) * 0.5) * window.innerWidth;
-      const h = ((tl.y - br.y) * 0.5) * window.innerHeight;
-      // center + size: the CSS side anchors with translate(-50%, -50%),
-      // which also keeps the no-WebGL fallback layout working
-      root.setProperty(`--scr-${id}-x`, `${x.toFixed(1)}px`);
-      root.setProperty(`--scr-${id}-y`, `${y.toFixed(1)}px`);
-      root.setProperty(`--scr-${id}-w`, `${w.toFixed(1)}px`);
-      root.setProperty(`--scr-${id}-h`, `${h.toFixed(1)}px`);
+    mesh.updateMatrixWorld();
+    const hw = mesh.userData.w / 2;
+    const tl = new THREE.Vector3(-hw, 0, 0).applyMatrix4(mesh.matrixWorld).project(this.camera);
+    const br = new THREE.Vector3(hw, 0, 0).applyMatrix4(mesh.matrixWorld).project(this.camera);
+    return ((br.x - tl.x) * 0.5) * window.innerWidth;
+  }
+
+  /** Narrow window → dolly the camera onto the main CRT so the canvas UI
+   *  stays readable; wide window → back to the seated desk pose. */
+  private updateZoom(): void {
+    const wasZoomed = this.zoomed;
+    this.zoomed = this.mainScreenWidth() < 720;
+    if (this.zoomed === wasZoomed && wasZoomed) return;
+    if (this.zoomed) {
+      const mesh = this.screenMeshes.main;
+      const center = new THREE.Vector3();
+      mesh.getWorldPosition(center);
+      const normal = new THREE.Vector3(0, 0, 1)
+        .applyQuaternion(mesh.getWorldQuaternion(new THREE.Quaternion()))
+        .normalize();
+      const halfW = mesh.userData.w / 2 + 0.7;
+      const d = THREE.MathUtils.clamp(
+        halfW / (Math.tan(THREE.MathUtils.degToRad(23)) * this.camera.aspect),
+        9,
+        30,
+      );
+      this.camPosTarget.copy(center).addScaledVector(normal, d);
+      this.camLookTarget.copy(center);
+    } else {
+      this.camPosTarget.set(0, 3.9, 4.3);
+      this.camLookTarget.set(0, 3.0, -12);
     }
+  }
+
+  /** Project a point on the main CRT glass (uv, origin bottom-left) to
+   *  client pixel coordinates — used by the e2e to send real mouse events. */
+  screenUvToClient(u: number, v: number): { x: number; y: number } | null {
+    const mesh = this.screenMeshes.main;
+    if (!mesh) return null;
+    mesh.updateMatrixWorld();
+    this.camera.updateMatrixWorld(true);
+    const local = new THREE.Vector3(
+      (u - 0.5) * mesh.userData.w,
+      (v - 0.5) * mesh.userData.h,
+      0,
+    );
+    const ndc = local.applyMatrix4(mesh.matrixWorld).project(this.camera);
+    return {
+      x: (ndc.x * 0.5 + 0.5) * window.innerWidth,
+      y: (-ndc.y * 0.5 + 0.5) * window.innerHeight,
+    };
+  }
+
+  /** Project the desk codebook's center to client pixels (e2e/tests). */
+  codebookClient(): { x: number; y: number } | null {
+    if (!this.codebookGrp) return null;
+    const p = new THREE.Vector3();
+    this.codebookGrp.getWorldPosition(p);
+    this.camera.updateMatrixWorld(true);
+    const ndc = p.project(this.camera);
+    return {
+      x: (ndc.x * 0.5 + 0.5) * window.innerWidth,
+      y: (-ndc.y * 0.5 + 0.5) * window.innerHeight,
+    };
+  }
+
+  // ---- paper sheet (codebook archive / field manual) ------------------------
+
+  private buildPaperSheet(): void {
+    const grp = new THREE.Group();
+    const back = new THREE.Mesh(
+      new RoundedBoxGeometry(3.5, 4.45, 0.08, 2, 0.03),
+      stdMat('#d4c4a8', 0.9, 0.05),
+    );
+    back.position.z = -0.05;
+    grp.add(back);
+    const paperMat = new THREE.MeshBasicMaterial({
+      map: this.paperPainter.tex,
+      transparent: true,
+    });
+    const paper = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 4.25), paperMat);
+    grp.add(paper);
+    grp.visible = false;
+    this.paperGrp = grp;
+    this.paperMesh = paper;
+    this.scene.add(grp);
+  }
+
+  setPaperOpen(open: boolean): void {
+    this.paperOpen = open;
+    if (open) {
+      // float the sheet in front of the camera, wherever it currently sits
+      const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
+      this.paperGrp?.position.copy(this.camera.position).addScaledVector(dir, 5.6);
+      this.paperGrp?.lookAt(this.camera.position);
+      if (this.paperGrp) this.paperGrp.visible = true;
+    }
+  }
+
+  /** Small readout plate under the score board: channel code + score text. */
+  private buildStatusPlate(): void {
+    const cv = document.createElement('canvas');
+    cv.width = 512;
+    cv.height = 96;
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.statusTex = { tex, cv };
+    const plate = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.2, 0.6),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
+    );
+    plate.position.set(6.6, 6.82, -10.19);
+    plate.rotation.y = -0.08;
+    this.scene.add(plate);
+    this.setStatus('', '');
+  }
+
+  setStatus(line1: string, line2: string): void {
+    if (!this.statusTex) return;
+    const g = this.statusTex.cv.getContext('2d');
+    if (!g) return;
+    g.clearRect(0, 0, 512, 96);
+    if (!line1 && !line2) {
+      this.statusTex.tex.needsUpdate = true;
+      return;
+    }
+    g.fillStyle = 'rgba(22, 10, 5, 0.85)';
+    g.fillRect(0, 0, 512, 96);
+    g.strokeStyle = 'rgba(255,180,94,0.35)';
+    g.lineWidth = 3;
+    g.strokeRect(3, 3, 506, 90);
+    g.textAlign = 'center';
+    if (line1) {
+      g.fillStyle = '#ffb45e';
+      g.font = '700 34px "SF Mono", ui-monospace, monospace';
+      g.fillText(line1, 256, line2 ? 42 : 60);
+    }
+    if (line2) {
+      g.fillStyle = 'rgba(243,230,207,0.85)';
+      g.font = '400 24px "PingFang SC", sans-serif';
+      g.fillText(line2, 256, line1 ? 78 : 60);
+    }
+    this.statusTex.tex.needsUpdate = true;
   }
 
   // ---- scene construction --------------------------------------------------
@@ -475,14 +738,16 @@ export class Stage implements StageAPI {
       g.restore();
     });
     const poster = new THREE.Mesh(
-      new THREE.PlaneGeometry(3.4, 4.25),
+      new THREE.PlaneGeometry(1.8, 2.4),
       new THREE.MeshStandardMaterial({ map: posterTex, roughness: 0.85 }),
     );
-    poster.position.set(11.9, 5.7, -13.85);
+    // squeezed into the visible wall band left of the main CRT (between the
+    // CRT's occlusion cone and the frame edge), under the clock
+    poster.position.set(-10.6, 4.5, -13.85);
     poster.rotation.z = 0.02;
     this.scene.add(poster);
 
-    // wall clock (working second hand)
+    // wall clock — all three hands driven by local time
     const clockTex = canvasTexture(256, 256, (g) => {
       g.beginPath();
       g.arc(128, 128, 120, 0, Math.PI * 2);
@@ -500,16 +765,21 @@ export class Stage implements StageAPI {
       g.fillText('9', 32, 137);
     });
     const clockG = new THREE.Group();
-    clockG.position.set(-10.8, 6.6, -13.8);
+    clockG.position.set(-10.6, 7.3, -13.8);
+    clockG.scale.setScalar(0.85);
     const face = new THREE.Mesh(
       new THREE.CircleGeometry(1.05, 40),
       new THREE.MeshBasicMaterial({ map: clockTex }),
     );
     clockG.add(face);
-    const hour = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.55, 0.02), stdMat('#25365e', 0.5, 0.1));
-    hour.position.set(0.12, 0.2, 0.02);
-    hour.rotation.z = -0.9;
-    clockG.add(hour);
+    this.hourHand = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.5, 0.02), stdMat('#25365e', 0.5, 0.1));
+    this.hourHand.geometry.translate(0, 0.18, 0);
+    this.hourHand.position.z = 0.02;
+    clockG.add(this.hourHand);
+    this.minuteHand = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.75, 0.02), stdMat('#25365e', 0.5, 0.1));
+    this.minuteHand.geometry.translate(0, 0.3, 0);
+    this.minuteHand.position.z = 0.025;
+    clockG.add(this.minuteHand);
     this.secondHand = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.9, 0.02), stdMat('#c9402e', 0.4, 0.1));
     this.secondHand.geometry.translate(0, 0.36, 0);
     this.secondHand.position.z = 0.03;
@@ -531,10 +801,10 @@ export class Stage implements StageAPI {
       grp.position.set(...pos);
       grp.rotation.y = rotY;
 
-      // cream enamel housing + dark bezel — the box art's monitor
+      // cream enamel housing (rounded, noise-roughened) + dark bezel
       const housing = new THREE.Mesh(
-        new THREE.BoxGeometry(w + 1.0, h + 1.0, 0.9),
-        stdMat('#dcd4bf', 0.62, 0.1),
+        new RoundedBoxGeometry(w + 1.0, h + 1.0, 0.9, 3, 0.12),
+        enamelMat(),
       );
       housing.position.z = -0.5;
       grp.add(housing);
@@ -580,19 +850,30 @@ export class Stage implements StageAPI {
       this.scene.add(grp);
     };
 
-    // main CRT: center-left, slight angle toward the seat
-    mkScreen('main', 9.6, 6.3, [-1.1, 4.35, -9.5], 0.06);
-    // archive CRT: right side, angled in
-    mkScreen('side', 3.7, 5.6, [6.6, 3.95, -10.2], -0.22);
+    // main CRT: center-left, slight angle toward the seat — the room's
+    // dominant surface, the DOM UI is pixel-locked onto its glass
+    mkScreen('main', 11.5, 7.0, [-1.1, 4.3, -9.5], 0.06);
+    // archive CRT: right side. It no longer carries DOM (the paper codebook
+    // owns history now), so it faces the seat almost straight and shows only
+    // analog standby content — no pixel-lock projection needed.
+    mkScreen('side', 3.7, 5.6, [6.6, 3.95, -10.2], -0.08);
+    delete this.screenMeshes.side;
 
-    // side screen idle content (dim amber standby readout) — visible whenever
-    // the DOM archive is not mounted over it
+    // side screen idle content: analog standby readout with a scrolling
+    // waveform and rotating field-manual tips (it no longer hosts the DOM
+    // archive — history lives in the paper codebook)
     const cv = document.createElement('canvas');
     cv.width = 256;
     cv.height = 384;
     const tex = new THREE.CanvasTexture(cv);
     tex.colorSpace = THREE.SRGBColorSpace;
     this.sideScreenTex = { tex, cv };
+    const TIPS = [
+      '① 加密：三条线索讲给队友',
+      '② 拦截：推理敌方词序',
+      '③ 获胜：两次拦截到手',
+      '④ 失误两次满盘皆输',
+    ];
     const redraw = (t: number): void => {
       const g = cv.getContext('2d');
       if (!g) return;
@@ -604,20 +885,28 @@ export class Stage implements StageAPI {
       g.fillStyle = 'rgba(255,180,94,0.85)';
       g.font = '700 20px "PingFang SC", sans-serif';
       g.textAlign = 'center';
-      g.fillText('情报档案', 128, 48);
+      g.fillText('频段扫描', 128, 48);
       g.font = '400 13px monospace';
       g.fillStyle = 'rgba(255,180,94,0.45)';
-      g.fillText('ARCHIVE · STANDBY', 128, 74);
+      g.fillText('SWEEP · STANDBY', 128, 74);
       // scrolling waveform to keep the tube alive
       g.strokeStyle = 'rgba(255,106,69,0.8)';
       g.lineWidth = 2;
       g.beginPath();
       for (let x = 0; x <= 220; x++) {
-        const y = 200 + Math.sin(x * 0.09 + t * 2.2) * 22 * Math.sin(x * 0.021 + t * 0.6);
+        const y = 180 + Math.sin(x * 0.09 + t * 2.2) * 22 * Math.sin(x * 0.021 + t * 0.6);
         if (x === 0) g.moveTo(18 + x, y);
         else g.lineTo(18 + x, y);
       }
       g.stroke();
+      // rotating field-manual tip
+      const tip = TIPS[Math.floor(t / 8) % TIPS.length];
+      g.fillStyle = 'rgba(255,217,160,0.75)';
+      g.font = '600 17px "PingFang SC", sans-serif';
+      g.fillText(tip, 128, 300);
+      g.fillStyle = 'rgba(255,180,94,0.4)';
+      g.font = '400 12px "PingFang SC", sans-serif';
+      g.fillText('—— 野战手册 ——', 128, 332);
       tex.needsUpdate = true;
     };
     redraw(0);
@@ -627,14 +916,14 @@ export class Stage implements StageAPI {
       new THREE.MeshBasicMaterial({ map: tex }),
     );
     idle.position.set(6.6, 3.95, -10.2 + 0.015);
-    idle.rotation.y = -0.22;
+    idle.rotation.y = -0.08;
     this.scene.add(idle);
 
     // console strip under the main CRT — the terminal's own control deck:
     // VU countdown meter (left), nameplate (center), power/alert lamps (right)
     const deckStrip = new THREE.Group();
     deckStrip.position.set(-1.1, 0.78, -9.5);
-    const stripBox = new THREE.Mesh(new THREE.BoxGeometry(10.6, 0.9, 0.9), stdMat('#dcd4bf', 0.62, 0.1));
+    const stripBox = new THREE.Mesh(new RoundedBoxGeometry(10.6, 0.9, 0.9, 3, 0.1), enamelMat());
     deckStrip.add(stripBox);
     // VU meter on the strip
     const vuTex = this.vuTexture();
@@ -653,17 +942,36 @@ export class Stage implements StageAPI {
     vuCap.rotation.x = Math.PI / 2;
     this.needle.add(vuCap);
     deckStrip.add(this.needle);
-    // nameplate
-    const plateTex = canvasTexture(512, 80, (g) => {
-      g.fillStyle = '#e9e1cc';
-      g.fillRect(0, 0, 512, 80);
-      g.strokeStyle = '#25365e';
-      g.lineWidth = 4;
-      g.strokeRect(4, 4, 504, 72);
-      g.fillStyle = '#25365e';
-      g.font = '700 34px "PingFang SC", sans-serif';
+    // nameplate: brushed brass with etched lettering, auto-fit so the text
+    // never clips no matter the glyph widths
+    const plateTex = canvasTexture(1024, 96, (g) => {
+      g.fillStyle = '#b8a06a';
+      g.fillRect(0, 0, 1024, 96);
+      // brushed-metal streaks
+      for (let i = 0; i < 120; i++) {
+        g.strokeStyle = `rgba(90,70,35,${0.04 + Math.random() * 0.08})`;
+        g.lineWidth = 1;
+        const y = Math.random() * 96;
+        g.beginPath();
+        g.moveTo(0, y);
+        g.lineTo(1024, y);
+        g.stroke();
+      }
+      g.strokeStyle = '#6b5426';
+      g.lineWidth = 5;
+      g.strokeRect(6, 6, 1012, 84);
+      const text = '监听台 · LISTENING POST K-3';
+      let size = 44;
       g.textAlign = 'center';
-      g.fillText('监听终端 · LISTENING POST K-3', 256, 52);
+      do {
+        g.font = `700 ${size}px "PingFang SC", sans-serif`;
+        size -= 2;
+      } while (size > 20 && g.measureText(text).width > 940);
+      // etched look: dark fill + faint highlight offset
+      g.fillStyle = 'rgba(255,240,200,0.35)';
+      g.fillText(text, 512, 62 + 1.5);
+      g.fillStyle = '#3d2f14';
+      g.fillText(text, 512, 62);
     });
     const plate = new THREE.Mesh(
       new THREE.PlaneGeometry(3.0, 0.5),
@@ -691,16 +999,44 @@ export class Stage implements StageAPI {
     this.lampRed = mkStripLamp(4.75, '#e0492f');
     this.scene.add(deckStrip);
 
-    // score lamp strip above the main CRT: per team 2 interception (navy)
-    // + 2 failure (red), with tiny enamel labels
+    // score lamp board: a grounded topper bolted onto the archive CRT's
+    // housing (the main CRT grew too tall to host it, and a floating wall
+    // strip clipped at common aspect ratios). Per team row: 2 interception
+    // (blue) + 2 failure (red) lamps, with the legend as column headers
+    // directly above each lamp group.
     const strip = new THREE.Group();
-    strip.position.set(-1.1, 8.45, -9.6);
-    const stripBack = new THREE.Mesh(new THREE.BoxGeometry(8.2, 1.0, 0.4), stdMat('#dcd4bf', 0.62, 0.1));
-    stripBack.position.z = -0.2;
+    strip.position.set(6.6, 7.6, -10.2);
+    strip.rotation.y = -0.08;
+    const stripBack = new THREE.Mesh(new RoundedBoxGeometry(4.2, 1.15, 0.3, 3, 0.06), enamelMat());
+    stripBack.position.z = -0.1;
     strip.add(stripBack);
-    const mkLampRow = (team: 'A' | 'B', yOff: number, startX: number): void => {
+    // support posts down to the archive CRT housing top
+    for (const px of [-1.4, 1.4]) {
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.4, 10), stdMat('#8f8672', 0.35, 0.75));
+      post.position.set(px, -0.72, -0.1);
+      strip.add(post);
+    }
+    // column headers above each lamp group: 拦截 over the blue pair, 失误
+    // over the red pair — the legend can no longer drift half a screen away
+    const mkHeader = (x: number, text: string, color: string): void => {
+      const tex = canvasTexture(256, 96, (g) => {
+        g.fillStyle = color;
+        g.font = '700 56px "PingFang SC", sans-serif';
+        g.textAlign = 'center';
+        g.fillText(text, 128, 68);
+      });
+      const plate = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.8, 0.3),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true }),
+      );
+      plate.position.set(x, 0.42, 0.06);
+      strip.add(plate);
+    };
+    mkHeader(-0.55, '拦截', '#25365e');
+    mkHeader(0.65, '失误', '#c9402e');
+    const mkLampRow = (team: 'A' | 'B', yOff: number): void => {
       const labelTex = canvasTexture(128, 64, (g) => {
-        g.fillStyle = team === 'A' ? '#25365e' : '#c9402e';
+        g.fillStyle = team === 'A' ? '#25365e' : '#8f3a2e';
         g.fillRect(0, 0, 128, 64);
         g.fillStyle = '#f3ecd9';
         g.font = '700 34px "PingFang SC", sans-serif';
@@ -708,41 +1044,29 @@ export class Stage implements StageAPI {
         g.fillText(`${team} 队`, 64, 44);
       });
       const label = new THREE.Mesh(
-        new THREE.PlaneGeometry(0.95, 0.48),
+        new THREE.PlaneGeometry(0.7, 0.34),
         new THREE.MeshBasicMaterial({ map: labelTex }),
       );
-      label.position.set(startX - 0.4, yOff, 0.01);
+      label.position.set(-1.55, yOff, 0.06);
       strip.add(label);
+      // shared semantics: interception = blue, failure = red (both teams)
       const colors = ['#3d6fb4', '#3d6fb4', '#e0492f', '#e0492f'];
+      const xs = [-0.75, -0.35, 0.45, 0.85];
       for (let i = 0; i < 4; i++) {
         const mat = new THREE.MeshStandardMaterial({
           color: '#2b3040',
           roughness: 0.3,
           emissive: colors[i],
-          emissiveIntensity: 0.12,
+          emissiveIntensity: 0.03,
         });
         const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 14, 10), mat);
-        bulb.position.set(startX + 0.35 + i * 0.42, yOff, 0.05);
+        bulb.position.set(xs[i], yOff, 0.1);
         strip.add(bulb);
         this.scoreLamps.push(mat);
       }
     };
-    mkLampRow('A', 0.22, -3.4);
-    mkLampRow('B', -0.26, -3.4);
-    const stripLabel = canvasTexture(256, 48, (g) => {
-      g.fillStyle = '#25365e';
-      g.font = '700 26px "PingFang SC", sans-serif';
-      g.textAlign = 'left';
-      g.fillText('拦截', 0, 32);
-      g.fillStyle = '#c9402e';
-      g.fillText('失误', 76, 32);
-    });
-    const legend = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.9, 0.36),
-      new THREE.MeshBasicMaterial({ map: stripLabel, transparent: true }),
-    );
-    legend.position.set(2.6, -0.02, 0.01);
-    strip.add(legend);
+    mkLampRow('A', 0.08);
+    mkLampRow('B', -0.3);
     this.scene.add(strip);
   }
 
@@ -763,10 +1087,9 @@ export class Stage implements StageAPI {
       const tex = new THREE.CanvasTexture(cv);
       tex.colorSpace = THREE.SRGBColorSpace;
       this.wordTextures.push({ tex, cv });
-      const plate = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.45, 0.85),
-        new THREE.MeshBasicMaterial({ map: tex }),
-      );
+      const plateMat = new THREE.MeshBasicMaterial({ map: tex });
+      this.wordPlateMats.push(plateMat);
+      const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.45, 0.85), plateMat);
       plate.position.z = 0.07;
       grp.add(plate);
       this.scene.add(grp);
@@ -806,18 +1129,22 @@ export class Stage implements StageAPI {
     // desk oscilloscope (activity waveform)
     this.buildScopeModule();
 
-    // a proper low keyboard in front of the main CRT (replaces the old
-    // floating keypad — it read as a waffle, not an instrument)
+    // a proper low keyboard in front of the main CRT. Keys share one
+    // material so the whole deck can dim in standby; individual keys sink
+    // when the player types in the DOM (stage.keyPress).
     const kbd = new THREE.Group();
     kbd.position.set(1.5, 0.42, -3.9);
     kbd.rotation.x = -0.1;
-    const kbdBase = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.22, 1.8), stdMat('#2b3040', 0.5, 0.4));
+    const kbdBase = new THREE.Mesh(new RoundedBoxGeometry(4.6, 0.22, 1.8, 3, 0.06), stdMat('#2b3040', 0.5, 0.4));
     kbd.add(kbdBase);
+    this.kbdKeyMat = new THREE.MeshStandardMaterial({ color: '#f3ecd9', roughness: 0.55, metalness: 0.05 });
     for (let r = 0; r < 3; r++) {
       for (let c = 0; c < 12; c++) {
-        const key = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.12, 0.3), stdMat('#f3ecd9', 0.55, 0.05));
+        const key = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.12, 0.3), this.kbdKeyMat);
         key.position.set(-2.05 + c * 0.375, 0.16, -0.55 + r * 0.55);
         kbd.add(key);
+        this.keyMeshes.push(key);
+        this.keySink.push(0);
       }
     }
     this.scene.add(kbd);
@@ -861,6 +1188,121 @@ export class Stage implements StageAPI {
     link([-5.5, 0.7, -9.5], [-4.4, 0.3, -7.2], 0.5); // strip → desk behind
     link([2.2, 0.7, -9.5], [1.5, 0.4, -4.2], 0.6); // strip → keyboard
   }
+
+  /** The field codebook on the desk — clicking it opens the paper archive
+   *  (round history). Hovering lifts it slightly to show it's interactive. */
+  private buildCodebook(): void {
+    const grp = new THREE.Group();
+    grp.position.set(4.7, 0.42, -4.9);
+    grp.rotation.y = -0.38;
+
+    // cloth-bound cover with gold-foil title
+    const coverTex = canvasTexture(256, 192, (g) => {
+      g.fillStyle = '#5c2f24';
+      g.fillRect(0, 0, 256, 192);
+      // cloth weave
+      for (let y = 0; y < 192; y += 3) {
+        g.strokeStyle = `rgba(0,0,0,${0.05 + (y % 6 === 0 ? 0.05 : 0)})`;
+        g.beginPath();
+        g.moveTo(0, y);
+        g.lineTo(256, y);
+        g.stroke();
+      }
+      g.strokeStyle = '#c9a84c';
+      g.lineWidth = 3;
+      g.strokeRect(12, 12, 232, 168);
+      g.fillStyle = '#e3c56a';
+      g.textAlign = 'center';
+      g.font = '700 44px "PingFang SC", sans-serif';
+      g.fillText('密码本', 128, 100);
+      g.font = '400 15px monospace';
+      g.fillText('FIELD CODEBOOK', 128, 132);
+      g.font = '600 13px "PingFang SC", sans-serif';
+      g.fillText('K-3 监听台', 128, 162);
+    });
+    const coverMat = new THREE.MeshStandardMaterial({ map: coverTex, roughness: 0.8, metalness: 0.05 });
+    const clothMat = stdMat('#5c2f24', 0.85, 0.05);
+
+    const bottom = new THREE.Mesh(new RoundedBoxGeometry(1.9, 0.07, 1.4, 2, 0.03), clothMat);
+    bottom.position.y = 0.035;
+    grp.add(bottom);
+    const pages = new THREE.Mesh(new RoundedBoxGeometry(1.78, 0.12, 1.28, 2, 0.02), stdMat('#e8dcc8', 0.9, 0.02));
+    pages.position.y = 0.13;
+    grp.add(pages);
+    const top = new THREE.Mesh(new RoundedBoxGeometry(1.9, 0.07, 1.4, 2, 0.03), clothMat);
+    top.position.y = 0.225;
+    grp.add(top);
+    // the titled cover plate: a separate plane so the foil text never mirrors
+    const cover = new THREE.Mesh(new THREE.PlaneGeometry(1.82, 1.32), coverMat);
+    cover.rotation.x = -Math.PI / 2;
+    cover.position.y = 0.262;
+    grp.add(cover);
+    // brass spine band
+    const spine = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.27, 1.42), stdMat('#b8860b', 0.35, 0.8));
+    spine.position.set(-0.92, 0.135, 0);
+    grp.add(spine);
+
+    this.codebookGrp = grp;
+    this.scene.add(grp);
+  }
+
+  private setPointer(ev: MouseEvent): void {
+    this.pointer.set(
+      (ev.clientX / window.innerWidth) * 2 - 1,
+      -(ev.clientY / window.innerHeight) * 2 + 1,
+    );
+  }
+
+  private onPointerMove = (ev: PointerEvent): void => {
+    this.setPointer(ev);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+
+    if (this.paperOpen && this.paperT > 0.5 && this.paperMesh) {
+      const hit = this.raycaster.intersectObject(this.paperMesh, false)[0];
+      if (hit?.uv) this.onPaperPick?.(hit.uv.x, hit.uv.y, 'hover');
+      else this.onPaperPick?.(0, 0, 'leave');
+      return;
+    }
+
+    if (this.mainGlass) {
+      const hit = this.raycaster.intersectObject(this.mainGlass, false)[0];
+      if (hit?.uv) {
+        this.codebookHover = 0;
+        this.onScreenPick?.(hit.uv.x, hit.uv.y, 'hover');
+        return;
+      }
+    }
+    this.onScreenPick?.(0, 0, 'leave');
+
+    const book = this.codebookGrp
+      ? this.raycaster.intersectObject(this.codebookGrp, true).length > 0
+      : false;
+    this.codebookHover = book ? 1 : 0;
+    this.renderer.domElement.style.cursor = book ? 'pointer' : '';
+  };
+
+  private onCanvasClick = (ev: MouseEvent): void => {
+    this.setPointer(ev);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+
+    if (this.paperOpen && this.paperT > 0.5 && this.paperMesh) {
+      const hit = this.raycaster.intersectObject(this.paperMesh, false)[0];
+      if (hit?.uv) this.onPaperPick?.(hit.uv.x, hit.uv.y, 'click');
+      else this.onPaperPick?.(0, 0, 'outside');
+      return;
+    }
+
+    if (this.mainGlass) {
+      const hit = this.raycaster.intersectObject(this.mainGlass, false)[0];
+      if (hit?.uv) {
+        this.onScreenPick?.(hit.uv.x, hit.uv.y, 'click');
+        return;
+      }
+    }
+    if (this.codebookGrp && this.raycaster.intersectObject(this.codebookGrp, true).length > 0) {
+      this.onCodebookClick?.();
+    }
+  };
 
   private buildScopeModule(): void {
     const scope = new THREE.Group();
@@ -952,12 +1394,22 @@ export class Stage implements StageAPI {
         g.stroke();
       }
 
+      // scale numbers: 60 (full) at the left end, 0 (spent) at the right
       g.fillStyle = '#25365e';
       g.textAlign = 'center';
-      g.font = '700 34px sans-serif';
-      g.fillText('TIME', 256, 330);
+      g.font = '700 30px monospace';
+      for (let i = 0; i <= 4; i++) {
+        const a = a0 + (a1 - a0) * (i / 4);
+        const v = 60 - i * 15;
+        g.fillText(String(v), px + Math.cos(a) * (R - 84), py + Math.sin(a) * (R - 84) + 10);
+      }
+
+      g.fillStyle = '#25365e';
+      g.textAlign = 'center';
+      g.font = '700 36px "PingFang SC", sans-serif';
+      g.fillText('回合', 256, 322);
       g.font = '700 16px sans-serif';
-      g.fillText('REMAINING', 256, 354);
+      g.fillText('ROUND TIME', 256, 348);
 
       g.beginPath();
       g.arc(px, py, 16, 0, Math.PI * 2);
@@ -1022,6 +1474,32 @@ export class Stage implements StageAPI {
     this.energy += (this.energyTarget - this.energy) * ease;
     for (let i = 0; i < 3; i++) this.slotBoost[i] = Math.max(0, this.slotBoost[i] - dt * 1.4);
 
+    // power-up blend: instruments fade in when a match starts, out in menus
+    this.powerBlend += ((this.powered ? 1 : 0) - this.powerBlend) * ease * 0.7;
+
+    // desk keyboard: DOM typing sinks a random key, then it springs back
+    for (let i = 0; i < this.keyMeshes.length; i++) {
+      this.keySink[i] = Math.max(0, this.keySink[i] - dt * 6);
+      this.keyMeshes[i].position.y = 0.16 - this.keySink[i] * 0.06;
+    }
+    this.kbdKeyMat.color.set('#f3ecd9').lerp(new THREE.Color('#3a362e'), 1 - this.powerBlend);
+
+    // word plates brighten with power
+    for (const m of this.wordPlateMats) {
+      m.color.setScalar(0.35 + this.powerBlend * 0.65);
+    }
+
+    // score lamps follow the score, gated by power
+    this.scoreLamps.forEach((m, i) => {
+      m.emissiveIntensity = 0.02 + this.powerBlend * (0.1 + (this.scoreLevels[i] ?? 0) * 1.5);
+    });
+
+    // codebook hover lift
+    if (this.codebookGrp) {
+      const targetY = 0.42 + this.codebookHover * 0.1;
+      this.codebookGrp.position.y += (targetY - this.codebookGrp.position.y) * ease * 1.4;
+    }
+
     // scope traces (tube is r=2.0 here)
     const attrA = this.traceA.geometry.getAttribute('position') as THREE.BufferAttribute;
     const amp = 0.35 + this.energy * 0.9 + this.slotBoost[0] * 0.35;
@@ -1051,7 +1529,9 @@ export class Stage implements StageAPI {
     const v =
       frac !== null
         ? frac
-        : Math.min(1, 0.15 + this.energy * 0.5 + boost * 0.3 + Math.sin(t * 2.3) * 0.05);
+        : this.powered
+          ? Math.min(1, 0.15 + this.energy * 0.5 + boost * 0.3 + Math.sin(t * 2.3) * 0.05)
+          : 0; // standby: needle parked at rest
     const targetRot = 0.87 - v * 1.74;
     this.needle.rotation.z += (targetRot - this.needle.rotation.z) * ease * 0.8;
 
@@ -1060,14 +1540,27 @@ export class Stage implements StageAPI {
       this.reels[i].rotation.z += dt * (0.3 + this.energy * 1.6) * (i % 2 === 0 ? 1 : -1);
     }
 
-    // clock second hand
-    if (this.secondHand) this.secondHand.rotation.z = -((t % 60) / 60) * Math.PI * 2;
+    // wall clock: all three hands from local time
+    {
+      const now = new Date();
+      const sec = now.getSeconds() + (this.reducedMotion ? 0 : now.getMilliseconds() / 1000);
+      const min = now.getMinutes() + sec / 60;
+      const hr = (now.getHours() % 12) + min / 60;
+      this.secondHand.rotation.z = -(sec / 60) * Math.PI * 2;
+      this.minuteHand.rotation.z = -(min / 60) * Math.PI * 2;
+      this.hourHand.rotation.z = -(hr / 12) * Math.PI * 2;
+    }
 
     // lamps
-    this.lampPower.emissiveIntensity = 0.9 + Math.sin(t * 2) * 0.15 + this.flash;
+    this.lampPower.emissiveIntensity =
+      0.15 + this.powerBlend * (0.75 + Math.sin(t * 2) * 0.15) + this.flash;
     this.lampRed.emissiveIntensity = this.mood.alert
-      ? (Math.sin(t * 6) > 0 ? 2.4 : 0.1)
-      : 0.3 + this.flash;
+      ? this.reducedMotion
+        ? 1.2
+        : Math.sin(t * 6) > 0
+          ? 2.4
+          : 0.1
+      : 0.1 + this.powerBlend * 0.2 + this.flash;
 
     // screen glow pulse
     for (const m of this.glowMats) {
@@ -1077,11 +1570,37 @@ export class Stage implements StageAPI {
     // side screen standby waveform
     if (this.sideScreenTex?.redraw && Math.floor(t * 12) % 3 === 0) this.sideScreenTex.redraw(t);
 
-    // dust drift
-    this.dust.rotation.y = t * 0.015;
-    this.dust.position.y = Math.sin(t * 0.4) * 0.3;
+    // dust drift (frozen when the user prefers reduced motion)
+    if (!this.reducedMotion) {
+      this.dust.rotation.y = t * 0.015;
+      this.dust.position.y = Math.sin(t * 0.4) * 0.3;
+    }
 
     this.composer.render();
+
+    // canvas UI repaint (dirty-flagged) + camera/paper motion
+    this.mainPainter.flush();
+    if (this.paperGrp?.visible) this.paperPainter.flush();
+
+    this.camera.position.lerp(this.camPosTarget, ease * 0.8);
+    this.camLookCur.lerp(this.camLookTarget, ease * 0.8);
+    this.camera.lookAt(this.camLookCur);
+
+    const paperTarget = this.paperOpen ? 1 : 0;
+    this.paperT += (paperTarget - this.paperT) * ease * 1.2;
+    if (this.paperGrp) {
+      if (!this.paperOpen && this.paperT < 0.02) {
+        this.paperGrp.visible = false;
+        this.paperT = 0;
+      }
+      if (this.paperGrp.visible) {
+        // settle from a slight dip as it rises
+        this.paperGrp.position.y += 0; // position set on open; bob via rotation only
+        this.paperGrp.rotation.z = (1 - this.paperT) * 0.06;
+        const mat = this.paperMesh?.material as THREE.MeshBasicMaterial | undefined;
+        if (mat) mat.opacity = this.paperT;
+      }
+    }
   };
 
   private onResize = (): void => {
@@ -1089,6 +1608,6 @@ export class Stage implements StageAPI {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.composer.setSize(window.innerWidth, window.innerHeight);
-    this.projectScreens();
+    this.updateZoom();
   };
 }

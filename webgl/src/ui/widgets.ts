@@ -13,9 +13,12 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-/** Circular countdown with an SVG ring. Local, informational — the server
- *  remains the authoritative timekeeper (HANDOFF §2 timeouts). Also mirrors
- *  itself to the room's VU meter through the static onChange hook. */
+/** Circular countdown with an SVG ring. The server is the authoritative
+ *  timekeeper: when a server deadline (unix ms, from phase_change/full_sync)
+ *  is supplied the ring syncs to it, so a reconnect mid-phase shows the true
+ *  remaining time instead of restarting full. Without one it falls back to a
+ *  local timer. Also mirrors itself to the room's VU meter through the
+ *  static onChange hook. */
 export class CountdownRing {
   /** Wired by the app shell: (seconds|null, deadline) — null parks the VU. */
   static onChange: ((seconds: number | null, deadline?: number) => void) | null = null;
@@ -30,8 +33,12 @@ export class CountdownRing {
   constructor(
     private readonly seconds: number,
     private readonly caption: string,
+    serverDeadline?: number | null,
   ) {
-    this.deadline = performance.now() + seconds * 1000;
+    this.deadline =
+      serverDeadline && serverDeadline > 0
+        ? performance.now() + (serverDeadline - Date.now())
+        : performance.now() + seconds * 1000;
     CountdownRing.onChange?.(seconds, this.deadline);
     this.el = el('div', 'countdown');
     const ns = 'http://www.w3.org/2000/svg';
@@ -367,7 +374,6 @@ export class HistoryPanel {
 
   constructor() {
     this.el = el('div', 'history-panel');
-    this.el.append(el('div', 'panel-title', '情报档案 · 回合历史'));
     this.list = el('div', 'history-list');
     this.el.append(this.list);
   }
@@ -428,6 +434,82 @@ export class HistoryPanel {
       this.list.scrollTop = this.list.scrollHeight;
     });
   }
+}
+
+/** Paper overlay: a cream codebook page floating over the room. Hosts the
+ *  round archive and the field manual — anything "written on paper" in
+ *  fiction. Opened via the desk codebook prop / HUD button / H key. */
+export class PaperOverlay {
+  readonly el: HTMLElement;
+  private readonly body: HTMLElement;
+  private readonly titleEl: HTMLElement;
+  private visible = false;
+
+  constructor(
+    title: string,
+    private readonly onClose?: () => void,
+  ) {
+    this.el = el('div', 'paper-overlay hidden');
+    const sheet = el('div', 'paper-sheet');
+    const head = el('div', 'paper-head');
+    this.titleEl = el('div', 'paper-title', title);
+    head.append(this.titleEl);
+    head.append(el('div', 'paper-stamp', '机密'));
+    const close = el('button', 'paper-close', '阅毕');
+    close.type = 'button';
+    close.addEventListener('click', () => this.hide());
+    head.append(close);
+    this.body = el('div', 'paper-body');
+    sheet.append(head, this.body);
+    this.el.append(sheet);
+    // click the desk around the sheet to close
+    this.el.addEventListener('click', (ev) => {
+      if (ev.target === this.el) this.hide();
+    });
+  }
+
+  setContent(node: HTMLElement): void {
+    this.body.textContent = '';
+    this.body.append(node);
+  }
+
+  get isOpen(): boolean {
+    return this.visible;
+  }
+
+  show(): void {
+    this.visible = true;
+    this.el.classList.remove('hidden');
+  }
+
+  hide(): void {
+    this.visible = false;
+    this.el.classList.add('hidden');
+    this.onClose?.();
+  }
+
+  toggle(): void {
+    if (this.visible) this.hide();
+    else this.show();
+  }
+}
+
+/** The "怎么玩" field-manual page: three steps, readable in half a minute. */
+export function fieldManual(): HTMLElement {
+  const page = el('div', 'manual');
+  page.append(el('div', 'manual-meta', '4–8 人 · 每队至少 2 人 · 约 30 分钟 · 人手不足可用 AI 补位'));
+  const steps: [string, string][] = [
+    ['① 词本', '每队 4 个秘密词汇，编号 1–4。敌方永远看不到你的词本。'],
+    ['② 加密', '加密者抽到 3 位密码（如 3-1-4），为每个词位写一条线索 —— 队友要懂，敌人要懵。'],
+    ['③ 拦截', '第 3 回合起，敌方可以截获线索、推理词序。拦截成功两次，或逼对方解密失误两次，即获胜。'],
+  ];
+  for (const [title, text] of steps) {
+    const row = el('div', 'manual-step');
+    row.append(el('div', 'manual-step-title', title));
+    row.append(el('div', 'manual-step-text', text));
+    page.append(row);
+  }
+  return page;
 }
 
 /** Toast stack (top-center). */

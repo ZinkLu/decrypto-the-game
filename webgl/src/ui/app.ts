@@ -1,7 +1,7 @@
 // App shell: routes GameState -> views inside the room's main screen, owns
-// the persistent archive panel in the side screen, renders the minimal HUD,
-// and drives the three.js stage (moods, pulses, activity, codebook, score,
-// VU countdown).
+// the paper overlays (codebook archive + field manual), renders the minimal
+// HUD, and drives the three.js stage (moods, pulses, activity, codebook
+// words, score lamps, VU countdown, power state).
 
 import type { GameState, Phase, Store } from '../store';
 import type { Mood, StageAPI } from '../scene';
@@ -19,7 +19,15 @@ import {
   View,
   WaitCluesView,
 } from './views';
-import { CountdownRing, HistoryPanel, Toasts, el, scorePips } from './widgets';
+import {
+  CountdownRing,
+  HistoryPanel,
+  PaperOverlay,
+  Toasts,
+  el,
+  fieldManual,
+  scorePips,
+} from './widgets';
 
 const PHASE_ACTION: Partial<Record<Phase, string>> = {
   encrypting: 'encrypt',
@@ -31,14 +39,6 @@ const ACTION_LABEL: Record<string, string> = {
   encrypt: '编制密电',
   intercept: '拦截破译',
   decrypt: '解密核对',
-};
-
-const PHASE_LABEL: Partial<Record<Phase, string>> = {
-  encrypting: '加密中',
-  intercept: '拦截窗口',
-  decrypt: '解密窗口',
-  round_result: '回合结算',
-  game_over: '行动结束',
 };
 
 const MOOD_BY_PHASE: Record<Phase, Mood> = {
@@ -55,14 +55,13 @@ export class App {
   private hud: HTMLElement;
   private hudLeft: HTMLElement;
   private hudRight: HTMLElement;
-  private chrome: HTMLElement;
-  private chromeRight: HTMLElement;
   private screenMain: HTMLElement;
-  private screenSide: HTMLElement;
   private viewRoot: HTMLElement;
   private strip: HTMLElement;
   private toasts = new Toasts();
   private history = new HistoryPanel();
+  private archive: PaperOverlay;
+  private manual: PaperOverlay;
 
   private view: View | null = null;
   private viewId = '';
@@ -72,6 +71,7 @@ export class App {
   private lastProgress: GameState['progress'] = null;
   private lastAI: GameState['aiStatus'] = null;
   private lastWordsKey = '';
+  private lastPowered: boolean | null = null;
 
   constructor(
     private readonly store: Store,
@@ -83,30 +83,64 @@ export class App {
     this.hudRight = el('div', 'hud-right');
     this.hud.append(this.hudLeft, this.hudRight);
 
-    // the room's two screens: main carries the views, side the archive
+    // the room's main tube carries the views
     this.screenMain = el('div', 'screen screen-main');
-    // terminal chrome: the screen's own title bar (round / phase / encryptor)
-    this.chrome = el('div', 'screen-chrome');
-    this.chrome.append(el('span', 'chrome-left', '监听终端 K-3 · DECRYPTO'));
-    this.chromeRight = el('span', 'chrome-right');
-    this.chrome.append(this.chromeRight);
     this.viewRoot = el('div', 'view-root');
-    this.screenMain.append(this.chrome, this.viewRoot);
-    this.screenSide = el('div', 'screen screen-side hidden');
-    this.screenSide.append(this.history.el);
+    this.screenMain.append(this.viewRoot);
 
     this.strip = el('div', 'status-strip');
     this.screenMain.append(this.strip);
     this.screenMain.append(this.toasts.el);
 
-    root.append(this.hud, this.screenMain, this.screenSide);
+    // paper overlays: the codebook (round archive) and the field manual
+    this.archive = new PaperOverlay('密码本 · 情报档案');
+    this.archive.setContent(this.history.el);
+    this.manual = new PaperOverlay('野战手册 · 怎么玩');
+    this.manual.setContent(fieldManual());
+
+    root.append(this.hud, this.screenMain, this.archive.el, this.manual.el);
 
     // the room's VU meter mirrors the active countdown
     CountdownRing.onChange = (seconds, deadline) => this.stage.setCountdown(seconds, deadline);
 
+    // the desk codebook prop opens the archive
+    this.stage.onCodebookClick = () => this.archive.toggle();
+
+    // DOM typing makes the 3D desk keyboard sink a key
+    this.viewRoot.addEventListener(
+      'keydown',
+      (ev) => {
+        const t = ev.target as HTMLElement | null;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) this.stage.keyPress();
+      },
+      true,
+    );
+
+    // H toggles the codebook, Esc closes any paper overlay; the home view's
+    // "怎么玩？" button opens the manual via a window event
+    window.addEventListener('keydown', this.onGlobalKey);
+    window.addEventListener('decrypto:howto', this.onHowto);
+
     store.subscribe((s) => this.render(s));
     this.render(store.state);
   }
+
+  private onGlobalKey = (ev: KeyboardEvent): void => {
+    const t = ev.target as HTMLElement | null;
+    const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+    if (ev.key === 'Escape') {
+      if (this.archive.isOpen) this.archive.hide();
+      if (this.manual.isOpen) this.manual.hide();
+      return;
+    }
+    if (!typing && (ev.key === 'h' || ev.key === 'H')) {
+      this.archive.toggle();
+    }
+  };
+
+  private onHowto = (): void => {
+    this.manual.show();
+  };
 
   private render(s: GameState): void {
     // toasts
@@ -119,14 +153,20 @@ export class App {
     const mood = MOOD_BY_PHASE[s.phase];
     this.stage.setMood(mood);
 
-    // desk displays: your 4 code words during a match, blank outside
+    // instruments power up for a match, go dark in menus
     const inGame = s.phase !== 'home' && s.phase !== 'room';
+    if (inGame !== this.lastPowered) {
+      this.lastPowered = inGame;
+      this.stage.setPowered(inGame);
+    }
+
+    // desk displays: your 4 code words during a match, blank outside
     const wordsKey = inGame ? s.myWords.join('|') : '';
     if (wordsKey !== this.lastWordsKey) {
       this.lastWordsKey = wordsKey;
       this.stage.setCodebook(inGame && s.myWords.length === 4 ? s.myWords : null);
     }
-    // score lamps on the wall strip
+    // score lamps on the wall board
     this.stage.setScore(s.scoreA, s.scoreB);
 
     // scene pulses on fresh results
@@ -169,10 +209,8 @@ export class App {
     }
     this.view?.update(s);
 
-    // archive side screen: visible during a match, hidden otherwise (the
-    // room shows a standby readout on that tube)
-    this.screenSide.classList.toggle('hidden', !inGame);
-    if (inGame) this.history.update(s.history, s.myTeam, s.myWords);
+    // codebook archive keeps tracking the match
+    this.history.update(s.history, s.myTeam, s.myWords);
 
     this.renderHud(s);
     this.renderStrip(s);
@@ -229,13 +267,13 @@ export class App {
   }
 
   private renderHud(s: GameState): void {
-    const inGame = s.phase !== 'home';
-    this.hud.classList.toggle('hidden', !inGame);
-    if (!inGame) return;
+    const inRoom = s.phase !== 'home';
+    this.hud.classList.toggle('hidden', !inRoom);
+    if (!inRoom) return;
 
     this.hudLeft.textContent = '';
     const conn = el('span', `conn-dot${s.connected ? ' on' : ''}`);
-    conn.title = s.connected ? '频道在线' : '连接中断';
+    conn.title = s.connected ? '线路已接通' : '线路中断';
     this.hudLeft.append(conn);
     if (s.roomCode) this.hudLeft.append(el('span', 'hud-room', `频道 ${s.roomCode}`));
     if (s.myTeam) {
@@ -247,18 +285,11 @@ export class App {
       this.hudRight.append(this.hudScore('A', s.scoreA));
       this.hudRight.append(this.hudScore('B', s.scoreB));
     }
-
-    // terminal chrome inside the main screen: round / phase / encryptor
-    this.chromeRight.textContent = '';
-    if (s.phase !== 'room' && s.round > 0) {
-      const parts = [`回合 ${s.round}/16`];
-      const label = PHASE_LABEL[s.phase];
-      if (label) parts.push(label);
-      if (s.encryptor && s.phase !== 'game_over') parts.push(`加密者 ${s.encryptor}`);
-      this.chromeRight.append(el('span', 'chrome-status', parts.join(' · ')));
-    } else if (s.phase === 'room') {
-      this.chromeRight.append(el('span', 'chrome-status', '集结待命'));
-    }
+    const bookBtn = el('button', 'hud-book', '密码本');
+    bookBtn.type = 'button';
+    bookBtn.title = '查看回合历史（H）';
+    bookBtn.addEventListener('click', () => this.archive.toggle());
+    this.hudRight.append(bookBtn);
   }
 
   private hudScore(team: string, score: { interceptions: number; decrypt_failures: number }): HTMLElement {
@@ -266,10 +297,14 @@ export class App {
     wrap.append(el('span', `team-badge team-${team.toLowerCase()}`, team));
     const ints = el('span', 'hud-score-group');
     ints.title = '拦截成功（先得 2 分获胜）';
+    ints.append(el('span', 'hud-score-tag', '拦'));
     ints.append(scorePips(score.interceptions, 'pips-intercept'));
+    ints.append(el('span', 'hud-score-num', `${score.interceptions}/2`));
     const fails = el('span', 'hud-score-group');
     fails.title = '解密失误（累计 2 次判负）';
+    fails.append(el('span', 'hud-score-tag', '误'));
     fails.append(scorePips(score.decrypt_failures, 'pips-fail'));
+    fails.append(el('span', 'hud-score-num', `${score.decrypt_failures}/2`));
     wrap.append(ints, fails);
     return wrap;
   }
@@ -300,6 +335,9 @@ export class App {
       this.strip.append(el('span', 'strip-item', `${p.player} · ${ACTION_LABEL[action]} · ${stateText}`));
       return;
     }
-    this.strip.append(el('span', 'strip-item strip-quiet', '频道静默'));
+    // say who we're waiting for instead of an opaque "silence"
+    const whom =
+      action === 'encrypt' && s.encryptor ? `等待 ${s.encryptor} 编制密电` : '线路静默 · 等待动静';
+    this.strip.append(el('span', 'strip-item strip-quiet', whom));
   }
 }

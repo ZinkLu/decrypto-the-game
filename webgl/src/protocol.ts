@@ -68,6 +68,8 @@ export interface PhaseChangeData {
   clues?: string[];
   history?: RoundHistoryRow[];
   waiting?: boolean;
+  /** Server-side phase timeout, unix ms. Absent = untimed phase. */
+  deadline?: number;
 }
 
 export interface RoundResultData {

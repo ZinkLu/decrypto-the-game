@@ -65,6 +65,8 @@ export interface GameState {
   encryptor: string;
   history: RoundHistoryRow[];
   waiting: boolean;
+  /** Server-side phase timeout (unix ms), null when untimed/unknown. */
+  phaseDeadline: number | null;
   scoreA: ScoreInfo;
   scoreB: ScoreInfo;
   result: RoundResultState | null;
@@ -100,6 +102,7 @@ const initialState = (): GameState => ({
   encryptor: '',
   history: [],
   waiting: false,
+  phaseDeadline: null,
   scoreA: { interceptions: 0, decrypt_failures: 0 },
   scoreB: { interceptions: 0, decrypt_failures: 0 },
   result: null,
@@ -262,6 +265,7 @@ export class Store {
         clues: [],
         history: d.history ?? this.state.history,
         waiting: d.waiting ?? false,
+        phaseDeadline: null,
         result: null,
         aiStatus: null,
         progress: null,
@@ -281,6 +285,7 @@ export class Store {
       clues: d.clues ?? this.state.clues,
       history: d.history ?? this.state.history,
       waiting: d.waiting ?? false,
+      phaseDeadline: d.deadline ?? null,
       result: null,
       aiStatus: null,
       progress: null,
@@ -299,6 +304,7 @@ export class Store {
       scoreA: d.score_a ?? this.state.scoreA,
       scoreB: d.score_b ?? this.state.scoreB,
       phase: 'round_result',
+      phaseDeadline: null,
     });
   }
 
@@ -341,6 +347,7 @@ export class Store {
         encryptor: (game.encryptor as string) ?? this.state.encryptor,
         history: (game.history as RoundHistoryRow[]) ?? this.state.history,
         waiting: (game.waiting as boolean) ?? false,
+        phaseDeadline: (game.deadline as number) ?? null,
         scoreA: (game.score_a as ScoreInfo) ?? this.state.scoreA,
         scoreB: (game.score_b as ScoreInfo) ?? this.state.scoreB,
         phase,

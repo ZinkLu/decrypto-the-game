@@ -1,6 +1,8 @@
-// Browser-level E2E: drives a real (headless) Chrome through a full game via
-// CDP, while a scripted WS client plays as the second human. Captures a
-// screenshot of every distinct view into /tmp/decrypto-shots/.
+// Browser-level E2E for the canvas (ui3d) UI: drives a real headless Chrome
+// through a full game via CDP, while a scripted WS client plays as the
+// second human. Interactions go through the shell's __ui3d hook (hit-area
+// clicks, IME input), plus real CDP mouse events for raycast verification.
+// Captures screenshots into /tmp/decrypto-shots/.
 //
 // Usage: node webgl/scripts/browser-e2e.mjs
 // Requires: ./server running on :8080, Google Chrome installed (macOS path).
@@ -100,121 +102,191 @@ await cdpSend('Page.enable');
 await cdpSend('Runtime.enable');
 await sleep(2500);
 
-// ---------- scenario ----------
-const stateExpr = `JSON.stringify({
-  conn: !!document.querySelector('.conn-dot.on'),
-  home: !!document.querySelector('.home-card'),
-  lobby: !!document.querySelector('.lobby-wrap'),
-  canStart: !![...document.querySelectorAll('.btn-start')].find(b=>!b.disabled),
-  clueInputs: [...document.querySelectorAll('.clue-inputs input')].filter(i=>!i.disabled).length,
-  digits: !!document.querySelector('.digit-selector:not(.disabled)'),
-  assign: !!document.querySelector('.word-assign:not(.disabled)'),
-  actionBtn: (()=>{const b=[...document.querySelectorAll('.action-panel .btn')].find(x=>!x.disabled && !x.textContent.includes('放弃')); return b?b.textContent.trim():null})(),
-  title: document.querySelector('.view-title')?.textContent ?? null,
-  banner: document.querySelector('.result-banner-title')?.textContent ?? null,
-  over: document.querySelector('.result-banner.big .result-banner-title')?.textContent ?? null,
-})`;
-
-// 1. home
-let st = JSON.parse(await evalJS(stateExpr));
-if (!st.home) fail('home view did not render');
-for (let i = 0; i < 20 && !st.conn; i++) {
-  await sleep(300);
-  st = JSON.parse(await evalJS(stateExpr));
+// ---------- ui3d helpers ----------
+const ui3d = (expr) => evalJS(`window.__ui3d ? window.__ui3d.${expr} : null`);
+const typeIme = (text) =>
+  evalJS(`(()=>{const i=document.querySelector('#ime-capture'); if(!i) return null; i.value=${JSON.stringify(text)}; i.dispatchEvent(new Event('input',{bubbles:true})); return i.value})()`);
+async function realClick(id) {
+  const p = await ui3d(`areaClient('${id}')`);
+  if (!p) return false;
+  const x = Math.round(p.x);
+  const y = Math.round(p.y);
+  await cdpSend('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+  await cdpSend('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+  return true;
 }
-if (!st.conn) fail('browser did not connect to WS');
+const keyEvent = async (key, text) => {
+  await cdpSend('Input.dispatchKeyEvent', { type: 'keyDown', key, ...(text ? { text } : {}) });
+  await cdpSend('Input.dispatchKeyEvent', { type: 'keyUp', key });
+};
+
+// ---------- 0. wait for boot + connection ----------
+let ok = false;
+for (let i = 0; i < 40; i++) {
+  const enabled = await ui3d(`area('submit')?.enabled`);
+  if (enabled) {
+    ok = true;
+    break;
+  }
+  await sleep(300);
+}
+if (!ok) fail('ui3d did not boot or never connected');
 await shot('01-home');
 
-// 2. create room as owner
-await evalJS(`(()=>{const i=document.querySelector('.home-card input'); i.value='指挥官'; i.dispatchEvent(new Event('input',{bubbles:true})); document.querySelector('.btn-primary').click(); return 1})()`);
-await sleep(800);
-st = JSON.parse(await evalJS(stateExpr));
-if (!st.lobby) fail('lobby did not render after create_room');
-const roomCode = await evalJS(`document.querySelector('.lobby-code')?.textContent`);
-log(`room: ${roomCode}`);
-await shot('02-lobby-empty');
+// ---------- 1. field manual via 怎么玩 ----------
+if (!(await ui3d(`click('howto')`))) fail('howto hit-area missing');
+await sleep(400);
+if (!(await ui3d(`paperOpen()`))) fail('manual paper did not open');
+await shot('02-manual');
+if (!(await ui3d(`paperClick('paper-close')`))) fail('paper-close hit-area missing');
+await sleep(300);
+if (await ui3d(`paperOpen()`)) fail('manual paper did not close');
 
-// 3. bot joins team B; browser (owner, auto-placed in team A) adds one AI per team
+// ---------- 2. archive via H key ----------
+await keyEvent('h', 'h');
+await sleep(400);
+if (!(await ui3d(`paperOpen()`))) fail('archive paper did not open on H');
+await shot('03-archive-empty');
+await keyEvent('Escape');
+await sleep(300);
+if (await ui3d(`paperOpen()`)) fail('archive paper did not close on Esc');
+
+// ---------- 3. create room (real mouse clicks — raycast verification) ----------
+if (!(await realClick('nick'))) fail('real click on nick field missed (raycast broken?)');
+await sleep(200);
+if ((await typeIme('指挥官')) !== '指挥官') fail('IME capture not wired');
+if (!(await realClick('submit'))) fail('real click on submit missed');
+await sleep(900);
+if ((await ui3d(`viewId()`)) !== 'lobby') fail('did not reach lobby after create_room');
+const roomCode = await ui3d(`roomCode()`);
+log(`room: ${roomCode}`);
+await shot('04-lobby-empty');
+
+// ---------- 4. bot joins team B, owner adds AI to both teams, start ----------
 bot.ws.send(JSON.stringify({ type: 'join_room', data: { room_code: roomCode, nickname: '副官' } }));
 await sleep(400);
 bot.ws.send(JSON.stringify({ type: 'select_team', data: { team: 'B' } }));
-await sleep(500);
-await evalJS(`[...document.querySelectorAll('.lobby-foot .btn-small')].find(b=>b.textContent.includes('A'))?.click()`);
+await sleep(400);
+await ui3d(`click('ai-a')`);
 await sleep(300);
-await evalJS(`[...document.querySelectorAll('.lobby-foot .btn-small')].find(b=>b.textContent.includes('B'))?.click()`);
+await ui3d(`click('ai-b')`);
 await sleep(600);
-st = JSON.parse(await evalJS(stateExpr));
-if (!st.canStart) fail('can_start never became true');
-await shot('03-lobby-full');
-
-// 4. start game from the browser (owner)
-await evalJS(`document.querySelector('.btn-start')?.click()`);
+ok = false;
+for (let i = 0; i < 20; i++) {
+  const enabled = await ui3d(`area('start')?.enabled`);
+  if (enabled) {
+    ok = true;
+    break;
+  }
+  await sleep(300);
+}
+if (!ok) fail('can_start never became true');
+await shot('05-lobby-full');
+await ui3d(`click('start')`);
 log('game started');
 
-// 5. play loop
+// ---------- 5. play loop ----------
 const seen = new Set();
-let lastSig = '';
-const deadline = Date.now() + 150_000;
+let lastView = '';
+const deadline = Date.now() + 200_000;
 while (Date.now() < deadline) {
   await sleep(700);
-  st = JSON.parse(await evalJS(stateExpr));
+  const view = await ui3d(`viewId()`);
+  if (!view) continue;
 
-  const sig = `${st.title}|${st.banner}|${st.clueInputs}|${st.digits}|${st.assign}|${st.over}`;
-  if (sig !== lastSig) {
-    lastSig = sig;
-    if (st.over && !seen.has('over')) {
-      seen.add('over');
-      await shot('90-gameover');
-      log(`game over: ${st.over}`);
-      break;
-    }
-    if (st.banner && !seen.has(`banner-${st.banner}`)) {
-      seen.add(`banner-${st.banner}`);
-      await shot(`80-result-${seen.size}`);
-    } else if (st.clueInputs > 0 && !seen.has('encrypt')) {
-      seen.add('encrypt');
-      await shot('10-encrypt');
-    } else if ((st.digits || st.assign) && !seen.has(`input-${st.title}`)) {
-      seen.add(`input-${st.title}`);
-      await shot(`20-input-${st.title?.replace(/\W+/g, '_')}`);
-    } else if (st.title && !seen.has(`wait-${st.title}`)) {
-      seen.add(`wait-${st.title}`);
-      await shot(`30-wait-${st.title?.replace(/\W+/g, '_')}`);
+  if (view !== lastView) {
+    lastView = view;
+    if (!seen.has(view)) {
+      seen.add(view);
+      await shot(`view-${seen.size}-${view}`);
     }
   }
 
-  // act: fill clues
-  if (st.clueInputs > 0) {
-    await evalJS(`(()=>{const vals=['北风','夜莺','钟楼']; const ins=[...document.querySelectorAll('.clue-inputs input')].filter(i=>!i.disabled); ins.forEach((el,i)=>{el.value=vals[i]??'信号'; el.dispatchEvent(new Event('input',{bubbles:true}))}); const b=[...document.querySelectorAll('.action-panel .btn')].find(x=>x.textContent.includes('密电')); if(b&&!b.disabled) b.click(); return ins.length})()`);
-    log('browser submitted clues');
-    continue;
+  if (view === 'gameover') {
+    log('game over reached');
+    break;
   }
-  // act: pick digits (intercept — confirm button enables only after 3 picks)
-  if (st.digits) {
-    await evalJS(`(()=>{const keys=[...document.querySelectorAll('.digit-selector:not(.disabled) .digit-key')].filter(k=>/^\\d$/.test(k.textContent)); keys[0]?.click(); return 1})()`);
-    await sleep(150);
-    await evalJS(`(()=>{const keys=[...document.querySelectorAll('.digit-selector:not(.disabled) .digit-key')].filter(k=>/^\\d$/.test(k.textContent)); keys[1]?.click(); return 1})()`);
-    await sleep(150);
-    await evalJS(`(()=>{const keys=[...document.querySelectorAll('.digit-selector:not(.disabled) .digit-key')].filter(k=>/^\\d$/.test(k.textContent)); keys[2]?.click(); return 1})()`);
-    await sleep(200);
-    await evalJS(`(()=>{const b=[...document.querySelectorAll('.action-panel .btn')].find(x=>!x.disabled && !x.textContent.includes('放弃')); b?.click(); return 1})()`);
-    log(`browser submitted guess (${st.actionBtn ?? 'digits'})`);
-    continue;
-  }
-  // act: assign words to clues (decrypt — click 3 chips then confirm)
-  if (st.assign) {
-    for (let i = 0; i < 3; i++) {
-      await evalJS(`(()=>{const chips=[...document.querySelectorAll('.word-assign:not(.disabled) .word-chip')]; chips[${i}]?.click(); return 1})()`);
+  if (view === 'encrypt') {
+    // only act once per round: clue fields are disabled after submitting
+    const editable = await ui3d(`area('clue-0')?.enabled`);
+    if (editable) {
+      await ui3d(`click('clue-0')`);
+      await typeIme('北风');
+      await ui3d(`click('clue-1')`);
+      await typeIme('夜莺');
+      await ui3d(`click('clue-2')`);
+      await typeIme('钟楼');
       await sleep(150);
+      await ui3d(`click('submit')`);
+      log('browser submitted clues');
     }
-    await sleep(200);
-    await evalJS(`(()=>{const b=[...document.querySelectorAll('.action-panel .btn')].find(x=>!x.disabled); b?.click(); return 1})()`);
-    log(`browser assigned words (${st.actionBtn ?? 'assign'})`);
+    continue;
+  }
+  if (view === 'intercept-input') {
+    const submittable = await ui3d(`area('submit')?.enabled`);
+    const slots = await ui3d(`area('slot-0')?.enabled`);
+    if (slots) {
+      await ui3d(`click('key-1')`);
+      await sleep(120);
+      await ui3d(`click('key-2')`);
+      await sleep(120);
+      await ui3d(`click('key-3')`);
+      await sleep(150);
+      await ui3d(`click('submit')`);
+      log('browser submitted intercept');
+    } else if (!submittable) {
+      // already submitted — idle
+    }
+    continue;
+  }
+  if (view === 'decrypt-input') {
+    const rowsEnabled = await ui3d(`area('row-0')?.enabled`);
+    if (rowsEnabled) {
+      await ui3d(`click('word-0')`);
+      await sleep(120);
+      await ui3d(`click('word-1')`);
+      await sleep(120);
+      await ui3d(`click('word-2')`);
+      await sleep(150);
+      await ui3d(`click('submit')`);
+      log('browser submitted decrypt');
+    }
+    continue;
   }
 }
 
-if (!seen.has('over')) fail('game_over not reached in time');
+if (!seen.has('gameover')) fail('game_over not reached in time');
+await shot('90-gameover');
+
+// ---------- 6. codebook prop opens the archive (real mouse on the 3D book) ----------
+const bookPos = await ui3d(`codebookClient()`);
+if (!bookPos) fail('codebook prop has no client position');
+await cdpSend('Input.dispatchMouseEvent', {
+  type: 'mousePressed',
+  x: Math.round(bookPos.x),
+  y: Math.round(bookPos.y),
+  button: 'left',
+  clickCount: 1,
+});
+await cdpSend('Input.dispatchMouseEvent', {
+  type: 'mouseReleased',
+  x: Math.round(bookPos.x),
+  y: Math.round(bookPos.y),
+  button: 'left',
+  clickCount: 1,
+});
+await sleep(500);
+if (!(await ui3d(`paperOpen()`))) fail('codebook prop click did not open the archive');
+await shot('91-archive-history');
+await keyEvent('Escape');
+await sleep(300);
+
+// ---------- 7. back home ----------
+await ui3d(`click('home')`);
+await sleep(600);
+if ((await ui3d(`phase()`)) !== 'home') fail('reset did not return home');
+
 log(`views captured: ${[...seen].join(', ')}`);
-console.log(`PASS: browser played a full game; screenshots in ${SHOTS}`);
+console.log(`PASS: browser played a full game on the canvas UI; screenshots in ${SHOTS}`);
 chrome.kill();
 process.exit(0);
