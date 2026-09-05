@@ -19,11 +19,11 @@ export class WebSocketService {
 
     this.ws.onopen = () => {
       this.reconnectDelay = 1000;
-      this.handler('_connected', {});
+      this.handler("_connected", {});
     };
 
     this.ws.onclose = () => {
-      this.handler('_disconnected', {});
+      if (!this.intentionalDisconnect) this.handler("_disconnected", {});
       // Only auto-reconnect if the close was NOT intentional
       if (!this.intentionalDisconnect) {
         this.scheduleReconnect();
@@ -36,10 +36,13 @@ export class WebSocketService {
 
     this.ws.onmessage = (event: MessageEvent) => {
       try {
-        const msg = JSON.parse(event.data as string) as { type: string; data: unknown };
+        const msg = JSON.parse(event.data as string) as {
+          type: string;
+          data: unknown;
+        };
         this.handler(msg.type, msg.data);
       } catch (e) {
-        console.error('Failed to parse WebSocket message:', e);
+        console.error("Failed to parse WebSocket message:", e);
       }
     };
   }

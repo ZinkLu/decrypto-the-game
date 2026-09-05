@@ -1,83 +1,23 @@
-# 前端页面与组件索引
+# Three.js tabletop frontend
 
-> 路由总表见 `src/App.tsx`（按 `phase × role` 分发页面）。
-> 一个回合分四个阶段：**ENCRYPTING → INTERCEPT → DECRYPT → ROUND_RESULT**。
-> 每个阶段每种角色（encryptor / teammate / opponent）看到的页面不同。
+The active UI is composed in `src/App.tsx`: Home, Lobby, Game, ActionPanel, Result and shared word rack/history/score components. Rendering and layout styles live in `src/index.css`.
 
-## 一、大厅阶段（回合外）
+`src/components/tabletop/DecoderScene.tsx` builds original black/ivory decoder machines, red filter windows, a code card and tokens with Three.js. It is lazy-loaded separately from the game UI, caps device pixel ratio, releases GPU resources, honors reduced motion, pauses drawing when hidden/still and provides a CSS fallback when WebGL is unavailable.
 
-| phase  | 页面      | 用途                          |
-| ------ | --------- | ----------------------------- |
-| `home` | Home.tsx  | 首页 / 创建房间               |
-| `room` | Room.tsx  | 房间大厅（等人、分队、加 AI） |
+## Screens
 
----
+- Home: nickname, create/join mode, four-character alphanumeric room code, connection status, rules.
+- Lobby: two teams, 4 seats per side, AI add/remove for owner, team join/leave, start readiness.
+- Encrypting: secret three-number code, Chinese keywords, three clue inputs; others see waiting/progress.
+- Intercept: opponents use unique 1–4 keys to guess the code; current team waits.
+- Decrypt: teammates guess; encryptor and opponents watch progress.
+- Round result: incremental interception/decryption outcomes and current scores.
+- Game over: winner/tie, scores and return to home.
 
-## 二、回合内阶段
+All controls use the existing Go WebSocket protocol. The Go backend was not changed. Disconnects clear the unusable old seat and show an explanation; this server cannot restore identities after reconnecting. Phase timers are estimates starting when the phase message arrives, because the server does not supply an authoritative deadline. Without an AI provider, the server uses placeholder clues.
 
-### 阶段 1 ── ENCRYPTING（加密者出题）
+## Validation
 
-> 加密者看 3 个秘密数字，给己方写 3 条线索。
+`npm test` exercises real store/client code with protocol messages: idempotent connection, public clues, incremental results, new-round reset, error feedback and disconnect cleanup.
 
-| 角色      | 页面                  | 状态                                     |
-| --------- | --------------------- | ---------------------------------------- |
-| encryptor | Encryptor.tsx         | 出题主界面：看数字、写线索、提交         |
-| teammate  | TeammateWaiting.tsx   | 等待己方加密者出题                       |
-| opponent  | OpponentWaiting.tsx   | 等待对方加密者出题                       |
-
-### 阶段 2 ── INTERCEPT（对手拦截，第 3 回合起）
-
-> 对手看到己方线索，尝试猜出对方的数字顺序。
-
-| 角色      | 页面                      | 状态                                     |
-| --------- | ------------------------- | ---------------------------------------- |
-| encryptor | InterceptedWaiting.tsx    | 己方出完题，等对手拦截                   |
-| teammate  | InterceptedWaiting.tsx    | 己方出完题，等对手拦截（共用同一页面）   |
-| opponent  | OpponentIntercepting.tsx  | 拦截主界面：看对方线索、下注数字顺序     |
-
-### 阶段 3 ── DECRYPT（队友解密）
-
-> 己方队友（非加密者）根据线索猜己方数字顺序。
-
-| 角色      | 页面                   | 状态                                     |
-| --------- | ---------------------- | ---------------------------------------- |
-| encryptor | EncryptorWatching.tsx  | 看队友解密（示波器/辉光管实时反馈）      |
-| teammate  | TeammateDecoding.tsx   | 解密主界面：看线索、选数字、提交         |
-| opponent  | OpponentAnalyzing.tsx  | 拦截已提交，等对手队伍解密结果            |
-
-### 阶段 4 ── ROUND_RESULT（回合结算）
-
-| 角色 | 页面              | 状态                 |
-| ---- | ----------------- | -------------------- |
-| 所有 | RoundResult.tsx   | 展示本回合拦截/失误  |
-
----
-
-## 三、终局
-
-| phase       | 页面           | 用途     |
-| ----------- | -------------- | -------- |
-| `game_over` | GameOver.tsx   | 游戏结束 |
-
----
-
-## 四、核心组件（src/components/）
-
-| 组件                  | 用途         |
-| --------------------- | ------------ |
-| TransitionOverlay.tsx | 全局转场遮罩 |
-
-### dossier 系列（复古档案 / 谍报风格 UI）
-
-| 组件                       | 用途                                        |
-| -------------------------- | ------------------------------------------- |
-| AgentPanel.tsx             | 底部特工 emoji + 气泡文案                   |
-| BrassTokenPad.tsx          | 黄铜数字按键盘（1–4）                       |
-| DeskClockTimer.tsx         | 桌面时钟计时器                              |
-| DossierButton.tsx          | 档案风格按钮（含 stamp 变体）               |
-| DossierEffectLayer.tsx     | 整页胶片噪点 / 漏光 / 暗角特效层            |
-| DossierTransition.tsx      | 档案风格页面转场                            |
-| ManilaFolder.tsx           | 牛皮纸文件夹卡片                            |
-| PaperCard.tsx              | 纸张卡片（可带回形针）                      |
-| RedactedText.tsx           | 涂黑 / 打码文字                             |
-| SelectorOscilloscope.tsx   | 示波器 + 辉光管数字（DECRYPT 阶段实时反馈） |
+`npm run build` typechecks and builds production files into `dist/`. Run the Go server from the repository root (with `words.txt`) and visit http://localhost:8080. Development uses `npm run dev` on port 3000.
