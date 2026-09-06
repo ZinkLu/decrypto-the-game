@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "node --test scripts/store.test.mjs"
+    "test": "node --test scripts/*.test.mjs"
   },
   "dependencies": {
     "react": "^19.2.3",

@@ -237,7 +237,7 @@ function handleServerMessage(
           encryptor: (d.encryptor as string) ?? "",
           secretDigits: (d.secret_digits as number[]) ?? [],
           secretWords: (d.secret_words as string[]) ?? [],
-          clues: (d.clues as string[]) ?? get().clues,
+          clues: (d.clues as string[]) ?? [],
           history: (d.history as RoundHistoryRow[]) ?? get().history,
           waiting: (d.waiting as boolean) ?? false,
           roundResult: null,
@@ -252,7 +252,7 @@ function handleServerMessage(
           encryptor: (d.encryptor as string) ?? "",
           secretDigits: (d.secret_digits as number[]) ?? [],
           secretWords: (d.secret_words as string[]) ?? [],
-          clues: (d.clues as string[]) ?? get().clues,
+          clues: (d.clues as string[]) ?? (newPhase === "encrypting" ? [] : get().clues),
           history: (d.history as RoundHistoryRow[]) ?? get().history,
           waiting: (d.waiting as boolean) ?? false,
           roundResult: newPhase === "decrypt" ? get().roundResult : null,
@@ -326,7 +326,7 @@ function handleServerMessage(
           waiting: (gameData.waiting as boolean) ?? false,
           scoreA: (gameData.score_a as ScoreInfo) ?? get().scoreA,
           scoreB: (gameData.score_b as ScoreInfo) ?? get().scoreB,
-          phase: (gameData.phase as GamePhase) ?? get().phase,
+          phase: ({ new: "encrypting", init: "encrypting", done: "round_result" } as Record<string, GamePhase>)[String(gameData.phase)] ?? (gameData.phase as GamePhase) ?? get().phase,
         });
       } else if (roomData) {
         set({ phase: "room" });

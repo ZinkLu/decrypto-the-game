@@ -53,6 +53,8 @@ yarn-error.log*
 
 # Cache
 .cache/
+.pnpm-store/
+*.blend1
 .parcel-cache/
 .eslintcache
 .agent/

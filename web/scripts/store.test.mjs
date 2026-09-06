@@ -51,6 +51,11 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     socket.receive('phase_change', { phase: 'new_round', round: 4, your_role: 'opponent' });
     assert.equal(store.getState().phase, 'encrypting');
     assert.equal(store.getState().roundResult, null);
+    assert.deepEqual(store.getState().clues, [], 'new rounds never show previous-round clues while waiting');
+    socket.receive('full_sync', { game: { phase: 'done', round: 4 } });
+    assert.equal(store.getState().phase, 'round_result', 'internal done maps to the console result surface');
+    socket.receive('full_sync', { game: { phase: 'init', round: 5 } });
+    assert.equal(store.getState().phase, 'encrypting', 'internal init maps to encryption');
     socket.receive('error', { message: 'room not found' });
     assert.match(store.getState().error, /没有找到/);
     store.getState().clearError();
