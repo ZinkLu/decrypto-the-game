@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 
 const source = await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const { roleState, archiveRows, archiveStart, resultTint, previewState, initialLocal } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { roleState, rosterTeams, archiveRows, archiveStart, resultTint, previewState, initialLocal } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 
 test('only the current actor can transmit a complete, valid message', () => {
   const encrypt = previewState({}, 'encrypting');
@@ -56,4 +56,34 @@ test('an intercepted sender gets a failure cue while the intercepting player get
   const final = previewState({}, 'game_over');
   assert.equal(resultTint(final), '#8bc995');
   assert.equal(resultTint({ ...final, myTeam: 'B' }), '#ed9781');
+});
+
+test('roster follows public phase progress and does not attribute stale or ambiguous reports', () => {
+  const s = previewState({}, 'waiting');
+  const team = rosterTeams(s, initialLocal)[0];
+  assert.equal(team.seats[1].status, '加密中');
+  assert.equal(team.seats[1].progress.step, 2);
+  assert.equal(team.seats[0].progress, null);
+  const stale = rosterTeams({ ...s, phase: 'decrypt' }, initialLocal)[0];
+  assert.equal(stale.seats[1].acting, false, 'encryptor cannot decrypt');
+  assert.equal(stale.seats[1].progress, null, 'previous phase progress is hidden');
+  const duplicate = { ...s, teamB: s.teamB.map((p, i) => i ? p : { ...p, nickname: s.encryptor }) };
+  assert.ok(rosterTeams(duplicate, initialLocal).flatMap(t => t.seats).every(p => !p.progress));
+  const intercept = rosterTeams(previewState({}, 'intercept'), initialLocal);
+  assert.ok(intercept[0].seats.every(p => p.acting), 'opponents act during interception');
+  assert.ok(intercept[1].seats.every(p => !p.acting));
+});
+
+test('roster distinguishes vacant seats, owner, self, AI and local completion', () => {
+  const lobby = rosterTeams(previewState({}, 'room-partial'), initialLocal);
+  assert.equal(lobby[0].summary, '还需 1 人');
+  assert.equal(lobby[0].seats[0].owner, true);
+  assert.equal(lobby[0].seats[0].self, true);
+  assert.equal(lobby[0].seats[1].player, undefined);
+  assert.equal(lobby[0].seats[1].status, '邀请好友 / AI');
+  const local = { ...initialLocal, clues: ['玫瑰', ' ', '飞鸟'], submitted: true };
+  const active = rosterTeams(previewState({}, 'encrypting'), local)[0];
+  assert.deepEqual(active.seats[0].progress, { step: 2, total: 3 });
+  assert.equal(active.seats[0].status, '已提交');
+  assert.equal(active.seats[3].player.is_ai, true);
 });

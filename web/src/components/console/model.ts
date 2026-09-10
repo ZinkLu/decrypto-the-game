@@ -15,14 +15,39 @@ export interface LocalState {
     archiveAnchor: number | null;
     archiveOpen: boolean;
     manual: boolean;
+    rosterOpen: boolean;
     hiddenWords: boolean;
     seconds: number;
+    diskOut: boolean;
+    scopeMode: number;
+    scopeRate: number;
+    scopePersistence: number;
+    backView: boolean;
+    batteryOpen: boolean;
+    soundOn: boolean;
+    removedBatteries: number;
+    unpluggedCables: number;
+    meterAmplitude: number;
+    meterRate: number;
 }
 export const initialLocal: LocalState = {
     mode: 'create', name: '', code: '', clues: ['', '', ''], guess: [0, 0, 0],
     slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
-    archiveOpen: false, manual: false, hiddenWords: false, seconds: 0,
+    archiveOpen: false, manual: false, rosterOpen: false, hiddenWords: false, seconds: 0, diskOut: false,
+    scopeMode: 0, scopeRate: 2, scopePersistence: 1,
+    backView: false, batteryOpen: false, soundOn: false,
+    removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 2, meterRate: 2,
 };
+export type HardwareState = Pick<LocalState, 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopePersistence' | 'backView' | 'batteryOpen' | 'soundOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate'>;
+export const scopeModes = ['矢量', '正弦', '双踪', '方波', '三角', '脉冲', '扫频', '噪声'];
+export const scopeRates = ['0.5×', '1×', '2×', '4×', '8×'];
+export const scopePersistenceModes = ['短余辉', '中余辉', '长余辉', '无限'];
+export function nextScopeValue(value: number, length: number, direction = 1) {
+    return (value + direction % length + length) % length;
+}
+export function nextScopeMode(mode: number, direction = 1) {
+    return nextScopeValue(mode, scopeModes.length, direction);
+}
 export const word = (s: string = '') => s.split('[')[0];
 export function resultTint(s: StationState) {
     if (s.phase === 'game_over')
@@ -45,6 +70,38 @@ export function roleState(s: StationState, u: LocalState) {
     return { encrypt, guess, active, ready: active && complete && s.connected, color,
         action: encrypt ? 'encrypt' : s.phase === 'intercept' ? 'intercept' : 'decrypt' };
 }
+// Presence and progress are public signals; never infer per-player connectivity.
+export function rosterTeams(s: StationState, u: LocalState) {
+    const playing = ['encrypting', 'intercept', 'decrypt'].includes(s.phase);
+    const role = roleState(s, u);
+    const everyone = [...s.teamA, ...s.teamB];
+    const uniqueName = (name: string) => everyone.filter(p => p.nickname === name).length === 1;
+    const sendingTeam = s.myTeam && s.myRole ? s.myRole === 'opponent' ? s.myTeam === 'A' ? 'B' : 'A' : s.myTeam : '';
+    const actingTeam = s.phase === 'intercept' ? sendingTeam === 'A' ? 'B' : sendingTeam === 'B' ? 'A' : '' : sendingTeam;
+    const signal = s.playerProgress || s.aiStatus;
+    const action = s.phase === 'encrypting' ? 'encrypt' : s.phase === 'intercept' ? 'intercept' : 'decrypt';
+    return (['A', 'B'] as const).map(team => {
+        const people = team === 'A' ? s.teamA : s.teamB;
+        const active = playing && team === actingTeam;
+        return { team, own: s.myTeam === team, count: people.length,
+            summary: s.phase === 'home' ? '尚未接入' : s.phase === 'room' ? people.length >= 2 ? '编组就绪' : `还需 ${2 - people.length} 人` :
+                active ? s.phase === 'encrypting' ? '正在加密' : s.phase === 'intercept' ? '正在拦截' : '正在解码' : playing ? '监听频道' : '行动回执',
+            seats: Array.from({ length: 4 }, (_, index) => {
+                const player = people[index];
+                const self = !!player && player.id === s.myPlayerID;
+                const owner = !!player && player.id === s.ownerID;
+                const encryptor = playing && !!player && (self ? s.myRole === 'encryptor' : team === sendingTeam && player.nickname === s.encryptor && uniqueName(s.encryptor));
+                const acting = !!player && active && (s.phase === 'encrypting' ? encryptor : !encryptor);
+                const reported = acting && !!player && signal?.action === action && signal.player === player.nickname && uniqueName(player.nickname) ? signal : null;
+                const progress = playing && self && (role.active || u.submitted) ? { step: role.encrypt ? u.clues.filter(c => c.trim()).length : u.guess.filter(Boolean).length, total: 3 } : reported;
+                const status = !player ? s.phase === 'home' ? '接入后编组' : s.phase === 'room' ? '邀请好友 / AI' : '空席' :
+                    s.phase === 'room' ? '已入席' : !playing ? '待命' : self && u.submitted || reported && 'state' in reported && reported.state === 'submitted' ? '已提交' :
+                    acting ? s.phase === 'encrypting' ? '加密中' : s.phase === 'intercept' ? '拦截中' : '解码中' : '监听中';
+                return { player, self, owner, encryptor, acting, progress, status, code: `${team}${index + 1}` };
+            }),
+        };
+    });
+}
 export function archiveRows(s: StationState, team: string) {
     // Never reconstruct a public answer from this player's private secretDigits.
     return s.history.filter(r => (team === 'all' || r.team === team) && r.round < s.round)
@@ -59,15 +116,20 @@ export function previewState(base: StationState, name: string): StationState {
     const people = ['你', 'Alice', 'Bob', 'AI · 01', 'John', 'Lisa', 'AI · 02', 'AI · 03']
         .map((nickname, i) => ({ id: String(i), nickname, is_ai: nickname.startsWith('AI') }));
     const phase = ['home', 'room', 'encrypting', 'intercept', 'decrypt', 'round_result', 'game_over'].includes(name)
-        ? name as StationState['phase'] : name === 'waiting' ? 'encrypting' : 'encrypting';
+        ? name as StationState['phase'] : name === 'room-empty' || name === 'room-partial' ? 'room' : 'encrypting';
+    if (name === 'room-partial') people[0].nickname = '凌晨三点还在破解频道密码的神秘特工';
+    const teamA = phase === 'home' || name === 'room-empty' ? [] : name === 'room-partial' ? people.slice(0, 1) : people.slice(0, 4);
+    const teamB = phase === 'home' || name === 'room-empty' ? [] : name === 'room-partial' ? people.slice(4, 6) : people.slice(4);
+    const playing = phase !== 'home' && phase !== 'room';
     return { ...base, phase, connected: true, roomCode: phase === 'home' ? null : '5821',
-        myPlayerID: '0', ownerID: '0', myTeam: 'A', players: people, teamA: people.slice(0, 4), teamB: people.slice(4), canStart: true,
-        round: 5, myRole: name === 'waiting' ? 'teammate' : phase === 'intercept' ? 'opponent' : phase === 'decrypt' ? 'teammate' : 'encryptor',
-        myWords: ['灯塔[lighthouse]', '海岸[coast]', '玫瑰[rose]', '候鸟[migratory bird]'],
-        secretDigits: [3, 1, 4], secretWords: ['玫瑰', '灯塔', '候鸟'], clues: ['花园', '航行', '羽毛'],
-        encryptor: phase === 'intercept' ? 'John' : name === 'waiting' || phase === 'decrypt' ? 'Alice' : '你', waiting: name === 'waiting',
-        scoreA: { interceptions: phase === 'game_over' ? 2 : 1, decrypt_failures: 0 }, scoreB: { interceptions: 0, decrypt_failures: 1 },
-        history: [
+        myPlayerID: '0', ownerID: '0', myTeam: teamA.length ? 'A' : '', players: phase === 'home' ? [] : name === 'room-empty' ? people.slice(0, 1) : name === 'room-partial' ? [...teamA, ...teamB, people[1]] : people,
+        teamA, teamB, canStart: teamA.length >= 2 && teamB.length >= 2,
+        round: playing ? 5 : 0, myRole: !playing ? '' : name === 'waiting' ? 'teammate' : phase === 'intercept' ? 'opponent' : phase === 'decrypt' ? 'teammate' : 'encryptor',
+        myWords: phase === 'home' || phase === 'room' ? [] : ['灯塔[lighthouse]', '海岸[coast]', '玫瑰[rose]', '候鸟[migratory bird]'],
+        secretDigits: playing ? [3, 1, 4] : [], secretWords: playing ? ['玫瑰', '灯塔', '候鸟'] : [], clues: playing ? ['花园', '航行', '羽毛'] : [],
+        encryptor: !playing ? '' : phase === 'intercept' ? 'John' : name === 'waiting' || phase === 'decrypt' ? 'Alice' : '你', waiting: name === 'waiting',
+        scoreA: { interceptions: !playing ? 0 : phase === 'game_over' ? 2 : 1, decrypt_failures: 0 }, scoreB: { interceptions: 0, decrypt_failures: playing ? 1 : 0 },
+        history: phase === 'home' || phase === 'room' ? [] : [
             { round: 1, team: 'A', clues: ['微光', '沙滩', '春天'], secret: [1, 2, 3], decrypt: [1, 2, 3] },
             { round: 2, team: 'B', clues: ['花园', '航行', '羽毛'], secret: [3, 1, 4], decrypt: [3, 1, 4] },
             { round: 3, team: 'A', clues: ['刺', '迁徙', '港口'], secret: [3, 4, 1], intercept: [2, 4, 1], decrypt: [3, 4, 1] },

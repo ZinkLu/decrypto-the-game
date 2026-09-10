@@ -64,3 +64,4 @@ yarn-error.log*
 .kiro/
 .trae/
 .gstack/
+assets/console/__pycache__/
