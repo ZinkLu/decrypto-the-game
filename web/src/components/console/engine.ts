@@ -65,6 +65,8 @@ export class ConsoleEngine {
     private removedBatteries = 0;
     private unpluggedCables = 0;
     private removable = new Map<string, { object: THREE.Object3D; rest: THREE.Vector3; amount: number }>();
+    private cableLeads = new Map<string, { mesh: THREE.Mesh; index: number }>();
+    private rosterCards = new Map<string, { object: THREE.Object3D; rest: THREE.Vector3; travel: number; amount: number; target: number; initialized: boolean }>();
     private lampMaterials = new Map<string, THREE.MeshStandardMaterial>();
     private scopeMode = 0;
     private scopeAngle = 0;
@@ -147,7 +149,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'tactile-hardware-20260910-v2';
+        const revision = 'tactile-hardware-20260911-v4';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -210,6 +212,24 @@ export class ConsoleEngine {
             this.removable.set(name, { object, rest: object.position.clone(), amount: 0 });
             if (plane) object.attach(plane);
         }
+        // Leads are separate anchored meshes, never parented to their plug: an
+        // `unplugged` morph bends the cable while the far end stays put.
+        for (const name of ['RJ45', 'Serial', 'DC']) {
+            const lead = this.part(`Tactile_${name} flexible lead`);
+            if (lead instanceof THREE.Mesh && lead.morphTargetDictionary?.unplugged !== undefined)
+                this.cableLeads.set('CablePlug_' + name, { mesh: lead, index: lead.morphTargetDictionary.unplugged });
+        }
+        // Roster cards are insertable assemblies; the printed face plane rides
+        // with its card while the stamped well floor stays on the rack.
+        for (const team of ['A', 'B']) for (let i = 0; i < 4; i++) {
+            const card = this.part(`RosterCard_${team}${i}`);
+            if (!card) continue;
+            const plane = this.planes.get(`roster${team}${i}`);
+            if (plane) card.attach(plane);
+            const travel = card.userData.travel;
+            this.rosterCards.set(team + i, { object: card, rest: card.position.clone(),
+                travel: typeof travel === 'number' ? travel : .55, amount: 0, target: 0, initialized: false });
+        }
         this.testLamp = this.part('RearTestLamp') as THREE.Mesh;
         // Keep the lamp independent from other lenses for the local self-test.
         this.testLamp.material = (this.testLamp.material as THREE.MeshStandardMaterial).clone();
@@ -261,6 +281,15 @@ export class ConsoleEngine {
         this.unpluggedCables = local.unpluggedCables;
         this.meterAmplitude = local.meterAmplitude;
         this.meterRate = local.meterRate;
+        // Seat occupancy slides physical cards in and out of the rack; the first
+        // sync seats them instantly so loading never plays an insertion.
+        for (const [id, seat] of this.rosterCards) {
+            seat.target = content.seats[id] ? 0 : 1;
+            if (!seat.initialized) {
+                seat.amount = seat.target;
+                seat.initialized = true;
+            }
+        }
         if (this.archiveOpen !== local.archiveOpen) {
             this.archiveOpen = local.archiveOpen;
             this.paperMotion = { from: this.paperProgress, to: local.archiveOpen ? 1 : 0, start: performance.now() };
@@ -316,12 +345,14 @@ export class ConsoleEngine {
     private batchStaticGeometry(root: THREE.Object3D = this.model!, preserveAssemblies = true) {
         // Keep the .blend and GLB fully editable. Only the runtime coalesces
         // static, opaque parts by material; animated assemblies retain names.
-        const moving = /^(FloppyTransport|ScopeTuning|ScopeRate|ScopePersistence|TransmitLever|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
+        const moving = /^(FloppyTransport|ScopeTuning|ScopeRate|ScopePersistence|TransmitLever|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
         const batches = new Map<THREE.Material, THREE.Mesh[]>();
         root.updateWorldMatrix(true, true);
         const inverse = root.matrixWorld.clone().invert();
         root.traverse(o => {
             if (!(o instanceof THREE.Mesh) || Array.isArray(o.material) || o.material.transparent) return;
+            // Morph-animated meshes (cable leads) must never merge into a batch.
+            if (o.morphTargetInfluences?.length) return;
             for (let p: THREE.Object3D | null = o; preserveAssemblies && p && p !== root; p = p.parent) {
                 if (moving.test(p.name)) return;
             }
@@ -510,8 +541,21 @@ export class ConsoleEngine {
             } else {
                 item.object.position.z -= item.amount * .85;
                 item.object.position.y -= item.amount * .22;
+                const lead = this.cableLeads.get(name);
+                if (lead?.mesh.morphTargetInfluences)
+                    lead.mesh.morphTargetInfluences[lead.index] = item.amount;
             }
             if (previous !== item.amount) { this.project(); this.renderer.shadowMap.needsUpdate = true; }
+        }
+        for (const [, seat] of this.rosterCards) {
+            const previous = seat.amount;
+            seat.amount = this.reduced.matches ? seat.target : THREE.MathUtils.damp(seat.amount, seat.target, 8, dt);
+            if (Math.abs(seat.amount - seat.target) < .001) seat.amount = seat.target;
+            // An empty seat has no card; while sliding, the card stays visible.
+            seat.object.visible = seat.target === 0 || seat.amount < .999;
+            seat.object.position.copy(seat.rest);
+            seat.object.position.z += seat.amount * seat.travel;
+            if (previous !== seat.amount) { this.project(); this.renderer.shadowMap.needsUpdate = true; }
         }
         const previousFlip = this.flipProgress;
         const targetFlip = this.backView ? 1 : 0;

@@ -26,6 +26,7 @@ export interface Content {
     waiting: boolean;
     ready: boolean;
     lamps: Record<string, boolean>;
+    seats: Record<string, boolean>;
     activity: number;
 }
 const INK = '#243344', CREAM = '#ece0c4', MUTED = '#a59e8c', DARK = '#111e24';
@@ -355,14 +356,15 @@ export function paint(s: StationState, u: LocalState): Content {
             const p = seat.player;
             const card = frame('roster' + team.team + i, 708, 118);
             card.scale(2, 2);
+            const well = frame('rosterWell' + team.team + i, 708, 118);
+            well.scale(2, 2);
             if (p) {
-                portrait(card, 7, 7, 43, p.is_ai, accent);
-                text(card, p.nickname, 64, 19, 28, INK, 600, seat.self || seat.encryptor ? 218 : 279);
+                text(card, p.nickname, 20, 19, 28, INK, 600, seat.self || seat.encryptor ? 258 : 318);
                 if (seat.self || seat.encryptor) {
                     card.fillStyle = accent; card.fillRect(294, 7, 50, 25);
                     text(card, seat.self ? '你' : '发报', seat.self ? 309 : 302, 20, 17, CREAM, 600);
                 }
-                text(card, `${seat.code} · ${p.is_ai ? 'AI' : '真人'}${seat.owner ? ' · 房主' : ''}`, 64, 45, 16, '#655c46', 500, 183);
+                text(card, `${seat.code} · ${p.is_ai ? 'AI' : '真人'}${seat.owner ? ' · 房主' : ''}`, 20, 45, 16, '#655c46', 500, 228);
                 text(card, seat.status, 263, 45, 17, accent, seat.acting ? 600 : 400, 81);
                 if (seat.progress) {
                     for (let step = 0; step < 3; step++) {
@@ -371,10 +373,13 @@ export function paint(s: StationState, u: LocalState): Content {
                     }
                 }
             } else {
-                card.strokeStyle = '#81765c'; card.setLineDash([4, 4]); card.strokeRect(8, 8, 42, 42); card.setLineDash([]);
-                text(card, '+', 19, 29, 27, '#7b7056');
-                text(card, '待入席', 64, 19, 26, '#736951', 500);
-                text(card, `${seat.code} · ${seat.status}`, 64, 44, 16, '#736951', 400, 276);
+                // The card is absent; the instruction is stamped into the empty
+                // well floor: a dark cut with a faint lower lip of light.
+                for (const [dy, color] of [[1.2, '#3d382e'], [0, '#989075']] as const) {
+                    text(well, '+', 20, 19 + dy, 27, color);
+                    text(well, '待入席', 44, 19 + dy, 26, color, 500);
+                    text(well, `${seat.code} · ${seat.status}`, 20, 45 + dy, 16, color, 400, 298);
+                }
             }
         });
     });
@@ -496,6 +501,8 @@ export function paint(s: StationState, u: LocalState): Content {
         frame(name + 'Control', 100, 100);
         target(name + 'Control', id, `${label}，当前第 ${value + 1} 档`, 0, 0, 100, 100);
     }
+    const seats: Record<string, boolean> = {};
+    teams.forEach(team => team.seats.forEach((seat, i) => { seats[team.team + i] = !!seat.player; }));
     return { frames, targets: targets.filter(t => rearControls.has(t.id) === u.backView),
-        status: status || `${s.phase} · ${s.connected ? '已连接' : '连接中'}`, tint, waiting, ready, lamps, activity };
+        status: status || `${s.phase} · ${s.connected ? '已连接' : '连接中'}`, tint, waiting, ready, lamps, seats, activity };
 }

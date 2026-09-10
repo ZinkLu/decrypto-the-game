@@ -76,8 +76,22 @@ test('rear model keeps the hinged cover separate from cells and has actual conne
     assert.equal(cell.extras.positive_end, i % 2 === 0 ? 'top' : 'bottom');
     assert.ok(cell.children.some(index => gltf.nodes[index].name === `Tactile_positive nipple ${i}`));
     assert.ok(node(`Tactile_cell negative spring ${i}`));
+    assert.ok(node(`Tactile_cell positive leaf ${i}`));
   }
-  for (const plug of ['RJ45', 'Serial', 'DC']) assert.ok(node('CablePlug_' + plug).children.length > 5);
+  assert.ok(!gltf.nodes.some(n => n.name.startsWith('Tactile_series bridge')), 'series bridges were removed from the tray');
+  assert.ok(!node('Tactile_battery red feed') && !node('Tactile_battery return'), 'feed cables were removed from the tray');
+  for (const plug of ['RJ45', 'Serial', 'DC']) {
+    const assembly = node('CablePlug_' + plug);
+    assert.ok(assembly.children.length > 5);
+    const leadName = `Tactile_${plug} flexible lead`;
+    const lead = node(leadName);
+    assert.ok(lead, `${leadName} exists as a separate anchored mesh`);
+    assert.ok(!assembly.children.some(i => gltf.nodes[i].name === leadName), `${leadName} must not translate with its plug`);
+    const primitive = gltf.meshes[lead.mesh].primitives[0];
+    const targets = primitive.targets ?? primitive.extensions?.KHR_draco_mesh_compression?.targets;
+    assert.ok(targets?.length >= 1, `${leadName} keeps its morph target through Draco compression`);
+    assert.ok(gltf.meshes[lead.mesh].extras?.targetNames?.includes('unplugged'), 'the bending morph is named unplugged');
+  }
   for (let i = 0; i < 8; i++) assert.ok(node(`Instrument_RJ45 contact ${i}`));
   for (const name of ['Instrument_perforated speaker grille', 'RearSoundSwitch', 'RearTestLamp',
     'Instrument_coax lead', 'Instrument_rear service cover']) assert.ok(node(name), name);
@@ -108,6 +122,18 @@ test('front print surfaces register to eight separate cards and eight physical s
       assert.ok(clearance > 0 && clearance < .008, 'print sits just above the actual cardstock');
       assert.ok(print.z > surfaces.roster.z, 'the card protrudes from the carrier');
       assert.equal(print.lit, true, 'paper print responds to scene lighting');
+      const assembly = node(`RosterCard_${team}${i}`);
+      assert.ok(assembly, 'each card is a removable assembly');
+      assert.equal(assembly.extras.removal_axis, 'front');
+      assert.ok(assembly.extras.travel >= .4, 'travel clearly lifts the card out of its channel');
+      assert.deepEqual(new Set(assembly.children.map(c => gltf.nodes[c].name)),
+        new Set([`Front_roster card ${team}${i + 1}`, `Front_roster card edge ${team}${i + 1}`]),
+        'only the card and its cut edge slide; clips, channels and wells stay on the rack');
+      const well = surfaces[`rosterWell${team}${i}`];
+      assert.ok(well, 'empty seats need a stamped well surface');
+      assert.ok(well.z < print.z && well.z >= 1.03, 'well print sits on the slot floor, covered by an inserted card');
+      assert.ok(Math.abs(well.x - print.x) < .001 && Math.abs(well.w - print.w) < .001, 'well print matches the card rect');
+      assert.equal(well.lit, true);
     }
     for (const category of ['intercept', 'failure']) {
       for (let i = 0; i < 2; i++) {
@@ -123,6 +149,9 @@ test('front print surfaces register to eight separate cards and eight physical s
   assert.equal(gltf.nodes.filter(n => /^Front_roster card [AB][1-4]$/.test(n.name)).length, 8);
   assert.equal(gltf.nodes.filter(n => n.name.startsWith('Interaction_tear edge tooth ')).length, 35);
   assert.ok(surfaces.paper.z > node('PaperFeed').translation[2]);
+  const bezel = gltf.materials[gltf.meshes[node('Score bezel').mesh].primitives[0].material];
+  assert.equal(bezel.name, 'Score bezel satin black');
+  assert.ok(!bezel.pbrMetallicRoughness.baseColorTexture && !bezel.normalTexture, 'the score panel keeps a smooth, untextured finish');
 });
 
 

@@ -157,6 +157,12 @@ for obj in bpy.data.objects:
             if slot.material and slot.material.name in replacement:
                 slot.material = replacement[slot.material.name]
 
+# The score panel keeps a smooth satin face; the mottled phenolic replacement
+# reads as grime behind the eight lamp lenses.
+SCORESATIN = material('Score bezel satin black', (.05,.045,.04), .05, .35)
+if bezel := bpy.data.objects.get('Score bezel'):
+    assign(bezel, SCORESATIN)
+
 FONT = bpy.data.fonts.load('/System/Library/Fonts/STHeiti Medium.ttc')
 
 
@@ -245,6 +251,19 @@ for team in ['A','B']:
         # A shallow thumb scallop exposes the stock rather than a painted border.
         box(P+f'card edge shadow {team}{i}',x,y-h/2-.016,1.095,w-.17,.018,.020,INK,.003)
 
+# Name cards are removable assemblies: the paper card and its exposed cut edge
+# slide straight out of the seat well toward the player. Clips, channels, wells
+# and edge shadows stay on the rack; an empty seat reveals the stamped well floor,
+# so each well floor gets its own print surface behind the card face (1.087).
+for team in ['A','B']:
+    for i in range(4):
+        card=bpy.data.objects.get(f'RosterCard_{team}{i}') or group(f'RosterCard_{team}{i}',0,0,0)
+        card['removal_axis']='front';card['travel']=.55
+        for part in [f'Front_roster card edge {team}{i+1}',f'Front_roster card {team}{i+1}']:
+            attach(bpy.data.objects[part],card)
+        s=SURFACES[f'roster{team}{i}']
+        surface(f'rosterWell{team}{i}',s['x'],s['y'],s['w'],s['h'],1.032)
+
 # The paper stock and its leader share physical fiber scale. The printed legend
 # belongs to the strip at the roller nip, not to the metal some distance below.
 SURFACES.pop('archiveControls',None)
@@ -329,7 +348,7 @@ surface('transmitControl',5.83,-3.63,2.26,.88,1.25)
 SURFACES.pop('transmitGuide',None)
 
 # Alternating D cells: each jacket, flat negative end and raised positive nipple
-# belongs to one removable assembly. Tray contacts and wiring remain fixed.
+# belongs to one removable assembly. Tray springs and leaf contacts remain fixed.
 remove_prefix('Instrument_battery cell','Instrument_battery terminal','Instrument_battery contact','Instrument_battery label','Instrument_battery polarity','Instrument_battery jacket','Instrument_contact spring')
 JACKET=material('Tactile battery olive paper jacket',(.29,.30,.17),.08,.54)
 for i,x in enumerate([-5.29,-4.03,-2.77,-1.51]):
@@ -363,15 +382,10 @@ for i,x in enumerate([-5.29,-4.03,-2.77,-1.51]):
     for yy in [-.37,1.61]:
         for side in [-1,1]: box(P+f'cell saddle {i} {yy} {side}',x+side*.46,yy,-3.07,.10,.23,.25,RUBBER,.025)
     surface(f'batteryCell{i}Control',x,.62,.92,2.88,-3.49,rotationY=math.pi)
-# Visible series straps join alternating cells at matching ends.
-for i,(x1,x2) in enumerate(zip([-5.29,-4.03,-2.77],[-4.03,-2.77,-1.51])):
-    y=-1.04 if i%2==0 else 2.26
-    box(P+f'series bridge {i}',(x1+x2)/2,y,-2.995,x2-x1,.12,.035,GOLD,.016)
-cable('battery red feed',[(-5.29,2.20,-2.99),(-5.71,2.43,-3.08),(-5.97,2.20,-3.11),(-5.97,-1.10,-3.11),(-5.7,-1.31,-3.06)],.030,RED)
-cable('battery return',[(-1.51,2.24,-2.99),(-1.0,2.38,-3.09),(-.86,1.91,-3.08),(-.86,-1.08,-3.09),(-1.17,-1.31,-3.06)],.03,RUBBER)
 
-# Complete removable plugs with pin structures, retention details, molded boots
-# and cable loops. Each assembly translates along the rear-facing socket axis.
+# Complete removable plugs with pin structures, retention details and molded
+# boots. Each assembly translates along the rear-facing socket axis; its lead
+# cable is a separate anchored mesh that bends via an 'unplugged' shape key.
 for name,x,y in [('RJ45',5.23,-2.77),('Serial',3.16,-2.74),('DC',1.45,-2.75)]:
     plug=group('CablePlug_'+name,x,y,-3.35)
     plug['removal_axis']='rear';plug['travel']=.85
@@ -395,10 +409,21 @@ for name,x,y in [('RJ45',5.23,-2.77),('Serial',3.16,-2.74),('DC',1.45,-2.75)]:
         for i in range(4): attach(cylinder(P+'DC grip '+str(i),x,y,-3.76-i*.11,.251,.036,PHENOLIC,32),plug)
     for i in range(5):
         attach(cylinder(P+name+' strain relief '+str(i),x,y,-4.29-i*.085,.16-i*.016,.085,RUBBER,24),plug)
-    # Coiled leads stay within the device silhouette and remain visible at rear.
-    shift={'RJ45':.85,'Serial':.15,'DC':-.5}[name]
-    points=[(x,y,-4.55),(x+shift*.2,y-.35,-4.86),(x+shift,y-.87,-4.96),(x+shift+.3,y-1.54,-4.80),(x+shift-.35,y-1.97,-4.63),(x+shift-.87,y-1.61,-4.45)]
-    cable(name+' flexible lead',points,.058 if name=='DC' else .077,RUBBER,plug)
+    # The lead is deliberately not parented to the plug: its far end drops below
+    # the console silhouette and stays anchored there. The 'unplugged' shape key
+    # moves only the boot-end region with the plug's travel, so the cable sags
+    # and bends instead of translating rigidly with the assembly.
+    shift={'RJ45':.9,'Serial':.15,'DC':-.6}[name]
+    points=[(x,y,-4.55),(x+shift*.2,y-.45,-4.72),(x+shift*.55,y-1.15,-4.68),
+            (x+shift*.8,y-2.05,-4.56),(x+shift,y-3.30,-4.62),(x+shift*.9,y-5.20,-4.72)]
+    lead=cable(name+' flexible lead',points,.058 if name=='DC' else .077,RUBBER)
+    lead.shape_key_add(name='Basis')
+    unplugged=lead.shape_key_add(name='unplugged')
+    boot=Vector((x,4.55,y))  # script (x, y, -4.55) in Blender axes
+    pull=Vector((0,.85,-.22))  # plug travel: .85 rearward and .22 down
+    for vert in unplugged.data:
+        weight=min(1,max(0,(3.0-(vert.co-boot).length)/2.2))
+        vert.co+=pull*(weight*weight*(3-2*weight))
     surface(name+'PlugControl',x,y,1.15 if name!='Serial' else 1.90,.90,-4.37,rotationY=math.pi)
 
 # Consistent physical-scale box UVs across the assembled instrument. Front faces
