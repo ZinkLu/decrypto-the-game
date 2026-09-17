@@ -2,14 +2,31 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import ts from 'typescript';
 import { readFile } from 'node:fs/promises';
-async function moduleFrom(name) {
+const moduleUrls = new Map();
+async function moduleUrl(name) {
+  if (moduleUrls.has(name)) return moduleUrls.get(name);
   const source = await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8');
-  const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-  return import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+  let js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
+  // Sibling imports resolve to their own data URLs, sharing one instance each.
+  for (const dependency of [...js.matchAll(/from '\.\/(\w+)'/g)].map(match => match[1])) {
+    js = js.replaceAll(`from './${dependency}'`, `from '${await moduleUrl(dependency)}'`);
+  }
+  const url = `data:text/javascript;base64,${Buffer.from(js).toString('base64')}`;
+  moduleUrls.set(name, url);
+  return url;
 }
+async function moduleFrom(name) { return import(await moduleUrl(name)); }
 const { parseNotes, notesKey } = await moduleFrom('notebook');
-const { waveSample, paperPose } = await moduleFrom('mechanics');
+const { waveSample, paperPose, receiptVertex, paperSeam, paperFeedDuration, paperCutDuration,
+  paperTearDuration, paperExtendedLength, paperTextureLength, paperRestLength, paperRefillDuration, paperLengthForRecords } = await moduleFrom('mechanics');
+const { ReceiptTransport, rowFractions, sheetRows } = await moduleFrom('tearing');
+const { rosterPose } = await moduleFrom('rosterMotion');
 const { nextScopeMode, nextScopeValue } = await moduleFrom('model');
+function meanDepth(paper) {
+  let total = 0, count = 0;
+  for (let i = 0; i <= paper.rows; i++) for (let j = 0; j <= paper.columns; j++) { total += paper.sample(j, i).z; count++; }
+  return total / count;
+}
 test('notes survive serialization, tolerate corrupt storage and separate players and rooms', () => {
   const notes = { general: 'B 队：远行 ≠ 花束\n下一步验证 4 号词。', rounds: { 4: '潮汐可能对应 2 号。' } };
   assert.deepEqual(parseNotes(JSON.stringify(notes)), notes);
@@ -42,8 +59,41 @@ test('exported model keeps housing fixed and paper registered at the feed nip', 
     assert.ok(tuningParts.has(name), `${name} must rotate with ScopeTuning`);
   assert.equal([...tuningParts].filter(name => name.startsWith('ScopeDetail_dial knurl ')).length, 20);
   for (const name of ['ScopeRate', 'ScopePersistence', 'Tactile_meter scale', 'ReceiverNeedle', 'Tactile_meter bevel glass',
-    'ConsoleDetail_monitor toggle stem']) assert.ok(node(name));
+    'MeterAmplitude', 'MeterRate']) assert.ok(node(name));
+  assert.ok(!gltf.nodes.some(n => /^(ConsoleDetail_(monitor toggle|sync toggle|sync lamp)|Archive scroll wheel|Wheel knurl)/.test(n.name)));
+  assert.ok(!gltf.nodes.some(n => /screw|bolt|rivet|fastener|washer|ConsoleDetail_decoder lower|Instrument_filter retainer/i.test(n.name) && (n.translation?.[2] ?? 0) > .3), 'front fasteners are removed completely');
+  assert.ok(!gltf.nodes.some(n => n.name.endsWith(' head') && node(n.name.slice(0, -5) + ' slot') && (n.translation?.[2] ?? 0) > .3), 'slotted screws are removed even when named after their mounting function');
+  assert.ok(node('Instrument_rear captive screw 0 head'), 'rear service screws stay intact');
   const surfaces = JSON.parse(await readFile(new URL('../public/models/console-surfaces.json', import.meta.url), 'utf8'));
+  assert.ok(!surfaces.wheel, 'removed wheel must not leave an invisible click surface');
+  assert.ok(surfaces.disk.y < -4.3, 'drive stays on the bottom rail');
+  assert.ok(!surfaces.power, 'I/O marks are modeled on the fixed legend plate, not a painted plane');
+  const power = node('PowerSwitch');
+  for (const name of ['PanelRefine_power pivot ball', 'PanelRefine_power bat', 'PanelRefine_power tip', 'PanelRefine_power tip cap'])
+    assert.ok(power.children.includes(gltf.nodes.indexOf(node(name))), `${name} swings with the toggle`);
+  for (const name of ['Power socket', 'PanelRefine_power hex nut', 'PanelRefine_power collar', 'PanelRefine_power legend plate',
+    'PanelRefine_power mark I', 'PanelRefine_power mark O'])
+    assert.ok(node(name) && !power.children.includes(gltf.nodes.indexOf(node(name))), `${name} stays fixed`);
+  assert.equal(power.extras.throw_degrees, 32);
+  const bat = node('PanelRefine_power bat');
+  assert.ok(power.translation[1] + bat.translation[1] > node('Power socket').translation[1] + .14, 'bat rises from inside the bushing');
+  assert.ok(bat.translation[0] < 0, 'bat rests tipped toward the I mark');
+  const tip = gltf.materials[gltf.meshes[node('PanelRefine_power tip').mesh].primitives[0].material];
+  assert.equal(tip.name, 'Launch worn red resin');
+  assert.ok(surfaces.powerControl.y > 5.37, 'toggle stays on the top side of the sleeve');
+  assert.ok(surfaces.powerControl.h >= .8 && surfaces.powerControl.w >= 1.4, 'stable target covers both switch positions');
+  assert.ok(surfaces.channel.y - surfaces.channel.h / 2 - (surfaces.score.y + surfaces.score.h / 2) > .3, 'code and score have separate readable areas');
+  for (const key of ['scopeKnob', 'scopeRateKnob', 'scopePersistenceKnob']) {
+    assert.ok(surfaces[key].y + surfaces[key].h / 2 < surfaces.scope.y - surfaces.scope.h / 2 - .15, 'all scope controls clear the CRT hood');
+  }
+  assert.ok(!gltf.nodes.some(n => n.name.startsWith('Vent slot') || n.name.startsWith('PanelRefine_vent cutter')), 'old fake slots and Boolean cutters never render');
+  assert.ok(node('PanelRefine_vent plenum'), 'real openings have a recessed plenum');
+  const diskY = node('FloppyTransport').translation[1] + node('Floppy paper label').translation[1];
+  assert.ok(Math.abs(diskY - surfaces.disklabel.y) < .03, 'disk print travels with the relocated assembly');
+  assert.ok(surfaces.transmitControl.y + surfaces.transmitControl.h / 2 < -3.32, 'launch key clears the receiver panel edge');
+  const red = gltf.materials[gltf.meshes[node('Tactile_transmit red key').mesh].primitives[0].material];
+  assert.equal(red.name, 'Launch worn red resin');
+  assert.equal(red.pbrMetallicRoughness.metallicFactor, 0);
   const feed = node('PaperFeed');
   assert.ok(feed.children.some(i => gltf.nodes[i].name === 'Paper back'));
   assert.ok(!node('Paper curl'), 'the old detached curl must be removed');
@@ -58,6 +108,13 @@ test('exported model keeps housing fixed and paper registered at the feed nip', 
   for (const part of ['Tactile_transmit key skirt', 'Tactile_transmit red key']) assert.ok(handle.includes(part));
   assert.equal(node('TransmitLever').extras.mechanism, 'linear_push');
   for (const name of ['TransmitLever', 'Key_0', 'Key_1', 'Key_2', 'Key_3', 'Key_4']) assert.ok(node(name));
+  assert.ok(!gltf.nodes.some(n => n.name.startsWith('Speaker perforation')));
+  const cap = node('ManualDetail_graphite cap');
+  assert.ok(node('ManualKey').children.includes(gltf.nodes.indexOf(cap)));
+  const resin = gltf.materials[gltf.meshes[cap.mesh].primitives[0].material];
+  assert.equal(resin.pbrMetallicRoughness.metallicFactor, 0);
+  assert.ok(!resin.emissiveFactor?.some(n => n > 0));
+  assert.ok(!gltf.nodes.some(n => n.name.startsWith('Tactile_manual lamp')));
 });
 
 test('rear model keeps the hinged cover separate from cells and has actual connector contacts', async () => {
@@ -124,8 +181,8 @@ test('front print surfaces register to eight separate cards and eight physical s
       assert.equal(print.lit, true, 'paper print responds to scene lighting');
       const assembly = node(`RosterCard_${team}${i}`);
       assert.ok(assembly, 'each card is a removable assembly');
-      assert.equal(assembly.extras.removal_axis, 'front');
-      assert.ok(assembly.extras.travel >= .4, 'travel clearly lifts the card out of its channel');
+      assert.equal(assembly.extras.removal_axis, 'up');
+      assert.ok(assembly.extras.travel > print.h, 'travel clears the full card height from the open-top channel');
       assert.deepEqual(new Set(assembly.children.map(c => gltf.nodes[c].name)),
         new Set([`Front_roster card ${team}${i + 1}`, `Front_roster card edge ${team}${i + 1}`]),
         'only the card and its cut edge slide; clips, channels and wells stay on the rack');
@@ -151,11 +208,51 @@ test('front print surfaces register to eight separate cards and eight physical s
   assert.ok(surfaces.paper.z > node('PaperFeed').translation[2]);
   const bezel = gltf.materials[gltf.meshes[node('Score bezel').mesh].primitives[0].material];
   assert.equal(bezel.name, 'Score bezel satin black');
-  assert.ok(!bezel.pbrMetallicRoughness.baseColorTexture && !bezel.normalTexture, 'the score panel keeps a smooth, untextured finish');
+  assert.ok(!bezel.pbrMetallicRoughness.baseColorTexture && !bezel.normalTexture, 'the dark outer bezel stays quiet');
+  const plate = gltf.materials[gltf.meshes[node('Front_score enamel bed').mesh].primitives[0].material];
+  assert.equal(plate.name, 'Score fine brushed nickel');
+  assert.ok(plate.normalTexture && plate.pbrMetallicRoughness.metallicRoughnessTexture, 'brushing lives on the inset lamp plate');
+  for (const name of ['Archive column', 'Control deck', 'Power rail', 'Receiver column', 'Scope panel']) {
+    const body = gltf.materials[gltf.meshes[node(name).mesh].primitives[0].material];
+    assert.equal(body.name, 'Front uniform satin alloy');
+    assert.ok(!body.normalTexture && !body.pbrMetallicRoughness.baseColorTexture, 'large body faces have no grain maps');
+  }
+});
+
+test('the full card path clears fixed retainers and the row above in both directions', async () => {
+  const bytes = await readFile(new URL('../public/models/decrypto-console.glb', import.meta.url));
+  const gltf = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString());
+  const node = name => gltf.nodes.find(n => n.name === name);
+  const bounds = name => {
+    const part = node(name);
+    const position = gltf.accessors[gltf.meshes[part.mesh].primitives[0].attributes.POSITION];
+    const translation = part.translation ?? [0, 0, 0];
+    return { min: position.min.map((v, i) => v + translation[i]), max: position.max.map((v, i) => v + translation[i]) };
+  };
+  const overlaps = (a, b) => [0, 1, 2].every(i => Math.min(a.max[i], b.max[i]) - Math.max(a.min[i], b.min[i]) > .00001);
+  for (const team of ['A', 'B']) for (let i = 0; i < 4; i++) {
+    const assembly = node(`RosterCard_${team}${i}`);
+    const fixtures = [`RosterGuide_floor ${team}${i}`, `Front_roster channel ${team}${i + 1}`,
+      ...[-1, 1].map(side => `Tactile_card clip ${team}${i} ${side}`)];
+    assert.ok(fixtures.every(name => !assembly.children.includes(gltf.nodes.indexOf(node(name)))), 'retainers never belong to a moving card');
+    if (i) fixtures.push(`Front_roster card edge ${team}${i}`, `Front_roster channel ${team}${i}`,
+      ...[-1, 1].map(side => `Tactile_card clip ${team}${i - 1} ${side}`));
+    else fixtures.push(`Front_roster team plaque ${team}`);
+    const fixed = fixtures.map(name => ({ name, box: bounds(name) }));
+    for (const part of [`Front_roster card ${team}${i + 1}`, `Front_roster card edge ${team}${i + 1}`]) {
+      const rest = bounds(part);
+      for (let step = 0; step <= 200; step++) {
+        const pose = rosterPose(step / 200, assembly.extras.travel);
+        const offset = [0, pose.y, pose.z];
+        const moving = { min: rest.min.map((v, a) => v + offset[a]), max: rest.max.map((v, a) => v + offset[a]) };
+        for (const fixture of fixed) assert.ok(!overlaps(moving, fixture.box), `${part} intersects ${fixture.name} at ${step / 200}`);
+      }
+    }
+  }
 });
 
 
-test('paper feeds continuously from a fixed nip and retracts without shifting sideways', () => {
+test('paper feeds continuously from a fixed nip even when extended over the instruments', () => {
   let previousLength = 0;
   for (const extension of [0, .1, .3, .5, .8, 1]) {
     const top = paperPose(0, extension), end = paperPose(1, extension);
@@ -171,6 +268,303 @@ test('paper feeds continuously from a fixed nip and retracts without shifting si
     }
     previousLength = end.length;
   }
-  assert.equal(paperPose(1, -10).length, .43);
-  assert.equal(paperPose(1, 10).length, 1.3);
+  assert.equal(paperPose(1, -10).length, paperRestLength);
+  assert.equal(paperPose(1, 10).length, paperExtendedLength);
+});
+
+test('opening feeds an attached sheet, holds it for reading, and closing alone tears it', () => {
+  const paper = new ReceiptTransport();
+  paper.sync(true);
+  assert.equal(paper.phase, 'feeding');
+  assert.equal(paper.advance(paperFeedDuration / 2), false, 'feed is still running while the reader enters');
+  assert.ok(paper.pose.extension > 0 && paper.pose.extension < 1);
+  assert.equal(paper.pose.tear, 0);
+  assert.equal(paper.pose.fold, 0);
+  assert.equal(paper.advance(paperFeedDuration / 2), true);
+  assert.equal(paper.phase, 'reading');
+  assert.equal(paper.pose.extension, 1);
+  assert.equal(paper.opacity, 1);
+  const held = { ...paper.pose };
+  const heldLength = paper.length;
+  paper.sync(true);
+  assert.equal(paper.advance(60_000), false, 'no duplicate feed completion while reading');
+  assert.deepEqual(paper.pose, held, 'the attached sheet remains extended behind the reader');
+  paper.sync(false);
+  assert.equal(paper.phase, 'tearing');
+  assert.deepEqual(paper.pose, held, 'closing does not snap back to the short leader');
+  paper.advance(paperTearDuration / 4);
+  assert.ok(paper.pose.tear > 0 && paper.pose.tear < 1);
+  assert.equal(paper.pose.extension, 1);
+  paper.advance(paperTearDuration / 4);
+  assert.equal(paper.pose.tear, 1, 'the cut finishes before the extended disappearance');
+  assert.ok(paper.opacity > .9 && paper.opacity < 1, 'detached stock remains visible as its slower fade begins');
+  paper.advance(paperTearDuration / 4);
+  assert.equal(paper.length, heldLength, 'outward disposal moves the sheet without feeding extra stock');
+  assert.ok(paper.opacity > .25, 'the sheet stays visible during the outward pull');
+  assert.ok(meanDepth(paper) > .4, 'detached stock travels beyond the old disposal distance');
+  paper.advance(paperTearDuration / 4);
+  assert.equal(paper.opacity, 0, 'old stock clears before a fresh leader appears');
+  paper.advance(1000);
+  assert.equal(paper.phase, 'idle');
+  assert.equal(paper.pose.extension, 0);
+  assert.equal(paper.opacity, 1);
+});
+
+test('closing during entry tears the partially fed sheet without snapping to full length', () => {
+  const paper = new ReceiptTransport();
+  paper.sync(true); paper.advance(paperFeedDuration * .4);
+  const extension = paper.pose.extension;
+  const length = paper.length;
+  paper.sync(false);
+  assert.equal(paper.pose.extension, extension, 'cancellation starts at the visible length');
+  assert.equal(paper.phase, 'tearing');
+  assert.equal(paper.advance(paperTearDuration / 2), false);
+  assert.equal(paper.pose.extension, extension);
+  assert.equal(paper.length, length);
+  assert.ok(paper.pose.tear > 0);
+  assert.equal(paper.advance(paperTearDuration / 2), false);
+  assert.equal(paper.advance(paperRefillDuration), false);
+  assert.equal(paper.phase, 'idle');
+  assert.equal(paper.pose.extension, 0);
+});
+
+test('rapid reopening waits for disposal and never reattaches the torn sheet', () => {
+  const paper = new ReceiptTransport();
+  paper.sync(true); paper.advance(paperFeedDuration);
+  paper.sync(false); paper.advance(paperTearDuration * .5);
+  const tear = paper.pose.tear;
+  paper.sync(true);
+  assert.equal(paper.phase, 'tearing');
+  assert.equal(paper.pose.tear, tear);
+  assert.equal(paper.advance(paperTearDuration), false);
+  assert.equal(paper.advance(1000), false);
+  assert.equal(paper.phase, 'feeding');
+  assert.equal(paper.advance(paperFeedDuration), true);
+  assert.equal(paper.phase, 'reading');
+  assert.equal(paper.pose.tear, 0);
+  paper.sync(false); paper.advance(100);
+  paper.sync(true); paper.sync(false);
+  paper.advance(1000); paper.advance(1000);
+  assert.equal(paper.phase, 'idle', 'cancelling a queued opening does not show the reader later');
+});
+
+test('reduced motion completes opening, closing and an interrupted feed immediately', () => {
+  const paper = new ReceiptTransport();
+  paper.sync(true); paper.advance(100);
+  assert.equal(paper.advance(0, true), true);
+  assert.equal(paper.phase, 'reading');
+  assert.equal(paper.pose.extension, 1);
+  paper.sync(false);
+  assert.equal(paper.advance(0, true), false);
+  assert.equal(paper.phase, 'idle');
+  assert.equal(paper.pose.extension, 0);
+  assert.equal(paper.length, paperRestLength);
+  assert.equal(paper.opacity, 1);
+  paper.sync(true); paper.advance(100); paper.sync(false);
+  assert.equal(paper.advance(0, true), false);
+  assert.equal(paper.phase, 'idle');
+  paper.sync(true); paper.advance(0, true);
+  paper.sync(false); paper.advance(50); paper.sync(true);
+  assert.equal(paper.advance(0, true), true, 'queued reopening also completes in one reduced-motion frame');
+  assert.equal(paper.phase, 'reading');
+});
+
+test('a fresh opaque tip feeds continuously from the nip and drives the roller forward', () => {
+  const paper = new ReceiptTransport();
+  paper.sync(true, 4); paper.advance(paperFeedDuration);
+  const fed = paper.feedTravel;
+  paper.sync(false); paper.advance(paperTearDuration);
+  assert.equal(paper.phase, 'refilling');
+  assert.equal(paper.length, 0, 'the old full-size leader never flashes back');
+  assert.equal(paper.feedTravel, fed, 'detaching paper must not rewind the feed roller');
+  let previousLength = 0;
+  for (let step = 1; step <= 52; step++) {
+    paper.advance(paperRefillDuration / 52);
+    assert.equal(paper.opacity, 1, 'new stock is revealed geometrically, not faded in');
+    assert.ok(paper.length > previousLength && paper.length <= paperRestLength);
+    for (const across of [0, .5, 1]) for (const fraction of [0, .5, 1]) {
+      const vertex = receiptVertex(across, fraction, paper.pose, 2.24, paper.length);
+      assert.ok(Object.values(vertex).every(Number.isFinite), 'tiny stock has finite coordinates');
+      assert.ok(vertex.y <= -paperSeam, 'new stock emerges only below the nip');
+    }
+    assert.ok(Math.abs(paper.feedTravel - fed - paper.length) < 1e-9, 'roller travel follows the growing stock');
+    previousLength = paper.length;
+  }
+  assert.equal(paper.phase, 'idle');
+  assert.equal(paper.length, paperRestLength);
+});
+
+test('archive length grows with completed rounds and is held until the next sheet', () => {
+  assert.ok(paperRestLength < .4, 'resting stock is less than half the old 0.8-unit leader');
+  let previous = paperRestLength;
+  for (let count = 0; count <= 16; count++) {
+    const length = paperLengthForRecords(count);
+    assert.ok(length > previous && length <= paperExtendedLength);
+    previous = length;
+  }
+  assert.equal(paperLengthForRecords(999), paperExtendedLength);
+  for (const count of [-3, NaN, Infinity]) assert.equal(paperLengthForRecords(count), paperLengthForRecords(0));
+  const paper = new ReceiptTransport();
+  paper.sync(true, 2); paper.advance(paperFeedDuration);
+  const length = paper.length;
+  paper.sync(true, 8); paper.advance(60_000);
+  assert.equal(paper.length, length, 'a live archive update never resizes the sheet being read');
+  paper.sync(false, 10); paper.advance(paperTearDuration / 2);
+  assert.equal(paper.length, length, 'tearing keeps the same physical stock');
+  paper.sync(true, 12); paper.advance(paperTearDuration); paper.advance(paperRefillDuration);
+  paper.advance(paperFeedDuration);
+  assert.equal(paper.length, paperLengthForRecords(12), 'queued reopening captures the latest completed rounds');
+});
+
+test('ink travels with the paper at a constant physical scale during feed and refill', () => {
+  const pose = { extension: 0, corner: 0, tear: 0, fold: 0, release: 0 };
+  for (const length of [.01, .08, paperRestLength, paperLengthForRecords(0), paperLengthForRecords(16)]) {
+    const a = receiptVertex(.5, .6, pose, 2.24, length);
+    const distance = length * .6;
+    const fed = .05;
+    const b = receiptVertex(.5, (distance + fed) / (length + fed), pose, 2.24, length + fed);
+    assert.ok(Math.abs(a.v - b.v) < 1e-9, 'a printed mark moves down with the fed stock');
+    const c = receiptVertex(.5, .4, pose, 2.24, length);
+    assert.ok(Math.abs((c.v - a.v) / (.2 * length) - 1 / paperTextureLength) < 1e-9, 'glyph size stays fixed');
+  }
+  const collapsed = receiptVertex(.5, 1, pose, 2.24, 0);
+  assert.ok(Object.values(collapsed).every(Number.isFinite));
+  assert.equal(collapsed.y, -paperSeam);
+  assert.equal(collapsed.z, 0);
+});
+
+test('the pinch bends the sheet before any fiber parts, then the crack runs from that corner to the far edge', () => {
+  const paper = new ReceiptTransport();
+  paper.sync(true, 4); paper.advance(paperFeedDuration); paper.sync(false);
+  const sheet = paper.sheet;
+  assert.ok(sheet, 'closing creates a physical sheet');
+  const columns = sheet.columns + 1;
+  let breakSteps = 0;
+  for (let ms = 0; ms < paperCutDuration; ms += 5) {
+    const before = sheet.brokenCount;
+    paper.advance(5);
+    if (ms + 5 <= 60) assert.equal(sheet.brokenCount, 0, 'fibers hold while the hand only bends the stock over the teeth');
+    if (ms + 5 === 60) assert.ok(paper.sample(sheet.columns, 12).z > .03, 'the pinched side has swung toward the viewer');
+    if (sheet.brokenCount > before) breakSteps++;
+    if (before === 0 && sheet.brokenCount > 0) {
+      for (let j = 0; j < columns; j++) if (sheet.broken[j]) assert.ok(j >= columns * .75, 'the cut starts at the pinched corner');
+    }
+  }
+  assert.ok(sheet.detached && sheet.detachedAt < paperCutDuration - 10, 'the last fiber parts on its own inside the cut budget');
+  assert.ok(breakSteps >= 12, `fibers part progressively, not in one burst (${breakSteps} steps)`);
+  assert.equal(paper.pose.tear, 1);
+  assert.ok(paper.pose.release > 0, 'unloading starts once nothing holds the sheet');
+});
+
+test('the crack advances where load concentrates: the fiber at its tip is among the most loaded', () => {
+  const paper = new ReceiptTransport();
+  paper.sync(true, 0); paper.advance(paperFeedDuration); paper.sync(false);
+  const sheet = paper.sheet;
+  let steps = 0, concentrated = 0;
+  for (let ms = 0; ms < paperCutDuration; ms += 5) {
+    paper.advance(5);
+    if (sheet.brokenCount === 0 || sheet.detached) continue;
+    steps++;
+    const tip = [...sheet.broken].lastIndexOf(0);
+    const ranked = [...sheet.load]
+      .map((load, j) => [sheet.broken[j] ? -Infinity : (load - sheet.baseline[j]) / sheet.strength[j], j])
+      .sort((a, b) => b[0] - a[0]).slice(0, 3).map(([, j]) => j);
+    if (ranked.some(j => Math.abs(j - tip) <= 2)) concentrated++;
+  }
+  assert.ok(steps >= 10, 'the crack takes several frames to cross the width');
+  assert.ok(concentrated >= steps * .75, `the tip led the load in ${concentrated}/${steps} steps`);
+});
+
+test('the same closing tears the same way every time', () => {
+  const run = () => {
+    const paper = new ReceiptTransport();
+    paper.sync(true, 4); paper.advance(paperFeedDuration); paper.sync(false); paper.advance(180);
+    return paper;
+  };
+  const a = run(), b = run();
+  assert.equal(a.sheet.brokenCount, b.sheet.brokenCount);
+  assert.ok(a.sheet.brokenCount > 0);
+  for (let i = 0; i <= a.rows; i += 5) for (let j = 0; j <= a.columns; j += 8) assert.deepEqual(a.sample(j, i), b.sample(j, i));
+});
+
+test('short, long and half-fed stock all part inside the cut budget and leave toward the viewer', () => {
+  for (const [records, feed] of [[0, paperFeedDuration], [16, paperFeedDuration], [4, paperFeedDuration * .4]]) {
+    const paper = new ReceiptTransport();
+    paper.sync(true, records); paper.advance(feed); paper.sync(false);
+    const sheet = paper.sheet;
+    assert.equal(sheet.length, paper.length, 'the sheet keeps the visible length at closing');
+    let previousDepth = -1;
+    for (let ms = 0; ms < paperTearDuration; ms += 20) {
+      paper.advance(20);
+      if (paper.phase !== 'tearing') break;
+      for (let i = 0; i <= paper.rows; i++) for (let j = 0; j <= paper.columns; j++) {
+        const vertex = paper.sample(j, i);
+        assert.ok(Object.values(vertex).every(Number.isFinite));
+        assert.ok(vertex.z >= -1e-9, 'the stock stays in front of the console face');
+      }
+      const depth = meanDepth(paper);
+      if (ms + 20 <= 60) assert.equal(sheet.brokenCount, 0);
+      if (ms + 20 >= paperCutDuration + 100) assert.ok(depth > previousDepth - .01, 'the detached sheet keeps moving out');
+      previousDepth = depth;
+    }
+    assert.ok(sheet.detachedAt > 60 && sheet.detachedAt < paperCutDuration - 10, `${records} records: parted at ${sheet.detachedAt}ms`);
+    assert.ok(previousDepth > .4, `${records} records: carried clear of the recorder before fading (${previousDepth.toFixed(2)})`);
+  }
+});
+
+test('development stills run the real mechanics to a frame and then hold', () => {
+  const paper = new ReceiptTransport();
+  paper.still('tear', .25, 4);
+  assert.equal(paper.phase, 'tearing');
+  assert.ok(paper.pose.tear > 0 && paper.pose.tear < 1, 'a quarter through the tear the crack is running');
+  const held = paper.sample(10, 10);
+  paper.sync(false); paper.advance(500);
+  assert.deepEqual(paper.sample(10, 10), held, 'the console loading with the reader closed keeps the still');
+  assert.equal(paper.phase, 'tearing');
+  paper.sync(true);
+  assert.equal(paper.advance(2000), false, 'pulling the paper resumes the frozen tear');
+  assert.equal(paper.phase, 'refilling');
+  paper.advance(2000);
+  assert.equal(paper.advance(2000), true, 'a fresh sheet feeds for the reader');
+  assert.equal(paper.phase, 'reading');
+  assert.equal(paper.pose.tear, 0);
+  assert.notDeepEqual(paper.sample(10, 10), held);
+  paper.still('feed', .5, 4);
+  assert.equal(paper.phase, 'feeding');
+  assert.ok(paper.pose.extension > 0 && paper.pose.extension < 1);
+  paper.still('refill', .5, 4);
+  assert.equal(paper.phase, 'refilling');
+  assert.ok(paper.length > 0 && paper.length < paperRestLength);
+});
+
+test('mesh rows crowd toward the tooth line on long stock and stay uniform on short stock', () => {
+  const long = rowFractions(paperLengthForRecords(16));
+  assert.equal(long.length, sheetRows + 1);
+  assert.equal(long[0], 0);
+  assert.ok(Math.abs(long.at(-1) - 1) < 1e-12);
+  for (let i = 1; i < long.length; i++) assert.ok(long[i] > long[i - 1]);
+  assert.ok(Math.abs(long[18] * paperLengthForRecords(16) - .5) < 1e-9, 'eighteen rows cover the top half unit');
+  const short = rowFractions(.36);
+  for (let i = 0; i < short.length; i++) assert.ok(Math.abs(short[i] - i / sheetRows) < 1e-9);
+  const paper = new ReceiptTransport();
+  for (let i = 0; i <= paper.rows; i++) assert.equal(paper.rowFraction(i), short[i], 'idle stock uses the same rows');
+});
+
+test('room digits are forty individually addressable wire cathodes inside four glass envelopes', async () => {
+  const glb = await readFile(new URL('../public/models/decrypto-console.glb', import.meta.url));
+  const gltf = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString());
+  for (let slot = 0; slot < 4; slot++) {
+    assert.ok(gltf.nodes.some(n => n.name === `Nixie_${slot} glass`));
+    assert.ok(gltf.nodes.some(n => n.name === `Nixie_${slot} anode mesh`));
+    assert.ok(gltf.nodes.some(n => n.name === `Nixie_${slot} cathode stack`));
+    for (let digit = 0; digit < 10; digit++) {
+      const node = gltf.nodes.find(n => n.name === `Nixie_Digit_${slot}_${digit}`);
+      assert.ok(node && node.mesh !== undefined);
+      assert.equal(node.extras.slot, slot);
+      assert.equal(node.extras.digit, digit);
+      assert.match(node.extras.cathode_path, /^M /);
+      const mat = gltf.materials[gltf.meshes[node.mesh].primitives[0].material];
+      assert.ok(mat.emissiveFactor[0] > .9);
+    }
+  }
 });

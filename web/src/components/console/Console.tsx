@@ -4,22 +4,28 @@ import { ConsoleEngine } from './engine';
 import { initialLocal, previewState, roleState, rosterTeams, archiveRows, nextScopeMode, nextScopeValue, scopeModes, scopeRates, scopePersistenceModes } from './model';
 import { paint } from './paint';
 import ArchiveSheet from './ArchiveSheet';
-import { notesKey } from './notebook';
-import type { PaperOrigin } from './mechanics';
 import type { LocalState } from './model';
 import type { Target } from './paint';
+import type { PlayerInfo } from '../../store/gameStore';
 const preview = import.meta.env.DEV ? new URLSearchParams(location.search).get('preview') : null;
+const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
 const scopeControls = ['scope-tune', 'scope-rate', 'scope-persist', 'meter-amplitude', 'meter-rate'];
 const isScopeControl = (id: string) => scopeControls.includes(id);
 const scopeStepId = (id: string, forward: boolean) => forward ? id : id === 'scope-tune' ? 'scope-prev' : id + '-prev';
 export default function Console() {
     const live = useGameStore();
-    const s = useMemo(() => preview ? previewState(live, preview) : live, [live]);
+    const [previewPeople, setPreviewPeople] = useState<PlayerInfo[]>([{ id: '0', nickname: '你', is_ai: false }]);
+    const previewSerial = useRef(1);
+    const s = useMemo(() => {
+        if (preview !== 'roster-motion') return preview ? previewState(live, preview) : live;
+        const state = previewState(live, 'room-partial');
+        return { ...state, teamA: previewPeople, players: [...previewPeople, ...state.teamB],
+            canStart: previewPeople.length >= 2 };
+    }, [live, previewPeople]);
     const [u, setU] = useState<LocalState>({ ...initialLocal, seconds: 90 });
     const [loaded, setLoaded] = useState(false);
     const [failure, setFailure] = useState('');
     const [archiveVisible, setArchiveVisible] = useState(false);
-    const [archiveOrigin, setArchiveOrigin] = useState<PaperOrigin>();
     const stage = useRef<HTMLDivElement>(null);
     const engine = useRef<ConsoleEngine | null>(null);
     const controls = useRef(new Map<string, HTMLElement>());
@@ -32,12 +38,32 @@ export default function Console() {
     const suppressTuningClick = useRef(false);
     const pullDrag = useRef<{ y: number; moved: boolean } | null>(null);
     const suppressPullClick = useRef(false);
+    const archiveFocusPending = useRef(false);
     const wheelLast = useRef(0);
     const [hint, setHint] = useState('');
     const [announcement, setAnnouncement] = useState('');
     const viewKey = `${s.phase}:${s.round}:${s.myRole}`;
     function patch(values: Partial<LocalState>) { setU(old => ({ ...old, ...values })); }
-    function closeArchive() { setArchiveVisible(false); patch({ archiveOpen: false }); }
+    function previewRoster(action: 'human' | 'ai' | 'remove' | 'replace') {
+        if (preview !== 'roster-motion') return;
+        const serial = previewSerial.current++;
+        const player = { id: `preview-${serial}`, nickname: action === 'human' ? `夜航员 ${serial}` : `AI · ${String(serial).padStart(2, '0')}`, is_ai: action !== 'human' };
+        setPreviewPeople(people => action === 'remove' ? people.slice(0, -1) :
+            action === 'replace' ? [...people.slice(0, -1), player] : [...people, player].slice(0, 4));
+    }
+    function closeArchive() {
+        archiveFocusPending.current = true;
+        setAnnouncement(archiveVisible ? '正在收起记录并撕下小票' : '已取消打开记录');
+        setArchiveVisible(false);
+        patch({ archiveOpen: false });
+        if (archiveVisible) void engine.current?.soundFeedback();
+    }
+    function restoreArchiveFocus() {
+        if (!archiveFocusPending.current || current.current.u.archiveOpen || document.querySelector('.archive-dialog[open]')) return;
+        archiveFocusPending.current = false;
+        controls.current.get('paper:archive-toggle')?.focus();
+    }
+    useEffect(restoreArchiveFocus, [u.archiveOpen]);
     function project() {
         const e = engine.current;
         if (!e)
@@ -63,12 +89,12 @@ export default function Console() {
         let cancelled = false;
         let instance: ConsoleEngine | undefined;
         try {
-            instance = new ConsoleEngine(stage.current!, project, setFailure, origin => {
+            instance = new ConsoleEngine(stage.current!, project, setFailure, () => {
                 if (!cancelled && current.current.u.archiveOpen) {
-                    setArchiveOrigin(origin); setArchiveVisible(true);
-                    setAnnouncement('密报档案已抽出，可以查阅回合记录和私人笔记');
+                    setArchiveVisible(true);
+                    setAnnouncement('正在拉出纸带并展开密报记录；关闭后撕下小票');
                 }
-            });
+            }, !!preview);
             engine.current = instance;
             instance.load().then(() => { if (!cancelled) {
                 instance!.update(current.current.content, current.current.u);
@@ -114,7 +140,7 @@ export default function Console() {
                 else patch({ archiveOpen: false, manual: false, rosterOpen: false });
                 return;
             }
-            if (current.current.u.backView || current.current.u.rosterOpen || current.current.u.manual) return;
+            if (!current.current.u.powerOn || current.current.u.backView || current.current.u.rosterOpen || current.current.u.manual) return;
             const input = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable);
             if (!input && /^[1-4]$/.test(event.key)) {
                 event.preventDefault();
@@ -140,12 +166,13 @@ export default function Console() {
         const state = current.current.s;
         const local = current.current.u;
         const r = roleState(state, local);
-        if (preview || !r.active || !state.connected)
+        if (preview || !local.powerOn || !r.active || !state.connected)
             return;
         state.sendProgress(r.action, r.encrypt ? clues.filter(c => c.trim()).length : guess.filter(Boolean).length, { state: 'editing', focus: slot + 1, ...(r.guess ? { guesses: guess } : {}) });
     }
     function change(target: Target, value: string) {
         const local = current.current.u;
+        if (!local.powerOn) return;
         if (target.id === 'name')
             patch({ name: value });
         else if (target.id === 'code')
@@ -169,6 +196,15 @@ export default function Console() {
             void engine.current?.soundFeedback();
             return;
         }
+        if (id === 'power-toggle') {
+            if (local.backView) return;
+            patch({ powerOn: !local.powerOn, manual: false, rosterOpen: false, archiveOpen: false, focus: 'power-toggle' });
+            setArchiveVisible(false);
+            setAnnouncement(local.powerOn ? '终端已关闭；对局继续进行，按电源恢复。' : '终端电源已开启，输入已保留。');
+            void engine.current?.soundFeedback();
+            return;
+        }
+        if (!local.powerOn && !local.backView) return;
         if (id === 'battery-toggle') {
             patch({ batteryOpen: !local.batteryOpen });
             setAnnouncement(local.batteryOpen ? '电池仓已合上' : '电池仓已打开，四节电池与金属触点可见。再次点击电池仓合上。');
@@ -233,7 +269,7 @@ export default function Console() {
             setHint('');
             if (local.archiveOpen) return;
             patch({ archiveOpen: true });
-            setAnnouncement('正在抽出密报档案');
+            setAnnouncement('正在拉出纸带并展开密报记录');
             void engine.current?.soundFeedback();
             if (failure || !engine.current) setArchiveVisible(true);
             return;
@@ -358,7 +394,7 @@ export default function Console() {
             state.removeAI(team, Number(index));
         }
     }
-    return <main className={`station ${failure ? 'station-fallback' : ''}`}>
+    return <main className={`station ${failure ? 'station-fallback' : ''}`} data-power={u.powerOn ? 'on' : 'off'} data-detail={detail || undefined}>
     <h1 className="sr-only">Decrypto 谍报风云 · 密码通信终端</h1>
     <div className="station-viewport" inert={u.archiveOpen}>
       <div className="station-stage" ref={stage}>
@@ -373,6 +409,8 @@ export default function Console() {
                 else
                     controls.current.delete(key); },
                 'aria-label': target.label, 'data-control': target.id, 'data-surface': target.surface,
+                role: target.id === 'power-toggle' ? 'switch' : undefined,
+                'aria-checked': target.id === 'power-toggle' ? u.powerOn : undefined,
                 disabled: target.disabled,
                 style: failure ? { visibility: 'visible' as const } : undefined,
                 title: target.label,
@@ -397,10 +435,12 @@ export default function Console() {
                     if (target.surface === 'paper' && suppressPullClick.current && e.detail > 0) { suppressPullClick.current = false; return; }
                     act(target.id);
                 }} onPointerDown={isScopeControl(target.id) ? e => {
+                    if (e.button !== 0) return;
                     suppressTuningClick.current = false;
                     tuningDrag.current = { x: e.clientX, y: e.clientY, moved: false };
                     e.currentTarget.setPointerCapture(e.pointerId);
                 } : target.surface === 'paper' ? e => {
+                    if (e.button !== 0) return;
                     suppressPullClick.current = false;
                     pullDrag.current = { y: e.clientY, moved: false };
                     e.currentTarget.setPointerCapture(e.pointerId);
@@ -435,7 +475,7 @@ export default function Console() {
               </button>;
         })}
         </div>
-        <section className={failure ? 'fallback-readout' : 'sr-only'} aria-label="当前通信文字记录"><h2>当前通信</h2><p>{content.status}</p><p>{u.hiddenWords ? '秘密词已遮住' : s.myWords.join(' · ')}</p><p>{s.clues.join(' / ')}</p>
+        <section hidden={!u.powerOn} className={failure ? 'fallback-readout' : 'sr-only'} aria-label="当前通信文字记录"><h2>当前通信</h2><p>{content.status}</p><p>{u.hiddenWords ? '秘密词已遮住' : s.myWords.join(' · ')}</p><p>{s.clues.join(' / ')}</p>
           <p>第 {s.round} 回合，加密者：{s.encryptor}。{roleState(s, u).encrypt ? `本轮私密密码：${s.secretDigits.join('、')}` : ''}</p>
           <p>A 队截获 {s.scoreA.interceptions} 次、失误 {s.scoreA.decrypt_failures} 次；B 队截获 {s.scoreB.interceptions} 次、失误 {s.scoreB.decrypt_failures} 次。</p>
           {rosterTeams(s, u).map(team => <section key={team.team} aria-label={`${team.team} 队名册`}>
@@ -448,7 +488,19 @@ export default function Console() {
       </div>
     </div>
     {loaded && !failure && <div className="station-workbench" inert={u.archiveOpen}>
-      {u.backView && <p className="station-rear-status" role="status">
+      {preview && <span className="station-orbit-hint" aria-hidden="true">中键拖动 · 旋转检查</span>}
+      {preview === 'roster-motion' && !u.backView && <div className="station-roster-preview" aria-label="名牌动画预览">
+        <span>名牌演示</span>
+        <button disabled={previewPeople.length >= 4} onClick={() => previewRoster('human')}>真人入席</button>
+        <button disabled={previewPeople.length >= 4} onClick={() => previewRoster('ai')}>AI 入席</button>
+        <button disabled={!previewPeople.length} onClick={() => previewRoster('remove')}>末席离开</button>
+        <button disabled={!previewPeople.length} onClick={() => previewRoster('replace')}>替换末席</button>
+      </div>}
+      {!u.powerOn && <p className="station-rear-status" role="status">
+        <span>终端电源已关闭</span>
+        {['home', 'room', 'round_result', 'game_over'].includes(s.phase) ? '输入已保留' : '对局继续计时'} · 按顶部电源开关恢复
+      </p>}
+      {u.powerOn && u.backView && <p className="station-rear-status" role="status">
         <span>检修面 · 对局仍在进行</span>
         {s.phase === 'home' ? '尚未接入频道' : s.phase === 'room' ? '队伍准备中' :
             `第 ${s.round} 回合 · ${s.phase === 'encrypting' ? '加密' : s.phase === 'intercept' ? '拦截' : s.phase === 'decrypt' ? '解码' : '阶段已更新'}${roleState(s,u).active ? ' · 轮到你了' : ''}`}
@@ -458,8 +510,8 @@ export default function Console() {
       </button>
     </div>}
     {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{content.targets.find(target => target.id === hint)?.label}</div>}
-    <p className="mobile-hint">横向滑动查看终端 · 点击纸带查看档案与笔记</p>
-    <ArchiveSheet key={notesKey(s.roomCode, s.myPlayerID, !!preview)} storageKey={notesKey(s.roomCode, s.myPlayerID, !!preview)} open={archiveVisible} origin={archiveOrigin} state={s} onClose={closeArchive} onClosed={() => controls.current.get('paper:archive-toggle')?.focus()}/>
+    <p className="mobile-hint">横向滑动查看终端 · 下拉纸带查看密报记录</p>
+    <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${!!preview}`} open={archiveVisible} state={s} onClose={closeArchive} onClosed={restoreArchiveFocus}/>
     <div className="sr-only" role="status" aria-live="polite">{announcement}</div>
   </main>;
 }

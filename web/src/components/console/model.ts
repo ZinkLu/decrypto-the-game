@@ -25,6 +25,7 @@ export interface LocalState {
     backView: boolean;
     batteryOpen: boolean;
     soundOn: boolean;
+    powerOn: boolean;
     removedBatteries: number;
     unpluggedCables: number;
     meterAmplitude: number;
@@ -35,10 +36,10 @@ export const initialLocal: LocalState = {
     slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
     archiveOpen: false, manual: false, rosterOpen: false, hiddenWords: false, seconds: 0, diskOut: false,
     scopeMode: 0, scopeRate: 2, scopePersistence: 1,
-    backView: false, batteryOpen: false, soundOn: false,
+    backView: false, batteryOpen: false, soundOn: false, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 2, meterRate: 2,
 };
-export type HardwareState = Pick<LocalState, 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopePersistence' | 'backView' | 'batteryOpen' | 'soundOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate'>;
+export type HardwareState = Pick<LocalState, 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopePersistence' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate'>;
 export const scopeModes = ['矢量', '正弦', '双踪', '方波', '三角', '脉冲', '扫频', '噪声'];
 export const scopeRates = ['0.5×', '1×', '2×', '4×', '8×'];
 export const scopePersistenceModes = ['短余辉', '中余辉', '长余辉', '无限'];
@@ -113,6 +114,39 @@ export function archiveStart(s: StationState, u: LocalState) {
     return anchored >= 0 ? anchored : Math.max(0, Math.min(u.archivePage * 2, rows.length - 1));
 }
 export function previewState(base: StationState, name: string): StationState {
+    if (name === 'late-game') {
+        const hints = {
+            A: [
+                ['微光', '沙滩', '春天', '远行'], ['灯火', '浪花', '花束', '南飞'],
+                ['守望', '潮汐', '荆棘', '迁徙'], ['航标', '贝壳', '告白', '羽翼'],
+                ['指引', '港湾', '芬芳', '归途'], ['夜航', '礁石', '红瓣', '雁阵'],
+                ['光束', '海风', '花园', '越冬'], ['归港', '岸线', '赠礼', '春归'],
+            ],
+            B: [
+                ['刻度', '山巅', '花蜜', '站台'], ['滴答', '冰川', '蜂房', '铁轨'],
+                ['齿轮', '雪线', '嗡鸣', '车厢'], ['报时', '攀登', '花粉', '汽笛'],
+                ['表盘', '寒峰', '蜂蜡', '卧铺'], ['时针', '白顶', '蜂群', '隧道'],
+                ['发条', '雪崩', '酿蜜', '终点'],
+            ],
+        };
+        const codes = [[1, 2, 3], [3, 1, 4], [3, 4, 1], [4, 2, 3], [2, 1, 4], [1, 3, 2]];
+        const history = Array.from({ length: 15 }, (_, index) => {
+            const round = index + 1;
+            const team = index % 2 === 0 ? 'A' : 'B';
+            const secret = [...codes[index % codes.length]];
+            const wrong = [secret[1], secret[0], secret[2]];
+            return { round, team, secret,
+                clues: secret.map(digit => hints[team][Math.floor(index / 2)][digit - 1]),
+                intercept: round < 3 ? undefined : round === 6 || round === 9 ? [...secret] : [...wrong],
+                decrypt: round === 7 || round === 12 ? [...wrong] : [...secret],
+            };
+        });
+        // Both teams are still in play: one interception and one error each.
+        return { ...previewState(base, 'intercept'), round: 16, history,
+            clues: ['末班', '分秒', '采蜜'], secretDigits: [], secretWords: [],
+            scoreA: { interceptions: 1, decrypt_failures: 1 }, scoreB: { interceptions: 1, decrypt_failures: 1 },
+        };
+    }
     const people = ['你', 'Alice', 'Bob', 'AI · 01', 'John', 'Lisa', 'AI · 02', 'AI · 03']
         .map((nickname, i) => ({ id: String(i), nickname, is_ai: nickname.startsWith('AI') }));
     const phase = ['home', 'room', 'encrypting', 'intercept', 'decrypt', 'round_result', 'game_over'].includes(name)

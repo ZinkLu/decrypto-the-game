@@ -1,79 +1,100 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef } from 'react';
+import type { CSSProperties } from 'react';
 import { archiveRows, type StationState } from './model';
-import type { PaperOrigin } from './mechanics';
-import { emptyNotes, parseNotes, type Notes } from './notebook';
+import { paperFeedDuration, paperTearDuration } from './mechanics';
 
-interface Props { open: boolean; origin?: PaperOrigin; state: StationState; storageKey: string; onClose: () => void; onClosed: () => void }
-export default function ArchiveSheet({ open, origin, state, storageKey, onClose, onClosed }: Props) {
+const motionRate = import.meta.env.DEV && new URLSearchParams(location.search).get('motion') === 'slow' ? .2 : 1;
+const enterDuration = paperFeedDuration / motionRate;
+const exitDuration = paperTearDuration / motionRate;
+
+interface Props { open: boolean; state: StationState; onClose: () => void; onClosed: () => void }
+
+function sequence(values?: number[]) {
+    return values?.some(Boolean) ? values.join(' — ') : '— — —';
+}
+
+function matches(actual?: number[], guess?: number[]) {
+    return !!actual?.length && actual.length === guess?.length && actual.every((value, index) => value === guess?.[index]);
+}
+
+export default function ArchiveSheet({ open, state, onClose, onClosed }: Props) {
     const dialog = useRef<HTMLDialogElement>(null);
-    const [team, setTeam] = useState('all');
-    const [storageFailed, setStorageFailed] = useState(false);
-    const [notes, setNotes] = useState<Notes>(() => {
-        try { return parseNotes(localStorage.getItem(storageKey)); }
-        catch { return emptyNotes(); }
-    });
-    const rows = archiveRows(state, team);
-    function save(next: Notes) {
-        setNotes(next);
-        try { localStorage.setItem(storageKey, JSON.stringify(next)); setStorageFailed(false); }
-        catch { setStorageFailed(true); }
+    // A printer roll reads from the oldest impression at the top to the newest at the tear.
+    const rows = archiveRows(state, 'all').slice().reverse();
+
+    function requestClose() {
+        if (!open) return;
+        const sheet = dialog.current?.querySelector<HTMLElement>('.archive-sheet');
+        if (sheet) {
+            // An early dismissal slides down from the current position.
+            const pose = getComputedStyle(sheet);
+            sheet.style.setProperty('--archive-exit-transform', pose.transform === 'none' ? 'translate(0, 0)' : pose.transform);
+            dialog.current!.style.setProperty('--archive-backdrop-exit-opacity', getComputedStyle(dialog.current!, '::backdrop').opacity);
+        }
+        onClose();
     }
+
     useLayoutEffect(() => {
         const el = dialog.current!;
         if (open) {
-            if (!el.open) el.showModal();
-            const sheet = el.querySelector<HTMLElement>('.archive-sheet')!;
-            // Measure the resting sheet before its entrance transform is applied.
-            sheet.style.animation = 'none';
-            const bounds = sheet.getBoundingClientRect();
-            sheet.style.setProperty('--archive-from-x', `${origin ? origin.left - bounds.left : 0}px`);
-            sheet.style.setProperty('--archive-from-y', `${origin ? origin.top - bounds.top : -48}px`);
-            sheet.style.setProperty('--archive-from-scale', `${origin ? Math.max(.12, origin.width / bounds.width) : 1}`);
-            sheet.style.animation = '';
             const previous = document.body.style.overflow;
             document.body.style.overflow = 'hidden';
+            if (!el.open) el.showModal();
+            el.scrollTop = 0;
+            el.querySelector<HTMLButtonElement>('.archive-dismiss')?.focus({ preventScroll: true });
             return () => { document.body.style.overflow = previous; };
         }
         if (!el.open) return;
-        const timer = window.setTimeout(() => el.close(), window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 160);
+        const timer = window.setTimeout(() => el.close(), window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : exitDuration);
         return () => clearTimeout(timer);
-    }, [open, origin]);
+    }, [open]);
+
     return <dialog ref={dialog} className="archive-dialog" data-open={open} aria-labelledby="archive-title"
+        style={{ '--archive-enter-duration': `${enterDuration}ms`, '--archive-exit-duration': `${exitDuration}ms` } as CSSProperties}
         onClose={onClosed}
-        onCancel={e => { e.preventDefault(); onClose(); }}
-        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        onCancel={event => { event.preventDefault(); requestClose(); }}
+        onClick={event => { if (event.target === event.currentTarget) requestClose(); }}>
+        <div className="archive-paper-track" onClick={event => { if (event.target === event.currentTarget) requestClose(); }}>
         <article className="archive-sheet">
             <header className="archive-header">
-                <div><p className="archive-eyebrow">回合留底 <span>{state.roomCode || '待接入'}</span></p>
+                <div>
+                    <p className="archive-eyebrow">MESSAGE RECORDER <span>CH {state.roomCode || '待接入'}</span></p>
                     <h2 id="archive-title">密报记录</h2>
-                    </div>
-                <button className="archive-close" onClick={onClose} autoFocus aria-label="收起密报档案">收起 <span aria-hidden="true">↑</span></button>
+                    <p className="receipt-subtitle">公开线索 · 猜测次序 · 回合留底</p>
+                </div>
             </header>
             <div className="archive-body">
                 <section className="archive-records" aria-label="公开回合记录">
-                    <div className="archive-toolbar">
-                        <div className="archive-filters" role="group" aria-label="按队伍筛选">
-                            {['all', 'A', 'B'].map(t => <button key={t} aria-pressed={team === t} onClick={() => setTeam(t)}>{t === 'all' ? '全部密报' : `${t} 队`}</button>)}
-                        </div><span className="archive-count">{rows.length} 回合</span>
-                    </div>
+                    <p className="archive-ledger-head"><span>{String(rows.length).padStart(2, '0')} RECORDS</span><span>OLDEST → LATEST</span></p>
                     {!rows.length ? <div className="archive-empty"><span aria-hidden="true">— 00 —</span><h3>等待第一份密报</h3>
-                        <p>回合结束后，公开线索会留在这里。</p></div> : rows.map(row => <article className="archive-record" key={row.round}>
-                        <header><h3><span className="archive-round">{String(row.round).padStart(2, '0')}</span>第 {row.round} 回合</h3><span className={`archive-team team-${row.team}`}>{row.team} 队发报</span></header>
-                        <ol className="archive-clues">{row.clues.map((clue, i) => <li key={i}><span>{String(i + 1).padStart(2, '0')}</span><strong>{clue}</strong><b aria-label={`对应编号 ${row.secret?.[i] || '未公开'}`}>{row.secret?.[i] || '—'}</b></li>)}</ol>
-                        <details className="archive-details"><summary>结果与批注</summary><p className="archive-result">公开密码 <strong>{row.secret?.join(' · ') || '尚未公开'}</strong><span>截获 {row.intercept?.some(Boolean) ? row.intercept.join(' · ') : '—'}</span><span>解码 {row.decrypt?.some(Boolean) ? row.decrypt.join(' · ') : '—'}</span></p>
-                        <label className="round-note">页边批注<textarea aria-label={`第 ${row.round} 回合笔记`} rows={2} maxLength={2000} placeholder="这组线索让我想到……" value={notes.rounds[row.round] || ''}
-                            onChange={e => save({ ...notes, rounds: { ...notes.rounds, [row.round]: e.target.value } })}/></label>
-                    </details></article>)}
-                    
+                        <p>回合结束后，公开线索与双方提交的次序会自动打印。</p></div> : rows.map(row => {
+                        const ours = row.team === state.myTeam;
+                        const interceptOwner = ours ? '对方' : '我方';
+                        const decryptOwner = ours ? '我方' : '对方';
+                        const interceptSuccess = matches(row.secret, row.intercept);
+                        const decryptSuccess = matches(row.secret, row.decrypt);
+                        return <article className="archive-record" key={row.round}>
+                            <header>
+                                <h3><span className="archive-round">{String(row.round).padStart(2, '0')}</span>第 {row.round} 回合</h3>
+                                <span className={`archive-team team-${row.team}`}>{ours ? '我方' : '对方'} · {row.team} 队发报</span>
+                            </header>
+                            <p className="archive-clue-line">{row.clues.map((clue, index) => <span key={index}><small>{String(index + 1).padStart(2, '0')}</small>{clue}</span>)}</p>
+                            <dl className="archive-sequences">
+                                <div><dt>{interceptOwner}截获</dt><dd>{sequence(row.intercept)}</dd></div>
+                                <div><dt>{decryptOwner}解码</dt><dd>{sequence(row.decrypt)}</dd></div>
+                                <div className="archive-secret"><dt>公开密码</dt><dd>{sequence(row.secret)}</dd></div>
+                            </dl>
+                            <p className="archive-outcome">
+                                {row.intercept?.some(Boolean) && <span data-result={interceptSuccess ? 'success' : 'failure'}>截获{interceptSuccess ? '成功' : '失败'}</span>}
+                                {row.decrypt?.some(Boolean) && <span data-result={decryptSuccess ? 'success' : 'failure'}>解码{decryptSuccess ? '成功' : '失败'}</span>}
+                            </p>
+                        </article>;
+                    })}
                 </section>
-                <details className="archive-notebook"><summary>我的笔记 <span>仅自己可见</span></summary>
-                    
-                    <label className="sr-only" htmlFor="field-notes">我的推理笔记</label>
-                    
-                    <textarea id="field-notes" maxLength={10000} placeholder={'例如：\nB 队的 4 号词，也许和旅行有关。\n“远行”和“羽毛”有没有共同的方向？'} value={notes.general} onChange={e => save({ ...notes, general: e.target.value })}/>
-                    <div className="notebook-status"><span role="status">{storageFailed ? '本机保存失败，请先复制笔记留存。' : '自动保存在当前浏览器'}</span><span>{notes.general.length} / 10000</span></div>
-                </details>
             </div>
+            <footer className="receipt-footer"><span aria-hidden="true">▎▍▏▌▍▎▏▍▌▏▎▍▏▌▍▎▏▍▌▎▍▏</span><p>END OF TRANSMISSION · {String(rows.length).padStart(2, '0')}</p></footer>
         </article>
+        </div>
+        <button className="archive-dismiss" onClick={requestClose} aria-label="收起密报记录">收起记录 <span aria-hidden="true">×</span></button>
     </dialog>;
 }

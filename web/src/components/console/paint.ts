@@ -1,5 +1,6 @@
-import { roleState, rosterTeams, word, resultTint, scopeModes, scopeRates, scopePersistenceModes } from './model';
+import { roleState, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeRates, scopePersistenceModes } from './model';
 import type { LocalState, StationState } from './model';
+import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
 export interface Target {
     id: string;
     label: string;
@@ -26,8 +27,10 @@ export interface Content {
     waiting: boolean;
     ready: boolean;
     lamps: Record<string, boolean>;
-    seats: Record<string, boolean>;
+    seats: Record<string, string | null>;
     activity: number;
+    roomCode: string;
+    paperRecords: number;
 }
 const INK = '#243344', CREAM = '#ece0c4', MUTED = '#a59e8c', DARK = '#111e24';
 const FONT = '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif';
@@ -73,6 +76,45 @@ function line(c: CanvasRenderingContext2D, x: number, y: number, w: number, colo
     c.lineTo(x + w, y);
     c.stroke();
 }
+// Seven separate phosphor bars per cell, including faint unlit segments.
+// The numerals are geometry, so their appearance does not depend on a font.
+function segmentDigit(c: CanvasRenderingContext2D, value: string, x: number, y: number, color: string) {
+    const bars: Record<string, number[][]> = {
+        a: [[11,0],[61,0],[68,7],[61,14],[11,14],[4,7]],
+        b: [[65,11],[72,18],[72,53],[65,60],[58,53],[58,18]],
+        c: [[65,68],[72,75],[72,110],[65,117],[58,110],[58,75]],
+        d: [[11,114],[61,114],[68,121],[61,128],[11,128],[4,121]],
+        e: [[7,68],[14,75],[14,110],[7,117],[0,110],[0,75]],
+        f: [[7,11],[14,18],[14,53],[7,60],[0,53],[0,18]],
+        g: [[11,57],[61,57],[68,64],[61,71],[11,71],[4,64]],
+    };
+    const digits = ['abcdef', 'bc', 'abdeg', 'abcdg', 'bcfg', 'acdfg', 'acdefg', 'abc', 'abcdefg', 'abcdfg'];
+    const lit = value === '-' ? 'g' : digits[Number(value)] ?? '';
+    c.save(); c.translate(x, y); c.scale(1.18, 1);
+    for (const [name, points] of Object.entries(bars)) {
+        const on = lit.includes(name);
+        c.fillStyle = on ? color : '#302a1d';
+        c.shadowColor = color; c.shadowBlur = on ? 4 : 0;
+        c.beginPath();
+        points.forEach(([px, py], index) => index ? c.lineTo(px, py) : c.moveTo(px, py));
+        c.closePath(); c.fill();
+    }
+    c.restore();
+}
+// Static phosphor falloff; the shared GPU shader draws the raster and halation.
+export function crtFinish(c: CanvasRenderingContext2D, width: number, height: number, ruby = false) {
+    c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalCompositeOperation = 'source-atop';
+    // The shader owns the raster so it can integrate scan rows at the actual
+    // projected pixel size. Baking a second grid here made distant text muddy.
+    const vignette = c.createRadialGradient(width * .5, height * .5, width * .10, width * .5, height * .5, width * .68);
+    vignette.addColorStop(0, ruby ? 'rgba(4, 0, 0, 0)' : 'rgba(0, 4, 2, 0)');
+    vignette.addColorStop(.65, 'rgba(0, 4, 2, .035)');
+    vignette.addColorStop(1, 'rgba(0, 4, 2, .50)');
+    c.fillStyle = vignette; c.fillRect(0, 0, width, height);
+    // Glass reflections belong to the scene lights, never to the raster.
+    c.restore();
+}
 function portrait(c: CanvasRenderingContext2D, x: number, y: number, size: number, ai: boolean, ink: string) {
     c.save();
     c.translate(x, y);
@@ -113,8 +155,10 @@ export function paint(s: StationState, u: LocalState): Content {
         const c = canvas.getContext('2d')!;
         if (background) {
             c.fillStyle = background;
-            round(c, 0, 0, width, height, name === 'screen' ? 42 : 12);
-            c.fill();
+            // The curved mesh owns the CRT silhouette. Transparent texture
+            // corners become holes when the barrel warp samples past them.
+            if (name === 'screen' || name.startsWith('word')) c.fillRect(0, 0, width, height);
+            else { round(c, 0, 0, width, height, 12); c.fill(); }
         }
         frames[name] = { canvas, width, height };
         return c;
@@ -334,17 +378,22 @@ export function paint(s: StationState, u: LocalState): Content {
         text(g, !hasGame ? '编号固定 / 每局重新分配' : u.hiddenWords ? '● 已遮住 · 点击显示' : '● 私密词窗 · 点击遮住', 123, 259, 16, '#c67d5e');
         target('word' + i, 'words', u.hiddenWords ? '显示秘密词' : '遮住秘密词', 0, 0, 480, 284, { disabled: !hasGame });
     }
-    const b = frame('badge', 600, 132);
+    const b = frame('badge', 660, 150);
     b.textAlign = 'center';
-    text(b, u.manual ? '返回操作' : '行动手册', 300, 66, 76, INK, 600);
+    text(b, 'FIELD GUIDE', 382, 76, 49, '#e7dfc9', 600);
+    b.strokeStyle = '#c6bea6'; b.lineWidth = 4;
+    b.beginPath();
+    b.moveTo(68, 53); b.lineTo(91, 48); b.lineTo(113, 53); b.lineTo(136, 48);
+    b.lineTo(136, 97); b.lineTo(113, 102); b.lineTo(91, 97); b.lineTo(68, 102); b.closePath();
+    b.moveTo(113, 53); b.lineTo(113, 102); b.stroke();
     // The hit area follows the complete keycap around the smaller ivory inset.
-    target('badge', 'manual', u.manual ? '返回操作' : '查看行动手册', -92, -64, 784, 260);
+    target('badge', 'manual', u.manual ? '返回操作' : '查看行动手册', -43, -47, 746, 244);
     // Only ink lives in these textures. Blender owns each card, channel and clip.
     const ro = frame('roster', 800, 1630);
     ro.scale(2, 2);
     frames.roster.width = 400; frames.roster.height = 815;
-    text(ro, '值 勤 名 册', 24, 32, 25, CREAM, 600);
-    text(ro, '展开 ↗', 288, 33, 18, '#cbbd9f');
+    text(ro, 'DUTY ROSTER', 24, 32, 22, CREAM, 600);
+    text(ro, 'VIEW ↗', 297, 33, 16, '#cbbd9f');
     line(ro, 22, 55, 356, '#657165');
     teams.forEach(team => {
         const accent = teamInk(team.team);
@@ -383,23 +432,19 @@ export function paint(s: StationState, u: LocalState): Content {
             }
         });
     });
-    text(ro, '人员与行动状态  /  点击查看', 65, 802, 15, '#bfb69e');
+    text(ro, 'PERSONNEL / PRESS TO INSPECT', 54, 802, 14, '#bfb69e');
     target('roster', 'roster-toggle', u.rosterOpen ? '收起队员名册，返回操作' : '查看队员名册与行动状态', 0, 0, 400, 815);
-    const channel = frame('channel', 600, 120, '#161d19');
-    channel.textAlign = 'center';
-    [...(s.roomCode || '————')].slice(0, 4).forEach((digit, i) => {
-        text(channel, digit, 75 + i * 150, 62, 81, s.roomCode ? '#e4c98d' : '#697360', 500);
-    });
+    frame('channel', 600, 240); // Live room digits are modeled wire cathodes.
     const copy = frame('channelCopy', 240, 160);
     copy.textAlign = 'center';
-    text(copy, '复制', 120, 80, 82, INK, 600);
+    text(copy, 'COPY', 120, 80, 62, INK, 600);
     target('channelCopy', 'copy-code', '复制房间码', 0, 0, 240, 160, { disabled: !s.roomCode });
     const lamps: Record<string, boolean> = {};
     const sc = frame('score', 600, 357);
-    text(sc, '行动计分', 28, 30, 19, '#b4b6a1', 500);
-    text(sc, '截获', 182, 65, 29, CREAM);
-    text(sc, '失误', 406, 65, 29, CREAM);
-    line(sc, 26, 99, 548, '#657568');
+    text(sc, 'SCORE', 28, 30, 19, '#414940', 500);
+    text(sc, 'INTERCEPT', 155, 65, 24, INK, 600);
+    text(sc, 'ERROR', 397, 65, 24, INK, 600);
+    line(sc, 26, 99, 548, '#7b847b');
     ['A', 'B'].forEach((team, i) => {
         const score = team === 'A' ? s.scoreA : s.scoreB;
         const yy = 153 + i * 103;
@@ -408,25 +453,48 @@ export function paint(s: StationState, u: LocalState): Content {
         [score.interceptions, score.decrypt_failures].forEach((n, j) => {
             for (let k = 0; k < 2; k++) {
                 lamps[`${team}_${j ? 'failure' : 'intercept'}_${k}`] = k < n;
-                text(sc, String(k + 1), 183 + j * 227 + k * 76, yy + 34, 15, '#b1ad96');
+                text(sc, String(k + 1), 183 + j * 227 + k * 76, yy + 34, 15, '#434c43');
             }
         });
-        if (i === 0) line(sc, 28, 204, 546, '#3a4a47');
+        if (i === 0) line(sc, 28, 204, 546, '#90978c');
     });
-    line(sc, 26, 304, 548, '#657568');
-    text(sc, '截获两次获胜 · 失误两次落败', 82, 334, 23, '#c1bca6');
-    const leader = frame('paper', 700, 135);
+    line(sc, 26, 304, 548, '#7b847b');
+    text(sc, '2 INTERCEPTS TO WIN / 2 ERRORS TO LOSE', 68, 334, 19, '#374137');
+    const leader = frame('paper', 840, paperTextureHeight, '#eadfc5');
+    const records = archiveRows(s, 'all');
+    const pixelsPerUnit = paperTextureHeight / paperTextureLength;
+    const printedHeight = pixelsPerUnit * paperLengthForRecords(records.length);
+    const printedTop = paperTextureHeight - printedHeight;
     leader.textAlign = 'center';
-    text(leader, '密 报 档 案', 350, 40, 39, '#57513f', 500);
-    line(leader, 72, 76, 556, '#aaa08a');
-    text(leader, '向 下 抽 出  ↓', 350, 110, 24, '#746b56', 500);
-    target('paper', 'archive-toggle', '拉出密报档案与私人笔记', 0, 0, 700, 135);
+    text(leader, `${String(records.length).padStart(2, '0')} RECORDS`, 420, paperTextureHeight - 84, 18, '#87765b');
+    text(leader, 'DECRYPTO / MESSAGE LOG', 420, printedTop + 43, 29, '#4e493b', 600);
+    text(leader, `CH ${s.roomCode || '----'}   ·   ${String(records.length).padStart(2, '0')} RECORDS`, 420, printedTop + 79, 21, '#786b52');
+    line(leader, 52, printedTop + 103, 736, '#887b6266');
+    leader.textAlign = 'left';
+    if (records.length) {
+        const rowPitch = (printedHeight - 307) / Math.max(1, records.length - 1);
+        records.forEach((row, index) => {
+            const y = printedTop + 132 + index * rowPitch;
+            text(leader, `${String(row.round).padStart(2, '0')}  ${row.team} 队`, 54, y, 29, '#574c38', 600);
+            text(leader, row.clues.join(' / '), 218, y, 32, '#403c31', 500, 568);
+            text(leader, `截获 ${row.intercept?.join('—') || '———'}   解码 ${row.decrypt?.join('—') || '———'}   密码 ${row.secret?.join('—') || '未公开'}`, 218, y + 36, 21, '#7c6c52', 400, 568);
+            line(leader, 52, y + 57, 736, '#a4967866');
+        });
+    } else {
+        text(leader, '等待第一份密报', 228, printedTop + 173, 33, '#62583f', 500);
+        text(leader, '回合结束后自动打印公开记录', 180, printedTop + 220, 25, '#87765b');
+    }
+    leader.textAlign = 'center';
+    text(leader, 'PULL TO READ', 420, paperTextureHeight - 45, 22, '#766349', 500);
+    // Above this sheet's header the roll already carries the start of the next
+    // sheet: the same leader that will emerge after tearing.
+    const reserve = Math.round(pixelsPerUnit * paperHeadReserve);
+    leader.drawImage(leader.canvas, 0, paperTextureHeight - reserve, 840, reserve, 0, printedTop - reserve, 840, reserve);
+    target('paper', 'archive-toggle', '下拉纸带查看密报记录，关闭后撕下', 0, 0, 840, paperTextureHeight);
     const progress = teams.flatMap(team => team.seats).find(seat => seat.acting && seat.progress)?.progress;
     const activity = !hasGame ? 0 : u.submitted ? 1 : r.active ?
         (r.encrypt ? u.clues.filter(value => value.trim()).length : u.guess.filter(Boolean).length) / 3 :
         progress ? Math.max(0, Math.min(1, progress.step / Math.max(1, progress.total))) : 0;
-    frame('wheel', 100, 140);
-    target('wheel', 'archive-toggle', '抽出密报档案', 0, 0, 100, 140);
     frame('disk', 400, 200);
     target('disk', 'disk-toggle', u.diskOut ? '插入软盘' : '弹出软盘', 0, 0, 400, 200);
     frame('scopeKnob', 100, 100);
@@ -435,10 +503,16 @@ export function paint(s: StationState, u: LocalState): Content {
     target('scopeRateKnob', 'scope-rate', '旋转扫描速率旋钮，当前' + scopeRates[u.scopeRate], 0, 0, 100, 100);
     frame('scopePersistenceKnob', 100, 100);
     target('scopePersistenceKnob', 'scope-persist', '旋转余辉旋钮，当前' + scopePersistenceModes[u.scopePersistence], 0, 0, 100, 100);
-    const cl = frame('clock', 520, 218, '#152128');
-    const timer = hasGame && !['round_result', 'game_over'].includes(s.phase) ? `${String(Math.floor(u.seconds / 60)).padStart(2, '0')}:${String(u.seconds % 60).padStart(2, '0')}` : '––:––';
-    text(cl, timer, 25, 106, 99, u.seconds <= 15 && hasGame ? '#ef9979' : '#f1bc62', 500);
-    text(cl, hasGame ? '阶段余时 · 约' : '等待接入', 29, 189, 25, '#ad9e7b');
+    const cl = frame('clock', 520, 218, '#111a17');
+    const running = hasGame && !['round_result', 'game_over'].includes(s.phase);
+    const seconds = Math.max(0, Math.floor(u.seconds));
+    const timer = running ? `${String(Math.floor(seconds / 60)).padStart(2, '0')}${String(seconds % 60).padStart(2, '0')}` : '----';
+    const glow = running ? seconds <= 15 ? '#ed8960' : '#efb663' : '#65563a';
+    [34, 141, 288, 395].forEach((x, i) => segmentDigit(cl, timer[i], x, 25, glow));
+    cl.fillStyle = glow;
+    cl.fillRect(257, 61, 10, 10); cl.fillRect(257, 111, 10, 10);
+    line(cl, 34, 174, 446, '#3b4030');
+    text(cl, running ? '阶段余时 · 约' : '等待行动', 34, 199, 22, '#a39b79');
     for (let i = 0; i < 5; i++) {
         const k = frame('key' + i, 180, 200);
         const enabled = r.guess && r.active && s.connected && !u.rosterOpen && !u.manual;
@@ -456,25 +530,27 @@ export function paint(s: StationState, u: LocalState): Content {
         if (i < 2) text(ph, '›', 152 + i * 177, 78, 28, '#7b857c');
     });
     text(ph, s.phase === 'home' || s.phase === 'room' ? '等待行动开始' : `第 ${s.round} / 16 回合`, 24, 190, 21, '#bbc0aa');
-    const tr = frame('transmitLabel', 600, 82);
+    const tr = frame('transmitLabel', 600, 164);
     const homeReady = s.phase === 'home' && !!u.name.trim() && (u.mode === 'create' || u.code.length === 4) && s.connected;
     const lobbyReady = s.phase === 'room' && s.canStart && s.ownerID === s.myPlayerID && s.connected;
     const ready = !!(r.ready || homeReady || lobbyReady || s.phase === 'game_over') && !u.rosterOpen && !u.manual;
     const transmitText = s.phase === 'home' ? u.mode === 'create' ? '建立频道' : '接入频道' : s.phase === 'room' ? '开始行动' : s.phase === 'game_over' ? '返回通信局' : u.submitted ? '已发送' : '发报 · 确认';
+    const command = s.phase === 'home' ? u.mode === 'create' ? 'CREATE' : 'CONNECT' : s.phase === 'room' ? 'LAUNCH' : s.phase === 'game_over' ? 'RETURN' : u.submitted ? 'SENT' : 'TRANSMIT';
     tr.textAlign = 'center';
-    text(tr, transmitText, 300, 41, 48, ready ? '#fff0d2' : '#dcc1a2', 600);
+    tr.letterSpacing = '7px';
+    text(tr, command, 304, 60, command.length > 6 ? 78 : 91, ready ? '#e9ddc2' : '#c8b597', 700);
+    tr.letterSpacing = '3px';
+    text(tr, u.submitted ? 'MESSAGE SENT' : 'PRESS TO CONFIRM', 302, 135, 25, ready ? '#e9ddc2' : '#c8b597', 500);
     frame('transmitControl', 600, 260);
     target('transmitControl', 'transmit', transmitText, 0, 0, 600, 260, { disabled: !ready });
     const dl = frame('disklabel', 300, 100);
-    text(dl, '密 钥 / 01', 16, 51, 37, INK, 600);
+    text(dl, 'KEY / 01', 16, 51, 37, INK, 600);
     text(dl, 'DECRYPTO', 17, 85, 19, '#817c70');
-    const po = frame('power', 100, 130);
-    text(po, 'I', 37, 46, 41, CREAM);
-    text(po, 'O', 32, 98, 30, CREAM);
+    frame('powerControl', 320, 180);
+    target('powerControl', 'power-toggle', u.powerOn ? '关闭终端电源' : '开启终端电源', 0, 0, 320, 180);
     const ft = frame('footer', 1100, 65);
-    text(ft, s.connected ? '链路已接通' : '正在连接…', 350, 32, 37, s.connected ? '#355b45' : '#865135');
-    text(ft, '电源', 7, 32, 36, INK);
-    text(ft, '非官方线上演绎', 770, 32, 23, '#817c70');
+    text(ft, !u.powerOn ? 'POWER OFF' : s.connected ? 'LINK ONLINE' : 'CONNECTING…', 350, 32, 29, u.powerOn && s.connected ? '#355b45' : '#865135');
+    text(ft, 'UNOFFICIAL EDITION', 770, 32, 18, '#817c70');
     frame('batteryControl', 100, 100);
     target('batteryControl', 'battery-toggle', u.batteryOpen ? '合上电池仓盖' : '掀开电池仓盖，查看四节电池', 0, 0, 100, 100);
     frame('soundControl', 100, 100);
@@ -501,8 +577,26 @@ export function paint(s: StationState, u: LocalState): Content {
         frame(name + 'Control', 100, 100);
         target(name + 'Control', id, `${label}，当前第 ${value + 1} 档`, 0, 0, 100, 100);
     }
-    const seats: Record<string, boolean> = {};
-    teams.forEach(team => team.seats.forEach((seat, i) => { seats[team.team + i] = !!seat.player; }));
-    return { frames, targets: targets.filter(t => rearControls.has(t.id) === u.backView),
-        status: status || `${s.phase} · ${s.connected ? '已连接' : '连接中'}`, tint, waiting, ready, lamps, seats, activity };
+    const seats: Record<string, string | null> = {};
+    teams.forEach(team => team.seats.forEach((seat, i) => { seats[team.team + i] = seat.player?.id ?? null; }));
+    for (const name of ['screen', 'word0', 'word1', 'word2', 'word3']) {
+        const { canvas } = frames[name];
+        crtFinish(canvas.getContext('2d')!, canvas.width, canvas.height, name.startsWith('word'));
+    }
+    if (!u.powerOn) {
+        for (const name of ['screen', 'word0', 'word1', 'word2', 'word3', 'channel', 'clock', 'phase']) {
+            const { canvas } = frames[name];
+            const display = canvas.getContext('2d')!;
+            display.setTransform(1, 0, 0, 1, 0, 0);
+            display.clearRect(0, 0, canvas.width, canvas.height);
+            display.fillStyle = name.startsWith('word') ? '#160805' : '#0b1313';
+            display.fillRect(0, 0, canvas.width, canvas.height);
+        }
+        for (const name of Object.keys(lamps)) lamps[name] = false;
+    }
+    return { frames, targets: targets.filter(t => rearControls.has(t.id) === u.backView &&
+            (u.powerOn || u.backView || t.id === 'power-toggle')),
+        status: !u.powerOn ? '终端已关闭；对局继续进行，按电源恢复。' : status || `${s.phase} · ${s.connected ? '已连接' : '连接中'}`,
+        tint, waiting, ready: ready && u.powerOn, lamps, seats, roomCode: u.powerOn ? s.roomCode || '' : '',
+        paperRecords: records.length, activity: u.powerOn ? activity : 0 };
 }
