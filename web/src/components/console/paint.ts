@@ -504,15 +504,15 @@ export function paint(s: StationState, u: LocalState): Content {
     frame('scopePersistenceKnob', 100, 100);
     target('scopePersistenceKnob', 'scope-persist', '旋转余辉旋钮，当前' + scopePersistenceModes[u.scopePersistence], 0, 0, 100, 100);
     const cl = frame('clock', 520, 218, '#111a17');
-    const running = hasGame && !['round_result', 'game_over'].includes(s.phase);
+    const running = u.powerOn && hasGame && !['round_result', 'game_over'].includes(s.phase);
     const seconds = Math.max(0, Math.floor(u.seconds));
     const timer = running ? `${String(Math.floor(seconds / 60)).padStart(2, '0')}${String(seconds % 60).padStart(2, '0')}` : '----';
-    const glow = running ? seconds <= 15 ? '#ed8960' : '#efb663' : '#65563a';
+    const glow = u.powerOn ? running ? seconds <= 15 ? '#ed8960' : '#efb663' : '#65563a' : '#252b21';
     [34, 141, 288, 395].forEach((x, i) => segmentDigit(cl, timer[i], x, 25, glow));
     cl.fillStyle = glow;
     cl.fillRect(257, 61, 10, 10); cl.fillRect(257, 111, 10, 10);
     line(cl, 34, 174, 446, '#3b4030');
-    text(cl, running ? '阶段余时 · 约' : '等待行动', 34, 199, 22, '#a39b79');
+    text(cl, running ? '阶段余时 · 约' : '等待行动', 34, 199, 22, u.powerOn ? '#a39b79' : '#4b483a');
     for (let i = 0; i < 5; i++) {
         const k = frame('key' + i, 180, 200);
         const enabled = r.guess && r.active && s.connected && !u.rosterOpen && !u.manual;
@@ -521,15 +521,15 @@ export function paint(s: StationState, u: LocalState): Content {
     }
     const ph = frame('phase', 550, 214);
     ['加密', '拦截', '解码'].forEach((label, i) => {
-        const active = s.phase === ['encrypting', 'intercept', 'decrypt'][i];
-        text(ph, `0${i + 1}`, 23 + i * 177, 28, 18, '#a2a492', 500);
-        text(ph, label, 23 + i * 177, 79, 34, active ? r.color : '#a2a492');
+        const active = u.powerOn && s.phase === ['encrypting', 'intercept', 'decrypt'][i];
+        text(ph, `0${i + 1}`, 23 + i * 177, 28, 18, u.powerOn ? '#a2a492' : '#4b4e42', 500);
+        text(ph, label, 23 + i * 177, 79, 34, active ? r.color : u.powerOn ? '#a2a492' : '#4b4e42');
         ph.fillStyle = active ? r.color : '#1b2a32';
         round(ph, 25 + i * 177, 129, 104, 17, 8);
         ph.fill();
-        if (i < 2) text(ph, '›', 152 + i * 177, 78, 28, '#7b857c');
+        if (i < 2) text(ph, '›', 152 + i * 177, 78, 28, u.powerOn ? '#7b857c' : '#3e453d');
     });
-    text(ph, s.phase === 'home' || s.phase === 'room' ? '等待行动开始' : `第 ${s.round} / 16 回合`, 24, 190, 21, '#bbc0aa');
+    text(ph, s.phase === 'home' || s.phase === 'room' ? '等待行动开始' : `第 ${s.round} / 16 回合`, 24, 190, 21, u.powerOn ? '#bbc0aa' : '#4b4e42');
     const tr = frame('transmitLabel', 600, 164);
     const homeReady = s.phase === 'home' && !!u.name.trim() && (u.mode === 'create' || u.code.length === 4) && s.connected;
     const lobbyReady = s.phase === 'room' && s.canStart && s.ownerID === s.myPlayerID && s.connected;
@@ -584,7 +584,7 @@ export function paint(s: StationState, u: LocalState): Content {
         crtFinish(canvas.getContext('2d')!, canvas.width, canvas.height, name.startsWith('word'));
     }
     if (!u.powerOn) {
-        for (const name of ['screen', 'word0', 'word1', 'word2', 'word3', 'channel', 'clock', 'phase']) {
+        for (const name of ['screen', 'word0', 'word1', 'word2', 'word3', 'channel']) {
             const { canvas } = frames[name];
             const display = canvas.getContext('2d')!;
             display.setTransform(1, 0, 0, 1, 0, 0);
