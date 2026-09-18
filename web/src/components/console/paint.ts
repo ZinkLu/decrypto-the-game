@@ -570,12 +570,24 @@ export function paint(s: StationState, u: LocalState): Content {
         target(surface, id, `${u.unpluggedCables & (1 << i) ? '插回' : '拔出'}${['网线', '串口线', '电源线'][i]}`, 0, 0, 180, 100);
         rearControls.add(id);
     });
+    const instrumentLabels = {
+        original: ['调整 VU 表摆动幅度', '调整 VU 表摆动频率'],
+        signal: [u.instrumentDemo ? '转动调谐旋钮，切回手动调谐' : `调谐模拟频道，刻度 ${Number((u.meterAmplitude * 2.5).toFixed(1))} / 100`, '调整接收增益'],
+        tuning: ['调整调谐频率，中央为第五档', '微调中央归零表'],
+        status: [`切换机械状态，${['READY 就绪', 'SEND 发送', 'WAIT 等待'][u.meterAmplitude]}`, '调整转鼓演示停留时间'],
+    }[u.instrumentVariant];
     for (const [name, id, label, value] of [
-        ['MeterAmplitude', 'meter-amplitude', '调整 VU 表摆动幅度', u.meterAmplitude],
-        ['MeterRate', 'meter-rate', '调整 VU 表摆动频率', u.meterRate],
+        ['MeterAmplitude', 'meter-amplitude', instrumentLabels[0], u.meterAmplitude],
+        ['MeterRate', 'meter-rate', instrumentLabels[1], u.meterRate],
     ] as const) {
         frame(name + 'Control', 100, 100);
-        target(name + 'Control', id, `${label}，当前第 ${value + 1} 档`, 0, 0, 100, 100);
+        const position = u.instrumentVariant === 'signal' && id === 'meter-amplitude' ? label : `${label}，当前第 ${value + 1} 档`;
+        target(name + 'Control', id, position, 0, 0, 100, 100);
+    }
+    frame('receiverSweepControl', 100, 100);
+    if (u.instrumentVariant === 'signal') {
+        target('receiverSweepControl', 'receiver-sweep',
+            u.instrumentDemo ? '关闭自动摆动，恢复手动调谐' : '开启自动信号摆动', 0, 0, 100, 100);
     }
     const seats: Record<string, string | null> = {};
     teams.forEach(team => team.seats.forEach((seat, i) => { seats[team.team + i] = seat.player?.id ?? null; }));

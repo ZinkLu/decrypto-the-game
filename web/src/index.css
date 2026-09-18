@@ -59,6 +59,41 @@ button,input { font: inherit; }
 @media (max-width: 600px) { .station-workbench { right: 10px; left: 10px; bottom: 10px; gap: 8px; } .station-orbit-hint { display: none; } .station-flip small { display: none; } .station-rear-status { font-size: 11px; } }
 .station-hint { position: fixed; z-index: 3; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 9px 16px; background: #26332e; color: #f0e4c9; font-size: 12px; letter-spacing: .04em; pointer-events: none; box-shadow: 0 3px 12px #17211c20; }
 
+/* A review bench below the machine, keeping every study in the same light. */
+.station[data-instruments] { --instrument-bench-height: 112px; }
+.station[data-instruments] .station-stage,
+.station[data-instruments] .station-viewport { height: calc(100svh - var(--instrument-bench-height)); min-height: 0; min-width: 0; }
+.station[data-instruments] .station-workbench,
+.station[data-instruments] .mobile-hint { display: none; }
+.station[data-instruments] .station-hint { bottom: calc(var(--instrument-bench-height) + 10px); }
+.instrument-comparison { position: fixed; z-index: 3; inset: auto 0 0; height: var(--instrument-bench-height); padding: 15px 24px; border-top: 1px solid #b4b2a0; background: #eee8db; color: #344139; }
+.instrument-comparison-row { display: flex; align-items: center; gap: 14px; }
+.instrument-comparison-title { font-size: 12px; letter-spacing: .14em; margin-right: 8px; white-space: nowrap; }
+.instrument-options,.instrument-view { display: flex; gap: 4px; }
+.instrument-view { margin-left: auto; }
+.instrument-comparison button { min-height: 38px; padding: 7px 13px; border: 1px solid #adae9e; border-radius: 2px; background: transparent; color: #344139; font-size: 12px; cursor: pointer; white-space: nowrap; }
+.instrument-comparison button:hover { background: #e0dbcd; }
+.instrument-comparison button[aria-pressed="true"] { border-color: #384c41; background: #384c41; color: #fff4d9; }
+.instrument-comparison button:focus-visible { outline: 3px solid #a65232; outline-offset: 3px; }
+.instrument-comparison button:disabled { opacity: .4; cursor: default; }
+.instrument-description { margin-top: 12px; justify-content: space-between; gap: 18px; font-size: 12px; line-height: 1.5; }
+.instrument-description p { margin: 0; }
+.instrument-description span { font-size: 11px; color: #6c7266; }
+@media (max-width: 1000px) {
+  .instrument-comparison { padding: 12px 14px; }
+  .instrument-comparison-row { gap: 7px; }
+  .instrument-comparison-title,.instrument-description span { display: none; }
+  .instrument-comparison button { padding: 7px 9px; }
+}
+@media (max-width: 650px) {
+  .station[data-instruments] { --instrument-bench-height: 166px; }
+  .instrument-comparison-row { flex-wrap: wrap; }
+  .instrument-options { width: 100%; }
+  .instrument-options button { flex: 1; padding-inline: 5px; font-size: 11px; }
+  .instrument-view { margin-left: 0; }
+  .instrument-description { margin-top: 7px; font-size: 11px; }
+}
+
 /* A full-window paper drawer, independent of the 3D viewport and its pan. */
 .archive-dialog { position: fixed; inset: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: clamp(20px, 6vh, 64px) clamp(12px, 4vw, 64px) 0; border: 0; background: transparent; color: #343b31; overflow: hidden; }
 .archive-dialog[open] { display: flex; align-items: flex-end; justify-content: center; }

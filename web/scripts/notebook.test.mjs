@@ -58,8 +58,8 @@ test('exported model keeps housing fixed and paper registered at the feed nip', 
     'ScopeDetail_dial knurled rim', 'ScopeDetail_dial ivory cap', 'ScopeDetail_dial hub'])
     assert.ok(tuningParts.has(name), `${name} must rotate with ScopeTuning`);
   assert.equal([...tuningParts].filter(name => name.startsWith('ScopeDetail_dial knurl ')).length, 20);
-  for (const name of ['ScopeRate', 'ScopePersistence', 'Tactile_meter scale', 'ReceiverNeedle', 'Tactile_meter bevel glass',
-    'MeterAmplitude', 'MeterRate']) assert.ok(node(name));
+  for (const name of ['ScopeRate', 'ScopePersistence', 'Instrument_signal', 'SignalNeedle', 'SignalGlass',
+    'SignalTuning', 'SignalGain', 'SignalSweep']) assert.ok(node(name), name);
   assert.ok(!gltf.nodes.some(n => /^(ConsoleDetail_(monitor toggle|sync toggle|sync lamp)|Archive scroll wheel|Wheel knurl)/.test(n.name)));
   assert.ok(!gltf.nodes.some(n => /screw|bolt|rivet|fastener|washer|ConsoleDetail_decoder lower|Instrument_filter retainer/i.test(n.name) && (n.translation?.[2] ?? 0) > .3), 'front fasteners are removed completely');
   assert.ok(!gltf.nodes.some(n => n.name.endsWith(' head') && node(n.name.slice(0, -5) + ' slot') && (n.translation?.[2] ?? 0) > .3), 'slotted screws are removed even when named after their mounting function');

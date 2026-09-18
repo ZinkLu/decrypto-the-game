@@ -9,7 +9,7 @@ const compile = source => ts.transpileModule(source, {
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const modelUrl = url(compile(await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8')));
 const mechanicsUrl = url(compile(await readFile(new URL('../src/components/console/mechanics.ts', import.meta.url), 'utf8')));
-const { initialLocal, previewState } = await import(modelUrl);
+const { initialLocal, previewState, instrumentSteps, stepInstrumentValue, receiverSignal, ReceiverActivity } = await import(modelUrl);
 const paintSource = await readFile(new URL('../src/components/console/paint.ts', import.meta.url), 'utf8');
 const { paint } = await import(url(compile(paintSource).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl))));
 
@@ -21,6 +21,80 @@ const context = new Proxy({
   createRadialGradient: () => ({ addColorStop() {} }),
 }, { get: (target, key) => key in target ? target[key] : () => {} });
 globalThis.document = { createElement: () => ({ getContext: () => context }) };
+
+test('instrument studies expose their own controls without changing public game information', () => {
+  const state = previewState({}, 'encrypting');
+  const original = paint(state, initialLocal);
+  for (const [variant, amplitude, rate, words] of [
+    ['signal', 14, 2, ['调谐模拟频道', '接收增益']],
+    ['tuning', 4, 2, ['调谐', '微调']],
+    ['status', 0, 2, ['READY 就绪', '停留时间']],
+  ]) {
+    const local = { ...initialLocal, instrumentVariant: variant, meterAmplitude: amplitude, meterRate: rate, instrumentDemo: false };
+    const content = paint(state, local);
+    const controls = content.targets.filter(t => t.id.startsWith('meter-'));
+    assert.equal(controls.length, 2);
+    words.forEach((word, i) => assert.ok(controls[i].label.includes(word)));
+    assert.deepEqual(content.lamps, original.lamps);
+    assert.deepEqual(content.seats, original.seats);
+    assert.equal(content.ready, original.ready);
+    assert.equal(content.roomCode, original.roomCode);
+    assert.ok(!paint(state, { ...local, powerOn: false }).targets.some(t => t.id.startsWith('meter-')));
+    for (const control of ['amplitude', 'rate']) {
+      const count = instrumentSteps(variant, control);
+      assert.equal(stepInstrumentValue(variant, control, count - 1, 1), variant === 'signal' ? count - 1 : 0);
+      assert.equal(stepInstrumentValue(variant, control, 0, -1), variant === 'signal' ? 0 : count - 1);
+    }
+  }
+});
+
+test('receiver tuning finds three peaks, falls away on both sides and gain controls their strength', () => {
+  for (const frequency of [8, 21, 33]) {
+    const level = receiverSignal(frequency, 2, 0, false);
+    assert.ok(level > receiverSignal(frequency - 3, 2, 0, false) * 2);
+    assert.ok(level > receiverSignal(frequency + 3, 2, 0, false) * 2);
+    assert.ok(receiverSignal(frequency, 4, 0, false) > receiverSignal(frequency, 0, 0, false));
+  }
+  assert.ok(receiverSignal(14, 2, 0, false) < .04, 'a gap between stations is quiet');
+  for (let tune = 0; tune <= 40; tune++) for (let gain = 0; gain <= 4; gain++) {
+    const level = receiverSignal(tune, gain, tune / 2);
+    assert.ok(Number.isFinite(level) && level >= 0 && level <= 1);
+    assert.equal(receiverSignal(tune, gain, 0, false), receiverSignal(tune, gain, 100, false), 'reduced motion is stable');
+  }
+  assert.equal(stepInstrumentValue('signal', 'amplitude', 38, 12), 40);
+  assert.equal(stepInstrumentValue('signal', 'amplitude', 3, -12), 0);
+});
+
+test('automatic signal has varied peaks and rests, stays bounded and pauses without hidden time advancing', () => {
+  const seeded = () => {
+    let seed = 729;
+    return () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296);
+  };
+  const activity = new ReceiverActivity(seeded());
+  const values = Array.from({ length: 600 }, () => activity.advance(1 / 30, true));
+  assert.ok(values.every(value => Number.isFinite(value) && value >= 0 && value <= 1));
+  assert.ok(Math.max(...values) - Math.min(...values) > .5, 'both peaks and quieter gaps occur');
+  assert.ok(Math.max(...values.slice(1).map((value, i) => Math.abs(value - values[i]))) < .35, 'needle drive is continuous');
+  const held = activity.level;
+  assert.equal(activity.advance(60, false), held, 'off, power off and reduced motion freeze the signal');
+  assert.equal(activity.advance(0, true), held);
+  const continuous = new ReceiverActivity(seeded()), stepped = new ReceiverActivity(seeded());
+  const expected = continuous.advance(20, true);
+  for (let i = 0; i < 600; i++) stepped.advance(1 / 30, true);
+  assert.ok(Math.abs(expected - stepped.level) < 1e-8, 'random timing is independent of frame rate');
+});
+
+test('physical AUTO/MAN switch belongs only to the receiver and follows power/front visibility', () => {
+  const state = previewState({}, 'encrypting');
+  const local = { ...initialLocal, instrumentVariant: 'signal', meterAmplitude: 14 };
+  const getSwitch = u => paint(state, u).targets.find(t => t.id === 'receiver-sweep');
+  assert.equal(getSwitch(local).surface, 'receiverSweepControl');
+  assert.match(getSwitch({ ...local, instrumentDemo: false }).label, /开启/);
+  assert.match(getSwitch({ ...local, instrumentDemo: true }).label, /恢复手动调谐/);
+  for (const instrumentVariant of ['original', 'tuning', 'status']) assert.equal(getSwitch({ ...local, instrumentVariant }), undefined);
+  assert.equal(getSwitch({ ...local, powerOn: false }), undefined);
+  assert.equal(getSwitch({ ...local, backView: true }), undefined);
+});
 
 test('front and rear control targets are disjoint in every game phase', () => {
   for (const phase of ['home', 'room', 'encrypting', 'intercept', 'decrypt', 'waiting', 'round_result', 'game_over']) {

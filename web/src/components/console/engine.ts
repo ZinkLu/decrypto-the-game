@@ -9,9 +9,10 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { crtFinish, type Content, type Frame, type Target } from './paint';
 import { RosterMotion, rosterPose } from './rosterMotion';
 import { crtProfile, crtGeometry, crtHeight, crtDisplayUv, crtOpticsShader } from './crt';
-import { scopeModes, scopeRates, scopePersistenceModes, type HardwareState } from './model';
+import { initialLocal, scopeModes, scopeRates, scopePersistenceModes, type HardwareState } from './model';
 import { waveSample, paperTooth, paperTextureLength, receiptHeadPath } from './mechanics';
 import { ReceiptTransport } from './tearing';
+import { ConsoleInstruments } from './instruments';
 interface Surface {
     x: number;
     y: number;
@@ -85,8 +86,12 @@ export class ConsoleEngine {
     private manual = false;
     private manualDepth = 0;
     private meterAngle = -.82;
-    private meterAmplitude = 2;
-    private meterRate = 2;
+    private meterAmplitude = initialLocal.meterAmplitude;
+    private meterRate = initialLocal.meterRate;
+    private instruments?: ConsoleInstruments;
+    private instrumentVariant: HardwareState['instrumentVariant'] = initialLocal.instrumentVariant;
+    private instrumentDemo = initialLocal.instrumentDemo;
+    private detailOverride: string | null | undefined;
     private removedBatteries = 0;
     private unpluggedCables = 0;
     private removable = new Map<string, { object: THREE.Object3D; rest: THREE.Vector3; amount: number }>();
@@ -105,6 +110,16 @@ export class ConsoleEngine {
     private scopePersistenceDesiredAngle = 0;
     private scopeFrames = 0;
     private scopeFpsStarted = performance.now();
+    private manualKey?: THREE.Object3D;
+    private receiverNeedle?: THREE.Object3D;
+    private meterKnobs: THREE.Object3D[] = [];
+    private soundSwitch?: THREE.Object3D;
+    private dirty = true;
+    private paperShadowSkip = 0;
+    private frameHashes = new Map<string, number>();
+    private hashCanvas = document.createElement('canvas');
+    private boundsEye = new THREE.Vector3();
+    private boundsPoint = new THREE.Vector3();
     private reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
     private rosterMotionRate = import.meta.env.DEV && new URLSearchParams(location.search).get('motion') === 'slow' ? .2 : 1;
     private pulses = new Map<string, number>();
@@ -140,7 +155,8 @@ export class ConsoleEngine {
         if (this.inspectionEnabled && e.button === 1) e.preventDefault();
     };
     constructor(private host: HTMLElement, private project: () => void, private fail: (message: string) => void,
-        private onPaperPull: () => void = () => {}, private inspectionEnabled = false) {
+        private onPaperPull: () => void = () => {}, private inspectionEnabled = false,
+        private instrumentPreview = false) {
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -149,7 +165,7 @@ export class ConsoleEngine {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.autoUpdate = false;
         this.renderer.shadowMap.needsUpdate = true;
-        this.renderer.shadowMap.type = THREE.VSMShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         this.renderer.domElement.setAttribute('aria-hidden', 'true');
         this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost);
         host.prepend(this.renderer.domElement);
@@ -189,7 +205,7 @@ export class ConsoleEngine {
         const key = new THREE.DirectionalLight('#ffe9c7', 3.4);
         key.position.set(-8, 10, 12);
         key.castShadow = true;
-        key.shadow.mapSize.set(2048, 2048);
+        key.shadow.mapSize.set(1024, 1024);
         key.shadow.camera.left = -11;
         key.shadow.camera.right = 11;
         key.shadow.camera.top = 9;
@@ -235,7 +251,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'console-lighting-20260915-v20';
+        const revision = 'console-receiver-20260918-v21';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -343,15 +359,16 @@ export class ConsoleEngine {
                             : crtCenter;
                         // Halation follows bright ink and traces only. Dark glass
                         // cannot produce this light, and power-off suppresses it.
-                        vec2 glowStep = vec2(.0022 / crtAspect, .0022);
-                        vec3 crtHalo = (crtEmission(map, crtUv + vec2(glowStep.x, 0.0))
-                            + crtEmission(map, crtUv - vec2(glowStep.x, 0.0))
-                            + crtEmission(map, crtUv + vec2(0.0, glowStep.y))
-                            + crtEmission(map, crtUv - vec2(0.0, glowStep.y))) * .18;
-                        crtHalo += (crtEmission(map, crtUv + glowStep * 2.4)
-                            + crtEmission(map, crtUv - glowStep * 2.4)
-                            + crtEmission(map, crtUv + vec2(glowStep.x, -glowStep.y) * 2.4)
-                            + crtEmission(map, crtUv + vec2(-glowStep.x, glowStep.y) * 2.4)) * .07;
+                        // Four near taps carry a slightly raised weight instead
+                        // of a second far ring; the tiny ruby windows skip it.
+                        vec3 crtHalo = vec3(0.0);
+                        if (crtProfile < .5 || crtProfile > 1.5) {
+                            vec2 glowStep = vec2(.0022 / crtAspect, .0022);
+                            crtHalo = (crtEmission(map, crtUv + vec2(glowStep.x, 0.0))
+                                + crtEmission(map, crtUv - vec2(glowStep.x, 0.0))
+                                + crtEmission(map, crtUv + vec2(0.0, glowStep.y))
+                                + crtEmission(map, crtUv - vec2(0.0, glowStep.y))) * .24;
+                        }
                         sampledDiffuseColor.rgb += crtHalo * .36 * crtPower;
                         sampledDiffuseColor.rgb *= 1.0 + .12 * crtPower;
                         // A dark inner border separates the emitting coating
@@ -393,7 +410,7 @@ export class ConsoleEngine {
                         #endif
                     `);
                 };
-                material.customProgramCacheKey = () => `console-crt-optics-v7-${profile}`;
+                material.customProgramCacheKey = () => `console-crt-optics-v8-${profile}`;
                 this.addScreenGlass(name, plane);
             }
         }
@@ -548,7 +565,42 @@ export class ConsoleEngine {
                 this.poweredMaterials.set(object.material, object.material.emissiveIntensity);
             }
         });
+        // The receiver is part of the shipped console model, including its controls.
+        const receiver = this.part('Instrument_signal');
+        if (!receiver) throw new Error('Missing production receiver');
+        const instruments = new THREE.Group();
+        instruments.name = 'ConsoleInstruments';
+        this.model.add(instruments);
+        this.model.updateWorldMatrix(true, true);
+        instruments.attach(receiver);
+        let original: THREE.Group | undefined;
+        if (import.meta.env.DEV && this.instrumentPreview) {
+            const loader = new GLTFLoader().setDRACOLoader(this.draco);
+            const [studies, vu] = await Promise.all([
+                loader.loadAsync('/models/instrument-studies.glb?v=20260918-5'),
+                loader.loadAsync('/models/instrument-vu.glb?v=20260918-1'),
+            ]);
+            if (this.disposed) { this.disposeObject(studies.scene); this.disposeObject(vu.scene); return; }
+            // Compare the same production receiver against the archived alternatives.
+            studies.scene.getObjectByName('Instrument_signal')?.removeFromParent();
+            studies.scene.position.set(5.83, -1.4, 0);
+            original = vu.scene;
+            original.name = 'InstrumentOriginal';
+            instruments.add(studies.scene, original);
+        }
+        this.instruments = new ConsoleInstruments(instruments, original);
         this.batchStaticGeometry();
+        this.manualKey = this.part('ManualKey');
+        this.receiverNeedle = this.part('ReceiverNeedle');
+        this.soundSwitch = this.part('RearSoundSwitch');
+        this.meterKnobs = ['MeterAmplitude', 'MeterRate'].flatMap(name => {
+            const knob = this.part(name);
+            return knob ? [knob] : [];
+        });
+        // The perpetually swinging needle and knob pointers are too small to
+        // read in the shadow map; excluding them keeps static shadows static.
+        for (const object of [this.manualKey, this.receiverNeedle, ...this.meterKnobs])
+            object?.traverse(o => { if (o instanceof THREE.Mesh) o.castShadow = false; });
         this.renderer.shadowMap.needsUpdate = true;
         const scope = new THREE.CanvasTexture(this.scopeCanvas);
         scope.colorSpace = THREE.SRGBColorSpace;
@@ -561,7 +613,8 @@ export class ConsoleEngine {
                 powerOn: this.powerOn,
                 archiveOpen: this.archiveOpen, manual: this.manual,
                 removedBatteries: this.removedBatteries, unpluggedCables: this.unpluggedCables,
-                meterAmplitude: this.meterAmplitude, meterRate: this.meterRate });
+                meterAmplitude: this.meterAmplitude, meterRate: this.meterRate,
+                instrumentVariant: this.instrumentVariant, instrumentDemo: this.instrumentDemo });
         this.resize();
     }
     private addScreenGlass(name: string, display: THREE.Mesh) {
@@ -669,6 +722,7 @@ export class ConsoleEngine {
         return this.model?.getObjectByName(name) || this.model?.getObjectByName(name.replaceAll(' ', '_'));
     }
     update(content: Content, local: HardwareState) {
+        this.dirty = true;
         if (this.powerOn !== local.powerOn || this.content?.waiting !== content.waiting) this.clearScopePersistence();
         this.content = content;
         this.updateNixies(content.roomCode);
@@ -683,6 +737,9 @@ export class ConsoleEngine {
         this.unpluggedCables = local.unpluggedCables;
         this.meterAmplitude = local.meterAmplitude;
         this.meterRate = local.meterRate;
+        this.instrumentVariant = local.instrumentVariant;
+        this.instrumentDemo = local.instrumentDemo;
+        this.instruments?.update(local);
         // Identity matters: replacing an occupied seat also exchanges its card.
         for (const [id, seat] of this.rosterCards) {
             const player = content.seats[id];
@@ -727,9 +784,26 @@ export class ConsoleEngine {
         }
         this.project();
     }
+    // paint() always returns fresh canvases; a downsampled hash skips the GPU
+    // upload whenever a surface's pixels are unchanged (the 840x2630 paper
+    // texture is by far the most expensive upload).
+    private frameHash(canvas: HTMLCanvasElement) {
+        const size = 32;
+        this.hashCanvas.width = size;
+        this.hashCanvas.height = size;
+        const c = this.hashCanvas.getContext('2d', { willReadFrequently: true })!;
+        c.clearRect(0, 0, size, size);
+        c.drawImage(canvas, 0, 0, size, size);
+        const data = c.getImageData(0, 0, size, size).data;
+        let hash = (2166136261 ^ Math.imul(canvas.width, 73856093) ^ Math.imul(canvas.height, 19349663)) | 0;
+        for (let i = 0; i < data.length; i += 4)
+            hash = Math.imul(hash ^ (data[i] | data[i + 1] << 8 | data[i + 2] << 16 | data[i + 3] << 24), 16777619);
+        return hash;
+    }
     private updateFrame(name: string, frame: Frame) {
         const plane = this.planes.get(name);
         if (!plane) return;
+        const hash = this.frameHash(frame.canvas);
         let texture = this.textures.get(name);
         if (!texture) {
             texture = new THREE.CanvasTexture(frame.canvas);
@@ -747,14 +821,17 @@ export class ConsoleEngine {
                 }
             }
         } else {
+            if (this.frameHashes.get(name) === hash) return;
             texture.image = frame.canvas;
             texture.needsUpdate = true;
         }
+        this.frameHashes.set(name, hash);
+        this.dirty = true;
     }
     private batchStaticGeometry(root: THREE.Object3D = this.model!, preserveAssemblies = true) {
         // Keep the .blend and GLB fully editable. Only the runtime coalesces
         // static, opaque parts by material; animated assemblies retain names.
-        const moving = /^(Nixie_Digit_.*|FloppyTransport|ScopeTuning|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
+        const moving = /^(ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|ScopeTuning|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
         const batches = new Map<THREE.Material, THREE.Mesh[]>();
         root.updateWorldMatrix(true, true);
         const inverse = root.matrixWorld.clone().invert();
@@ -863,7 +940,10 @@ export class ConsoleEngine {
             this.paperRoller.quaternion.copy(this.rollerRest);
             this.paperRoller.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), this.receipt.feedTravel / .095));
         }
-        this.renderer.shadowMap.needsUpdate = true;
+        if (this.paperShadowSkip-- <= 0) {
+            this.renderer.shadowMap.needsUpdate = true;
+            this.paperShadowSkip = 3;
+        }
         this.project();
     }
     private beginPaperReader() {
@@ -871,12 +951,16 @@ export class ConsoleEngine {
         this.paperReaderStarted = true;
         this.onPaperPull();
     }
+    inspectInstrument(closeup: boolean) {
+        this.detailOverride = closeup ? 'meter' : null;
+        this.resize();
+    }
     private resize() {
         this.width = this.host.clientWidth;
         this.height = this.host.clientHeight;
         this.renderer.setSize(this.width, this.height, false);
         const aspect = this.width / this.height;
-        const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
+        const detail = this.detailOverride !== undefined ? this.detailOverride : import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
         const normalHeight = Math.max(13.15, 18.6 / aspect);
         this.camera.aspect = aspect;
         const target = new THREE.Vector3(0, .1, -.4);
@@ -889,13 +973,14 @@ export class ConsoleEngine {
         this.camera.updateProjectionMatrix();
         this.camera.updateMatrixWorld();
         const display = detail === 'words' ? this.surfaces.word1 : detail ? this.surfaces[detail] : undefined;
-        if (detail === 'nixie' || detail === 'recorder' || display && (detail === 'screen' || detail === 'scope' || detail === 'words')) {
+        if (detail === 'meter' || detail === 'nixie' || detail === 'recorder' || display && (detail === 'screen' || detail === 'scope' || detail === 'words')) {
             // Crop the original camera frustum without moving the camera:
             // close-up and full-console views keep exactly the same perspective.
             this.inspection.rotation.set(this.inspectionPitch, this.inspectionYaw, 0);
             this.root.updateWorldMatrix(true, false);
             const focus = (display
                 ? this.root.localToWorld(new THREE.Vector3(detail === 'words' ? -.45 : display.x, display.y, display.z))
+                : detail === 'meter' ? this.root.localToWorld(new THREE.Vector3(5.83, -1.78, 1.1))
                 : new THREE.Vector3(5.83, detail === 'nixie' ? 3.55 : -.2, 1.1)).project(this.camera);
             const detailHeight = display
                 ? Math.max(display.h * (detail === 'scope' ? 1.8 : 1.35), (detail === 'words' ? 9.8 : display.w * 1.3) / aspect)
@@ -905,6 +990,7 @@ export class ConsoleEngine {
             this.camera.setViewOffset(this.width, this.height,
                 (focus.x + 1) * this.width / 2 - w / 2, (1 - focus.y) * this.height / 2 - h / 2, w, h);
         }
+        this.dirty = true;
         this.project();
     }
     bounds(target: Target) {
@@ -916,21 +1002,25 @@ export class ConsoleEngine {
             return null;
         plane.updateWorldMatrix(true, false);
         const curvature = crtProfile(target.surface);
-        const eye = plane.worldToLocal(this.camera.getWorldPosition(new THREE.Vector3()));
+        const eye = plane.worldToLocal(this.camera.getWorldPosition(this.boundsEye));
         // Include edge midpoints: a convex display's projected bounds can extend
         // beyond its four corners. Invert raster warp before sampling the face.
-        const points: THREE.Vector3[] = [];
+        const point = this.boundsPoint;
+        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
         for (const fy of [0, .5, 1]) for (const fx of [0, .5, 1]) {
             const u = (target.x + target.w * fx) / frame.width;
             const v = 1 - (target.y + target.h * fy) / frame.height;
             const uv = curvature ? crtDisplayUv(u, v, surface.w, surface.h, curvature, eye) : { u, v };
-            points.push(new THREE.Vector3((uv.u - .5) * surface.w, (uv.v - .5) * surface.h,
+            point.set((uv.u - .5) * surface.w, (uv.v - .5) * surface.h,
                 curvature ? crtHeight(uv.u, uv.v, curvature.rise) : 0)
-                .applyMatrix4(plane.matrixWorld).project(this.camera));
+                .applyMatrix4(plane.matrixWorld).project(this.camera);
+            const sx = (point.x + 1) * this.width / 2, sy = (1 - point.y) * this.height / 2;
+            if (sx < left) left = sx;
+            if (sx > right) right = sx;
+            if (sy < top) top = sy;
+            if (sy > bottom) bottom = sy;
         }
-        const xs = points.map(p => (p.x + 1) * this.width / 2);
-        const ys = points.map(p => (1 - p.y) * this.height / 2);
-        return { left: Math.min(...xs), top: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+        return { left, top, width: right - left, height: bottom - top };
     }
     private tick = (now: number) => {
         if (this.disposed)
@@ -940,6 +1030,7 @@ export class ConsoleEngine {
             return;
         const dt = Math.min((now - this.last) / 1000, .1);
         this.last = now;
+        let changed = false;
         const oldInspectionYaw = this.inspectionYaw, oldInspectionPitch = this.inspectionPitch;
         this.inspectionYaw = this.reduced.matches ? this.inspectionTargetYaw :
             THREE.MathUtils.damp(this.inspectionYaw, this.inspectionTargetYaw, 18, dt);
@@ -961,16 +1052,19 @@ export class ConsoleEngine {
             Math.abs(oldInspectionPitch - this.inspectionPitch) > .00001 || backdropMoved) {
             this.project();
             this.renderer.shadowMap.needsUpdate = true;
+            changed = true;
         }
         const previousPowerAngle = this.powerAngle;
         const powerTarget = this.powerOn ? 0 : -THREE.MathUtils.degToRad(this.powerSwitch?.userData.throw_degrees ?? 32);
         this.powerAngle = this.reduced.matches ? powerTarget : THREE.MathUtils.damp(this.powerAngle, powerTarget, 22, dt);
         if (Math.abs(this.powerAngle - powerTarget) < .001) this.powerAngle = powerTarget;
         if (this.powerSwitch) this.powerSwitch.rotation.z = this.powerAngle;
-        if (previousPowerAngle !== this.powerAngle) this.renderer.shadowMap.needsUpdate = true;
+        if (previousPowerAngle !== this.powerAngle) { this.renderer.shadowMap.needsUpdate = true; changed = true; }
         if (this.receipt.active) {
             this.receipt.advance(dt * 1000 * this.rosterMotionRate, this.reduced.matches);
             this.syncPaperGeometry();
+            changed = true;
+            if (!this.receipt.active) this.renderer.shadowMap.needsUpdate = true;
             if (this.paper) {
                 this.paper.visible = this.receipt.opacity > 0 && this.receipt.length > .0001;
                 this.paper.traverse(object => {
@@ -987,23 +1081,23 @@ export class ConsoleEngine {
         }
         const manualDepth = this.manualDepth;
         this.manualDepth = this.reduced.matches ? (this.manual ? .035 : 0) : THREE.MathUtils.damp(this.manualDepth, this.manual ? .035 : 0, 20, dt);
-        const manualKey = this.part('ManualKey');
-        if (manualKey) manualKey.position.z = .85 - this.manualDepth;
-        if (Math.abs(this.manualDepth - manualDepth) > .00001) { this.project(); this.renderer.shadowMap.needsUpdate = true; }
-        const needle = this.part('ReceiverNeedle');
-        const oldMeter = this.meterAngle;
-        // A local analog toy. Its motion has no connection to game progress.
-        const level = [.12, .27, .44, .64, .88][this.meterAmplitude];
-        const speed = [.5, .8, 1.2, 1.8, 2.8][this.meterRate];
-        const wave = Math.sin(now / 1000 * speed * 3.2) * .70 + Math.sin(now / 1000 * speed * 7.7) * .30;
-        const meterTarget = this.powerOn ? this.reduced.matches ? 0 : wave * level : -.82;
-        this.meterAngle = this.reduced.matches ? meterTarget : THREE.MathUtils.damp(this.meterAngle, meterTarget, 12, dt);
-        if (needle) needle.rotation.z = -this.meterAngle;
-        if (Math.abs(oldMeter - this.meterAngle) > .0001) this.renderer.shadowMap.needsUpdate = true;
-        for (const [name, value] of [['MeterAmplitude', this.meterAmplitude], ['MeterRate', this.meterRate]] as const) {
-            const knob = this.part(name);
-            if (knob) knob.rotation.z = -.85 + value * .425;
+        if (this.manualKey) this.manualKey.position.z = .85 - this.manualDepth;
+        if (Math.abs(this.manualDepth - manualDepth) > .00001) { this.project(); this.renderer.shadowMap.needsUpdate = true; changed = true; }
+        if (this.instrumentVariant === 'original') {
+            const oldMeter = this.meterAngle;
+            // A local analog toy. Its motion has no connection to game progress.
+            const level = [.12, .27, .44, .64, .88][this.meterAmplitude];
+            const speed = [.5, .8, 1.2, 1.8, 2.8][this.meterRate];
+            const wave = Math.sin(now / 1000 * speed * 3.2) * .70 + Math.sin(now / 1000 * speed * 7.7) * .30;
+            const meterTarget = this.powerOn ? this.reduced.matches ? 0 : wave * level : -.82;
+            this.meterAngle = this.reduced.matches ? meterTarget : THREE.MathUtils.damp(this.meterAngle, meterTarget, 12, dt);
+            if (this.receiverNeedle) this.receiverNeedle.rotation.z = -this.meterAngle;
+            if (Math.abs(oldMeter - this.meterAngle) > .0001) changed = true;
+            for (const [knob, value] of [[this.meterKnobs[0], this.meterAmplitude], [this.meterKnobs[1], this.meterRate]] as const) {
+                if (knob) knob.rotation.z = -.85 + value * .425;
+            }
         }
+        if (this.instruments?.tick(now, dt, this.reduced.matches)) changed = true;
         for (const [name, item] of this.removable) {
             const battery = name.startsWith('BatteryCell_');
             const index = battery ? Number(name.slice(-1)) : ['RJ45', 'Serial', 'DC'].indexOf(name.slice(10));
@@ -1024,7 +1118,7 @@ export class ConsoleEngine {
                 if (lead?.mesh.morphTargetInfluences)
                     lead.mesh.morphTargetInfluences[lead.index] = item.amount;
             }
-            if (previous !== item.amount) { this.project(); this.renderer.shadowMap.needsUpdate = true; }
+            if (previous !== item.amount) { this.project(); this.renderer.shadowMap.needsUpdate = true; changed = true; }
         }
         for (const [id, seat] of this.rosterCards) {
             const previous = seat.motion.amount;
@@ -1040,7 +1134,7 @@ export class ConsoleEngine {
                 this.updateFrame('roster' + id, frame);
                 seat.printed = frame;
             }
-            if (previous !== seat.motion.amount) { this.project(); this.renderer.shadowMap.needsUpdate = true; }
+            if (previous !== seat.motion.amount) { this.project(); this.renderer.shadowMap.needsUpdate = true; changed = true; }
         }
         const previousFlip = this.flipProgress;
         const targetFlip = this.backView ? 1 : 0;
@@ -1056,23 +1150,26 @@ export class ConsoleEngine {
         if (Math.abs(this.batteryAngle - (this.batteryOpen ? 1.85 : 0)) < .0005)
             this.batteryAngle = this.batteryOpen ? 1.85 : 0;
         this.batteryDoor.rotation.y = this.batteryAngle;
-        const soundSwitch = this.part('RearSoundSwitch');
+        const soundSwitch = this.soundSwitch;
         if (soundSwitch && soundSwitch.position.x !== (this.soundOn ? 4.79 : 5.05)) {
             soundSwitch.position.x = this.soundOn ? 4.79 : 5.05;
             this.renderer.shadowMap.needsUpdate = true;
+            changed = true;
         }
         if (this.testLamp?.material instanceof THREE.MeshStandardMaterial) {
             const strength = !this.powerOn ? 0 : now < this.testUntil ? .8 + .7 * Math.sin(now * .018) : .03;
             this.testLamp.material.emissive.set('#80dc65');
             this.testLamp.material.emissiveIntensity = strength;
         }
-        if (previousFlip !== this.flipProgress || oldBatteryAngle !== this.batteryAngle) this.project();
+        if (previousFlip !== this.flipProgress || oldBatteryAngle !== this.batteryAngle) { this.project(); changed = true; }
         if (previousFlip !== this.flipProgress || oldBatteryAngle !== this.batteryAngle ||
             Math.abs(this.diskProgress - (this.diskOut ? 1 : 0)) > .0001 ||
             Math.abs(this.scopeAngle - this.scopeDesiredAngle) > .0001 ||
             Math.abs(this.scopeRateAngle - this.scopeRateDesiredAngle) > .0001 ||
-            Math.abs(this.scopePersistenceAngle - this.scopePersistenceDesiredAngle) > .0001 || this.pulses.size > 0)
+            Math.abs(this.scopePersistenceAngle - this.scopePersistenceDesiredAngle) > .0001 || this.pulses.size > 0) {
             this.renderer.shadowMap.needsUpdate = true;
+            changed = true;
+        }
         const desired = this.diskOut ? 1 : 0;
         if (Math.abs(this.diskProgress - desired) > .0001) {
             this.diskProgress = this.reduced.matches ? desired : THREE.MathUtils.damp(this.diskProgress, desired, 13, dt);
@@ -1110,9 +1207,16 @@ export class ConsoleEngine {
             if (age > .36)
                 this.pulses.delete(id);
         }
-        if (this.flipProgress < .65) this.drawScope(this.reduced.matches ? 0 : now / 1000, dt);
+        const live = this.powerOn && !this.reduced.matches;
+        if (this.flipProgress < .65 && (live || this.dirty)) this.drawScope(this.reduced.matches ? 0 : now / 1000, dt);
         this.crtTime.value = this.reduced.matches ? 0 : now / 1000;
-        this.renderer.render(this.scene, this.camera);
+        // Power-on keeps the CRT raster, scope and VU needle alive, so those
+        // frames always render. Otherwise a frame renders only when state
+        // actually changed (tracked by `dirty` and `changed`).
+        if (live || changed || this.dirty) {
+            this.dirty = false;
+            this.renderer.render(this.scene, this.camera);
+        }
         if (import.meta.env.DEV) {
             this.scopeFrames++;
             if (now - this.scopeFpsStarted >= 750) {
@@ -1206,12 +1310,13 @@ export class ConsoleEngine {
         };
         // History has a strict brightness ceiling. The fresh sweep is drawn
         // separately, so even HOLD + NOISE cannot accumulate into a white slab.
+        const paths = channels.map(channel => path(channel));
         trace.save();
         trace.globalCompositeOperation = 'source-over';
         trace.strokeStyle = phosphor;
         trace.globalAlpha = .35;
         trace.lineWidth = 1.1;
-        for (const channel of channels) trace.stroke(path(channel));
+        for (const sweep of paths) trace.stroke(sweep);
         trace.restore();
 
         const c = this.scopeCanvas.getContext('2d')!;
@@ -1221,11 +1326,11 @@ export class ConsoleEngine {
         c.drawImage(this.scopeTraceCanvas, 0, 0); c.restore();
         c.save(); c.beginPath(); c.rect(0, 0, w, 292); c.clip();
         c.strokeStyle = phosphor; c.shadowColor = phosphor;
-        for (const channel of channels) {
-            const sweep = path(channel);
+        channels.forEach((channel, i) => {
+            const sweep = paths[i];
             c.globalAlpha = .20; c.lineWidth = 3; c.shadowBlur = 6; c.stroke(sweep);
             c.globalAlpha = channel ? .68 : .94; c.lineWidth = 1.1; c.shadowBlur = 0; c.stroke(sweep);
-        }
+        });
         c.restore();
         c.fillStyle = 'rgba(211, 239, 232, .86)';
         c.font = '17px "PingFang SC", sans-serif';

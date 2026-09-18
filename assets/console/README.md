@@ -3,6 +3,74 @@
 Approved visual: `reference.png`. Editable model: `decrypto-console.blend`.
 The running interface uses actual Blender-exported geometry, not the reference bitmap.
 
+The main console now ships the selected SIGNAL receiver in both the editable
+`.blend` and the production GLB. It starts in AUTO with the low, recessed toggle;
+only the needle moves, with softened attack/release and irregular 0.45–1.1-second
+phrases (0.8–1.5-second quiet rests). The physical toggle selects MAN, and the
+tuning/gain controls work throughout the normal game. No study query is needed.
+To install a regenerated receiver into the current console without rebuilding
+the housing or other refined assemblies:
+
+```sh
+blender -b assets/console/decrypto-console.blend --python assets/console/install_receiver.py
+```
+
+This repeatable pass archives the old VU in `instrument-vu.glb` for the development
+comparison, replaces only the receiver assembly, and registers its switch surface.
+It exports all 40 room-code digit variants while preserving the editable scene's
+digit visibility and excluding Boolean cutters.
+
+## Interchangeable instrument studies
+
+Development comparison: `/?preview=encrypting&instruments=signal`.
+The bottom review bench switches between `signal` (tunable receiver), `tuning`
+(center-zero discriminator), `status` (three-sided mechanical state drum), and
+`original` (the former VU). Add `&detail=meter` for the close-up, or use the
+bench's whole-machine / detail buttons. All alternatives share the same console,
+camera and lighting. The physical knobs accept clicks, drags, wheel and arrow keys.
+The optional motion demo is local and does not report real radio/network quality
+or change a game. Reduced motion disables automatic sweeps and drum cycling.
+
+The refined `signal` study combines the S-meter face with a larger tuning knob
+and smaller gain knob. Tuning has 41 positions with end stops and a six-pixel
+drag step; three fixed local stations produce peaks with quiet gaps between them.
+Gain independently scales the received envelope. The needle has inertial settling
+and restrained signal flutter; reduced motion retains tuning without flutter.
+The miniature bat toggle between the knobs selects AUTO (up) / MAN (down).
+Its independent `SignalSweep` assembly has a pivot at z=.591, buried .044 units
+below a genuinely bored hex collar. The gasket is almost flush to the face;
+the shortened stem and ivory tip stay behind z=.780 through the entire throw,
+roughly halving the previous projection. The script validates all 65 sampled
+poses and the shaft clearance at both ends of the throw.
+AUTO animates only the needle with irregular VU-like peaks, short phrases and
+occasional quieter rests. Tuning and gain knobs remain at their manual settings,
+and the toggle stays in its selected position. Returning to MAN restores the
+manual frequency without moving its knob. Touching tuning selects MAN; gain
+remains adjustable in AUTO. Power off and reduced motion pause the random signal
+without advancing its clock. Signal attack is quicker than release.
+The signal study uses this physical control in place of the review bench's demo
+button. These controls do not use game progress,
+private clues, connection latency, microphone input, or a real radio source.
+
+`instrument-studies.blend` is an independent, editable source presenting the
+three assemblies side by side. `build_instrument_studies.py` generates that file
+and `web/public/models/instrument-studies.glb` without opening or changing the
+approved console source. Regenerate using:
+
+```sh
+blender -b --python assets/console/build_instrument_studies.py
+```
+
+The GLB exports all variants at one local mounting origin; the runtime places
+it at `(5.83, -1.4, 0)`. Needles, knob assemblies, and the complete triangular
+drum retain independent origins. Scale marks and legends are Blender geometry;
+the drum's three labels rotate with its faces. Its housing accommodates the
+entire swept volume between the mounting floor and front glass, validated by
+the build script. The production console embeds only the selected receiver;
+the studies and archived VU load only for the development comparison bench.
+Selecting a study updates the development URL, so a
+particular option and viewing distance can be shared or reloaded directly.
+
 ## Editable model and base geometry
 
 The `.blend` is the current geometry source. On 2026-09-06 it was refined directly
@@ -79,13 +147,13 @@ The base interaction pass uses
   Its free edge curls and the roller turns with actual feed travel. Ink moves
   down with the stock at a fixed physical letter size. At runtime the mesh is the
   tearing simulation's particle grid, so the cut opens wherever fibers actually fail. Later rounds
-  hang in front of the VU gauge and launch key, with a three-degree forward feed
+  hang in front of the signal gauge and launch key, with a three-degree forward feed
   angle keeping the stock clear of the raised key; the longer paper prints every archived record
   at the original letter size. Thirty-five
   tear teeth and two guides register to the same centerline.
-- A warm VU scale with a red zero, tapered steel `ReceiverNeedle`, counterweight,
-  brass hub and beveled glass. `MeterAmplitude` and `MeterRate` are independent
-  five-position knobs; the pointer is a local toy, unrelated to game progress.
+- A warm SIGNAL scale, tapered `SignalNeedle`, counterweight, brass hub and
+  beveled glass. `SignalTuning`, `SignalGain` and the low `SignalSweep` AUTO/MAN
+  toggle are independent assemblies; the pointer is a local toy, unrelated to game progress.
   The obsolete archive wheel and legacy monitor/sync toggles are removed. Only
   the paper leader opens the archive; no extra knob is painted over the model.
 - `TransmitLever` keeps its compatibility name but is now a large red pushbutton

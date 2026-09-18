@@ -1,5 +1,59 @@
 import type { useGameStore } from '../../store/gameStore';
 export type StationState = ReturnType<typeof useGameStore.getState>;
+export type InstrumentVariant = 'original' | 'signal' | 'tuning' | 'status';
+export const instrumentOptions: { id: InstrumentVariant; label: string; description: string }[] = [
+    { id: 'signal', label: 'A · 调谐接收机', description: 'AUTO 让表针随机摆动，旋钮保持原位。MAN 可手动调谐；右侧调整增益。' },
+    { id: 'tuning', label: 'B · 中央归零表', description: '对称刻度与绿色校准区。左侧大旋钮调谐，右侧微调，让指针回到中央。' },
+    { id: 'status', label: 'C · 机械状态窗', description: '三面转鼓显示 READY / SEND / WAIT。左侧切换状态，右侧调演示停留时间。' },
+    { id: 'original', label: '原版 VU', description: '保留原有 VU 表作为对照。左侧调整摆幅，右侧调整速度。' },
+];
+export function instrumentSteps(variant: InstrumentVariant, control: 'amplitude' | 'rate') {
+    return variant === 'signal' && control === 'amplitude' ? 41 : variant === 'status' && control === 'amplitude' ? 3 :
+        variant === 'tuning' && control === 'amplitude' ? 9 : 5;
+}
+export function stepInstrumentValue(variant: InstrumentVariant, control: 'amplitude' | 'rate', value: number, steps: number) {
+    const count = instrumentSteps(variant, control);
+    // Receiver knobs have end stops. A frequency sweep must not jump bands.
+    return variant === 'signal' ? Math.max(0, Math.min(count - 1, value + steps)) : nextScopeValue(value, count, steps);
+}
+/** Local receiver toy: three fixed stations, independent of every game/network state. */
+export function receiverSignal(tuning: number, gain: number, seconds = 0, lively = true) {
+    const position = Math.max(0, Math.min(40, tuning));
+    const stations = [[8, 1.75, .70], [21, 1.45, .94], [33, 2.1, .78]];
+    let envelope = 0;
+    for (const [center, bandwidth, strength] of stations) {
+        envelope += strength * Math.exp(-.5 * ((position - center) / bandwidth) ** 2);
+    }
+    const flutter = lively ? (Math.sin(seconds * 3.7) * .018 + Math.sin(seconds * 8.9 + position) * .008) * envelope : 0;
+    const noise = lively ? .005 * Math.sin(seconds * 11.3 + position * .8) : 0;
+    const amplification = [.35, .55, .82, 1.08, 1.36][Math.max(0, Math.min(4, Math.round(gain)))];
+    return Math.max(0, Math.min(1, (.026 + envelope + flutter + noise) * amplification));
+}
+/** Unhurried VU-like phrases with a soft attack, slower release and occasional gaps. */
+export class ReceiverActivity {
+    level = .12;
+    private target = .12;
+    private remaining = 0;
+    constructor(private random: () => number = Math.random) {}
+    advance(seconds: number, running: boolean) {
+        if (!running) return this.level;
+        let elapsed = Math.max(0, seconds);
+        while (elapsed > 0) {
+            if (this.remaining < 1e-8) {
+                const phrase = this.random();
+                this.target = phrase < .14 ? .025 + this.random() * .08 :
+                    phrase > .86 ? .82 + this.random() * .15 : .20 + this.random() * .52;
+                this.remaining = phrase < .14 ? .8 + this.random() * .7 : .45 + this.random() * .65;
+            }
+            const step = Math.min(elapsed, this.remaining);
+            const response = this.target > this.level ? 7 : 3.5;
+            this.level += (this.target - this.level) * (1 - Math.exp(-response * step));
+            this.remaining -= step;
+            elapsed -= step;
+        }
+        return this.level;
+    }
+}
 export interface LocalState {
     mode: 'create' | 'join';
     name: string;
@@ -30,6 +84,8 @@ export interface LocalState {
     unpluggedCables: number;
     meterAmplitude: number;
     meterRate: number;
+    instrumentVariant: InstrumentVariant;
+    instrumentDemo: boolean;
 }
 export const initialLocal: LocalState = {
     mode: 'create', name: '', code: '', clues: ['', '', ''], guess: [0, 0, 0],
@@ -37,9 +93,10 @@ export const initialLocal: LocalState = {
     archiveOpen: false, manual: false, rosterOpen: false, hiddenWords: false, seconds: 0, diskOut: false,
     scopeMode: 0, scopeRate: 2, scopePersistence: 1,
     backView: false, batteryOpen: false, soundOn: false, powerOn: true,
-    removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 2, meterRate: 2,
+    removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
+    instrumentVariant: 'signal', instrumentDemo: true,
 };
-export type HardwareState = Pick<LocalState, 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopePersistence' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate'>;
+export type HardwareState = Pick<LocalState, 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopePersistence' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo'>;
 export const scopeModes = ['矢量', '正弦', '双踪', '方波', '三角', '脉冲', '扫频', '噪声'];
 export const scopeRates = ['0.5×', '1×', '2×', '4×', '8×'];
 export const scopePersistenceModes = ['短余辉', '中余辉', '长余辉', '无限'];

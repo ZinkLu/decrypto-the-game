@@ -1,14 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
-import { initialLocal, previewState, roleState, rosterTeams, archiveRows, nextScopeMode, nextScopeValue, scopeModes, scopeRates, scopePersistenceModes } from './model';
+import { initialLocal, previewState, roleState, rosterTeams, archiveRows, nextScopeMode, nextScopeValue, scopeModes, scopeRates, scopePersistenceModes, instrumentOptions, stepInstrumentValue } from './model';
 import { paint } from './paint';
 import ArchiveSheet from './ArchiveSheet';
-import type { LocalState } from './model';
+import type { LocalState, InstrumentVariant } from './model';
 import type { Target } from './paint';
 import type { PlayerInfo } from '../../store/gameStore';
-const preview = import.meta.env.DEV ? new URLSearchParams(location.search).get('preview') : null;
+const instrumentPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('instruments');
+const preview = import.meta.env.DEV ? new URLSearchParams(location.search).get('preview') || (instrumentPreview ? 'encrypting' : null) : null;
 const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
+const initialInstrument = instrumentPreview ? instrumentOptions.find(option => option.id === new URLSearchParams(location.search).get('instruments'))?.id || 'signal' : initialLocal.instrumentVariant;
 const scopeControls = ['scope-tune', 'scope-rate', 'scope-persist', 'meter-amplitude', 'meter-rate'];
 const isScopeControl = (id: string) => scopeControls.includes(id);
 const scopeStepId = (id: string, forward: boolean) => forward ? id : id === 'scope-tune' ? 'scope-prev' : id + '-prev';
@@ -22,7 +24,9 @@ export default function Console() {
         return { ...state, teamA: previewPeople, players: [...previewPeople, ...state.teamB],
             canStart: previewPeople.length >= 2 };
     }, [live, previewPeople]);
-    const [u, setU] = useState<LocalState>({ ...initialLocal, seconds: 90 });
+    const [u, setU] = useState<LocalState>({ ...initialLocal, seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal',
+        meterAmplitude: initialInstrument === 'signal' ? 14 : initialInstrument === 'tuning' ? 4 : initialInstrument === 'status' ? 0 : 2 });
+    const [instrumentCloseup, setInstrumentCloseup] = useState(detail === 'meter');
     const [loaded, setLoaded] = useState(false);
     const [failure, setFailure] = useState('');
     const [archiveVisible, setArchiveVisible] = useState(false);
@@ -44,6 +48,29 @@ export default function Console() {
     const [announcement, setAnnouncement] = useState('');
     const viewKey = `${s.phase}:${s.round}:${s.myRole}`;
     function patch(values: Partial<LocalState>) { setU(old => ({ ...old, ...values })); }
+    function adjustInstrument(control: 'amplitude' | 'rate', steps: number) {
+        const local = current.current.u;
+        if (!local.powerOn || local.backView) return;
+        const field = control === 'amplitude' ? 'meterAmplitude' : 'meterRate';
+        patch({ [field]: stepInstrumentValue(local.instrumentVariant, control, local[field], steps),
+            instrumentDemo: local.instrumentVariant === 'signal' && control === 'rate' ? local.instrumentDemo : false });
+    }
+    function selectInstrument(variant: InstrumentVariant) {
+        patch({ instrumentVariant: variant, meterAmplitude: variant === 'signal' ? 14 : variant === 'tuning' ? 4 : variant === 'status' ? 0 : 2,
+            meterRate: 2, instrumentDemo: false });
+        const url = new URL(location.href);
+        url.searchParams.set('instruments', variant);
+        history.replaceState(null, '', url);
+        setHint('');
+        setAnnouncement(`已试装${instrumentOptions.find(option => option.id === variant)?.label}`);
+    }
+    function inspectInstrument(closeup: boolean) {
+        setInstrumentCloseup(closeup);
+        engine.current?.inspectInstrument(closeup);
+        const url = new URL(location.href);
+        if (closeup) url.searchParams.set('detail', 'meter'); else url.searchParams.delete('detail');
+        history.replaceState(null, '', url);
+    }
     function previewRoster(action: 'human' | 'ai' | 'remove' | 'replace') {
         if (preview !== 'roster-motion') return;
         const serial = previewSerial.current++;
@@ -94,7 +121,7 @@ export default function Console() {
                     setArchiveVisible(true);
                     setAnnouncement('正在拉出纸带并展开密报记录；关闭后撕下小票');
                 }
-            }, !!preview);
+            }, !!preview, instrumentPreview);
             engine.current = instance;
             instance.load().then(() => { if (!cancelled) {
                 instance!.update(current.current.content, current.current.u);
@@ -238,9 +265,14 @@ export default function Console() {
             return;
         }
         if (local.backView) return;
+        if (id === 'receiver-sweep' && local.instrumentVariant === 'signal') {
+            patch({ instrumentDemo: !local.instrumentDemo });
+            setAnnouncement(local.instrumentDemo ? '已切回手动调谐' : '自动信号摆动已开启，旋钮保持原位');
+            void engine.current?.soundFeedback();
+            return;
+        }
         if (id.startsWith('meter-amplitude') || id.startsWith('meter-rate')) {
-            const field = id.startsWith('meter-amplitude') ? 'meterAmplitude' : 'meterRate';
-            patch({ [field]: (local[field] + (id.endsWith('-prev') ? 4 : 1)) % 5 });
+            adjustInstrument(id.startsWith('meter-amplitude') ? 'amplitude' : 'rate', id.endsWith('-prev') ? -1 : 1);
             return;
         }
         if (id.startsWith('scope-') || ['disk-toggle', 'transmit'].includes(id) || id.startsWith('key-'))
@@ -394,7 +426,9 @@ export default function Console() {
             state.removeAI(team, Number(index));
         }
     }
-    return <main className={`station ${failure ? 'station-fallback' : ''}`} data-power={u.powerOn ? 'on' : 'off'} data-detail={detail || undefined}>
+    return <main className={`station ${failure ? 'station-fallback' : ''}`} data-power={u.powerOn ? 'on' : 'off'}
+        data-instruments={instrumentPreview || undefined} data-instrument={instrumentPreview ? u.instrumentVariant : undefined}
+        data-detail={(instrumentPreview ? instrumentCloseup ? 'meter' : null : detail) || undefined}>
     <h1 className="sr-only">Decrypto 谍报风云 · 密码通信终端</h1>
     <div className="station-viewport" inert={u.archiveOpen}>
       <div className="station-stage" ref={stage}>
@@ -409,8 +443,8 @@ export default function Console() {
                 else
                     controls.current.delete(key); },
                 'aria-label': target.label, 'data-control': target.id, 'data-surface': target.surface,
-                role: target.id === 'power-toggle' ? 'switch' : undefined,
-                'aria-checked': target.id === 'power-toggle' ? u.powerOn : undefined,
+                role: target.id === 'power-toggle' || target.id === 'receiver-sweep' ? 'switch' : undefined,
+                'aria-checked': target.id === 'power-toggle' ? u.powerOn : target.id === 'receiver-sweep' ? u.instrumentDemo : undefined,
                 disabled: target.disabled,
                 style: failure ? { visibility: 'visible' as const } : undefined,
                 title: target.label,
@@ -448,6 +482,14 @@ export default function Console() {
                     const drag = tuningDrag.current;
                     if (!drag) return;
                     const delta = e.clientX - drag.x - (e.clientY - drag.y);
+                    if (target.id === 'meter-amplitude' && current.current.u.instrumentVariant === 'signal') {
+                        const steps = Math.trunc(delta / 6);
+                        if (steps) {
+                            adjustInstrument('amplitude', steps);
+                            tuningDrag.current = { x: e.clientX, y: e.clientY, moved: true };
+                        }
+                        return;
+                    }
                     if (Math.abs(delta) >= 22) {
                         act(scopeStepId(target.id, delta > 0));
                         tuningDrag.current = { x: e.clientX, y: e.clientY, moved: true };
@@ -509,6 +551,27 @@ export default function Console() {
         <span aria-hidden="true">↶</span>{u.backView ? '回到操作面' : '翻到背面'}<small>{u.backView ? 'ESC' : '检修 / 探索'}</small>
       </button>
     </div>}
+    {instrumentPreview && loaded && !failure && <section className="instrument-comparison" aria-label="仪表造型对比" inert={u.archiveOpen}>
+      <div className="instrument-comparison-row">
+        <span className="instrument-comparison-title">仪表试装</span>
+        <div className="instrument-options" role="group" aria-label="选择仪表方案">
+          {instrumentOptions.map(option => <button key={option.id} aria-pressed={u.instrumentVariant === option.id}
+              onClick={() => selectInstrument(option.id)}>{option.label}</button>)}
+        </div>
+        <div className="instrument-view" role="group" aria-label="观察距离">
+          <button aria-pressed={!instrumentCloseup} onClick={() => inspectInstrument(false)}>整机</button>
+          <button aria-pressed={instrumentCloseup} onClick={() => inspectInstrument(true)}>看细节</button>
+        </div>
+        {u.instrumentVariant !== 'signal' && <button className="instrument-demo" disabled={!u.powerOn || u.instrumentVariant === 'original'}
+            aria-pressed={u.instrumentDemo} onClick={() => patch({ instrumentDemo: !u.instrumentDemo })}>
+          {u.instrumentDemo ? '停止演示' : '动态演示'}
+        </button>}
+      </div>
+      <div className="instrument-comparison-row instrument-description">
+        <p>{instrumentOptions.find(option => option.id === u.instrumentVariant)?.description}</p>
+        <span>旋钮可点击、拖动或滚轮调整 · 中键旋转机身</span>
+      </div>
+    </section>}
     {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{content.targets.find(target => target.id === hint)?.label}</div>}
     <p className="mobile-hint">横向滑动查看终端 · 下拉纸带查看密报记录</p>
     <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${!!preview}`} open={archiveVisible} state={s} onClose={closeArchive} onClosed={restoreArchiveFocus}/>
