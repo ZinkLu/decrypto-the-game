@@ -3,6 +3,50 @@
 Approved visual: `reference.png`. Editable model: `decrypto-console.blend`.
 The running interface uses actual Blender-exported geometry, not the reference bitmap.
 
+## Device details — 2026-09-20
+
+Fixed chassis ink is English and independent of gameplay: the connection lens is
+NETWORK, the red key is ACTION / PRESS TO CONFIRM, and the scoreboard keeps its English legends. The session's 中文 / EN
+selector persists locally. Main and word CRTs, roster inserts,
+phase indicators, receipts and accessible controls change language together.
+Names and submitted clues retain their original text; bilingual word-bank entries
+use their supplied translation. Authored preview clues have both languages. Keyword windows share a 60 px base size; long phrases wrap and measured overflow shrinks without ellipses. Translations live in `i18n.ts`.
+
+The monitor defaults to a triggered 1 kHz sine in Y/T mode. The continuous
+TRIGGER, TIME/DIV and INTENSITY knobs have end stops. Drag, scroll or use arrow
+keys; Shift gives fine adjustment, Home/End go to the limits. Click the CRT to
+select eight calibration waveforms. Trigger spans ±1.2 V and locks each trace to
+the same rising crossing; thresholds outside the signal fall back to AUTO.
+Timebase spans 0.05–1 ms/div logarithmically over ten divisions, with fixed
+0.5 V/div sensitivity. Intensity controls brightness, with intrinsic 85 ms
+phosphor decay; it does not distort the input. Reduced motion freezes free-running
+sweeps and clears afterglow. Analog input reuses game-screen and receipt canvases.
+
+References: [Tektronix systems and controls](https://www.tek.com/fr/documents/primer/oscilloscope-systems-and-controls),
+[TDS3000C intensity control](https://download.tek.com/manual/TDS3000C-Series-Oscilloscopes-User-Manual-071230808.pdf).
+
+The coax is a local INPUT–CAL OUT patch beside the scope, clear of all controls.
+The drive has curved thumb reliefs cut into its actual fascia, inset guides,
+a dust flap, an independently moving eject button, and a disk with shell seams,
+grip ribs, a write-protect slider and a folded metal shutter aperture.
+The disk lies flat in the guides at y=−4.59 and travels only along the
+front-panel normal (z), with no pitch or vertical drift. Its shell, shutter and
+printed label share that plane. Insertion first reaches the fascia at travel
+−0.77, pauses 160 ms for the
+fingertip to reach the scallop, then presses to −0.93. The tail ends 0.16 units
+behind the fascia; latch compression is only 0.012 units. Ejection first depresses the button and
+releases the latch, then springs the disk out to a supported grip position.
+Reduced motion settles both mechanisms immediately. Inspect with
+`/?preview=encrypting&detail=disk` or `&detail=scope`; `&motion=slow` slows travel.
+
+Regenerate only these details against the current editable scene:
+
+```sh
+blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_scope_drive.py
+```
+
+This pass preserves other refinements and all 40 room-code digit variants.
+
 The main console now ships the selected SIGNAL receiver in both the editable
 `.blend` and the production GLB. It starts in AUTO with the low, recessed toggle;
 only the needle moves, with softened attack/release and irregular 0.45–1.1-second
@@ -32,8 +76,7 @@ The optional motion demo is local and does not report real radio/network quality
 or change a game. Reduced motion disables automatic sweeps and drum cycling.
 
 The refined `signal` study combines the S-meter face with a larger tuning knob
-and smaller gain knob. Tuning has 41 positions with end stops and a six-pixel
-drag step; three fixed local stations produce peaks with quiet gaps between them.
+and smaller gain knob. Tuning has a continuous 0–40 range with end stops; three fixed local stations produce peaks with quiet gaps between them.
 Gain independently scales the received envelope. The needle has inertial settling
 and restrained signal flutter; reduced motion retains tuning without flutter.
 The miniature bat toggle between the knobs selects AUTO (up) / MAN (down).
@@ -159,8 +202,8 @@ The base interaction pass uses
 - `TransmitLever` keeps its compatibility name but is now a large red pushbutton
   beneath the receiver panel, with linear travel, a black skirt and a satin
   gunmetal collar. Its oxide-red resin cap has fine grain, subtle edge wear and
-  no clear coat. English commands such as LAUNCH or TRANSMIT sit above a smaller
-  English confirmation label; both move with the cap.
+  no clear coat. The fixed ACTION legend sits above a smaller
+  PRESS TO CONFIRM label; both move with the cap.
 - The amber clock uses seven individually drawn segments per digit, faint unlit
   bars and a restrained glow. It displays MM:SS during a timed turn and dim
   dashes while idle.
@@ -355,11 +398,10 @@ entry tears the partially fed sheet at its current length without jumping to ful
 Focus returns to the paper after dismissal or cancellation. The raised
 manual key toggles the action manual and visibly depresses while selected.
 
-Click the floppy or drive to eject/reinsert the disk. The oscilloscope has three
-independent modeled controls, each supporting click, drag, wheel, and arrow keys:
-MODE cycles vector, sine, dual-trace, square, triangle, pulse, sweep, and noise;
-TIME selects five scan rates; PERSIST selects four phosphor-decay lengths. These
-local controls combine into 160 display configurations and send no game messages.
+Click the exposed floppy to push it in; the drive/eject key depresses the eject
+button before releasing the disk. LEVEL, FREQ and PERSIST are continuous analog
+controls. Click the scope display to choose vector, sine, dual-trace, square,
+triangle, pulse, sweep or noise. These local controls send no game messages.
 Reduced motion disables spatial transitions while retaining state changes.
 
 The bottom-right **翻到背面** control rotates the entire console around its body
@@ -449,9 +491,9 @@ using the current camera, keeping input controls aligned during inspection.
 DEV close-ups: `/?preview=encrypting&detail=screen` (also `words` and `scope`);
 append `&view=oblique` or `&view=opposite` to compare the two viewing directions.
 Reduced motion freezes the band. Scope history uses source-over
-compositing and is displayed at a bounded 25% opacity beneath a fresh sharp trace.
-Even infinite persistence cannot saturate the current sweep; changing mode, rate,
-persistence, power or standby state clears stale history.
+compositing and is displayed at a bounded 32% opacity beneath a fresh sharp trace.
+The 45–1440 ms decay retains history during continuous tuning; changing waveform,
+power or standby state clears stale history.
 
 The printed leader and enlarged receipt both use `archiveRows`, including the
 preview fixtures. Public answers are never derived from private current-round

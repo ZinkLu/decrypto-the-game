@@ -24,6 +24,21 @@ export function waveSample(mode: number, phase: number, channel = 0) {
     }
 }
 
+// Rising-edge trigger on the primary channel. Every sweep starts at the
+// same voltage crossing; an out-of-range threshold falls back to auto sweep.
+export function scopeTriggerPhase(mode: number, level: number): number | null {
+    if (mode === 7) return null;
+    const step = Math.PI * 2 / 720;
+    let before = waveSample(mode, -step);
+    for (let index = 0; index <= 2880; index++) {
+        const phase = index * step, after = waveSample(mode, phase);
+        if (before <= level && after > level)
+            return phase - step + (level - before) / (after - before) * step;
+        before = after;
+    }
+    return null;
+}
+
 export const paperFeedDuration = 420;
 export const paperCutDuration = 280;
 export const paperDiscardDuration = 520;
@@ -57,6 +72,54 @@ export function paperPose(fraction: number, extension: number, extendedLength = 
 export function smoothstep(from: number, to: number, value: number) {
     const t = Math.max(0, Math.min(1, (value - from) / (to - from)));
     return t * t * (3 - 2 * t);
+}
+
+// Travel is along the drive's depth axis, perpendicular to the front fascia.
+// The flat 1.32-unit disk has a trailing edge at z=1.79 in the modeled rest pose.
+// Stop the first push at the face (z=1.02), then seat the edge inside at z=.86.
+export const diskSeatTravel = -.93;
+export const diskEjectedTravel = .38;
+export const diskTailTravel = -.77;
+
+export function diskInsertPose(elapsed: number, from: number) {
+    // A hand aligns the disk, pushes along the guides, then overcomes the latch.
+    // At no point does an insertion pull the disk back out to "gather force".
+    const tail = Math.min(from, diskTailTravel);
+    const slideMs = 620 * Math.max(.15, Math.min(1, (from - tail) / (diskEjectedTravel - diskTailTravel)));
+    if (elapsed < slideMs)
+        return { phase: 'slide' as const, done: false, button: 0, travel: from + (tail - from) * smoothstep(0, 1, elapsed / slideMs) };
+    elapsed -= slideMs;
+    // Reposition the fingertip into the central scallop after the disk is flush.
+    if (elapsed < 160) return { phase: 'grip' as const, done: false, button: 0, travel: tail };
+    elapsed -= 160;
+    const latch = Math.min(tail, diskSeatTravel + .055);
+    if (elapsed < 190)
+        return { phase: 'resistance' as const, done: false, button: 0, travel: tail + (latch - tail) * smoothstep(0, 1, elapsed / 190) };
+    elapsed -= 190;
+    if (elapsed < 130)
+        return { phase: 'latch' as const, done: false, button: 0, travel: latch + (diskSeatTravel - .012 - latch) * smoothstep(0, 1, elapsed / 130) };
+    elapsed -= 130;
+    if (elapsed < 95)
+        return { phase: 'seat' as const, done: false, button: 0, travel: diskSeatTravel - .012 + .012 * smoothstep(0, 1, elapsed / 95) };
+    return { phase: 'seat' as const, done: true, button: 0, travel: diskSeatTravel };
+}
+
+export function diskEjectPose(elapsed: number, from: number) {
+    // The eject cap must be depressed before the latch releases. The spring
+    // delivers only enough travel to grip the disk, leaving it in the guides.
+    if (elapsed < 170)
+        return { phase: 'press' as const, done: false, button: smoothstep(0, 1, elapsed / 170), travel: from };
+    elapsed -= 170;
+    if (elapsed < 80)
+        return { phase: 'release' as const, done: false, button: 1, travel: from };
+    elapsed -= 80;
+    if (elapsed < 370) {
+        const t = elapsed / 370;
+        // Critically damped spring: fast release, a soft supported stop, no bounce.
+        const spring = (1 - (1 + 7 * t) * Math.exp(-7 * t)) / (1 - 8 * Math.exp(-7));
+        return { phase: 'pop' as const, done: false, button: 1 - smoothstep(0, .6, t), travel: from + (diskEjectedTravel - from) * spring };
+    }
+    return { phase: 'settle' as const, done: true, button: 0, travel: diskEjectedTravel };
 }
 
 /**

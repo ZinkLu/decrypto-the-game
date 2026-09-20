@@ -261,3 +261,10 @@ button,input { font: inherit; }
   .archive-sequences dt { margin: 0; }
   .archive-dismiss { top: 8px; right: 10px; }
 }
+
+/* The language selector belongs to the session UI, outside the fixed legends. */
+.station-language { position: absolute; top: 18px; right: 22px; z-index: 6; display: flex; padding: 3px; gap: 2px; border: 1px solid #afa994; background: #e5decb; border-radius: 4px; }
+.station-language button { min-width: 46px; min-height: 36px; padding: 5px 10px; border: 0; border-radius: 2px; background: transparent; color: #57594a; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.station-language button[aria-pressed="true"] { color: #eee5cf; background: #394c48; }
+.station-language button:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
+.station-controls [data-control^="scope-"] { touch-action: none; }

@@ -105,7 +105,7 @@ export class ConsoleInstruments {
         };
         if (this.variant === 'signal') {
             const activity = this.receiverActivity.advance(dt, this.demo && animate);
-            const gain = [.35, .55, .82, 1.08, 1.36][this.rate];
+            const gain = .35 + this.rate * .2525;
             const level = !this.powered ? 0 : this.demo ? Math.min(1, activity * gain) :
                 receiverSignal(this.amplitude, this.rate, now / 1000, !reduced);
             rotate('SignalNeedle', 'z', 1.08 - level * 2.16, 9);

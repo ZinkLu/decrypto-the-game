@@ -1,4 +1,5 @@
-import { roleState, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeRates, scopePersistenceModes } from './model';
+import { translate, localizeError } from './i18n';
+import { roleState, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeTimebase, scopeTriggerLevel } from './model';
 import type { LocalState, StationState } from './model';
 import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
 export interface Target {
@@ -23,6 +24,7 @@ export interface Content {
     frames: Record<string, Frame>;
     targets: Target[];
     status: string;
+    connected: boolean;
     tint: string;
     waiting: boolean;
     ready: boolean;
@@ -52,6 +54,32 @@ function text(c: CanvasRenderingContext2D, value: string, x: number, y: number, 
     }
     else
         c.fillText(value, x, y);
+}
+function fitLabel(c: CanvasRenderingContext2D, value: string, x: number, y: number, size: number, color: string, weight = 400, max = Infinity) {
+    c.font = `${weight} ${size}px ${FONT}`;
+    const fitted = Math.min(size, size * max / Math.max(1, c.measureText(value).width));
+    text(c, value, x, y, fitted, color, weight);
+}
+function keyword(c: CanvasRenderingContext2D, value: string, x: number, y: number, width: number) {
+    // Both languages start at 60 px. Long phrases wrap at word boundaries;
+    // only content that does not fit shrinks, and secret words are never elided.
+    const base = 60;
+    c.font = `600 ${base}px ${FONT}`;
+    if (c.measureText(value).width <= width) {
+        text(c, value, x, y, base, '#f4b07f', 600);
+        return;
+    }
+    const tokens = value.trim().split(/\s+/);
+    if (tokens.length > 1) {
+        let lines = [value], widest = Infinity;
+        for (let split = 1; split < tokens.length; split++) {
+            const candidate = [tokens.slice(0, split).join(' '), tokens.slice(split).join(' ')];
+            const measured = Math.max(...candidate.map(line => c.measureText(line).width));
+            if (measured < widest) { widest = measured; lines = candidate; }
+        }
+        const size = Math.min(48, base * width / widest);
+        lines.forEach((line, i) => text(c, line, x, y + (i - .5) * size * 1.08, size, '#f4b07f', 600));
+    } else fitLabel(c, value, x, y, base, '#f4b07f', 600, width);
 }
 function wrap(c: CanvasRenderingContext2D, value: string, x: number, y: number, width: number, size = 22, color = CREAM, maxLines = 3) {
     c.font = `400 ${size}px ${FONT}`;
@@ -139,7 +167,24 @@ function portrait(c: CanvasRenderingContext2D, x: number, y: number, size: numbe
     }
     c.restore();
 }
+export function knobLabel(id: string, u: LocalState) {
+    const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
+    if (id === 'scope-tune') return t('触发电平 {0} V', [scopeTriggerLevel(u.scopeTrigger).toFixed(2)]);
+    if (id === 'scope-rate') return t('扫描时基 {0} ms/格', [(scopeTimebase(u.scopeRate) * 1000).toFixed(3)]);
+    if (id === 'scope-persist') return t('光迹亮度 {0}%', [Math.round(u.scopeIntensity * 100)]);
+    const instrumentLabels = {
+        original: [t("调整 VU 表摆动幅度"), t("调整 VU 表摆动频率")],
+        signal: [u.instrumentDemo ? t("转动调谐旋钮，切回手动调谐") : t("调谐模拟频道，刻度 {0} / 100", [Number((u.meterAmplitude * 2.5).toFixed(1))]), t("调整接收增益")],
+        tuning: [t("调整调谐频率，中央为第五档"), t("微调中央归零表")],
+        status: [t("切换机械状态，{0}", [[t("READY 就绪"), t("SEND 发送"), t("WAIT 等待")][u.meterAmplitude]]), t("调整转鼓演示停留时间")],
+    }[u.instrumentVariant];
+    const amplitude = id === 'meter-amplitude';
+    const label = instrumentLabels[amplitude ? 0 : 1];
+    return u.instrumentVariant === 'signal' && amplitude ? label : `${label} · ${(amplitude ? u.meterAmplitude : u.meterRate).toFixed(2)}`;
+}
+
 export function paint(s: StationState, u: LocalState): Content {
+    const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
     const frames: Record<string, Frame> = {};
     const targets: Target[] = [];
     const r = roleState(s, u);
@@ -187,18 +232,18 @@ export function paint(s: StationState, u: LocalState): Content {
     frames.screen.height = 830 / 1.4;
     const w = 1000;
     const right = w - 55;
-    const status = s.error || u.note || (u.submitted ? '密报已发送，等待服务器确认。' : '');
-    text(c, hasGame ? `第 ${String(s.round).padStart(2, '0')} 回合` : 'DECRYPTO  /  通信局', 55, 49, 19, tint, 500);
-    text(c, s.roomCode ? `CH ${s.roomCode}  /  ${s.myTeam ? s.myTeam + ' 队' : '待编组'}  /  ${s.connected ? '已接通' : '连接中'}` : '双队通信  /  4–8 人', 500, 49, 16, MUTED, 400, 338);
-    button(c, 'manual', u.manual ? '返回' : '手册', right - 75, 28, 75, 39);
+    const status = (s.error ? localizeError(u.locale, s.error) : '') || (u.note ? t(u.note) : '') || (u.submitted ? t("密报已发送，等待服务器确认。") : '');
+    text(c, hasGame ? t("第 {0} 回合", [String(s.round).padStart(2, '0')]) : t("DECRYPTO  /  通信局"), 55, 49, 19, tint, 500);
+    text(c, s.roomCode ? `CH ${s.roomCode}  /  ${s.myTeam ? s.myTeam + t(" 队") : t("待编组")}  /  ${s.connected ? t("已接通") : t("连接中")}` : t("双队通信  /  4–8 人"), 500, 49, 16, MUTED, 400, 338);
+    button(c, 'manual', u.manual ? t("返回") : t("手册"), right - 100, 28, 100, 39);
     if (u.rosterOpen) {
-        text(c, '频道人员 · 值勤名册', 55, 112, 36, tint, 600);
-        button(c, 'roster-toggle', '返回操作', 799, 88, 146, 47);
-        text(c, s.phase === 'home' ? '建立或加入频道后，在这里查看队伍与当前行动。' : `频道 ${s.roomCode} · ${s.teamA.length + s.teamB.length} 人已编组 · 每队 2–4 人`, 55, 164, 21, MUTED, 400, 890);
+        text(c, t("频道人员 · 值勤名册"), 55, 112, 36, tint, 600);
+        button(c, 'roster-toggle', t("返回操作"), 799, 88, 146, 47);
+        text(c, s.phase === 'home' ? t("建立或加入频道后，在这里查看队伍与当前行动。") : t("频道 {0} · {1} 人已编组 · 每队 2–4 人", [s.roomCode, s.teamA.length + s.teamB.length]), 55, 164, 21, MUTED, 400, 890);
         teams.forEach((team, j) => {
             const x = 55 + j * 457;
-            text(c, `${team.team} 队${team.own ? ' / 我方' : ''}`, x, 215, 27, teamLight(team.team), 600);
-            text(c, team.summary, x + 252, 215, 20, teamLight(team.team));
+            text(c, t("{0} 队{1}", [team.team, team.own ? t(" / 我方") : '']), x, 215, 27, teamLight(team.team), 600);
+            text(c, t(team.summary), x + 252, 215, 20, teamLight(team.team));
             line(c, x, 240, 430, '#45514d');
             team.seats.forEach((seat, i) => {
                 const y = 252 + i * 64;
@@ -208,91 +253,91 @@ export function paint(s: StationState, u: LocalState): Content {
                     c.font = `500 25px ${FONT}`;
                     const nameSize = Math.max(16, Math.min(25, 25 * 350 / Math.max(1, c.measureText(name).width)));
                     text(c, name, x + 58, y + 16, nameSize, CREAM, 500, 350);
-                    text(c, `${seat.code}${seat.self ? ' · 你' : ''} · ${seat.player.is_ai ? 'AI' : '真人'}${seat.owner ? ' · 房主' : ''} · ${seat.status}${seat.progress ? ` ${seat.progress.step}/${seat.progress.total}` : ''}`, x + 58, y + 44, 18, seat.acting ? tint : MUTED, 400, 350);
+                    text(c, `${seat.code}${seat.self ? t(" · 你") : ''} · ${seat.player.is_ai ? 'AI' : t("真人")}${seat.owner ? t(" · 房主") : ''} · ${t(seat.status)}${seat.progress ? ` ${seat.progress.step}/${seat.progress.total}` : ''}`, x + 58, y + 44, 18, seat.acting ? tint : MUTED, 400, 350);
                 } else {
                     text(c, '+', x + 12, y + 25, 29, MUTED);
-                    text(c, `${seat.code}  空席`, x + 58, y + 16, 23, MUTED);
-                    text(c, seat.status, x + 58, y + 44, 18, MUTED);
+                    text(c, t("{0}  空席", [seat.code]), x + 58, y + 16, 23, MUTED);
+                    text(c, t(seat.status), x + 58, y + 44, 18, MUTED);
                 }
                 line(c, x, y + 61, 430, '#2c3a3b');
             });
         });
         const unassigned = s.players.filter(p => ![...s.teamA, ...s.teamB].some(member => member.id === p.id)).length;
-        text(c, unassigned ? `${unassigned} 人尚未选择队伍 · 在集合界面加入 A 队或 B 队` : '姓名牌标记当前行动 · 点击左侧名册收起', 55, 532, 20, tint, 400, 890);
+        text(c, unassigned ? t("{0} 人尚未选择队伍 · 在集合界面加入 A 队或 B 队", [unassigned]) : t("姓名牌标记当前行动 · 点击左侧名册收起"), 55, 532, 20, tint, 400, 890);
     }
     else if (u.manual) {
-        text(c, '让队友听懂，让对手迷失。', 55, 113, 34, tint, 600);
-        const rules = ['每队至少两人，可以由 AI 补位。', '四个秘密词对应编号 1–4，词窗仅我方可见。', '加密者按三位密码顺序，各写一条关联线索。', '对手先拦截，再由队友解码；前两回合跳过拦截。', '截获两次，或对方解码失误两次，即获胜。', '数字键选择密码，退格删除；按下红色发报键确认。', '点击纸带抽出档案，按队伍对照并写私人笔记。'];
+        text(c, t("让队友听懂，让对手迷失。"), 55, 113, 34, tint, 600);
+        const rules = [t("每队至少两人，可以由 AI 补位。"), t("四个秘密词对应编号 1–4，词窗仅我方可见。"), t("加密者按三位密码顺序，各写一条关联线索。"), t("对手先拦截，再由队友解码；前两回合跳过拦截。"), t("截获两次，或对方解码失误两次，即获胜。"), t("数字键选择密码，退格删除；按下红色发报键确认。"), t("点击纸带抽出档案，按队伍对照并写私人笔记。")];
         rules.forEach((t, i) => wrap(c, t, 55, 181 + i * 47, w - 110, 21, CREAM, 2));
-        text(c, '线上版最多 16 回合；截获成功会结束该回合。', 55, 537, 18, MUTED, 400, w - 110);
+        text(c, t("线上版最多 16 回合；截获成功会结束该回合。"), 55, 537, 18, MUTED, 400, w - 110);
     }
     else if (s.phase === 'home') {
-        text(c, '接通你的秘密频道。', 55, 118, 43, tint, 600);
-        text(c, '同样的线索，不同的秘密。', 55, 169, 24, MUTED);
-        button(c, 'mode-create', '建立频道', 55, 212, 180, 47, false, u.mode === 'create');
-        button(c, 'mode-join', '加入频道', 246, 212, 180, 47, false, u.mode === 'join');
-        text(c, '编组  →  加密  →  破译', 615, 236, 20, MUTED);
-        text(c, '特工代号', 55, 296, 21, tint);
-        field('name', u.name, '输入你的昵称', 55, 320, w - 110, 61, 20);
+        text(c, t("接通你的秘密频道。"), 55, 118, 43, tint, 600);
+        text(c, t("同样的线索，不同的秘密。"), 55, 169, 24, MUTED);
+        button(c, 'mode-create', t("建立频道"), 55, 212, 180, 47, false, u.mode === 'create');
+        button(c, 'mode-join', t("加入频道"), 246, 212, 180, 47, false, u.mode === 'join');
+        text(c, t("编组  →  加密  →  破译"), 615, 236, 20, MUTED);
+        text(c, t("特工代号"), 55, 296, 21, tint);
+        field('name', u.name, t("输入你的昵称"), 55, 320, w - 110, 61, 20);
         if (u.mode === 'join') {
-            text(c, '四位频道编号', 55, 413, 21, tint);
-            field('code', u.code, '例如 A1B2', 55, 437, w - 110, 61, 4);
+            text(c, t("四位频道编号"), 55, 413, 21, tint);
+            field('code', u.code, t("例如 A1B2"), 55, 437, w - 110, 61, 4);
         }
         else {
-            text(c, '4–8 位玩家 · 支持 AI 队友', 55, 437, 23, CREAM);
-            text(c, '填写代号后，按下右侧红键建立频道。', 55, 485, 21, MUTED, 400, w - 110);
+            text(c, t("4–8 位玩家 · 支持 AI 队友"), 55, 437, 23, CREAM);
+            text(c, t("填写代号后，按下右侧红键建立频道。"), 55, 485, 21, MUTED, 400, w - 110);
         }
     }
     else if (s.phase === 'room') {
-        text(c, `频道 ${s.roomCode ?? '—'} · 集合`, 55, 111, 36, tint, 600);
-        button(c, 'copy-code', '复制频道', right - 134, 84, 134, 47);
-        text(c, '选择队伍，房主可添加 AI。每队至少两人。', 55, 166, 22, MUTED, 400, w - 110);
+        text(c, t("频道 {0} · 集合", [s.roomCode ?? '—']), 55, 111, 36, tint, 600);
+        button(c, 'copy-code', t("复制频道"), right - 134, 84, 134, 47);
+        text(c, t("选择队伍，房主可添加 AI。每队至少两人。"), 55, 166, 22, MUTED, 400, w - 110);
         const owner = s.ownerID === s.myPlayerID;
         const col = (w - 132) / 2;
         ['A', 'B'].forEach((team, j) => {
             const x = 55 + j * (col + 22), people = team === 'A' ? s.teamA : s.teamB;
-            text(c, `${team} 队  /  ${people.length} 人`, x, 215, 27, team === 'A' ? '#9fbfd1' : '#e8a28c', 600);
+            text(c, t("{0} 队  /  {1} 人", [team, people.length]), x, 215, 27, team === 'A' ? '#9fbfd1' : '#e8a28c', 600);
             line(c, x, 244, col);
             Array.from({ length: 4 }, (_, i) => {
                 const p = people[i], y = 254 + i * 46;
                 if (p) {
                     portrait(c, x, y + 4, 33, p.is_ai, teamInk(team));
-                    text(c, `${p.nickname}${p.id === s.myPlayerID ? ' · 你' : ''}`, x + 45, y + 20, 23, CREAM, 500, col - 178);
-                    text(c, p.id === s.ownerID ? '房主' : p.is_ai ? 'AI' : '真人', x + col - 123, y + 21, 17, MUTED);
+                    text(c, `${p.nickname}${p.id === s.myPlayerID ? t(" · 你") : ''}`, x + 45, y + 20, 23, CREAM, 500, col - 178);
+                    text(c, p.id === s.ownerID ? t("房主") : p.is_ai ? 'AI' : t("真人"), x + col - 123, y + 21, 17, MUTED);
                     if (owner && p.is_ai)
                         button(c, `remove-${team}-${i}`, '×', x + col - 38, y + 4, 38, 32);
                 } else {
                     text(c, '+', x + 6, y + 21, 25, MUTED);
-                    text(c, `空席 ${team}${i + 1} · 等待好友或 AI`, x + 45, y + 21, 19, MUTED, 400, col - 50);
+                    text(c, t("空席 {0}{1} · 等待好友或 AI", [team, i + 1]), x + 45, y + 21, 19, MUTED, 400, col - 50);
                 }
                 line(c, x, y + 43, col, '#2e3d3d');
             });
             const joined = people.some(p => p.id === s.myPlayerID);
-            button(c, `team-${team}`, joined ? '离开此队' : '加入此队', x, 451, col * .59, 47, !s.connected || (!joined && people.length >= 4), joined);
+            button(c, `team-${team}`, joined ? t("离开此队") : t("加入此队"), x, 451, col * .59, 47, !s.connected || (!joined && people.length >= 4), joined);
             if (owner)
                 button(c, `ai-${team}`, '+ AI', x + col * .62, 451, col * .38, 47, people.length >= 4 || !s.connected);
         });
-        text(c, owner ? s.canStart ? '人员就绪，按下红键开始行动。' : '等待人员就绪…' : '等待房主开始行动。', 55, 535, 22, tint, 400, w - 110);
+        text(c, owner ? s.canStart ? t("人员就绪，按下红键开始行动。") : t("等待人员就绪…") : t("等待房主开始行动。"), 55, 535, 22, tint, 400, w - 110);
     }
     else if (s.phase === 'round_result' || s.phase === 'game_over') {
         const final = s.phase === 'game_over';
-        const title = final ? s.gameOver?.winner ? `${s.gameOver.winner} 队获胜` : '双方平局' :
-            s.roundResult?.decrypt_success !== undefined ? s.roundResult.decrypt_success ? '解码成功' : '解码失误' :
-                s.roundResult?.intercept_success ? '密报被截获' : '拦截未成功';
-        text(c, final ? '行动结束' : '本轮回执', 55, 123, 25, tint);
+        const title = final ? s.gameOver?.winner ? t("{0} 队获胜", [s.gameOver.winner]) : t("双方平局") :
+            s.roundResult?.decrypt_success !== undefined ? s.roundResult.decrypt_success ? t("解码成功") : t("解码失误") :
+                s.roundResult?.intercept_success ? t("密报被截获") : t("拦截未成功");
+        text(c, final ? t("行动结束") : t("本轮回执"), 55, 123, 25, tint);
         text(c, title, 55, 221, 59, tint, 600);
-        wrap(c, final ? '每句看似普通的话，都藏着一场交锋。' : s.roundResult?.intercept_success === false && s.roundResult.decrypt_success === undefined ? '即将进入解码阶段。' : '结果已记录，等待下一轮通信。', 55, 304, w - 110, 25);
+        wrap(c, final ? t("每句看似普通的话，都藏着一场交锋。") : s.roundResult?.intercept_success === false && s.roundResult.decrypt_success === undefined ? t("即将进入解码阶段。") : t("结果已记录，等待下一轮通信。"), 55, 304, w - 110, 25);
         ['A', 'B'].forEach((team, i) => {
             const score = team === 'A' ? s.scoreA : s.scoreB;
-            text(c, `${team} 队     截获 ${score.interceptions} / 2     失误 ${score.decrypt_failures} / 2`, 55, 408 + i * 57, 27, CREAM);
+            text(c, t("{0} 队     截获 {1} / 2     失误 {2} / 2", [team, score.interceptions, score.decrypt_failures]), 55, 408 + i * 57, 27, CREAM);
         });
         if (final)
-            text(c, '按下红键返回通信局；纸带仍可翻阅。', 55, 539, 21, MUTED, 400, w - 110);
+            text(c, t("按下红键返回通信局；纸带仍可翻阅。"), 55, 539, 21, MUTED, 400, w - 110);
     }
     else {
-        const title = u.submitted ? '密报已发送' : r.encrypt ? '你的回合 · 加密' : r.guess ? s.phase === 'intercept' ? '截获对方密报' : '解读队友线索' : s.phase === 'encrypting' ? '等待加密者发报' : s.phase === 'intercept' ? '对方正在拦截' : '等待队友解码';
+        const title = u.submitted ? t("密报已发送") : r.encrypt ? t("你的回合 · 加密") : r.guess ? s.phase === 'intercept' ? t("截获对方密报") : t("解读队友线索") : s.phase === 'encrypting' ? t("等待加密者发报") : s.phase === 'intercept' ? t("对方正在拦截") : t("等待队友解码");
         text(c, title, 55, 113, w < 900 ? 33 : 42, tint, 600);
-        const description = r.encrypt ? '按密码顺序写下三条线索，让队友读懂。' : r.guess ? '对照线索与档案，选择三个不同的编号。' : s.encryptor ? `本轮加密者：${s.encryptor}` : '留意通信信号，可以随时翻阅档案。';
+        const description = r.encrypt ? t("按密码顺序写下三条线索，让队友读懂。") : r.guess ? t("对照线索与档案，选择三个不同的编号。") : s.encryptor ? t("本轮加密者：{0}", [s.encryptor]) : t("留意通信信号，可以随时翻阅档案。");
         text(c, description, 55, 166, 22, MUTED, 400, w - 110);
         [0, 1, 2].forEach(i => {
             const y = 211 + i * 91;
@@ -302,12 +347,12 @@ export function paint(s: StationState, u: LocalState): Content {
             c.stroke();
             if (r.encrypt) {
                 text(c, String(s.secretDigits[i] ?? '—'), 75, y + 38, 38, tint, 600);
-                text(c, word(s.secretWords[i] || s.myWords[(s.secretDigits[i] ?? 1) - 1]), 126, y + 38, 25, tint, 500, 130);
+                fitLabel(c, word(s.myWords[(s.secretDigits[i] ?? 1) - 1] || s.secretWords[i], u.locale), 126, y + 38, 25, tint, 500, 130);
                 line(c, 267, y + 17, 0);
                 c.fillStyle = '#504c37';
                 c.fillRect(267, y + 16, 1, 43);
-                text(c, u.clues[i] || '写下关联线索…', 288, y + 38, 25, u.clues[i] ? CREAM : '#7e8278', 400, w - 372);
-                target('screen', `clue-${i}`, `第 ${i + 1} 条线索`, 277, y + 3, w - 336, 69, { kind: 'input', value: u.clues[i], maxLength: 40, disabled: !r.active || !s.connected });
+                text(c, u.clues[i] || t("写下关联线索…"), 288, y + 38, 25, u.clues[i] ? CREAM : '#7e8278', 400, w - 372);
+                target('screen', `clue-${i}`, t("第 {0} 条线索", [i + 1]), 277, y + 3, w - 336, 69, { kind: 'input', value: u.clues[i], maxLength: 40, disabled: !r.active || !s.connected });
                 if (u.focus === `clue-${i}` && !u.clues[i]) {
                     c.fillStyle = tint;
                     c.fillRect(288, y + 23, 2, 29);
@@ -315,18 +360,18 @@ export function paint(s: StationState, u: LocalState): Content {
             }
             else {
                 text(c, `0${i + 1}`, 75, y + 38, 24, MUTED);
-                text(c, s.clues[i] || '等待线索…', 134, y + 38, 28, s.clues[i] ? CREAM : MUTED, 500, w - 330);
+                text(c, s.clues[i] || t("等待线索…"), 134, y + 38, 28, s.clues[i] ? CREAM : MUTED, 500, w - 330);
                 if (r.guess) {
                     text(c, String(u.guess[i] || '—'), w - 121, y + 38, 36, tint, 600);
-                    target('screen', `slot-${i}`, `选择第 ${i + 1} 位密码`, 55, y, w - 110, 75, { disabled: !r.active });
+                    target('screen', `slot-${i}`, t("选择第 {0} 位密码", [i + 1]), 55, y, w - 110, 75, { disabled: !r.active });
                 }
                 else if (s.playerProgress && s.playerProgress.step > i) {
-                    text(c, '已完成', w - 147, y + 38, 19, tint);
+                    text(c, t("已完成"), w - 147, y + 38, 19, tint);
                 }
             }
         });
         const progress = s.playerProgress || s.aiStatus;
-        const foot = u.submitted ? '已提交，等待其他玩家。' : r.active ? r.encrypt ? `已填写 ${u.clues.filter(v => v.trim()).length} / 3 · 按下右侧红键提交` : `当前密码  ${u.guess.map(n => n || '—').join(' · ')} · 按下红键确认` : progress ? `${progress.player} · 已完成 ${progress.step} / ${progress.total}` : '链路已接通 · 等待信号';
+        const foot = u.submitted ? t("已提交，等待其他玩家。") : r.active ? r.encrypt ? t("已填写 {0} / 3 · 按下右侧红键提交", [u.clues.filter(v => v.trim()).length]) : t("当前密码  {0} · 按下红键确认", [u.guess.map(n => n || '—').join(' · ')]) : progress ? t("{0} · 已完成 {1} / {2}", [progress.player, progress.step, progress.total]) : t("链路已接通 · 等待信号");
         text(c, foot, 55, 525, 21, tint, 400, w - 110);
     }
     if (status) {
@@ -336,8 +381,8 @@ export function paint(s: StationState, u: LocalState): Content {
         text(c, status, 54, 565, 18, '#ffd0b4', 400, w - 109);
     } else {
         line(c, 55, 558, 890, '#34423f');
-        text(c, hasGame ? '密钥仅我方可见' : '每条线索，都是一次试探。', 55, 577, 14, MUTED);
-        text(c, u.rosterOpen ? 'PERSONNEL / 值勤记录' : u.manual ? 'FIELD GUIDE / 行动手册' : 'D / FIELD COMMUNICATIONS', 662, 577, 13, MUTED);
+        text(c, hasGame ? t("密钥仅我方可见") : t("每条线索，都是一次试探。"), 55, 577, 14, MUTED);
+        text(c, u.rosterOpen ? t("PERSONNEL / 值勤记录") : u.manual ? t("FIELD GUIDE / 行动手册") : t("D / 密码通信"), 662, 577, 13, MUTED);
     }
     // Fine glass scanlines are deliberately faint, never across the paper.
     c.fillStyle = 'rgba(160,194,180,.025)';
@@ -349,7 +394,7 @@ export function paint(s: StationState, u: LocalState): Content {
         round(c, x, y, width, height, 8);
         c.stroke();
         text(c, value || placeholder, x + 18, y + height / 2, 27, value ? CREAM : '#88928b', 400, width - 36);
-        target('screen', id, id === 'name' ? '特工代号' : '四位频道编号', x, y, width, height, { kind: 'input', value, maxLength, disabled: !s.connected });
+        target('screen', id, id === 'name' ? t("特工代号") : t("四位频道编号"), x, y, width, height, { kind: 'input', value, maxLength, disabled: !s.connected });
     }
     for (let i = 0; i < 4; i++) {
         const g = frame('word' + i, 480, 284, '#360a06');
@@ -369,14 +414,14 @@ export function paint(s: StationState, u: LocalState): Content {
         }
         for (let y = 15; y < 284; y += 40)
             line(g, 0, y, 480, '#612016');
-        text(g, `KEY / 0${i + 1}`, 26, 31, 17, '#c67d5e', 500);
+        text(g, t("密钥 / 0{0}", [i + 1]), 26, 31, 17, '#c67d5e', 500);
         line(g, 26, 55, 426, '#99513a');
         text(g, String(i + 1), 27, 127, 83, '#ed7653', 600);
-        text(g, !hasGame ? s.phase === 'room' ? '待开局' : '待接入' : u.hiddenWords ? '••••' : word(s.myWords[i]) || '待载入', 119, 128, 68, '#f4b07f', 600, 330);
-        text(g, hasGame ? '仅我方可见' : '开局后分配秘密词', 123, 201, 20, '#ba6750');
+        keyword(g, !hasGame ? s.phase === 'room' ? t("待开局") : t("待接入") : u.hiddenWords ? '••••' : word(s.myWords[i], u.locale) || t("待载入"), 119, 128, 330);
+        text(g, hasGame ? t("仅我方可见") : t("开局后分配秘密词"), 123, 201, 20, '#ba6750');
         line(g, 26, 237, 426, '#99513a');
-        text(g, !hasGame ? '编号固定 / 每局重新分配' : u.hiddenWords ? '● 已遮住 · 点击显示' : '● 私密词窗 · 点击遮住', 123, 259, 16, '#c67d5e');
-        target('word' + i, 'words', u.hiddenWords ? '显示秘密词' : '遮住秘密词', 0, 0, 480, 284, { disabled: !hasGame });
+        text(g, !hasGame ? t("编号固定 / 每局重新分配") : u.hiddenWords ? t("● 已遮住 · 点击显示") : t("● 私密词窗 · 点击遮住"), 123, 259, 16, '#c67d5e');
+        target('word' + i, 'words', u.hiddenWords ? t("显示秘密词") : t("遮住秘密词"), 0, 0, 480, 284, { disabled: !hasGame });
     }
     const b = frame('badge', 660, 150);
     b.textAlign = 'center';
@@ -387,7 +432,7 @@ export function paint(s: StationState, u: LocalState): Content {
     b.lineTo(136, 97); b.lineTo(113, 102); b.lineTo(91, 97); b.lineTo(68, 102); b.closePath();
     b.moveTo(113, 53); b.lineTo(113, 102); b.stroke();
     // The hit area follows the complete keycap around the smaller ivory inset.
-    target('badge', 'manual', u.manual ? '返回操作' : '查看行动手册', -43, -47, 746, 244);
+    target('badge', 'manual', u.manual ? t("返回操作") : t("查看行动手册"), -43, -47, 746, 244);
     // Only ink lives in these textures. Blender owns each card, channel and clip.
     const ro = frame('roster', 800, 1630);
     ro.scale(2, 2);
@@ -399,7 +444,7 @@ export function paint(s: StationState, u: LocalState): Content {
         const accent = teamInk(team.team);
         const plaque = frame('roster' + team.team, 728, 96);
         plaque.scale(2, 2);
-        text(plaque, `${team.team} 队${team.own ? ' / 我方' : ''}`, 14, 25, 27, CREAM, 600);
+        text(plaque, t("{0} 队{1}", [team.team, team.own ? t(" / 我方") : '']), 14, 25, 27, CREAM, 600);
         text(plaque, `${team.count} / 4`, 279, 25, 23, CREAM, 500);
         team.seats.forEach((seat, i) => {
             const p = seat.player;
@@ -411,10 +456,10 @@ export function paint(s: StationState, u: LocalState): Content {
                 text(card, p.nickname, 20, 19, 28, INK, 600, seat.self || seat.encryptor ? 258 : 318);
                 if (seat.self || seat.encryptor) {
                     card.fillStyle = accent; card.fillRect(294, 7, 50, 25);
-                    text(card, seat.self ? '你' : '发报', seat.self ? 309 : 302, 20, 17, CREAM, 600);
+                    fitLabel(card, seat.self ? t("你") : t("发报"), 299, 20, 17, CREAM, 600, 40);
                 }
-                text(card, `${seat.code} · ${p.is_ai ? 'AI' : '真人'}${seat.owner ? ' · 房主' : ''}`, 20, 45, 16, '#655c46', 500, 228);
-                text(card, seat.status, 263, 45, 17, accent, seat.acting ? 600 : 400, 81);
+                text(card, `${seat.code} · ${p.is_ai ? 'AI' : t("真人")}${seat.owner ? t(" · 房主") : ''}`, 20, 45, 16, '#655c46', 500, 228);
+                text(card, t(seat.status), 263, 45, 17, accent, seat.acting ? 600 : 400, 81);
                 if (seat.progress) {
                     for (let step = 0; step < 3; step++) {
                         card.fillStyle = step < seat.progress.step / seat.progress.total * 3 ? accent : '#b3a78d';
@@ -426,24 +471,24 @@ export function paint(s: StationState, u: LocalState): Content {
                 // well floor: a dark cut with a faint lower lip of light.
                 for (const [dy, color] of [[1.2, '#3d382e'], [0, '#989075']] as const) {
                     text(well, '+', 20, 19 + dy, 27, color);
-                    text(well, '待入席', 44, 19 + dy, 26, color, 500);
-                    text(well, `${seat.code} · ${seat.status}`, 20, 45 + dy, 16, color, 400, 298);
+                    text(well, 'OPEN SEAT', 44, 19 + dy, 26, color, 500);
+                    text(well, `${seat.code} / INSERT ID CARD`, 20, 45 + dy, 16, color, 400, 298);
                 }
             }
         });
     });
     text(ro, 'PERSONNEL / PRESS TO INSPECT', 54, 802, 14, '#bfb69e');
-    target('roster', 'roster-toggle', u.rosterOpen ? '收起队员名册，返回操作' : '查看队员名册与行动状态', 0, 0, 400, 815);
+    target('roster', 'roster-toggle', u.rosterOpen ? t("收起队员名册，返回操作") : t("查看队员名册与行动状态"), 0, 0, 400, 815);
     frame('channel', 600, 240); // Live room digits are modeled wire cathodes.
     const copy = frame('channelCopy', 240, 160);
     copy.textAlign = 'center';
     text(copy, 'COPY', 120, 80, 62, INK, 600);
-    target('channelCopy', 'copy-code', '复制房间码', 0, 0, 240, 160, { disabled: !s.roomCode });
+    target('channelCopy', 'copy-code', t("复制房间码"), 0, 0, 240, 160, { disabled: !s.roomCode });
     const lamps: Record<string, boolean> = {};
     const sc = frame('score', 600, 357);
-    text(sc, 'SCORE', 28, 30, 19, '#414940', 500);
-    text(sc, 'INTERCEPT', 155, 65, 24, INK, 600);
-    text(sc, 'ERROR', 397, 65, 24, INK, 600);
+    text(sc, "SCORE", 28, 30, 19, '#414940', 500);
+    text(sc, "INTERCEPT", 155, 65, 24, INK, 600);
+    text(sc, "ERROR", 397, 65, 24, INK, 600);
     line(sc, 26, 99, 548, '#7b847b');
     ['A', 'B'].forEach((team, i) => {
         const score = team === 'A' ? s.scoreA : s.scoreB;
@@ -459,50 +504,54 @@ export function paint(s: StationState, u: LocalState): Content {
         if (i === 0) line(sc, 28, 204, 546, '#90978c');
     });
     line(sc, 26, 304, 548, '#7b847b');
-    text(sc, '2 INTERCEPTS TO WIN / 2 ERRORS TO LOSE', 68, 334, 19, '#374137');
+    text(sc, "2 INTERCEPTS TO WIN / 2 ERRORS TO LOSE", 68, 334, 19, '#374137');
     const leader = frame('paper', 840, paperTextureHeight, '#eadfc5');
     const records = archiveRows(s, 'all');
     const pixelsPerUnit = paperTextureHeight / paperTextureLength;
     const printedHeight = pixelsPerUnit * paperLengthForRecords(records.length);
     const printedTop = paperTextureHeight - printedHeight;
     leader.textAlign = 'center';
-    text(leader, `${String(records.length).padStart(2, '0')} RECORDS`, 420, paperTextureHeight - 84, 18, '#87765b');
-    text(leader, 'DECRYPTO / MESSAGE LOG', 420, printedTop + 43, 29, '#4e493b', 600);
-    text(leader, `CH ${s.roomCode || '----'}   ·   ${String(records.length).padStart(2, '0')} RECORDS`, 420, printedTop + 79, 21, '#786b52');
+    text(leader, t("{0} 条记录", [String(records.length).padStart(2, '0')]), 420, paperTextureHeight - 84, 18, '#87765b');
+    text(leader, t("DECRYPTO / 密报记录"), 420, printedTop + 43, 29, '#4e493b', 600);
+    text(leader, t("频道 {0}   ·   {1} 条记录", [s.roomCode || '----', String(records.length).padStart(2, '0')]), 420, printedTop + 79, 21, '#786b52');
     line(leader, 52, printedTop + 103, 736, '#887b6266');
     leader.textAlign = 'left';
     if (records.length) {
         const rowPitch = (printedHeight - 307) / Math.max(1, records.length - 1);
         records.forEach((row, index) => {
             const y = printedTop + 132 + index * rowPitch;
-            text(leader, `${String(row.round).padStart(2, '0')}  ${row.team} 队`, 54, y, 29, '#574c38', 600);
+            text(leader, t("{0}  {1} 队", [String(row.round).padStart(2, '0'), row.team]), 54, y, 29, '#574c38', 600);
             text(leader, row.clues.join(' / '), 218, y, 32, '#403c31', 500, 568);
-            text(leader, `截获 ${row.intercept?.join('—') || '———'}   解码 ${row.decrypt?.join('—') || '———'}   密码 ${row.secret?.join('—') || '未公开'}`, 218, y + 36, 21, '#7c6c52', 400, 568);
+            text(leader, t("截获 {0}   解码 {1}   密码 {2}", [row.intercept?.join('—') || '———', row.decrypt?.join('—') || '———', row.secret?.join('—') || t("未公开")]), 218, y + 36, 21, '#7c6c52', 400, 568);
             line(leader, 52, y + 57, 736, '#a4967866');
         });
     } else {
-        text(leader, '等待第一份密报', 228, printedTop + 173, 33, '#62583f', 500);
-        text(leader, '回合结束后自动打印公开记录', 180, printedTop + 220, 25, '#87765b');
+        text(leader, t("等待第一份密报"), 228, printedTop + 173, 33, '#62583f', 500);
+        text(leader, t("回合结束后自动打印公开记录"), 180, printedTop + 220, 25, '#87765b');
     }
     leader.textAlign = 'center';
-    text(leader, 'PULL TO READ', 420, paperTextureHeight - 45, 22, '#766349', 500);
+    text(leader, t("下拉阅读"), 420, paperTextureHeight - 45, 22, '#766349', 500);
     // Above this sheet's header the roll already carries the start of the next
     // sheet: the same leader that will emerge after tearing.
     const reserve = Math.round(pixelsPerUnit * paperHeadReserve);
     leader.drawImage(leader.canvas, 0, paperTextureHeight - reserve, 840, reserve, 0, printedTop - reserve, 840, reserve);
-    target('paper', 'archive-toggle', '下拉纸带查看密报记录，关闭后撕下', 0, 0, 840, paperTextureHeight);
+    target('paper', 'archive-toggle', t("下拉纸带查看密报记录，关闭后撕下"), 0, 0, 840, paperTextureHeight);
     const progress = teams.flatMap(team => team.seats).find(seat => seat.acting && seat.progress)?.progress;
     const activity = !hasGame ? 0 : u.submitted ? 1 : r.active ?
         (r.encrypt ? u.clues.filter(value => value.trim()).length : u.guess.filter(Boolean).length) / 3 :
         progress ? Math.max(0, Math.min(1, progress.step / Math.max(1, progress.total))) : 0;
     frame('disk', 400, 200);
-    target('disk', 'disk-toggle', u.diskOut ? '插入软盘' : '弹出软盘', 0, 0, 400, 200);
+    target('disk', 'disk-toggle', u.diskOut ? t("插入软盘") : t("弹出软盘"), 0, 0, 400, 200);
+    frame('diskEjectControl', 100, 100);
+    target('diskEjectControl', 'disk-eject', t('弹出软盘'), 0, 0, 100, 100, { disabled: u.diskOut });
+    frame('scopeModeControl', 420, 350);
+    target('scopeModeControl', 'scope-mode', t("点击屏幕切换波形 · {0}", [t(scopeModes[u.scopeMode])]), 0, 0, 420, 350);
     frame('scopeKnob', 100, 100);
-    target('scopeKnob', 'scope-tune', '旋转示波器旋钮，当前' + scopeModes[u.scopeMode] + '，点击或拖动调谐', 0, 0, 100, 100);
+    target('scopeKnob', 'scope-tune', knobLabel('scope-tune', u), 0, 0, 100, 100);
     frame('scopeRateKnob', 100, 100);
-    target('scopeRateKnob', 'scope-rate', '旋转扫描速率旋钮，当前' + scopeRates[u.scopeRate], 0, 0, 100, 100);
+    target('scopeRateKnob', 'scope-rate', knobLabel('scope-rate', u), 0, 0, 100, 100);
     frame('scopePersistenceKnob', 100, 100);
-    target('scopePersistenceKnob', 'scope-persist', '旋转余辉旋钮，当前' + scopePersistenceModes[u.scopePersistence], 0, 0, 100, 100);
+    target('scopePersistenceKnob', 'scope-persist', knobLabel('scope-persist', u), 0, 0, 100, 100);
     const cl = frame('clock', 520, 218, '#111a17');
     const running = u.powerOn && hasGame && !['round_result', 'game_over'].includes(s.phase);
     const seconds = Math.max(0, Math.floor(u.seconds));
@@ -512,82 +561,72 @@ export function paint(s: StationState, u: LocalState): Content {
     cl.fillStyle = glow;
     cl.fillRect(257, 61, 10, 10); cl.fillRect(257, 111, 10, 10);
     line(cl, 34, 174, 446, '#3b4030');
-    text(cl, running ? '阶段余时 · 约' : '等待行动', 34, 199, 22, u.powerOn ? '#a39b79' : '#4b483a');
+    text(cl, running ? t("阶段余时 · 约") : t("等待行动"), 34, 199, 22, u.powerOn ? '#a39b79' : '#4b483a');
     for (let i = 0; i < 5; i++) {
         const k = frame('key' + i, 180, 200);
         const enabled = r.guess && r.active && s.connected && !u.rosterOpen && !u.manual;
         text(k, i === 4 ? '←' : String(i + 1), i === 4 ? 27 : 53, 101, 96, enabled ? CREAM : '#84908c', 500);
-        target('key' + i, 'key-' + i, i === 4 ? '删除上一位' : `输入数字 ${i + 1}`, 0, 0, 180, 200, { disabled: !enabled });
+        target('key' + i, 'key-' + i, i === 4 ? t("删除上一位") : t("输入数字 {0}", [i + 1]), 0, 0, 180, 200, { disabled: !enabled });
     }
     const ph = frame('phase', 550, 214);
-    ['加密', '拦截', '解码'].forEach((label, i) => {
+    [t("加密"), t("拦截"), t("解码")].forEach((label, i) => {
         const active = u.powerOn && s.phase === ['encrypting', 'intercept', 'decrypt'][i];
         text(ph, `0${i + 1}`, 23 + i * 177, 28, 18, u.powerOn ? '#a2a492' : '#4b4e42', 500);
-        text(ph, label, 23 + i * 177, 79, 34, active ? r.color : u.powerOn ? '#a2a492' : '#4b4e42');
+        fitLabel(ph, label, 23 + i * 177, 79, 29, active ? r.color : u.powerOn ? '#a2a492' : '#4b4e42', 400, 148);
         ph.fillStyle = active ? r.color : '#1b2a32';
         round(ph, 25 + i * 177, 129, 104, 17, 8);
         ph.fill();
         if (i < 2) text(ph, '›', 152 + i * 177, 78, 28, u.powerOn ? '#7b857c' : '#3e453d');
     });
-    text(ph, s.phase === 'home' || s.phase === 'room' ? '等待行动开始' : `第 ${s.round} / 16 回合`, 24, 190, 21, u.powerOn ? '#bbc0aa' : '#4b4e42');
+    text(ph, s.phase === 'home' || s.phase === 'room' ? t("等待行动开始") : t("第 {0} / 16 回合", [s.round]), 24, 190, 21, u.powerOn ? '#bbc0aa' : '#4b4e42');
     const tr = frame('transmitLabel', 600, 164);
     const homeReady = s.phase === 'home' && !!u.name.trim() && (u.mode === 'create' || u.code.length === 4) && s.connected;
     const lobbyReady = s.phase === 'room' && s.canStart && s.ownerID === s.myPlayerID && s.connected;
     const ready = !!(r.ready || homeReady || lobbyReady || s.phase === 'game_over') && !u.rosterOpen && !u.manual;
-    const transmitText = s.phase === 'home' ? u.mode === 'create' ? '建立频道' : '接入频道' : s.phase === 'room' ? '开始行动' : s.phase === 'game_over' ? '返回通信局' : u.submitted ? '已发送' : '发报 · 确认';
-    const command = s.phase === 'home' ? u.mode === 'create' ? 'CREATE' : 'CONNECT' : s.phase === 'room' ? 'LAUNCH' : s.phase === 'game_over' ? 'RETURN' : u.submitted ? 'SENT' : 'TRANSMIT';
+    const transmitText = s.phase === 'home' ? u.mode === 'create' ? t("建立频道") : t("接入频道") : s.phase === 'room' ? t("开始行动") : s.phase === 'game_over' ? t("返回通信局") : u.submitted ? t("已发送") : t("发报 · 确认");
+    const command = 'ACTION';
     tr.textAlign = 'center';
     tr.letterSpacing = '7px';
-    text(tr, command, 304, 60, command.length > 6 ? 78 : 91, ready ? '#e9ddc2' : '#c8b597', 700);
+    text(tr, command, 304, 60, command.length > 6 ? 78 : 91, '#e9ddc2', 700);
     tr.letterSpacing = '3px';
-    text(tr, u.submitted ? 'MESSAGE SENT' : 'PRESS TO CONFIRM', 302, 135, 25, ready ? '#e9ddc2' : '#c8b597', 500);
+    text(tr, 'PRESS TO CONFIRM', 302, 135, 25, '#e9ddc2', 500);
     frame('transmitControl', 600, 260);
     target('transmitControl', 'transmit', transmitText, 0, 0, 600, 260, { disabled: !ready });
     const dl = frame('disklabel', 300, 100);
     text(dl, 'KEY / 01', 16, 51, 37, INK, 600);
     text(dl, 'DECRYPTO', 17, 85, 19, '#817c70');
     frame('powerControl', 320, 180);
-    target('powerControl', 'power-toggle', u.powerOn ? '关闭终端电源' : '开启终端电源', 0, 0, 320, 180);
+    target('powerControl', 'power-toggle', u.powerOn ? t("关闭终端电源") : t("开启终端电源"), 0, 0, 320, 180);
     const ft = frame('footer', 1100, 65);
-    text(ft, !u.powerOn ? 'POWER OFF' : s.connected ? 'LINK ONLINE' : 'CONNECTING…', 350, 32, 29, u.powerOn && s.connected ? '#355b45' : '#865135');
+    text(ft, 'NETWORK', 350, 32, 29, '#355b45');
     text(ft, 'UNOFFICIAL EDITION', 770, 32, 18, '#817c70');
     frame('batteryControl', 100, 100);
-    target('batteryControl', 'battery-toggle', u.batteryOpen ? '合上电池仓盖' : '掀开电池仓盖，查看四节电池', 0, 0, 100, 100);
+    target('batteryControl', 'battery-toggle', u.batteryOpen ? t("合上电池仓盖") : t("掀开电池仓盖，查看四节电池"), 0, 0, 100, 100);
     frame('soundControl', 100, 100);
-    target('soundControl', 'sound-toggle', u.soundOn ? '关闭机械音效' : '开启机械音效并试听喇叭', 0, 0, 100, 100);
+    target('soundControl', 'sound-toggle', u.soundOn ? t("关闭机械音效") : t("开启机械音效并试听喇叭"), 0, 0, 100, 100);
     frame('testControl', 100, 100);
-    target('testControl', 'lamp-test', '本机灯光自检，不改变对局连接', 0, 0, 100, 100);
+    target('testControl', 'lamp-test', t("本机灯光自检，不改变对局连接"), 0, 0, 100, 100);
     const rearControls = new Set(['battery-toggle', 'sound-toggle', 'lamp-test']);
     for (let i = 0; i < 4; i++) {
         const name = `batteryCell${i}Control`, id = `battery-cell-${i}`;
         frame(name, 100, 300);
-        if (u.batteryOpen) target(name, id, `${u.removedBatteries & (1 << i) ? '装回' : '取出'}第 ${i + 1} 节电池`, 0, 0, 100, 300);
+        if (u.batteryOpen) target(name, id, t("{0}第 {1} 节电池", [u.removedBatteries & (1 << i) ? t("装回") : t("取出"), i + 1]), 0, 0, 100, 300);
         rearControls.add(id);
     }
     ['RJ45', 'Serial', 'DC'].forEach((name, i) => {
         const surface = `${name}PlugControl`, id = `cable-plug-${i}`;
         frame(surface, 180, 100);
-        target(surface, id, `${u.unpluggedCables & (1 << i) ? '插回' : '拔出'}${['网线', '串口线', '电源线'][i]}`, 0, 0, 180, 100);
+        target(surface, id, `${u.unpluggedCables & (1 << i) ? t("插回") : t("拔出")}${[t("网线"), t("串口线"), t("电源线")][i]}`, 0, 0, 180, 100);
         rearControls.add(id);
     });
-    const instrumentLabels = {
-        original: ['调整 VU 表摆动幅度', '调整 VU 表摆动频率'],
-        signal: [u.instrumentDemo ? '转动调谐旋钮，切回手动调谐' : `调谐模拟频道，刻度 ${Number((u.meterAmplitude * 2.5).toFixed(1))} / 100`, '调整接收增益'],
-        tuning: ['调整调谐频率，中央为第五档', '微调中央归零表'],
-        status: [`切换机械状态，${['READY 就绪', 'SEND 发送', 'WAIT 等待'][u.meterAmplitude]}`, '调整转鼓演示停留时间'],
-    }[u.instrumentVariant];
-    for (const [name, id, label, value] of [
-        ['MeterAmplitude', 'meter-amplitude', instrumentLabels[0], u.meterAmplitude],
-        ['MeterRate', 'meter-rate', instrumentLabels[1], u.meterRate],
-    ] as const) {
+    for (const [name, id] of [['MeterAmplitude', 'meter-amplitude'], ['MeterRate', 'meter-rate']]) {
         frame(name + 'Control', 100, 100);
-        const position = u.instrumentVariant === 'signal' && id === 'meter-amplitude' ? label : `${label}，当前第 ${value + 1} 档`;
-        target(name + 'Control', id, position, 0, 0, 100, 100);
+        target(name + 'Control', id, knobLabel(id, u), 0, 0, 100, 100);
     }
     frame('receiverSweepControl', 100, 100);
     if (u.instrumentVariant === 'signal') {
         target('receiverSweepControl', 'receiver-sweep',
-            u.instrumentDemo ? '关闭自动摆动，恢复手动调谐' : '开启自动信号摆动', 0, 0, 100, 100);
+            u.instrumentDemo ? t("关闭自动摆动，恢复手动调谐") : t("开启自动信号摆动"), 0, 0, 100, 100);
     }
     const seats: Record<string, string | null> = {};
     teams.forEach(team => team.seats.forEach((seat, i) => { seats[team.team + i] = seat.player?.id ?? null; }));
@@ -606,9 +645,9 @@ export function paint(s: StationState, u: LocalState): Content {
         }
         for (const name of Object.keys(lamps)) lamps[name] = false;
     }
-    return { frames, targets: targets.filter(t => rearControls.has(t.id) === u.backView &&
+    return { frames, connected: s.connected, targets: targets.filter(t => rearControls.has(t.id) === u.backView &&
             (u.powerOn || u.backView || t.id === 'power-toggle')),
-        status: !u.powerOn ? '终端已关闭；对局继续进行，按电源恢复。' : status || `${s.phase} · ${s.connected ? '已连接' : '连接中'}`,
+        status: !u.powerOn ? t("终端已关闭；对局继续进行，按电源恢复。") : status || `${t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase])} · ${s.connected ? t("已连接") : t("连接中")}`,
         tint, waiting, ready: ready && u.powerOn, lamps, seats, roomCode: u.powerOn ? s.roomCode || '' : '',
         paperRecords: records.length, activity: u.powerOn ? activity : 0 };
 }

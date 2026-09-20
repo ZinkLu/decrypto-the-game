@@ -17,7 +17,7 @@ async function moduleUrl(name) {
 }
 async function moduleFrom(name) { return import(await moduleUrl(name)); }
 const { parseNotes, notesKey } = await moduleFrom('notebook');
-const { waveSample, paperPose, receiptVertex, paperSeam, paperFeedDuration, paperCutDuration,
+const { waveSample, scopeTriggerPhase, paperPose, receiptVertex, paperSeam, paperFeedDuration, paperCutDuration,
   paperTearDuration, paperExtendedLength, paperTextureLength, paperRestLength, paperRefillDuration, paperLengthForRecords } = await moduleFrom('mechanics');
 const { ReceiptTransport, rowFractions, sheetRows } = await moduleFrom('tearing');
 const { rosterPose } = await moduleFrom('rosterMotion');
@@ -35,7 +35,7 @@ test('notes survive serialization, tolerate corrupt storage and separate players
   assert.equal(parseNotes(JSON.stringify({ general: '字'.repeat(11000) })).general.length, 10000);
   assert.equal(new Set([notesKey('5821', 'a', false), notesKey('5821', 'b', false), notesKey('5822', 'a', false), notesKey('5821', 'a', true)]).size, 4);
 });
-test('three scope controls wrap and eight signals stay distinct and bounded', () => {
+test('waveform selector wraps and eight signals stay distinct and bounded', () => {
   assert.equal(nextScopeMode(7), 0);
   assert.equal(nextScopeMode(0, -1), 7);
   assert.equal(nextScopeValue(4, 5), 0);
@@ -567,4 +567,15 @@ test('room digits are forty individually addressable wire cathodes inside four g
       assert.ok(mat.emissiveFactor[0] > .9);
     }
   }
+});
+
+test('scope locks sine sweeps to the selected rising voltage crossing', () => {
+  for (const level of [-.9, -.5, 0, .5, .9]) {
+    const phase = scopeTriggerPhase(1, level);
+    assert.notEqual(phase, null);
+    assert.ok(Math.abs(waveSample(1, phase) - level) < .0001);
+    assert.ok(waveSample(1, phase + .001) > waveSample(1, phase - .001));
+  }
+  assert.equal(scopeTriggerPhase(1, 1.1), null);
+  assert.equal(scopeTriggerPhase(1, -1.1), null);
 });

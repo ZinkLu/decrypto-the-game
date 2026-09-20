@@ -1,3 +1,4 @@
+import { translate, type Locale } from './i18n';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -9,8 +10,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { crtFinish, type Content, type Frame, type Target } from './paint';
 import { RosterMotion, rosterPose } from './rosterMotion';
 import { crtProfile, crtGeometry, crtHeight, crtDisplayUv, crtOpticsShader } from './crt';
-import { initialLocal, scopeModes, scopeRates, scopePersistenceModes, type HardwareState } from './model';
-import { waveSample, paperTooth, paperTextureLength, receiptHeadPath } from './mechanics';
+import { initialLocal, scopeModes, scopeTimebase, scopeTriggerLevel, type HardwareState } from './model';
+import { waveSample, scopeTriggerPhase, paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, diskInsertPose, diskEjectPose } from './mechanics';
 import { ReceiptTransport } from './tearing';
 import { ConsoleInstruments } from './instruments';
 interface Surface {
@@ -64,12 +65,16 @@ export class ConsoleEngine {
     private width = 1;
     private height = 1;
     private disk: THREE.Object3D = new THREE.Group();
+    private ejectButton?: THREE.Object3D;
+    private ejectButtonRest = new THREE.Vector3();
     private diskRest = new THREE.Vector3();
+    private diskAxis = new THREE.Vector3(0, 0, 1);
     private tuningKnob: THREE.Object3D = new THREE.Group();
     private rateKnob: THREE.Object3D = new THREE.Group();
     private persistenceKnob: THREE.Object3D = new THREE.Group();
     private diskOut = false;
-    private diskProgress = 0;
+    private diskTravel = diskSeatTravel;
+    private diskMotion?: { from: number; out: boolean; elapsed: number; clunk: boolean };
     private paper?: THREE.Mesh;
     private paperHead?: THREE.Mesh;
     private paperHeadArc: number[] = [];
@@ -99,15 +104,18 @@ export class ConsoleEngine {
     private rosterCards = new Map<string, { object: THREE.Object3D; rest: THREE.Vector3; travel: number;
         motion: RosterMotion<{ id: string; frame: Frame }>; printed?: Frame; materials: THREE.Material[] }>();
     private lampMaterials = new Map<string, THREE.MeshStandardMaterial>();
-    private scopeMode = 0;
+    private scopeMode = initialLocal.scopeMode;
     private scopeAngle = 0;
     private scopeDesiredAngle = 0;
-    private scopeRate = 2;
+    private locale: Locale = 'zh';
+    private scopeTrigger = initialLocal.scopeTrigger;
+    private scopePhase = 0;
+    private scopeRate = initialLocal.scopeRate;
     private scopeRateAngle = 0;
     private scopeRateDesiredAngle = 0;
-    private scopePersistence = 1;
-    private scopePersistenceAngle = 0;
-    private scopePersistenceDesiredAngle = 0;
+    private scopeIntensity = initialLocal.scopeIntensity;
+    private scopeIntensityAngle = 0;
+    private scopeIntensityDesiredAngle = 0;
     private scopeFrames = 0;
     private scopeFpsStarted = performance.now();
     private manualKey?: THREE.Object3D;
@@ -128,7 +136,7 @@ export class ConsoleEngine {
     private scopeCanvas = document.createElement('canvas');
     private scopeGridCanvas = document.createElement('canvas');
     private scopeTraceCanvas = document.createElement('canvas');
-    private onContextLost = (e: Event) => { e.preventDefault(); this.fail('图形连接已中断，请刷新终端。'); };
+    private onContextLost = (e: Event) => { e.preventDefault(); this.fail(translate(this.locale, '图形连接已中断，请刷新终端。')); };
     private onInspectionDown = (e: PointerEvent) => {
         if (!this.inspectionEnabled || e.button !== 1) return;
         e.preventDefault();
@@ -251,7 +259,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'console-receiver-20260918-v21';
+        const revision = 'console-details-20260920-v25';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -421,7 +429,12 @@ export class ConsoleEngine {
         const persistence = this.part('ScopePersistence');
         if (!disk || !knob || !rate || !persistence) throw new Error('终端机械组件不完整。');
         this.disk = disk;
+        this.ejectButton = this.part('FloppyEject');
+        if (this.ejectButton) this.ejectButtonRest.copy(this.ejectButton.position);
         this.diskRest.copy(disk.position);
+        this.diskAxis.fromArray(disk.userData.travel_axis ?? [0, 0, 1]).normalize();
+        this.diskMotion = undefined;
+        this.diskTravel = this.diskOut ? diskEjectedTravel : diskSeatTravel;
         this.tuningKnob = knob;
         this.rateKnob = rate;
         this.persistenceKnob = persistence;
@@ -472,6 +485,9 @@ export class ConsoleEngine {
         this.testLamp.material = (this.testLamp.material as THREE.MeshStandardMaterial).clone();
         this.root.updateMatrixWorld(true);
         this.disk.attach(this.planes.get('disklabel')!);
+        // The label must ride with the transport: attach at the modeled rest
+        // pose, only then sink the assembly to the seated offset.
+        this.applyDiskTravel();
         for (const [part, surface] of [['ManualKey', 'badge'], ['ChannelCopy', 'channelCopy'], ['TransmitLever', 'transmitLabel']]) {
             const assembly = this.part(part), plane = this.planes.get(surface);
             if (assembly && plane) assembly.attach(plane);
@@ -607,8 +623,8 @@ export class ConsoleEngine {
         this.textures.set('scope', scope);
         this.planes.get('scope')!.material.map = scope;
         if (this.content)
-            this.update(this.content, { diskOut: this.diskOut, scopeMode: this.scopeMode,
-                scopeRate: this.scopeRate, scopePersistence: this.scopePersistence,
+            this.update(this.content, { locale: this.locale, scopeTrigger: this.scopeTrigger, diskOut: this.diskOut, scopeMode: this.scopeMode,
+                scopeRate: this.scopeRate, scopeIntensity: this.scopeIntensity,
                 backView: this.backView, batteryOpen: this.batteryOpen, soundOn: this.soundOn,
                 powerOn: this.powerOn,
                 archiveOpen: this.archiveOpen, manual: this.manual,
@@ -749,29 +765,29 @@ export class ConsoleEngine {
         if (!local.archiveOpen) this.paperReaderStarted = false;
         this.receipt.sync(local.archiveOpen, content.paperRecords);
         this.beginPaperReader();
-        this.diskOut = local.diskOut;
+        if (this.diskOut !== local.diskOut) {
+            this.diskMotion = { from: this.diskTravel, out: local.diskOut, elapsed: 0, clunk: false };
+            this.diskOut = local.diskOut;
+        }
+        this.locale = local.locale;
         if (this.scopeMode !== local.scopeMode) {
-            this.scopeDesiredAngle -= this.shortestStep(this.scopeMode, local.scopeMode, scopeModes.length) * Math.PI / 4;
             this.scopeMode = local.scopeMode;
             this.clearScopePersistence();
         }
-        if (this.scopeRate !== local.scopeRate) {
-            this.scopeRateDesiredAngle -= this.shortestStep(this.scopeRate, local.scopeRate, scopeRates.length) * Math.PI / 3;
-            this.scopeRate = local.scopeRate;
-            this.clearScopePersistence();
-        }
-        if (this.scopePersistence !== local.scopePersistence) {
-            this.scopePersistenceDesiredAngle -= this.shortestStep(this.scopePersistence, local.scopePersistence, scopePersistenceModes.length) * Math.PI / 3;
-            this.scopePersistence = local.scopePersistence;
-            this.clearScopePersistence();
-        }
+        this.scopeTrigger = local.scopeTrigger;
+        this.scopeRate = local.scopeRate;
+        this.scopeIntensity = local.scopeIntensity;
+        // Analog knobs have physical end stops and retain every fractional turn.
+        this.scopeDesiredAngle = 2.25 - local.scopeTrigger * 4.5;
+        this.scopeRateDesiredAngle = 2.25 - local.scopeRate * 4.5;
+        this.scopeIntensityDesiredAngle = 2.25 - local.scopeIntensity * 4.5;
         for (const [name, frame] of Object.entries(content.frames)) {
             if (/^roster[AB][0-3]$/.test(name)) continue;
             this.updateFrame(name, frame);
         }
         const lamp = this.model?.getObjectByName('Connection_lens') || this.model?.getObjectByName('Connection lens');
         if (lamp instanceof THREE.Mesh && lamp.material instanceof THREE.MeshStandardMaterial) {
-            lamp.material.emissive.set(content.status.includes('连接中') ? '#a66318' : '#328248');
+            lamp.material.emissive.set(content.connected ? '#328248' : '#a66318');
             lamp.material.emissiveIntensity = this.powerOn ? .5 : 0;
         }
         for (const [name, material] of this.lampMaterials) {
@@ -787,7 +803,10 @@ export class ConsoleEngine {
     // paint() always returns fresh canvases; a downsampled hash skips the GPU
     // upload whenever a surface's pixels are unchanged (the 840x2630 paper
     // texture is by far the most expensive upload).
+    private canvasHashes = new WeakMap<HTMLCanvasElement, number>();
     private frameHash(canvas: HTMLCanvasElement) {
+        const cached = this.canvasHashes.get(canvas);
+        if (cached !== undefined) return cached;
         const size = 32;
         this.hashCanvas.width = size;
         this.hashCanvas.height = size;
@@ -798,6 +817,7 @@ export class ConsoleEngine {
         let hash = (2166136261 ^ Math.imul(canvas.width, 73856093) ^ Math.imul(canvas.height, 19349663)) | 0;
         for (let i = 0; i < data.length; i += 4)
             hash = Math.imul(hash ^ (data[i] | data[i + 1] << 8 | data[i + 2] << 16 | data[i + 3] << 24), 16777619);
+        this.canvasHashes.set(canvas, hash);
         return hash;
     }
     private updateFrame(name: string, frame: Frame) {
@@ -831,7 +851,7 @@ export class ConsoleEngine {
     private batchStaticGeometry(root: THREE.Object3D = this.model!, preserveAssemblies = true) {
         // Keep the .blend and GLB fully editable. Only the runtime coalesces
         // static, opaque parts by material; animated assemblies retain names.
-        const moving = /^(ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|ScopeTuning|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
+        const moving = /^(ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|FloppyEject|ScopeTuning|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
         const batches = new Map<THREE.Material, THREE.Mesh[]>();
         root.updateWorldMatrix(true, true);
         const inverse = root.matrixWorld.clone().invert();
@@ -866,7 +886,7 @@ export class ConsoleEngine {
             meshes.forEach(mesh => { mesh.removeFromParent(); mesh.geometry.dispose(); });
         }
         if (preserveAssemblies) {
-            for (const name of ['FloppyTransport', 'ScopeTuning', 'ScopeRate', 'ScopePersistence', 'TransmitLever', 'PowerSwitch', 'BatteryDoor', 'ManualKey', 'ChannelCopy', 'ReceiverNeedle']) {
+            for (const name of ['FloppyTransport', 'FloppyEject', 'ScopeTuning', 'ScopeRate', 'ScopePersistence', 'TransmitLever', 'PowerSwitch', 'BatteryDoor', 'ManualKey', 'ChannelCopy', 'ReceiverNeedle']) {
                 const assembly = this.part(name);
                 if (assembly) this.batchStaticGeometry(assembly, false);
             }
@@ -899,10 +919,6 @@ export class ConsoleEngine {
     }
     setSound(on: boolean) { this.soundOn = on; void this.soundFeedback(true); }
     testLamps() { this.testUntil = performance.now() + 1800; void this.soundFeedback(true); }
-    private shortestStep(from: number, to: number, count: number) {
-        const forward = (to - from + count) % count;
-        return forward > count / 2 ? forward - count : forward;
-    }
     private clearScopePersistence() {
         this.scopeTraceCanvas.getContext('2d')!.clearRect(0, 0, 420, 350);
     }
@@ -973,7 +989,7 @@ export class ConsoleEngine {
         this.camera.updateProjectionMatrix();
         this.camera.updateMatrixWorld();
         const display = detail === 'words' ? this.surfaces.word1 : detail ? this.surfaces[detail] : undefined;
-        if (detail === 'meter' || detail === 'nixie' || detail === 'recorder' || display && (detail === 'screen' || detail === 'scope' || detail === 'words')) {
+        if (detail === 'disk' || detail === 'meter' || detail === 'nixie' || detail === 'recorder' || display && (detail === 'screen' || detail === 'scope' || detail === 'words')) {
             // Crop the original camera frustum without moving the camera:
             // close-up and full-console views keep exactly the same perspective.
             this.inspection.rotation.set(this.inspectionPitch, this.inspectionYaw, 0);
@@ -983,7 +999,7 @@ export class ConsoleEngine {
                 : detail === 'meter' ? this.root.localToWorld(new THREE.Vector3(5.83, -1.78, 1.1))
                 : new THREE.Vector3(5.83, detail === 'nixie' ? 3.55 : -.2, 1.1)).project(this.camera);
             const detailHeight = display
-                ? Math.max(display.h * (detail === 'scope' ? 1.8 : 1.35), (detail === 'words' ? 9.8 : display.w * 1.3) / aspect)
+                ? Math.max(display.h * (detail === 'scope' ? 2.7 : detail === 'disk' ? 3.5 : 1.35), (detail === 'words' ? 9.8 : display.w * (detail === 'scope' ? 1.9 : 1.3)) / aspect)
                 : Math.max(detail === 'nixie' ? 3.6 : 3.3, 4.1 / aspect);
             const scale = normalHeight / detailHeight;
             const w = this.width / scale, h = this.height / scale;
@@ -1021,6 +1037,11 @@ export class ConsoleEngine {
             if (sy > bottom) bottom = sy;
         }
         return { left, top, width: right - left, height: bottom - top };
+    }
+    private applyDiskTravel() {
+        // The exported guide axis is perpendicular to the fascia. Keep lateral
+        // position and height constant throughout both manual pushes and eject.
+        this.disk.position.copy(this.diskRest).addScaledVector(this.diskAxis, this.diskTravel);
     }
     private tick = (now: number) => {
         if (this.disposed)
@@ -1086,8 +1107,8 @@ export class ConsoleEngine {
         if (this.instrumentVariant === 'original') {
             const oldMeter = this.meterAngle;
             // A local analog toy. Its motion has no connection to game progress.
-            const level = [.12, .27, .44, .64, .88][this.meterAmplitude];
-            const speed = [.5, .8, 1.2, 1.8, 2.8][this.meterRate];
+            const level = .12 + this.meterAmplitude * .19;
+            const speed = .5 * 2 ** (this.meterRate * .62);
             const wave = Math.sin(now / 1000 * speed * 3.2) * .70 + Math.sin(now / 1000 * speed * 7.7) * .30;
             const meterTarget = this.powerOn ? this.reduced.matches ? 0 : wave * level : -.82;
             this.meterAngle = this.reduced.matches ? meterTarget : THREE.MathUtils.damp(this.meterAngle, meterTarget, 12, dt);
@@ -1163,28 +1184,47 @@ export class ConsoleEngine {
         }
         if (previousFlip !== this.flipProgress || oldBatteryAngle !== this.batteryAngle) { this.project(); changed = true; }
         if (previousFlip !== this.flipProgress || oldBatteryAngle !== this.batteryAngle ||
-            Math.abs(this.diskProgress - (this.diskOut ? 1 : 0)) > .0001 ||
+            this.diskMotion !== undefined ||
+            Math.abs(this.diskTravel - (this.diskOut ? diskEjectedTravel : diskSeatTravel)) > .0001 ||
             Math.abs(this.scopeAngle - this.scopeDesiredAngle) > .0001 ||
             Math.abs(this.scopeRateAngle - this.scopeRateDesiredAngle) > .0001 ||
-            Math.abs(this.scopePersistenceAngle - this.scopePersistenceDesiredAngle) > .0001 || this.pulses.size > 0) {
+            Math.abs(this.scopeIntensityAngle - this.scopeIntensityDesiredAngle) > .0001 || this.pulses.size > 0) {
             this.renderer.shadowMap.needsUpdate = true;
             changed = true;
         }
-        const desired = this.diskOut ? 1 : 0;
-        if (Math.abs(this.diskProgress - desired) > .0001) {
-            this.diskProgress = this.reduced.matches ? desired : THREE.MathUtils.damp(this.diskProgress, desired, 13, dt);
-            if (Math.abs(this.diskProgress - desired) < .001) this.diskProgress = desired;
-            const distance = this.diskProgress * .68;
-            this.disk.position.copy(this.diskRest);
-            this.disk.position.y -= Math.cos(65 * Math.PI / 180) * distance;
-            this.disk.position.z += Math.sin(65 * Math.PI / 180) * distance;
+        const diskDesired = this.diskOut ? diskEjectedTravel : diskSeatTravel;
+        const diskMotion = this.diskMotion;
+        if (diskMotion || Math.abs(this.diskTravel - diskDesired) > .0001) {
+            if (!diskMotion || this.reduced.matches) {
+                this.diskTravel = diskDesired;
+                this.diskMotion = undefined;
+                if (this.ejectButton) this.ejectButton.position.copy(this.ejectButtonRest);
+            } else {
+                diskMotion.elapsed += dt * 1000 * this.rosterMotionRate;
+                const pose = diskMotion.out ? diskEjectPose(diskMotion.elapsed, diskMotion.from) : diskInsertPose(diskMotion.elapsed, diskMotion.from);
+                this.diskTravel = pose.travel;
+                if (this.ejectButton) {
+                    this.ejectButton.position.copy(this.ejectButtonRest);
+                    this.ejectButton.position.z -= pose.button * .058;
+                }
+                // The firm final push lands with the mechanism's clunk.
+                if ((diskMotion.out ? pose.phase === 'pop' : pose.phase === 'seat') && !diskMotion.clunk) {
+                    diskMotion.clunk = true;
+                    void this.soundFeedback();
+                }
+                if (pose.done) {
+                    this.diskTravel = diskDesired;
+                    this.diskMotion = undefined;
+                }
+            }
+            this.applyDiskTravel();
         }
         this.scopeAngle = this.reduced.matches ? this.scopeDesiredAngle : THREE.MathUtils.damp(this.scopeAngle, this.scopeDesiredAngle, 16, dt);
         this.tuningKnob.rotation.z = this.scopeAngle;
         this.scopeRateAngle = this.reduced.matches ? this.scopeRateDesiredAngle : THREE.MathUtils.damp(this.scopeRateAngle, this.scopeRateDesiredAngle, 16, dt);
         this.rateKnob.rotation.z = this.scopeRateAngle;
-        this.scopePersistenceAngle = this.reduced.matches ? this.scopePersistenceDesiredAngle : THREE.MathUtils.damp(this.scopePersistenceAngle, this.scopePersistenceDesiredAngle, 16, dt);
-        this.persistenceKnob.rotation.z = this.scopePersistenceAngle;
+        this.scopeIntensityAngle = this.reduced.matches ? this.scopeIntensityDesiredAngle : THREE.MathUtils.damp(this.scopeIntensityAngle, this.scopeIntensityDesiredAngle, 16, dt);
+        this.persistenceKnob.rotation.z = this.scopeIntensityAngle;
         for (const [id, time] of this.pulses) {
             const age = (now - time) / 1000;
             const amount = this.reduced.matches ? 0 : Math.sin(Math.min(age / .36, 1) * Math.PI);
@@ -1208,7 +1248,7 @@ export class ConsoleEngine {
                 this.pulses.delete(id);
         }
         const live = this.powerOn && !this.reduced.matches;
-        if (this.flipProgress < .65 && (live || this.dirty)) this.drawScope(this.reduced.matches ? 0 : now / 1000, dt);
+        if (this.flipProgress < .65 && (live || this.dirty)) this.drawScope(dt);
         this.crtTime.value = this.reduced.matches ? 0 : now / 1000;
         // Power-on keeps the CRT raster, scope and VU needle alive, so those
         // frames always render. Otherwise a frame renders only when state
@@ -1261,7 +1301,7 @@ export class ConsoleEngine {
         c.strokeStyle = 'rgba(160, 203, 200, .15)';
         c.beginPath(); c.moveTo(0, plotBottom + .5); c.lineTo(w, plotBottom + .5); c.stroke();
     }
-    private drawScope(t: number, dt: number) {
+    private drawScope(dt: number) {
         if (!this.powerOn) {
             const c = this.scopeCanvas.getContext('2d')!;
             c.fillStyle = '#07100e';
@@ -1270,74 +1310,76 @@ export class ConsoleEngine {
             if (texture) texture.needsUpdate = true;
             return;
         }
-        const w = 420, centerY = 146;
+        const w = 420, centerY = 146, left = 35, plotWidth = 350;
         const trace = this.scopeTraceCanvas.getContext('2d')!;
-        const decay = [0.30, 0.16, 0.065, 0][this.scopePersistence];
+        // Phosphor decay is a screen property. INTENSITY controls beam current,
+        // not signal amplitude or the persistence duration.
         trace.save();
         trace.globalCompositeOperation = 'destination-out';
-        trace.fillStyle = `rgba(0,0,0,${1 - Math.pow(1 - decay, dt * 60)})`;
+        trace.fillStyle = `rgba(0,0,0,${this.reduced.matches ? 1 : 1 - Math.exp(-dt / .085)})`;
         trace.fillRect(0, 0, w, 292);
         trace.restore();
 
-        const rate = [.45, .72, 1, 1.75, 2.8][this.scopeRate];
+        const timebase = scopeTimebase(this.scopeRate);
+        const level = scopeTriggerLevel(this.scopeTrigger);
+        const trigger = scopeTriggerPhase(this.scopeMode, level);
+        this.scopePhase = (this.scopePhase + dt * 2.4) % (Math.PI * 2);
+        const phaseOffset = trigger ?? (this.reduced.matches ? 0 : this.scopePhase);
         const channels = this.scopeMode === 2 ? [0, 1] : [0];
-        const phosphor = this.content?.waiting ? '#9dbb78' : '#d4ed98';
-        const path = (channel: number) => {
-            const trace = new Path2D();
-            if (this.scopeMode === 0) {
-                const count = 360;
-                for (let i = 0; i <= count; i++) {
-                    const p = i / count * Math.PI * 2;
-                    const flutter = Math.sin(p * 6 + t * rate * 1.6) * 2.4;
-                    const x = 210 + Math.sign(Math.cos(p)) * Math.pow(Math.abs(Math.cos(p)), .36) * (124 + flutter);
-                    const y = centerY + Math.sign(Math.sin(p)) * Math.pow(Math.abs(Math.sin(p)), .36) * (86 + flutter * .5);
-                    i ? trace.lineTo(x, y) : trace.moveTo(x, y);
-                }
-                trace.closePath();
-            } else {
-                const amplitude = this.content?.waiting ? 24 : channel ? 54 : 70;
-                const cycles = 2.4 + this.scopeRate * 1.18;
-                for (let x = 0; x < w; x += 1.25) {
-                    const motion = this.scopeMode >= 6 ? Math.sin(t * rate * .32) * .12 : Math.sin(t * .8) * .018;
-                    const phase = x / w * Math.PI * 2 * cycles + motion;
-                    const jitter = Math.sin(x * 1.71 + t * 23) * .42;
-                    const y = centerY + waveSample(this.scopeMode, phase, channel) * amplitude +
-                        (channel ? 38 : this.scopeMode === 2 ? -30 : 0) + jitter;
-                    x ? trace.lineTo(x, y) : trace.moveTo(x, y);
-                }
+        const brightness = .16 + this.scopeIntensity * .84;
+        const phosphor = '#c8ef91';
+        // Ten horizontal divisions at the selected seconds/division. Input is
+        // a fixed 1 kHz calibrator, with fixed 0.5 V/div vertical sensitivity.
+        const cycles = timebase * 10 * 1000;
+        const paths = channels.map(channel => {
+            const path = new Path2D();
+            for (let i = 0; i <= 720; i++) {
+                const x = left + i / 720 * plotWidth;
+                const phase = i / 720 * Math.PI * 2 * cycles + phaseOffset;
+                const y = centerY - waveSample(this.scopeMode, phase, channel) * 70;
+                i ? path.lineTo(x, y) : path.moveTo(x, y);
             }
-            return trace;
-        };
-        // History has a strict brightness ceiling. The fresh sweep is drawn
-        // separately, so even HOLD + NOISE cannot accumulate into a white slab.
-        const paths = channels.map(channel => path(channel));
+            return path;
+        });
         trace.save();
         trace.globalCompositeOperation = 'source-over';
         trace.strokeStyle = phosphor;
-        trace.globalAlpha = .35;
-        trace.lineWidth = 1.1;
+        trace.globalAlpha = .18 * brightness;
+        trace.lineWidth = 1.4;
         for (const sweep of paths) trace.stroke(sweep);
         trace.restore();
 
         const c = this.scopeCanvas.getContext('2d')!;
         c.clearRect(0, 0, 420, 350);
         c.drawImage(this.scopeGridCanvas, 0, 0);
-        c.save(); c.globalAlpha = .25;
+        c.save(); c.globalAlpha = .20 * brightness;
         c.drawImage(this.scopeTraceCanvas, 0, 0); c.restore();
-        c.save(); c.beginPath(); c.rect(0, 0, w, 292); c.clip();
+        c.save(); c.beginPath(); c.rect(left, 6, plotWidth, 280); c.clip();
         c.strokeStyle = phosphor; c.shadowColor = phosphor;
         channels.forEach((channel, i) => {
             const sweep = paths[i];
-            c.globalAlpha = .20; c.lineWidth = 3; c.shadowBlur = 6; c.stroke(sweep);
-            c.globalAlpha = channel ? .68 : .94; c.lineWidth = 1.1; c.shadowBlur = 0; c.stroke(sweep);
+            c.globalAlpha = .23 * brightness; c.lineWidth = 3; c.shadowBlur = 5; c.stroke(sweep);
+            c.globalAlpha = (channel ? .60 : .98) * brightness; c.lineWidth = 1.65; c.shadowBlur = 0; c.stroke(sweep);
         });
         c.restore();
+        // The small edge marker shows the real trigger voltage without adding
+        // a distracting line through the waveform. Its threshold is adjustable.
+        const triggerY = centerY - level * 70;
+        c.fillStyle = trigger === null ? '#c99d65' : '#acd084';
+        c.beginPath(); c.moveTo(left - 13, triggerY - 4); c.lineTo(left - 5, triggerY); c.lineTo(left - 13, triggerY + 4); c.closePath(); c.fill();
         c.fillStyle = 'rgba(211, 239, 232, .86)';
         c.font = '17px "PingFang SC", sans-serif';
-        c.fillText(`${scopeModes[this.scopeMode]} · ${scopeRates[this.scopeRate]}`, 20, 319);
-        c.fillStyle = 'rgba(174, 211, 205, .65)';
-        c.font = '13px "PingFang SC", sans-serif';
-        c.fillText(`${scopePersistenceModes[this.scopePersistence]} / ${this.content?.waiting ? 'STANDBY' : 'TRIGGERED'}`, 20, 340);
+        c.fillText(`${translate(this.locale, scopeModes[this.scopeMode])}${this.scopeMode < 6 ? ' · 1 kHz' : ''}`, 20, 319);
+        c.textAlign = 'right';
+        c.fillText(translate(this.locale, trigger === null ? '自动扫描' : '已触发'), 400, 319);
+        c.textAlign = 'left';
+        c.fillStyle = 'rgba(174, 211, 205, .75)';
+        c.font = '14px "PingFang SC", sans-serif';
+        const div = translate(this.locale, '每格');
+        c.fillText(`0.5 V/${div} · ${(timebase * 1000).toFixed(3)} ms/${div}`, 20, 340);
+        c.textAlign = 'right';
+        c.fillText(`${level >= 0 ? '+' : ''}${level.toFixed(2)} V ↑`, 400, 340);
+        c.textAlign = 'left';
         crtFinish(c, 420, 350);
         const texture = this.textures.get('scope');
         if (texture)

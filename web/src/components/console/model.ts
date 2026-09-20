@@ -14,7 +14,7 @@ export function instrumentSteps(variant: InstrumentVariant, control: 'amplitude'
 export function stepInstrumentValue(variant: InstrumentVariant, control: 'amplitude' | 'rate', value: number, steps: number) {
     const count = instrumentSteps(variant, control);
     // Receiver knobs have end stops. A frequency sweep must not jump bands.
-    return variant === 'signal' ? Math.max(0, Math.min(count - 1, value + steps)) : nextScopeValue(value, count, steps);
+    return variant === 'status' && control === 'amplitude' ? nextScopeValue(value, count, Math.sign(steps)) : Math.max(0, Math.min(count - 1, value + steps));
 }
 /** Local receiver toy: three fixed stations, independent of every game/network state. */
 export function receiverSignal(tuning: number, gain: number, seconds = 0, lively = true) {
@@ -26,7 +26,7 @@ export function receiverSignal(tuning: number, gain: number, seconds = 0, lively
     }
     const flutter = lively ? (Math.sin(seconds * 3.7) * .018 + Math.sin(seconds * 8.9 + position) * .008) * envelope : 0;
     const noise = lively ? .005 * Math.sin(seconds * 11.3 + position * .8) : 0;
-    const amplification = [.35, .55, .82, 1.08, 1.36][Math.max(0, Math.min(4, Math.round(gain)))];
+    const amplification = .35 + Math.max(0, Math.min(4, gain)) * .2525;
     return Math.max(0, Math.min(1, (.026 + envelope + flutter + noise) * amplification));
 }
 /** Unhurried VU-like phrases with a soft attack, slower release and occasional gaps. */
@@ -55,6 +55,8 @@ export class ReceiverActivity {
     }
 }
 export interface LocalState {
+    locale: 'zh' | 'en';
+    scopeTrigger: number;
     mode: 'create' | 'join';
     name: string;
     code: string;
@@ -75,7 +77,7 @@ export interface LocalState {
     diskOut: boolean;
     scopeMode: number;
     scopeRate: number;
-    scopePersistence: number;
+    scopeIntensity: number;
     backView: boolean;
     batteryOpen: boolean;
     soundOn: boolean;
@@ -88,25 +90,29 @@ export interface LocalState {
     instrumentDemo: boolean;
 }
 export const initialLocal: LocalState = {
+    locale: 'zh', scopeTrigger: .5,
     mode: 'create', name: '', code: '', clues: ['', '', ''], guess: [0, 0, 0],
     slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
     archiveOpen: false, manual: false, rosterOpen: false, hiddenWords: false, seconds: 0, diskOut: false,
-    scopeMode: 0, scopeRate: 2, scopePersistence: 1,
+    scopeMode: 1, scopeRate: .46, scopeIntensity: .65,
     backView: false, batteryOpen: false, soundOn: false, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
     instrumentVariant: 'signal', instrumentDemo: true,
 };
-export type HardwareState = Pick<LocalState, 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopePersistence' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo'>;
-export const scopeModes = ['矢量', '正弦', '双踪', '方波', '三角', '脉冲', '扫频', '噪声'];
-export const scopeRates = ['0.5×', '1×', '2×', '4×', '8×'];
-export const scopePersistenceModes = ['短余辉', '中余辉', '长余辉', '无限'];
+export type HardwareState = Pick<LocalState, 'locale' | 'scopeTrigger' | 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopeIntensity' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo'>;
+export const scopeModes = ['调幅', '正弦', '双踪', '方波', '三角', '脉冲', '扫频', '噪声'];
 export function nextScopeValue(value: number, length: number, direction = 1) {
     return (value + direction % length + length) % length;
 }
 export function nextScopeMode(mode: number, direction = 1) {
     return nextScopeValue(mode, scopeModes.length, direction);
 }
-export const word = (s: string = '') => s.split('[')[0];
+export const word = (s = '', locale: 'zh' | 'en' = 'zh') => locale === 'en' ? s.match(/\[([^\]]+)\]/)?.[1] || s.split('[')[0] : s.split('[')[0];
+// A 1 kHz, 2 Vpp calibration signal. The timebase changes the horizontal
+// observation interval, never the incoming signal frequency.
+const clampControl = (value: number) => Math.max(0, Math.min(1, value));
+export const scopeTimebase = (value: number) => .00005 * 20 ** clampControl(value);
+export const scopeTriggerLevel = (value: number) => (clampControl(value) - .5) * 2.4;
 export function resultTint(s: StationState) {
     if (s.phase === 'game_over')
         return s.gameOver?.winner === null ? '#b9c5c7' : s.gameOver?.winner === s.myTeam ? '#8bc995' : '#ed9781';
@@ -170,20 +176,21 @@ export function archiveStart(s: StationState, u: LocalState) {
     const anchored = u.archiveAnchor === null ? -1 : rows.findIndex(row => row.round === u.archiveAnchor);
     return anchored >= 0 ? anchored : Math.max(0, Math.min(u.archivePage * 2, rows.length - 1));
 }
-export function previewState(base: StationState, name: string): StationState {
+export function previewState(base: StationState, name: string, locale: 'zh' | 'en' = 'zh'): StationState {
+    const sample = (...entries: string[]) => entries.map(value => word(value, locale));
     if (name === 'late-game') {
         const hints = {
             A: [
-                ['微光', '沙滩', '春天', '远行'], ['灯火', '浪花', '花束', '南飞'],
-                ['守望', '潮汐', '荆棘', '迁徙'], ['航标', '贝壳', '告白', '羽翼'],
-                ['指引', '港湾', '芬芳', '归途'], ['夜航', '礁石', '红瓣', '雁阵'],
-                ['光束', '海风', '花园', '越冬'], ['归港', '岸线', '赠礼', '春归'],
+                ['微光[Glimmer]', '沙滩[Beach]', '春天[Spring]', '远行[Journey]'], ['灯火[Lamplight]', '浪花[Surf]', '花束[Bouquet]', '南飞[Southbound]'],
+                ['守望[Watch]', '潮汐[Tide]', '荆棘[Thorns]', '迁徙[Migration]'], ['航标[Beacon]', '贝壳[Shell]', '告白[Confession]', '羽翼[Wings]'],
+                ['指引[Guidance]', '港湾[Harbor]', '芬芳[Fragrance]', '归途[Homeward]'], ['夜航[Night sailing]', '礁石[Reef]', '红瓣[Red petals]', '雁阵[Flying geese]'],
+                ['光束[Beam]', '海风[Sea breeze]', '花园[Garden]', '越冬[Wintering]'], ['归港[Home port]', '岸线[Shoreline]', '赠礼[Gift]', '春归[Spring return]'],
             ],
             B: [
-                ['刻度', '山巅', '花蜜', '站台'], ['滴答', '冰川', '蜂房', '铁轨'],
-                ['齿轮', '雪线', '嗡鸣', '车厢'], ['报时', '攀登', '花粉', '汽笛'],
-                ['表盘', '寒峰', '蜂蜡', '卧铺'], ['时针', '白顶', '蜂群', '隧道'],
-                ['发条', '雪崩', '酿蜜', '终点'],
+                ['刻度[Markings]', '山巅[Summit]', '花蜜[Nectar]', '站台[Platform]'], ['滴答[Tick-tock]', '冰川[Glacier]', '蜂房[Hive]', '铁轨[Rails]'],
+                ['齿轮[Gears]', '雪线[Snowline]', '嗡鸣[Buzz]', '车厢[Carriage]'], ['报时[Chime]', '攀登[Climbing]', '花粉[Pollen]', '汽笛[Whistle]'],
+                ['表盘[Dial]', '寒峰[Icy peak]', '蜂蜡[Beeswax]', '卧铺[Sleeper]'], ['时针[Hour hand]', '白顶[White peak]', '蜂群[Swarm]', '隧道[Tunnel]'],
+                ['发条[Mainspring]', '雪崩[Avalanche]', '酿蜜[Honey making]', '终点[Terminus]'],
             ],
         };
         const codes = [[1, 2, 3], [3, 1, 4], [3, 4, 1], [4, 2, 3], [2, 1, 4], [1, 3, 2]];
@@ -193,22 +200,22 @@ export function previewState(base: StationState, name: string): StationState {
             const secret = [...codes[index % codes.length]];
             const wrong = [secret[1], secret[0], secret[2]];
             return { round, team, secret,
-                clues: secret.map(digit => hints[team][Math.floor(index / 2)][digit - 1]),
+                clues: secret.map(digit => word(hints[team][Math.floor(index / 2)][digit - 1], locale)),
                 intercept: round < 3 ? undefined : round === 6 || round === 9 ? [...secret] : [...wrong],
                 decrypt: round === 7 || round === 12 ? [...wrong] : [...secret],
             };
         });
         // Both teams are still in play: one interception and one error each.
-        return { ...previewState(base, 'intercept'), round: 16, history,
-            clues: ['末班', '分秒', '采蜜'], secretDigits: [], secretWords: [],
+        return { ...previewState(base, 'intercept', locale), round: 16, history,
+            clues: sample('末班[Last service]', '分秒[Seconds]', '采蜜[Foraging]'), secretDigits: [], secretWords: [],
             scoreA: { interceptions: 1, decrypt_failures: 1 }, scoreB: { interceptions: 1, decrypt_failures: 1 },
         };
     }
-    const people = ['你', 'Alice', 'Bob', 'AI · 01', 'John', 'Lisa', 'AI · 02', 'AI · 03']
+    const people = [locale === 'en' ? 'You' : '你', 'Alice', 'Bob', 'AI · 01', 'John', 'Lisa', 'AI · 02', 'AI · 03']
         .map((nickname, i) => ({ id: String(i), nickname, is_ai: nickname.startsWith('AI') }));
     const phase = ['home', 'room', 'encrypting', 'intercept', 'decrypt', 'round_result', 'game_over'].includes(name)
         ? name as StationState['phase'] : name === 'room-empty' || name === 'room-partial' ? 'room' : 'encrypting';
-    if (name === 'room-partial') people[0].nickname = '凌晨三点还在破解频道密码的神秘特工';
+    if (name === 'room-partial') people[0].nickname = locale === 'en' ? 'The mysterious agent still decoding at three in the morning' : '凌晨三点还在破解频道密码的神秘特工';
     const teamA = phase === 'home' || name === 'room-empty' ? [] : name === 'room-partial' ? people.slice(0, 1) : people.slice(0, 4);
     const teamB = phase === 'home' || name === 'room-empty' ? [] : name === 'room-partial' ? people.slice(4, 6) : people.slice(4);
     const playing = phase !== 'home' && phase !== 'room';
@@ -217,14 +224,14 @@ export function previewState(base: StationState, name: string): StationState {
         teamA, teamB, canStart: teamA.length >= 2 && teamB.length >= 2,
         round: playing ? 5 : 0, myRole: !playing ? '' : name === 'waiting' ? 'teammate' : phase === 'intercept' ? 'opponent' : phase === 'decrypt' ? 'teammate' : 'encryptor',
         myWords: phase === 'home' || phase === 'room' ? [] : ['灯塔[lighthouse]', '海岸[coast]', '玫瑰[rose]', '候鸟[migratory bird]'],
-        secretDigits: playing ? [3, 1, 4] : [], secretWords: playing ? ['玫瑰', '灯塔', '候鸟'] : [], clues: playing ? ['花园', '航行', '羽毛'] : [],
-        encryptor: !playing ? '' : phase === 'intercept' ? 'John' : name === 'waiting' || phase === 'decrypt' ? 'Alice' : '你', waiting: name === 'waiting',
+        secretDigits: playing ? [3, 1, 4] : [], secretWords: playing ? sample('玫瑰[Rose]', '灯塔[Lighthouse]', '候鸟[Migratory bird]') : [], clues: playing ? sample('花园[Garden]', '航行[Sailing]', '羽毛[Feather]') : [],
+        encryptor: !playing ? '' : phase === 'intercept' ? 'John' : name === 'waiting' || phase === 'decrypt' ? 'Alice' : locale === 'en' ? 'You' : '你', waiting: name === 'waiting',
         scoreA: { interceptions: !playing ? 0 : phase === 'game_over' ? 2 : 1, decrypt_failures: 0 }, scoreB: { interceptions: 0, decrypt_failures: playing ? 1 : 0 },
         history: phase === 'home' || phase === 'room' ? [] : [
-            { round: 1, team: 'A', clues: ['微光', '沙滩', '春天'], secret: [1, 2, 3], decrypt: [1, 2, 3] },
-            { round: 2, team: 'B', clues: ['花园', '航行', '羽毛'], secret: [3, 1, 4], decrypt: [3, 1, 4] },
-            { round: 3, team: 'A', clues: ['刺', '迁徙', '港口'], secret: [3, 4, 1], intercept: [2, 4, 1], decrypt: [3, 4, 1] },
-            { round: 4, team: 'B', clues: ['远行', '潮汐', '花束'], secret: [4, 2, 3], intercept: [4, 2, 3] },
+            { round: 1, team: 'A', clues: sample('微光[Glimmer]', '沙滩[Beach]', '春天[Spring]'), secret: [1, 2, 3], decrypt: [1, 2, 3] },
+            { round: 2, team: 'B', clues: sample('花园[Garden]', '航行[Sailing]', '羽毛[Feather]'), secret: [3, 1, 4], decrypt: [3, 1, 4] },
+            { round: 3, team: 'A', clues: sample('刺[Thorn]', '迁徙[Migration]', '港口[Port]'), secret: [3, 4, 1], intercept: [2, 4, 1], decrypt: [3, 4, 1] },
+            { round: 4, team: 'B', clues: sample('远行[Journey]', '潮汐[Tide]', '花束[Bouquet]'), secret: [4, 2, 3], intercept: [4, 2, 3] },
         ], roundResult: phase === 'round_result' ? { intercept_success: false, decrypt_success: true } : null,
         gameOver: phase === 'game_over' ? { winner: 'A' } : null, error: null,
         playerProgress: name === 'waiting' ? { action: 'encrypt', player: 'Alice', state: 'editing', step: 2, total: 3 } : null,

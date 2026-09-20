@@ -10,8 +10,9 @@ const url = source => `data:text/javascript;base64,${Buffer.from(source).toStrin
 const modelUrl = url(compile(await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8')));
 const mechanicsUrl = url(compile(await readFile(new URL('../src/components/console/mechanics.ts', import.meta.url), 'utf8')));
 const { initialLocal, previewState, instrumentSteps, stepInstrumentValue, receiverSignal, ReceiverActivity } = await import(modelUrl);
+const i18nUrl = url(compile(await readFile(new URL('../src/components/console/i18n.ts', import.meta.url), 'utf8')));
 const paintSource = await readFile(new URL('../src/components/console/paint.ts', import.meta.url), 'utf8');
-const { paint } = await import(url(compile(paintSource).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl))));
+const { paint } = await import(url(compile(paintSource).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl))));
 
 // These tests validate control routing, not pixel output. Browser checks cover
 // the actual WebGL model, controls, text input, and the hinge animation.
@@ -42,8 +43,8 @@ test('instrument studies expose their own controls without changing public game 
     assert.ok(!paint(state, { ...local, powerOn: false }).targets.some(t => t.id.startsWith('meter-')));
     for (const control of ['amplitude', 'rate']) {
       const count = instrumentSteps(variant, control);
-      assert.equal(stepInstrumentValue(variant, control, count - 1, 1), variant === 'signal' ? count - 1 : 0);
-      assert.equal(stepInstrumentValue(variant, control, 0, -1), variant === 'signal' ? 0 : count - 1);
+      assert.equal(stepInstrumentValue(variant, control, count - 1, 1), variant === 'status' && control === 'amplitude' ? 0 : count - 1);
+      assert.equal(stepInstrumentValue(variant, control, 0, -1), variant === 'status' && control === 'amplitude' ? count - 1 : 0);
     }
   }
 });

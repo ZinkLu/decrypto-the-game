@@ -1,3 +1,4 @@
+import { translate } from './i18n';
 import { useLayoutEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { archiveRows, type StationState } from './model';
@@ -7,7 +8,7 @@ const motionRate = import.meta.env.DEV && new URLSearchParams(location.search).g
 const enterDuration = paperFeedDuration / motionRate;
 const exitDuration = paperTearDuration / motionRate;
 
-interface Props { open: boolean; state: StationState; onClose: () => void; onClosed: () => void }
+interface Props { locale: 'zh' | 'en'; open: boolean; state: StationState; onClose: () => void; onClosed: () => void }
 
 function sequence(values?: number[]) {
     return values?.some(Boolean) ? values.join(' — ') : '— — —';
@@ -17,7 +18,8 @@ function matches(actual?: number[], guess?: number[]) {
     return !!actual?.length && actual.length === guess?.length && actual.every((value, index) => value === guess?.[index]);
 }
 
-export default function ArchiveSheet({ open, state, onClose, onClosed }: Props) {
+export default function ArchiveSheet({ open, state, onClose, onClosed, locale }: Props) {
+    const t = (message: string, values?: unknown[]) => translate(locale, message, values);
     const dialog = useRef<HTMLDialogElement>(null);
     // A printer roll reads from the oldest impression at the top to the newest at the tear.
     const rows = archiveRows(state, 'all').slice().reverse();
@@ -58,43 +60,43 @@ export default function ArchiveSheet({ open, state, onClose, onClosed }: Props) 
         <article className="archive-sheet">
             <header className="archive-header">
                 <div>
-                    <p className="archive-eyebrow">MESSAGE RECORDER <span>CH {state.roomCode || '待接入'}</span></p>
-                    <h2 id="archive-title">密报记录</h2>
-                    <p className="receipt-subtitle">公开线索 · 猜测次序 · 回合留底</p>
+                    <p className="archive-eyebrow">{t("密报记录")}<span>CH {state.roomCode || t("待接入")}</span></p>
+                    <h2 id="archive-title">{t("密报记录")}</h2>
+                    <p className="receipt-subtitle">{t("公开线索 · 猜测次序 · 回合留底")}</p>
                 </div>
             </header>
             <div className="archive-body">
-                <section className="archive-records" aria-label="公开回合记录">
-                    <p className="archive-ledger-head"><span>{String(rows.length).padStart(2, '0')} RECORDS</span><span>OLDEST → LATEST</span></p>
-                    {!rows.length ? <div className="archive-empty"><span aria-hidden="true">— 00 —</span><h3>等待第一份密报</h3>
-                        <p>回合结束后，公开线索与双方提交的次序会自动打印。</p></div> : rows.map(row => {
+                <section className="archive-records" aria-label={t("公开回合记录")}>
+                    <p className="archive-ledger-head"><span>{String(rows.length).padStart(2, '0')} {t("条记录")}</span><span>{t("按时间顺序")}</span></p>
+                    {!rows.length ? <div className="archive-empty"><span aria-hidden="true">— 00 —</span><h3>{t("等待第一份密报")}</h3>
+                        <p>{t("回合结束后，公开线索与双方提交的次序会自动打印。")}</p></div> : rows.map(row => {
                         const ours = row.team === state.myTeam;
-                        const interceptOwner = ours ? '对方' : '我方';
-                        const decryptOwner = ours ? '我方' : '对方';
+                        const interceptOwner = ours ? t("对方") : t("我方");
+                        const decryptOwner = ours ? t("我方") : t("对方");
                         const interceptSuccess = matches(row.secret, row.intercept);
                         const decryptSuccess = matches(row.secret, row.decrypt);
                         return <article className="archive-record" key={row.round}>
                             <header>
-                                <h3><span className="archive-round">{String(row.round).padStart(2, '0')}</span>第 {row.round} 回合</h3>
-                                <span className={`archive-team team-${row.team}`}>{ours ? '我方' : '对方'} · {row.team} 队发报</span>
+                                <h3><span className="archive-round">{String(row.round).padStart(2, '0')}</span>{t('第 {0} 回合', [row.round])}</h3>
+                                <span className={`archive-team team-${row.team}`}>{ours ? t("我方") : t("对方")} · {t('{0} 队发报', [row.team])}</span>
                             </header>
                             <p className="archive-clue-line">{row.clues.map((clue, index) => <span key={index}><small>{String(index + 1).padStart(2, '0')}</small>{clue}</span>)}</p>
                             <dl className="archive-sequences">
-                                <div><dt>{interceptOwner}截获</dt><dd>{sequence(row.intercept)}</dd></div>
-                                <div><dt>{decryptOwner}解码</dt><dd>{sequence(row.decrypt)}</dd></div>
-                                <div className="archive-secret"><dt>公开密码</dt><dd>{sequence(row.secret)}</dd></div>
+                                <div><dt>{interceptOwner} · {t('截获')}</dt><dd>{sequence(row.intercept)}</dd></div>
+                                <div><dt>{decryptOwner} · {t('解码')}</dt><dd>{sequence(row.decrypt)}</dd></div>
+                                <div className="archive-secret"><dt>{t("公开密码")}</dt><dd>{sequence(row.secret)}</dd></div>
                             </dl>
                             <p className="archive-outcome">
-                                {row.intercept?.some(Boolean) && <span data-result={interceptSuccess ? 'success' : 'failure'}>截获{interceptSuccess ? '成功' : '失败'}</span>}
-                                {row.decrypt?.some(Boolean) && <span data-result={decryptSuccess ? 'success' : 'failure'}>解码{decryptSuccess ? '成功' : '失败'}</span>}
+                                {row.intercept?.some(Boolean) && <span data-result={interceptSuccess ? 'success' : 'failure'}>{t('截获')} · {interceptSuccess ? t("成功") : t("失败")}</span>}
+                                {row.decrypt?.some(Boolean) && <span data-result={decryptSuccess ? 'success' : 'failure'}>{t('解码')} · {decryptSuccess ? t("成功") : t("失败")}</span>}
                             </p>
                         </article>;
                     })}
                 </section>
             </div>
-            <footer className="receipt-footer"><span aria-hidden="true">▎▍▏▌▍▎▏▍▌▏▎▍▏▌▍▎▏▍▌▎▍▏</span><p>END OF TRANSMISSION · {String(rows.length).padStart(2, '0')}</p></footer>
+            <footer className="receipt-footer"><span aria-hidden="true">▎▍▏▌▍▎▏▍▌▏▎▍▏▌▍▎▏▍▌▎▍▏</span><p>{t("通信结束 ·")}{String(rows.length).padStart(2, '0')}</p></footer>
         </article>
         </div>
-        <button className="archive-dismiss" onClick={requestClose} aria-label="收起密报记录">收起记录 <span aria-hidden="true">×</span></button>
+        <button className="archive-dismiss" onClick={requestClose} aria-label={t("收起密报记录")}>{t("收起记录")}<span aria-hidden="true">×</span></button>
     </dialog>;
 }
