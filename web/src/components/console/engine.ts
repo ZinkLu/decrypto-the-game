@@ -1102,6 +1102,10 @@ export class ConsoleEngine {
         }
         this.dirty = true;
         this.project();
+        // Sizing the canvas clears it, and the observer reports after this
+        // frame's tick has already drawn. Draw again before the browser paints,
+        // or the bare page shows through for a frame.
+        if (this.width > 0 && this.height > 0) this.renderer.render(this.scene, this.camera);
     }
     bounds(target: Target) {
         if (Math.abs(this.flipProgress - (this.backView ? 1 : 0)) > .02) return null;

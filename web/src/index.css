@@ -6,7 +6,8 @@ button,input { font: inherit; }
 .station-viewport { width: 100%; overflow: auto; overscroll-behavior: contain; }
 .station-stage { position: relative; width: 100%; height: 100svh; min-height: 540px; }
 .station-stage > canvas { display: block; width: 100%; height: 100%; }
-.station-controls { position: absolute; inset: 0; pointer-events: none; }
+/* A target projected past the stage must not grow the scroll area: a classic scrollbar would resize the stage, which clears the canvas. */
+.station-controls { position: absolute; inset: 0; overflow: clip; pointer-events: none; }
 .station-controls button,.station-controls input { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; color: transparent; caret-color: transparent; opacity: 0; outline: none; pointer-events: auto; border-radius: 5px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .station-controls input { font-size: 22px; padding: 0 8px; }
 .station-controls button { cursor: pointer; touch-action: manipulation; }
