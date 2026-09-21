@@ -13,7 +13,7 @@ const instrumentPreview = import.meta.env.DEV && new URLSearchParams(location.se
 const preview = import.meta.env.DEV ? new URLSearchParams(location.search).get('preview') || (instrumentPreview ? 'encrypting' : null) : null;
 const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
 const initialInstrument = instrumentPreview ? instrumentOptions.find(option => option.id === new URLSearchParams(location.search).get('instruments'))?.id || 'signal' : initialLocal.instrumentVariant;
-const scopeControls = ['scope-tune', 'scope-rate', 'scope-persist', 'meter-amplitude', 'meter-rate'];
+const scopeControls = ['scope-tune', 'scope-rate', 'scope-xy', 'meter-amplitude', 'meter-rate'];
 const isScopeControl = (id: string) => scopeControls.includes(id);
 export default function Console() {
     const live = useGameStore();
@@ -36,11 +36,11 @@ export default function Console() {
     const controls = useRef(new Map<string, HTMLElement>());
     // Analog input updates targets and hardware, without repainting all the
     // game screens and the long receipt for each fraction of a knob turn.
-    const paintKey = JSON.stringify({ ...u, scopeTrigger: 0, scopeRate: 0, scopeIntensity: 0, meterAmplitude: 0, meterRate: 0 });
+    const paintKey = JSON.stringify({ ...u, scopeFreq: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
     const painted = useMemo(() => paint(s, u), [s, paintKey]);
     const content = useMemo(() => ({ ...painted, targets: painted.targets.map(target =>
         isScopeControl(target.id) ? { ...target, label: knobLabel(target.id, u) } : target) }),
-        [painted, u.scopeTrigger, u.scopeRate, u.scopeIntensity, u.meterAmplitude, u.meterRate]);
+        [painted, u.scopeFreq, u.scopeRate, u.scopeAxis, u.meterAmplitude, u.meterRate]);
     const current = useRef({ s, u, content });
     current.current = { s, u, content };
     const pending = useRef(false);
@@ -63,16 +63,21 @@ export default function Console() {
         patch({ [field]: stepInstrumentValue(local.instrumentVariant, control, local[field], steps),
             instrumentDemo: local.instrumentVariant === 'signal' && control === 'rate' ? local.instrumentDemo : false });
     }
-    function adjustKnob(id: string, delta: number) {
+    // Pointer and wheel input turn a knob continuously; clicks and keys move it
+    // in notches. FREQ sits behind a vernier drive, and its notches are quarters
+    // of the spacing between engraved marks, so keys still land on every mark.
+    function adjustKnob(id: string, delta: number, notches = false) {
         const local = current.current.u;
         if (!local.powerOn || local.backView) return;
+        const vernier = id === 'scope-tune';
+        const turn = notches ? delta * (vernier ? 1 / 28 : .025) : vernier ? delta * .45 : delta;
         if (id.startsWith('meter-')) {
             const control = id === 'meter-amplitude' ? 'amplitude' : 'rate';
-            adjustInstrument(control, delta * (instrumentSteps(local.instrumentVariant, control) - 1));
+            adjustInstrument(control, turn * (instrumentSteps(local.instrumentVariant, control) - 1));
             return;
         }
-        const field = id === 'scope-tune' ? 'scopeTrigger' : id === 'scope-rate' ? 'scopeRate' : 'scopeIntensity';
-        setU(old => ({ ...old, [field]: Math.max(0, Math.min(1, old[field] + delta)) }));
+        const field = vernier ? 'scopeFreq' : id === 'scope-rate' ? 'scopeRate' : 'scopeAxis';
+        setU(old => ({ ...old, [field]: Math.max(0, Math.min(1, old[field] + turn)) }));
     }
     function selectInstrument(variant: InstrumentVariant) {
         patch({ instrumentVariant: variant, meterAmplitude: variant === 'signal' ? 14 : variant === 'tuning' ? 4 : variant === 'status' ? 0 : 2,
@@ -341,7 +346,7 @@ export default function Console() {
             return;
         }
         if (id.startsWith('scope-')) {
-            adjustKnob(id.replace('-prev', '').replace('scope-prev', 'scope-tune'), id.endsWith('-prev') || id === 'scope-prev' ? -.025 : .025);
+            adjustKnob(id.replace('-prev', '').replace('scope-prev', 'scope-tune'), id.endsWith('-prev') || id === 'scope-prev' ? -1 : 1, true);
             return;
         }
         if (id === 'copy-code') {
@@ -466,7 +471,7 @@ export default function Console() {
                 role: isScopeControl(target.id) ? 'slider' : target.id === 'power-toggle' || target.id === 'receiver-sweep' ? 'switch' : undefined,
                 'aria-valuemin': isScopeControl(target.id) ? 0 : undefined,
                 'aria-valuemax': isScopeControl(target.id) ? 100 : undefined,
-                'aria-valuenow': isScopeControl(target.id) ? Math.round((target.id === 'scope-tune' ? u.scopeTrigger : target.id === 'scope-rate' ? u.scopeRate : target.id === 'scope-persist' ? u.scopeIntensity : target.id === 'meter-amplitude' ? u.meterAmplitude / (instrumentSteps(u.instrumentVariant, 'amplitude') - 1) : u.meterRate / 4) * 1000) / 10 : undefined,
+                'aria-valuenow': isScopeControl(target.id) ? Math.round((target.id === 'scope-tune' ? u.scopeFreq : target.id === 'scope-rate' ? u.scopeRate : target.id === 'scope-xy' ? u.scopeAxis : target.id === 'meter-amplitude' ? u.meterAmplitude / (instrumentSteps(u.instrumentVariant, 'amplitude') - 1) : u.meterRate / 4) * 1000) / 10 : undefined,
                 'aria-valuetext': isScopeControl(target.id) ? target.label : undefined,
                 'aria-checked': target.id === 'power-toggle' ? u.powerOn : target.id === 'receiver-sweep' ? u.instrumentDemo : undefined,
                 disabled: target.disabled,
@@ -491,7 +496,7 @@ export default function Console() {
                 }}/> : <button key={key} {...common} onClick={e => {
                     if (isScopeControl(target.id) && suppressTuningClick.current && e.detail > 0) { suppressTuningClick.current = false; return; }
                     if (target.surface === 'paper' && suppressPullClick.current && e.detail > 0) { suppressPullClick.current = false; return; }
-                    if (isScopeControl(target.id)) adjustKnob(target.id, .025); else act(target.id);
+                    if (isScopeControl(target.id)) adjustKnob(target.id, 1, true); else act(target.id);
                 }} onPointerDown={isScopeControl(target.id) ? e => {
                     if (e.button !== 0) return;
                     suppressTuningClick.current = false;
@@ -521,9 +526,9 @@ export default function Console() {
                     pullDrag.current = null;
                 } : undefined} onPointerCancel={() => { tuningDrag.current = null; suppressTuningClick.current = false; pullDrag.current = null; suppressPullClick.current = false; }}
                 onKeyDown={isScopeControl(target.id) ? e => {
-                    if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); adjustKnob(target.id, e.key === 'Home' ? -1 : 1); }
+                    if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); adjustKnob(target.id, e.key === 'Home' ? -40 : 40, true); }
                     if (['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) {
-                        e.preventDefault(); adjustKnob(target.id, (['ArrowDown', 'ArrowLeft'].includes(e.key) ? -1 : 1) * (e.shiftKey ? .0025 : .025));
+                        e.preventDefault(); adjustKnob(target.id, (['ArrowDown', 'ArrowLeft'].includes(e.key) ? -1 : 1) * (e.shiftKey ? .1 : 1), true);
                     }
                 } : undefined} onWheel={isScopeControl(target.id) ? e => {
                     adjustKnob(target.id, Math.max(-.08, Math.min(.08, e.deltaY * (e.deltaMode ? .012 : .001))) * (e.shiftKey ? .1 : 1));

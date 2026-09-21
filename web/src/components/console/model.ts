@@ -56,7 +56,7 @@ export class ReceiverActivity {
 }
 export interface LocalState {
     locale: 'zh' | 'en';
-    scopeTrigger: number;
+    scopeFreq: number;
     mode: 'create' | 'join';
     name: string;
     code: string;
@@ -77,7 +77,7 @@ export interface LocalState {
     diskOut: boolean;
     scopeMode: number;
     scopeRate: number;
-    scopeIntensity: number;
+    scopeAxis: number;
     backView: boolean;
     batteryOpen: boolean;
     soundOn: boolean;
@@ -90,17 +90,18 @@ export interface LocalState {
     instrumentDemo: boolean;
 }
 export const initialLocal: LocalState = {
-    locale: 'zh', scopeTrigger: .5,
+    // FREQ rests on the engraved 2:1 mark: two locked cycles per sweep.
+    locale: 'zh', scopeFreq: 3 / 7,
     mode: 'create', name: '', code: '', clues: ['', '', ''], guess: [0, 0, 0],
     slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
     archiveOpen: false, manual: false, rosterOpen: false, hiddenWords: false, seconds: 0, diskOut: false,
-    scopeMode: 1, scopeRate: .46, scopeIntensity: .65,
+    scopeMode: 0, scopeRate: .9, scopeAxis: 0,
     backView: false, batteryOpen: false, soundOn: false, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
     instrumentVariant: 'signal', instrumentDemo: true,
 };
-export type HardwareState = Pick<LocalState, 'locale' | 'scopeTrigger' | 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopeIntensity' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo'>;
-export const scopeModes = ['调幅', '正弦', '双踪', '方波', '三角', '脉冲', '扫频', '噪声'];
+export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo'>;
+export const scopeModes = ['正弦', '三角', '方波', '锯齿', '脉冲'];
 export function nextScopeValue(value: number, length: number, direction = 1) {
     return (value + direction % length + length) % length;
 }
@@ -108,11 +109,27 @@ export function nextScopeMode(mode: number, direction = 1) {
     return nextScopeValue(mode, scopeModes.length, direction);
 }
 export const word = (s = '', locale: 'zh' | 'en' = 'zh') => locale === 'en' ? s.match(/\[([^\]]+)\]/)?.[1] || s.split('[')[0] : s.split('[')[0];
-// A 1 kHz, 2 Vpp calibration signal. The timebase changes the horizontal
-// observation interval, never the incoming signal frequency.
+// The monitor's three dials. FREQ sets the CAL OUT oscillator as a multiple of
+// the sweep reference; its eight engraved marks are calibrated to these
+// ratios. TIME/DIV sets the reference itself, and X-Y pans the horizontal
+// amplifier from the sweep ramp (0) to the reference sine (a quarter turn).
 const clampControl = (value: number) => Math.max(0, Math.min(1, value));
-export const scopeTimebase = (value: number) => .00005 * 20 ** clampControl(value);
-export const scopeTriggerLevel = (value: number) => (clampControl(value) - .5) * 2.4;
+export const scopeMarks: [number, number][] = [[1, 1], [4, 3], [3, 2], [2, 1], [5, 2], [3, 1], [4, 1], [5, 1]];
+export function scopeRatio(value: number) {
+    const position = clampControl(value) * (scopeMarks.length - 1);
+    const index = Math.min(scopeMarks.length - 2, Math.floor(position)), t = position - index;
+    // Vernier law: fine travel around each engraved mark, quicker between them.
+    const eased = t - .7 * Math.sin(2 * Math.PI * t) / (2 * Math.PI);
+    const [p, q] = scopeMarks[index], [nextP, nextQ] = scopeMarks[index + 1];
+    return p / q * (nextP * q / (nextQ * p)) ** eased;
+}
+// Ten divisions per sweep: 200 ms/div fully counter-clockwise, 1.25 ms/div
+// fully clockwise. Both oscillators follow, so a figure keeps its shape while
+// the beam that writes it slows from a line to a visible moving spot.
+export const scopeSweepHz = (value: number) => .5 * 160 ** clampControl(value);
+export const scopeTimebase = (value: number) => 1 / (10 * scopeSweepHz(value));
+export const scopeAxisAngle = (value: number) => clampControl(value) * Math.PI / 2;
+export const scopeFigures = (value: number) => value.toFixed(value < 10 ? 2 : value < 100 ? 1 : 0);
 export function resultTint(s: StationState) {
     if (s.phase === 'game_over')
         return s.gameOver?.winner === null ? '#b9c5c7' : s.gameOver?.winner === s.myTeam ? '#8bc995' : '#ed9781';

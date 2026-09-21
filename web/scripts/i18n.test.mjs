@@ -6,7 +6,7 @@ const compile = source => ts.transpileModule(source, { compilerOptions: { target
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const load = async name => compile(await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8'));
 const modelUrl = url(await load('model')), mechanicsUrl = url(await load('mechanics')), i18nUrl = url(await load('i18n'));
-const { initialLocal, previewState, scopeTimebase, scopeTriggerLevel, stepInstrumentValue, receiverSignal, word } = await import(modelUrl);
+const { initialLocal, previewState, scopeTimebase, scopeRatio, stepInstrumentValue, receiverSignal, word } = await import(modelUrl);
 const { messages, translate, readLocale, saveLocale } = await import(i18nUrl);
 const { paint } = await import(url((await load('paint')).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./i18n'", JSON.stringify(i18nUrl))));
 globalThis.document = { createElement: () => {
@@ -69,8 +69,8 @@ test('language preferences survive reloads and blocked local storage', () => {
 });
 test('analog controls retain fractional changes, physical end stops and finite signal values', () => {
   for (let value = 0; value < 1; value += .001) {
-    assert.ok(scopeTimebase(value + .001) > scopeTimebase(value));
-    assert.ok(scopeTriggerLevel(value + .001) > scopeTriggerLevel(value));
+    assert.ok(scopeTimebase(value + .001) < scopeTimebase(value));
+    assert.ok(scopeRatio(value + .001) > scopeRatio(value));
     assert.ok(Number.isFinite(receiverSignal(value * 40, value * 4)));
   }
   assert.equal(scopeTimebase(-1), scopeTimebase(0)); assert.equal(scopeTimebase(2), scopeTimebase(1));

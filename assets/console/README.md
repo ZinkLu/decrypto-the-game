@@ -12,18 +12,40 @@ phase indicators, receipts and accessible controls change language together.
 Names and submitted clues retain their original text; bilingual word-bank entries
 use their supplied translation. Authored preview clues have both languages. Keyword windows share a 60 px base size; long phrases wrap and measured overflow shrinks without ellipses. Translations live in `i18n.ts`.
 
-The monitor defaults to a triggered 1 kHz sine in Y/T mode. The continuous
-TRIGGER, TIME/DIV and INTENSITY knobs have end stops. Drag, scroll or use arrow
-keys; Shift gives fine adjustment, Home/End go to the limits. Click the CRT to
-select eight calibration waveforms. Trigger spans ±1.2 V and locks each trace to
-the same rising crossing; thresholds outside the signal fall back to AUTO.
-Timebase spans 0.05–1 ms/div logarithmically over ten divisions, with fixed
-0.5 V/div sensitivity. Intensity controls brightness, with intrinsic 85 ms
-phosphor decay; it does not distort the input. Reduced motion freezes free-running
-sweeps and clears afterglow. Analog input reuses game-screen and receipt canvases.
+The vector monitor is simulated from the tube outward (`scope.ts`): two
+oscillators steer one beam, and a floating-point phosphor keeps what it wrote.
+Brightness is dwell time, so sine crests burn brighter than zero crossings and
+square-wave risers stay faint. It rests on a locked 2:1 sine in Y/T.
 
-References: [Tektronix systems and controls](https://www.tek.com/fr/documents/primer/oscilloscope-systems-and-controls),
-[TDS3000C intensity control](https://download.tek.com/manual/TDS3000C-Series-Oscilloscopes-User-Manual-071230808.pdf).
+- **FREQ**, the large vernier dial, tunes the CAL OUT oscillator from 1:1 to 5:1
+  of the sweep reference. Its eight engraved marks are calibrated to 1:1, 4:3,
+  3:2, 2:1, 5:2, 3:1, 4:1 and 5:1, with finer travel around each mark. The
+  oscillators pull on each other (Adler's equation): inside a p:q tongue the
+  figure locks and fine tuning tilts its phase; just outside, it slips with a
+  hesitation each turn; far away it runs free as a woven mesh.
+- **TIME/DIV** spans 200 to 1.25 ms/div and slows both oscillators together, so
+  a figure keeps its shape while the line resolves into a moving spot with a
+  fading trail. Beam current and persistence track the sweep, keeping standing
+  figures equally bright.
+- **X-Y** pans the horizontal amplifier from the sweep ramp to the reference
+  sine. A sine wave and its Lissajous figure are the side and end views of one
+  space curve; this quarter turn rolls one into the other.
+
+The LOCK lamp is a phase detector behind a slow filament: it beats while the
+oscillators slip, steadies as they lock and is brightest dead in tune. Click the
+CRT to step through sine, triangle, square, sawtooth and pulse; shapes melt into
+each other while the selector settles. Knobs have end stops. Drag,
+scroll or use arrow keys; Shift gives fine adjustment, Home/End go to the limits,
+and FREQ's arrow steps are quarter-marks so keys land on every calibrated ratio.
+Reduced motion shows each standing figure as one long exposure. Analog input
+reuses game-screen and receipt canvases. Engrave the dial legends with:
+
+```sh
+blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_scope_controls.py
+```
+
+References: [Tektronix systems and controls](https://www.tek.com/fr/documents/primer/oscilloscope-systems-and-controls);
+R. Adler, "A Study of Locking Phenomena in Oscillators", Proc. IRE 34 (1946).
 
 The coax is a local INPUT–CAL OUT patch beside the scope, clear of all controls.
 The drive has curved thumb reliefs cut into its actual fascia, inset guides,

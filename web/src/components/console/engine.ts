@@ -10,8 +10,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { crtFinish, type Content, type Frame, type Target } from './paint';
 import { RosterMotion, rosterPose } from './rosterMotion';
 import { crtProfile, crtGeometry, crtHeight, crtDisplayUv, crtOpticsShader } from './crt';
-import { initialLocal, scopeModes, scopeTimebase, scopeTriggerLevel, type HardwareState } from './model';
-import { waveSample, scopeTriggerPhase, paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, diskInsertPose, diskEjectPose } from './mechanics';
+import { initialLocal, scopeModes, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState } from './model';
+import { VectorMonitor, scopeResonance, scopeTuning } from './scope';
+import { paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, diskInsertPose, diskEjectPose } from './mechanics';
 import { ReceiptTransport } from './tearing';
 import { ConsoleInstruments } from './instruments';
 interface Surface {
@@ -108,14 +109,16 @@ export class ConsoleEngine {
     private scopeAngle = 0;
     private scopeDesiredAngle = 0;
     private locale: Locale = 'zh';
-    private scopeTrigger = initialLocal.scopeTrigger;
-    private scopePhase = 0;
+    private scopeFreq = initialLocal.scopeFreq;
     private scopeRate = initialLocal.scopeRate;
     private scopeRateAngle = 0;
     private scopeRateDesiredAngle = 0;
-    private scopeIntensity = initialLocal.scopeIntensity;
-    private scopeIntensityAngle = 0;
-    private scopeIntensityDesiredAngle = 0;
+    private scopeAxis = initialLocal.scopeAxis;
+    private scopeAxisAngle = 0;
+    private scopeAxisDesiredAngle = 0;
+    private monitor = new VectorMonitor();
+    private scopeLamp?: { material: THREE.MeshStandardMaterial; intensity: number };
+    private scopeLampGlow = 1;
     private scopeFrames = 0;
     private scopeFpsStarted = performance.now();
     private manualKey?: THREE.Object3D;
@@ -136,6 +139,8 @@ export class ConsoleEngine {
     private scopeCanvas = document.createElement('canvas');
     private scopeGridCanvas = document.createElement('canvas');
     private scopeTraceCanvas = document.createElement('canvas');
+    private scopeBloomCanvas = document.createElement('canvas');
+    private scopeGlow?: ImageData;
     private onContextLost = (e: Event) => { e.preventDefault(); this.fail(translate(this.locale, '图形连接已中断，请刷新终端。')); };
     private onInspectionDown = (e: PointerEvent) => {
         if (!this.inspectionEnabled || e.button !== 1) return;
@@ -246,10 +251,15 @@ export class ConsoleEngine {
         back.receiveShadow = true;
         this.backdrop = back;
         this.scene.add(back);
-        for (const canvas of [this.scopeCanvas, this.scopeGridCanvas, this.scopeTraceCanvas]) {
+        for (const canvas of [this.scopeCanvas, this.scopeGridCanvas]) {
             canvas.width = 420;
             canvas.height = 350;
         }
+        // The phosphor owns the plotting area; a quarter-size copy is its bloom.
+        this.scopeTraceCanvas.width = scopeTuning.width;
+        this.scopeTraceCanvas.height = scopeTuning.height;
+        this.scopeBloomCanvas.width = scopeTuning.width / 4;
+        this.scopeBloomCanvas.height = scopeTuning.height / 4;
         this.drawScopeGraticule();
         this.observer = new ResizeObserver(() => this.resize());
         this.observer.observe(host);
@@ -259,7 +269,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'console-details-20260920-v25';
+        const revision = 'console-details-20260921-v28';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -579,6 +589,8 @@ export class ConsoleEngine {
             if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial &&
                 ['Tactile warm meter dial', 'Scope indicator glass'].includes(object.material.name)) {
                 this.poweredMaterials.set(object.material, object.material.emissiveIntensity);
+                if (object.material.name === 'Scope indicator glass')
+                    this.scopeLamp = { material: object.material, intensity: object.material.emissiveIntensity };
             }
         });
         // The receiver is part of the shipped console model, including its controls.
@@ -623,8 +635,8 @@ export class ConsoleEngine {
         this.textures.set('scope', scope);
         this.planes.get('scope')!.material.map = scope;
         if (this.content)
-            this.update(this.content, { locale: this.locale, scopeTrigger: this.scopeTrigger, diskOut: this.diskOut, scopeMode: this.scopeMode,
-                scopeRate: this.scopeRate, scopeIntensity: this.scopeIntensity,
+            this.update(this.content, { locale: this.locale, scopeFreq: this.scopeFreq, diskOut: this.diskOut, scopeMode: this.scopeMode,
+                scopeRate: this.scopeRate, scopeAxis: this.scopeAxis,
                 backView: this.backView, batteryOpen: this.batteryOpen, soundOn: this.soundOn,
                 powerOn: this.powerOn,
                 archiveOpen: this.archiveOpen, manual: this.manual,
@@ -770,17 +782,15 @@ export class ConsoleEngine {
             this.diskOut = local.diskOut;
         }
         this.locale = local.locale;
-        if (this.scopeMode !== local.scopeMode) {
-            this.scopeMode = local.scopeMode;
-            this.clearScopePersistence();
-        }
-        this.scopeTrigger = local.scopeTrigger;
+        this.scopeMode = local.scopeMode;
+        this.scopeFreq = local.scopeFreq;
         this.scopeRate = local.scopeRate;
-        this.scopeIntensity = local.scopeIntensity;
+        this.scopeAxis = local.scopeAxis;
         // Analog knobs have physical end stops and retain every fractional turn.
-        this.scopeDesiredAngle = 2.25 - local.scopeTrigger * 4.5;
-        this.scopeRateDesiredAngle = 2.25 - local.scopeRate * 4.5;
-        this.scopeIntensityDesiredAngle = 2.25 - local.scopeIntensity * 4.5;
+        // Each pointer sweeps exactly between the outer index marks of its dial.
+        this.scopeDesiredAngle = Math.PI * .75 * (1 - 2 * local.scopeFreq);
+        this.scopeRateDesiredAngle = 2.182 * (1 - 2 * local.scopeRate);
+        this.scopeAxisDesiredAngle = 2.182 * (1 - 2 * local.scopeAxis);
         for (const [name, frame] of Object.entries(content.frames)) {
             if (/^roster[AB][0-3]$/.test(name)) continue;
             this.updateFrame(name, frame);
@@ -920,7 +930,7 @@ export class ConsoleEngine {
     setSound(on: boolean) { this.soundOn = on; void this.soundFeedback(true); }
     testLamps() { this.testUntil = performance.now() + 1800; void this.soundFeedback(true); }
     private clearScopePersistence() {
-        this.scopeTraceCanvas.getContext('2d')!.clearRect(0, 0, 420, 350);
+        this.monitor.clear();
     }
     pulse(id: string) {
         this.pulses.set(id, performance.now());
@@ -1188,7 +1198,7 @@ export class ConsoleEngine {
             Math.abs(this.diskTravel - (this.diskOut ? diskEjectedTravel : diskSeatTravel)) > .0001 ||
             Math.abs(this.scopeAngle - this.scopeDesiredAngle) > .0001 ||
             Math.abs(this.scopeRateAngle - this.scopeRateDesiredAngle) > .0001 ||
-            Math.abs(this.scopeIntensityAngle - this.scopeIntensityDesiredAngle) > .0001 || this.pulses.size > 0) {
+            Math.abs(this.scopeAxisAngle - this.scopeAxisDesiredAngle) > .0001 || this.pulses.size > 0) {
             this.renderer.shadowMap.needsUpdate = true;
             changed = true;
         }
@@ -1223,8 +1233,8 @@ export class ConsoleEngine {
         this.tuningKnob.rotation.z = this.scopeAngle;
         this.scopeRateAngle = this.reduced.matches ? this.scopeRateDesiredAngle : THREE.MathUtils.damp(this.scopeRateAngle, this.scopeRateDesiredAngle, 16, dt);
         this.rateKnob.rotation.z = this.scopeRateAngle;
-        this.scopeIntensityAngle = this.reduced.matches ? this.scopeIntensityDesiredAngle : THREE.MathUtils.damp(this.scopeIntensityAngle, this.scopeIntensityDesiredAngle, 16, dt);
-        this.persistenceKnob.rotation.z = this.scopeIntensityAngle;
+        this.scopeAxisAngle = this.reduced.matches ? this.scopeAxisDesiredAngle : THREE.MathUtils.damp(this.scopeAxisAngle, this.scopeAxisDesiredAngle, 16, dt);
+        this.persistenceKnob.rotation.z = this.scopeAxisAngle;
         for (const [id, time] of this.pulses) {
             const age = (now - time) / 1000;
             const amount = this.reduced.matches ? 0 : Math.sin(Math.min(age / .36, 1) * Math.PI);
@@ -1310,75 +1320,51 @@ export class ConsoleEngine {
             if (texture) texture.needsUpdate = true;
             return;
         }
-        const w = 420, centerY = 146, left = 35, plotWidth = 350;
+        // The tube is simulated, not plotted: two oscillators steer one beam and
+        // the phosphor keeps what it wrote. Reduced motion shows a long exposure.
+        this.monitor.run(dt, { freq: this.scopeFreq, rate: this.scopeRate, axis: this.scopeAxis, mode: this.scopeMode }, this.reduced.matches);
+        // LOCK lamp: a phase detector seen through a slow, warm filament. Fast
+        // slipping blurs to a half glow; near a tongue it beats ever more slowly,
+        // then steadies as the oscillators lock, brightest dead in tune.
+        if (this.scopeLamp) {
+            const drive = (1 + this.monitor.signal.coherence) / 2;
+            this.scopeLampGlow = this.reduced.matches ? drive : THREE.MathUtils.damp(this.scopeLampGlow, drive, 5.5, dt);
+            // A filament's light rises much faster than its drive, so beats read clearly.
+            this.scopeLamp.material.emissiveIntensity = this.scopeLamp.intensity * (.03 + .97 * this.scopeLampGlow ** 3);
+        }
         const trace = this.scopeTraceCanvas.getContext('2d')!;
-        // Phosphor decay is a screen property. INTENSITY controls beam current,
-        // not signal amplitude or the persistence duration.
-        trace.save();
-        trace.globalCompositeOperation = 'destination-out';
-        trace.fillStyle = `rgba(0,0,0,${this.reduced.matches ? 1 : 1 - Math.exp(-dt / .085)})`;
-        trace.fillRect(0, 0, w, 292);
-        trace.restore();
-
-        const timebase = scopeTimebase(this.scopeRate);
-        const level = scopeTriggerLevel(this.scopeTrigger);
-        const trigger = scopeTriggerPhase(this.scopeMode, level);
-        this.scopePhase = (this.scopePhase + dt * 2.4) % (Math.PI * 2);
-        const phaseOffset = trigger ?? (this.reduced.matches ? 0 : this.scopePhase);
-        const channels = this.scopeMode === 2 ? [0, 1] : [0];
-        const brightness = .16 + this.scopeIntensity * .84;
-        const phosphor = '#c8ef91';
-        // Ten horizontal divisions at the selected seconds/division. Input is
-        // a fixed 1 kHz calibrator, with fixed 0.5 V/div vertical sensitivity.
-        const cycles = timebase * 10 * 1000;
-        const paths = channels.map(channel => {
-            const path = new Path2D();
-            for (let i = 0; i <= 720; i++) {
-                const x = left + i / 720 * plotWidth;
-                const phase = i / 720 * Math.PI * 2 * cycles + phaseOffset;
-                const y = centerY - waveSample(this.scopeMode, phase, channel) * 70;
-                i ? path.lineTo(x, y) : path.moveTo(x, y);
-            }
-            return path;
-        });
-        trace.save();
-        trace.globalCompositeOperation = 'source-over';
-        trace.strokeStyle = phosphor;
-        trace.globalAlpha = .18 * brightness;
-        trace.lineWidth = 1.4;
-        for (const sweep of paths) trace.stroke(sweep);
-        trace.restore();
+        const glow = this.scopeGlow ??= trace.createImageData(scopeTuning.width, scopeTuning.height);
+        this.monitor.phosphor.expose(glow.data);
+        trace.putImageData(glow, 0, 0);
+        const bloom = this.scopeBloomCanvas.getContext('2d')!;
+        bloom.clearRect(0, 0, this.scopeBloomCanvas.width, this.scopeBloomCanvas.height);
+        bloom.drawImage(this.scopeTraceCanvas, 0, 0, this.scopeBloomCanvas.width, this.scopeBloomCanvas.height);
 
         const c = this.scopeCanvas.getContext('2d')!;
         c.clearRect(0, 0, 420, 350);
         c.drawImage(this.scopeGridCanvas, 0, 0);
-        c.save(); c.globalAlpha = .20 * brightness;
-        c.drawImage(this.scopeTraceCanvas, 0, 0); c.restore();
-        c.save(); c.beginPath(); c.rect(left, 6, plotWidth, 280); c.clip();
-        c.strokeStyle = phosphor; c.shadowColor = phosphor;
-        channels.forEach((channel, i) => {
-            const sweep = paths[i];
-            c.globalAlpha = .23 * brightness; c.lineWidth = 3; c.shadowBlur = 5; c.stroke(sweep);
-            c.globalAlpha = (channel ? .60 : .98) * brightness; c.lineWidth = 1.65; c.shadowBlur = 0; c.stroke(sweep);
-        });
+        // Light adds to the lit graticule: a soft halo in the glass, then the trace.
+        c.save();
+        c.globalCompositeOperation = 'lighter';
+        c.globalAlpha = .5; c.drawImage(this.scopeBloomCanvas, 0, 0, scopeTuning.width, scopeTuning.height);
+        c.globalAlpha = 1; c.drawImage(this.scopeTraceCanvas, 0, 0);
         c.restore();
-        // The small edge marker shows the real trigger voltage without adding
-        // a distracting line through the waveform. Its threshold is adjustable.
-        const triggerY = centerY - level * 70;
-        c.fillStyle = trigger === null ? '#c99d65' : '#acd084';
-        c.beginPath(); c.moveTo(left - 13, triggerY - 4); c.lineTo(left - 5, triggerY); c.lineTo(left - 13, triggerY + 4); c.closePath(); c.fill();
+        const ratio = scopeRatio(this.scopeFreq), hz = scopeSweepHz(this.scopeRate), resonance = scopeResonance(ratio);
         c.fillStyle = 'rgba(211, 239, 232, .86)';
         c.font = '17px "PingFang SC", sans-serif';
-        c.fillText(`${translate(this.locale, scopeModes[this.scopeMode])}${this.scopeMode < 6 ? ' · 1 kHz' : ''}`, 20, 319);
+        c.fillText(`${translate(this.locale, scopeModes[this.scopeMode])} · ${scopeFigures(ratio * hz)} Hz`, 20, 319);
         c.textAlign = 'right';
-        c.fillText(translate(this.locale, trigger === null ? '自动扫描' : '已触发'), 400, 319);
+        // Inside a tongue the oscillators hold a whole-number ratio and the figure stands.
+        if (!resonance?.locked) c.fillStyle = '#c99d65';
+        c.fillText(resonance?.locked ? translate(this.locale, '锁定 {0}', [`${resonance.p}:${resonance.q}`]) : translate(this.locale, '自由运行'), 400, 319);
         c.textAlign = 'left';
         c.fillStyle = 'rgba(174, 211, 205, .75)';
         c.font = '14px "PingFang SC", sans-serif';
-        const div = translate(this.locale, '每格');
-        c.fillText(`0.5 V/${div} · ${(timebase * 1000).toFixed(3)} ms/${div}`, 20, 340);
+        const div = translate(this.locale, '每格'), turned = Math.round(scopeAxisAngle(this.scopeAxis) * 180 / Math.PI);
+        const horizontal = turned <= 0 ? `${scopeFigures(scopeTimebase(this.scopeRate) * 1000)} ms/${div}` : turned >= 90 ? 'X-Y' : `X-Y ${turned}°`;
+        c.fillText(`0.5 V/${div} · ${horizontal}`, 20, 340);
         c.textAlign = 'right';
-        c.fillText(`${level >= 0 ? '+' : ''}${level.toFixed(2)} V ↑`, 400, 340);
+        c.fillText(`Y:X ${ratio.toFixed(3)}`, 400, 340);
         c.textAlign = 'left';
         crtFinish(c, 420, 350);
         const texture = this.textures.get('scope');

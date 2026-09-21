@@ -1,5 +1,5 @@
 import { translate, localizeError } from './i18n';
-import { roleState, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeTimebase, scopeTriggerLevel } from './model';
+import { roleState, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
 import type { LocalState, StationState } from './model';
 import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
 export interface Target {
@@ -169,9 +169,12 @@ function portrait(c: CanvasRenderingContext2D, x: number, y: number, size: numbe
 }
 export function knobLabel(id: string, u: LocalState) {
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
-    if (id === 'scope-tune') return t('触发电平 {0} V', [scopeTriggerLevel(u.scopeTrigger).toFixed(2)]);
-    if (id === 'scope-rate') return t('扫描时基 {0} ms/格', [(scopeTimebase(u.scopeRate) * 1000).toFixed(3)]);
-    if (id === 'scope-persist') return t('光迹亮度 {0}%', [Math.round(u.scopeIntensity * 100)]);
+    if (id === 'scope-tune') return t('信号频率 {0} Hz · Y:X {1}', [scopeFigures(scopeRatio(u.scopeFreq) * scopeSweepHz(u.scopeRate)), scopeRatio(u.scopeFreq).toFixed(3)]);
+    if (id === 'scope-rate') return t('扫描时基 {0} ms/格', [scopeFigures(scopeTimebase(u.scopeRate) * 1000)]);
+    if (id === 'scope-xy') {
+        const turned = Math.round(scopeAxisAngle(u.scopeAxis) * 180 / Math.PI);
+        return turned <= 0 ? t('水平偏转 · 时基扫描') : turned >= 90 ? t('水平偏转 · X-Y') : t('水平偏转 · 转向 X-Y {0}°', [turned]);
+    }
     const instrumentLabels = {
         original: [t("调整 VU 表摆动幅度"), t("调整 VU 表摆动频率")],
         signal: [u.instrumentDemo ? t("转动调谐旋钮，切回手动调谐") : t("调谐模拟频道，刻度 {0} / 100", [Number((u.meterAmplitude * 2.5).toFixed(1))]), t("调整接收增益")],
@@ -551,7 +554,7 @@ export function paint(s: StationState, u: LocalState): Content {
     frame('scopeRateKnob', 100, 100);
     target('scopeRateKnob', 'scope-rate', knobLabel('scope-rate', u), 0, 0, 100, 100);
     frame('scopePersistenceKnob', 100, 100);
-    target('scopePersistenceKnob', 'scope-persist', knobLabel('scope-persist', u), 0, 0, 100, 100);
+    target('scopePersistenceKnob', 'scope-xy', knobLabel('scope-xy', u), 0, 0, 100, 100);
     const cl = frame('clock', 520, 218, '#111a17');
     const running = u.powerOn && hasGame && !['round_result', 'game_over'].includes(s.phase);
     const seconds = Math.max(0, Math.floor(u.seconds));
