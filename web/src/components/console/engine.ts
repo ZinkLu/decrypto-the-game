@@ -9,13 +9,17 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { crtFinish, type Content, type Frame, type Target } from './paint';
 import { RosterMotion, rosterPose } from './rosterMotion';
-import { crtProfile, crtGeometry, crtHeight, crtDisplayUv, crtOpticsShader } from './crt';
+import { CrtMotion, crtRestSpot, type CrtKind } from './crtMotion';
+import { shadeCrt, crtUniforms, type CrtUniforms } from './crtShader';
+import { plateFinish } from './finishes';
+import { crtProfile, crtGeometry, crtHeight, crtDisplayUv } from './crt';
 import { initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState } from './model';
 import { VectorMonitor, scopeResonance, scopeTuning } from './scope';
 import { paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, diskInsertPose, diskEjectPose } from './mechanics';
 import { ReceiptTransport } from './tearing';
 import { ConsoleInstruments } from './instruments';
 import { qualityProfiles, type QualityProfile } from './quality';
+import { gameFraming, handleSurfaces, inspectionZoom, type HandleSide } from './view';
 interface Surface {
     x: number;
     y: number;
@@ -39,6 +43,10 @@ export class ConsoleEngine {
     private inspectionTargetYaw = 0;
     private inspectionTargetPitch = 0;
     private inspectionDrag?: { pointerId: number; x: number; y: number };
+    private zoom = 1;
+    private zoomTarget = 1;
+    private handleDrag?: number;
+    private flipDirection = 1;
     private backView = false;
     private flipProgress = 0;
     private batteryOpen = false;
@@ -56,7 +64,7 @@ export class ConsoleEngine {
     private testLamp?: THREE.Mesh;
     private surfaces: Record<string, Surface> = {};
     private planes = new Map<string, THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial | THREE.MeshStandardMaterial>>();
-    private textures = new Map<string, THREE.CanvasTexture>();
+    private textures = new Map<string, THREE.Texture>();
     private content?: Content;
     private model?: THREE.Group;
     private backdrop?: THREE.Mesh;
@@ -86,7 +94,9 @@ export class ConsoleEngine {
     private nixieDigits: { mesh: THREE.Mesh; slot: number; digit: number }[] = [];
     private nixieCoronas: { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture; paths: string[]; code: string }[] = [];
     private crtTime = { value: 0 };
-    private crtPower = { value: 1 };
+    // Every tube has its own supply tolerances, so no two come up or die alike.
+    private crtTubes = new Map<string, { motion: CrtMotion<{ id: string; frame?: Frame }>; uniforms: CrtUniforms; printed?: Frame }>();
+    private crtMotion = new CrtMotion<{ id: string; frame?: Frame }>();
     private rollerRest = new THREE.Quaternion();
     private receipt = new ReceiptTransport();
     private paperReaderStarted = false;
@@ -106,7 +116,12 @@ export class ConsoleEngine {
     private cableLeads = new Map<string, { mesh: THREE.Mesh; index: number }>();
     private rosterCards = new Map<string, { object: THREE.Object3D; rest: THREE.Vector3; travel: number;
         motion: RosterMotion<{ id: string; frame: Frame }>; printed?: Frame; materials: THREE.Material[] }>();
-    private lampMaterials = new Map<string, THREE.MeshStandardMaterial>();
+    private scoreLamps = new Map<string, { material: THREE.MeshPhysicalMaterial;
+        halo: THREE.MeshBasicMaterial; off: THREE.Color; on: THREE.Color; glow: number; lit: boolean }>();
+    private themePanels = new Map<string, { object: THREE.Group; rest: THREE.Vector3;
+        motion: RosterMotion<{ id: string; frame: Frame; color: string }>; printed?: Frame;
+        enamel: THREE.MeshStandardMaterial[];
+        materials: { material: THREE.Material; opacity: number }[] }>();
     private scopeWave = initialLocal.scopeWave;
     private scopeWaveAngle = 0;
     private scopeWaveDesiredAngle = 0;
@@ -158,8 +173,11 @@ export class ConsoleEngine {
     private scopeGlow?: ImageData;
     private onContextLost = (e: Event) => { e.preventDefault(); this.fail(translate(this.locale, '图形连接已中断，请刷新终端。')); };
     private onInspectionDown = (e: PointerEvent) => {
-        if (!this.inspectionEnabled || e.button !== 1) return;
+        if (!this.inspectionEnabled || this.handleDrag !== undefined || this.archiveOpen) return;
+        const control = e.target instanceof Element && e.target.closest('button, input, a, textarea');
+        if (e.button !== 1 && (e.button !== 0 || control)) return;
         e.preventDefault();
+        e.stopPropagation();
         this.inspectionDrag = { pointerId: e.pointerId, x: e.clientX, y: e.clientY };
         this.host.dataset.inspecting = 'true';
         this.host.setPointerCapture(e.pointerId);
@@ -169,8 +187,8 @@ export class ConsoleEngine {
         if (!drag || drag.pointerId !== e.pointerId) return;
         e.preventDefault();
         const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-        this.inspectionTargetYaw = THREE.MathUtils.clamp(this.inspectionTargetYaw + dx * .0055, -.70, .70);
-        this.inspectionTargetPitch = THREE.MathUtils.clamp(this.inspectionTargetPitch + dy * .0045, -.36, .36);
+        this.inspectionTargetYaw += dx * .0055;
+        this.inspectionTargetPitch = THREE.MathUtils.clamp(this.inspectionTargetPitch + dy * .0045, -1.25, 1.25);
         drag.x = e.clientX; drag.y = e.clientY;
     };
     private finishInspection = (e: PointerEvent) => {
@@ -181,6 +199,13 @@ export class ConsoleEngine {
     };
     private onInspectionAuxClick = (e: MouseEvent) => {
         if (this.inspectionEnabled && e.button === 1) e.preventDefault();
+    };
+    private onInspectionWheel = (e: WheelEvent) => {
+        if (!this.inspectionEnabled || this.archiveOpen || this.handleDrag !== undefined) return;
+        // Knobs own their wheel input; inspecting must never retune hardware.
+        if (e.target instanceof Element && e.target.closest('[role="slider"], input, textarea')) return;
+        e.preventDefault();
+        this.zoomTarget = inspectionZoom(this.zoomTarget, e.deltaY, e.deltaMode);
     };
     constructor(private host: HTMLElement, private project: () => void, private fail: (message: string) => void,
         private onPaperPull: () => void = () => {}, private inspectionEnabled = false,
@@ -202,7 +227,9 @@ export class ConsoleEngine {
             host.addEventListener('pointermove', this.onInspectionMove, true);
             host.addEventListener('pointerup', this.finishInspection, true);
             host.addEventListener('pointercancel', this.finishInspection, true);
+            host.addEventListener('lostpointercapture', this.finishInspection, true);
             host.addEventListener('auxclick', this.onInspectionAuxClick, true);
+            host.addEventListener('wheel', this.onInspectionWheel, { passive: false });
             const inspectionView = import.meta.env.DEV ? new URLSearchParams(location.search).get('view') : null;
             if (inspectionView === 'oblique' || inspectionView === 'opposite') {
                 this.inspectionYaw = this.inspectionTargetYaw = inspectionView === 'opposite' ? -.48 : .48;
@@ -301,6 +328,7 @@ export class ConsoleEngine {
         }
         this.surfaces = {
             ...surfaces,
+            ...handleSurfaces,
             batteryControl: { x: -3.4, y: .62, z: -3.66, w: 5.6, h: 4.2, rotationY: Math.PI },
             soundControl: { x: 4.92, y: -1.4, z: -3.25, w: 1.35, h: .60, rotationY: Math.PI },
             testControl: { x: -.05, y: -2.76, z: -3.27, w: .70, h: .70, rotationY: Math.PI },
@@ -332,134 +360,20 @@ export class ConsoleEngine {
             plane.renderOrder = name === 'paper' ? 3 : 2;
             this.root.add(plane);
             this.planes.set(name, plane);
-            if (name === 'channel' || name === 'paper') plane.visible = false;
+            if (name === 'channel' || name === 'paper' || name.startsWith('handle')) plane.visible = false;
             if (curvature) {
-                const profile = name.startsWith('word') ? 1 : name === 'scope' ? 2 : 0;
-                const seed = name.startsWith('word') ? Number(name.slice(4)) + 1 : 0;
+                const kind: CrtKind = name.startsWith('word') ? 'word' : name === 'scope' ? 'scope' : 'screen';
+                const seed = name.startsWith('word') ? Number(name.slice(4)) + 1 : name === 'scope' ? 5 : 0;
                 const eye = { value: new THREE.Vector3() };
                 plane.onBeforeRender = (_renderer, _scene, camera) => {
                     camera.getWorldPosition(eye.value);
                     plane.worldToLocal(eye.value);
                 };
-                material.onBeforeCompile = shader => {
-                    const lite = this.quality.crtOptics === 'lite';
-                    shader.uniforms.crtTime = this.crtTime;
-                    shader.uniforms.crtPower = this.crtPower;
-                    shader.uniforms.crtProfile = { value: profile };
-                    shader.uniforms.crtSeed = { value: seed };
-                    shader.uniforms.crtCurve = { value: curvature.warp };
-                    shader.uniforms.crtAspect = { value: s.w / s.h };
-                    shader.uniforms.crtEye = eye;
-                    shader.uniforms.crtSize = { value: new THREE.Vector2(s.w, s.h) };
-                    shader.uniforms.crtRise = { value: curvature.rise };
-                    shader.uniforms.crtInnerRise = { value: curvature.innerRise };
-                    shader.uniforms.crtDepth = { value: curvature.depth };
-                    shader.fragmentShader = (lite ? '#define CRT_LITE\n' : '') + crtOpticsShader + `
-                        uniform float crtTime;
-                        uniform float crtPower;
-                        uniform float crtProfile;
-                        uniform float crtSeed;
-                        uniform float crtCurve;
-                        uniform float crtAspect;
-                        float crtHash(vec2 p) {
-                            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-                        }
-                        vec3 crtEmission(sampler2D crtMap, vec2 uv) {
-                            vec3 signal = texture2D(crtMap, clamp(uv, .002, .998)).rgb;
-                            float peak = max(max(signal.r, signal.g), signal.b);
-                            return signal * smoothstep(.035, .20, peak);
-                        }
-                    ` + shader.fragmentShader;
-                    shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
-                        #ifdef USE_MAP
-                        // Lite optics print the picture on the faceplate: no ray
-                        // through the glass, no fringing and no halation taps.
-                        #ifdef CRT_LITE
-                        vec2 crtCentered = vMapUv - .5;
-                        #else
-                        vec2 crtCentered = crtPhosphorUv(vMapUv) - .5;
-                        #endif
-                        float crtRadius = dot(crtCentered, crtCentered);
-                        vec2 crtRasterUv = .5 + crtCentered * (1.0 + crtRadius * crtCurve);
-                        vec2 crtUv = clamp(crtRasterUv, .002, .998);
-                        // Each ruby window owns a separate clock and noise seed.
-                        // A burst now averages roughly once every four seconds
-                        // and lasts under 200ms instead of occupying a full tick.
-                        float crtClock = crtTime * .85 + crtSeed * 5.17;
-                        float crtTick = floor(crtClock);
-                        float crtPulse = 1.0 - step(.16, fract(crtClock));
-                        float crtBurst = step(.68, crtHash(vec2(crtTick, crtSeed * 13.7 + 4.7))) * crtPulse;
-                        crtBurst *= step(.5, crtProfile) * step(crtProfile, 1.5) * step(.0001, crtTime);
-                        float crtTearY = .12 + crtHash(vec2(crtTick + crtSeed * 7.3, 8.3)) * .76;
-                        float crtTear = (1.0 - smoothstep(.003, .022, abs(crtUv.y - crtTearY))) * crtBurst;
-                        crtUv.x = clamp(crtUv.x + crtTear * (crtHash(vec2(crtTick, crtSeed * 9.1 + 2.1)) - .5) * .075, .002, .998);
-                        vec4 crtCenter = texture2D(map, crtUv);
-                        #ifdef CRT_LITE
-                        vec4 sampledDiffuseColor = crtCenter;
-                        #else
-                        float crtSplit = (.0012 + crtTear * .009) * crtPower;
-                        vec4 crtLeft = texture2D(map, clamp(crtUv - vec2(crtSplit, 0.0), .002, .998));
-                        vec4 crtRight = texture2D(map, clamp(crtUv + vec2(crtSplit, 0.0), .002, .998));
-                        vec4 sampledDiffuseColor = crtProfile > .5 && crtProfile < 1.5
-                            ? vec4(crtRight.r, crtCenter.g, crtLeft.b, crtCenter.a)
-                            : crtCenter;
-                        #endif
-                        // Halation follows bright ink and traces only. Dark glass
-                        // cannot produce this light, and power-off suppresses it.
-                        // Four near taps carry a slightly raised weight instead
-                        // of a second far ring; the tiny ruby windows skip it.
-                        vec3 crtHalo = vec3(0.0);
-                        #ifndef CRT_LITE
-                        if (crtProfile < .5 || crtProfile > 1.5) {
-                            vec2 glowStep = vec2(.0022 / crtAspect, .0022);
-                            crtHalo = (crtEmission(map, crtUv + vec2(glowStep.x, 0.0))
-                                + crtEmission(map, crtUv - vec2(glowStep.x, 0.0))
-                                + crtEmission(map, crtUv + vec2(0.0, glowStep.y))
-                                + crtEmission(map, crtUv - vec2(0.0, glowStep.y))) * .24;
-                        }
-                        #endif
-                        sampledDiffuseColor.rgb += crtHalo * .36 * crtPower;
-                        sampledDiffuseColor.rgb *= 1.0 + .12 * crtPower;
-                        // A dark inner border separates the emitting coating
-                        // from the front glass. Out-of-frame samples fade rather
-                        // than stretching their last row onto the rounded rim.
-                        vec2 crtAperture = abs(crtRasterUv - .5) * 2.0;
-                        float crtPicture = (1.0 - smoothstep(.97, 1.01, crtAperture.x))
-                            * (1.0 - smoothstep(.97, 1.01, crtAperture.y));
-                        vec3 crtTube = crtProfile > .5 && crtProfile < 1.5 ? vec3(.004, .0007, .0004) : vec3(.002, .004, .004);
-                        sampledDiffuseColor.rgb = mix(crtTube, sampledDiffuseColor.rgb, crtPicture);
-                        sampledDiffuseColor.a = 1.0;
-                        diffuseColor *= sampledDiffuseColor;
-                        #endif
-                    `);
-                    shader.fragmentShader = shader.fragmentShader.replace('#include <dithering_fragment>', `
-                        #include <dithering_fragment>
-                        #ifdef USE_MAP
-                        // One raster, curved with the picture. Pixel integration
-                        // preserves visible scan rows without distant moire.
-                        float crtRows = crtProfile < .5 ? 142.0 : crtProfile > 1.5 ? 54.0 : 46.0;
-                        float crtFootprint = max(.001, fwidth(crtRasterUv.y) * crtRows * 3.14159265);
-                        float crtVisibility = max(0.0, sin(crtFootprint) / crtFootprint);
-                        float crtLines = .5 + .5 * cos(crtRasterUv.y * crtRows * 6.2831853) * crtVisibility;
-                        float crtRoll = fract(crtRasterUv.y - crtTime * .095 + crtSeed * .17);
-                        float crtBand = exp(-pow((crtRoll - .5) / .045, 2.0));
-                        float crtFlicker = 1.0 + sin(crtTime * 37.0 + crtSeed * 2.0) * .006 * crtPower;
-                        vec2 crtEdgeUv = abs(vMapUv - .5) * 2.0;
-                        float crtEdge = pow(crtEdgeUv.x, 6.0) + pow(crtEdgeUv.y, 6.0);
-                        float crtGrain = crtHash(floor(crtUv * vec2(960.0, 640.0)) + floor(crtTime * 18.0));
-                        gl_FragColor.rgb *= mix(1.0, .79 + .27 * crtLines, crtPower * crtPicture);
-                        gl_FragColor.rgb *= 1.0 + crtBand * .10 * crtPower * crtPicture;
-                        gl_FragColor.rgb *= crtFlicker * (1.0 - min(.54, crtEdge * .30) * crtPower);
-                        gl_FragColor.rgb *= 1.0 + (crtGrain - .5) * .035 * crtPower;
-                        if (crtProfile > .5 && crtProfile < 1.5) {
-                            float crtNoise = crtHash(floor(vMapUv * vec2(420.0, 180.0)) + floor(crtTime * 28.0));
-                            gl_FragColor.rgb += vec3(.16, .035, .018) * crtTear * crtPower * crtPicture;
-                            gl_FragColor.rgb += (crtNoise - .5) * .055 * crtBurst * crtPower * crtPicture;
-                        }
-                        #endif
-                    `);
-                };
-                material.customProgramCacheKey = () => `console-crt-optics-v9-${profile}-${this.quality.crtOptics}`;
+                const uniforms = crtUniforms();
+                const motion = name === 'screen' ? this.crtMotion : new CrtMotion<{ id: string; frame?: Frame }>(kind, seed);
+                this.crtTubes.set(name, { motion, uniforms });
+                shadeCrt(material, { kind, seed, lite: () => this.quality.crtOptics === 'lite', time: this.crtTime, eye,
+                    tube: uniforms, size: new THREE.Vector2(s.w, s.h), curvature, spot: crtRestSpot(kind) });
                 this.crtMaterials.push(material);
                 this.addScreenGlass(name, plane);
             }
@@ -616,10 +530,6 @@ export class ConsoleEngine {
             this.receipt.warmUp();
         }
         this.model.traverse(object => {
-            if (object instanceof THREE.Mesh && object.name.startsWith('ScoreLamp_') && object.material instanceof THREE.MeshStandardMaterial) {
-                object.material = object.material.clone();
-                this.lampMaterials.set(object.name.slice(10), object.material);
-            }
             if (object instanceof THREE.Mesh && object.material instanceof THREE.MeshStandardMaterial &&
                 ['Tactile warm meter dial', 'Scope indicator glass'].includes(object.material.name)) {
                 this.poweredMaterials.set(object.material, object.material.emissiveIntensity);
@@ -627,6 +537,9 @@ export class ConsoleEngine {
                     this.scopeLamp = { material: object.material, intensity: object.material.emissiveIntensity };
             }
         });
+        this.setupPlateFinishes();
+        this.setupThemePanels();
+        this.setupScoreLamps();
         // The receiver is part of the shipped console model, including its controls.
         const receiver = this.part('Instrument_signal');
         if (!receiver) throw new Error('Missing production receiver');
@@ -704,6 +617,176 @@ export class ConsoleEngine {
         glass.castShadow = glass.receiveShadow = false;
         display.add(glass);
         this.screenGlass.push(glass);
+    }
+    private setupPlateFinishes() {
+        const enamel = plateFinish('enamel'), nickel = plateFinish('nickel');
+        for (const [kind, finish] of [['enamel', enamel], ['nickel', nickel]] as const)
+            for (const [name, texture] of Object.entries(finish)) {
+                texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+                this.textures.set(`${kind}-${name}`, texture);
+            }
+        const score = this.part('Front_score enamel bed');
+        if (score instanceof THREE.Mesh) {
+            score.material = new THREE.MeshPhysicalMaterial({
+                ...nickel, color: '#bac0b1', metalness: .82, roughness: .86,
+                anisotropy: .65, anisotropyRotation: 0,
+            });
+        }
+        for (const team of ['A', 'B']) {
+            const plaque = this.part(`Front_roster team plaque ${team}`), plane = this.planes.get('roster' + team);
+            if (!(plaque instanceof THREE.Mesh) || !plane) continue;
+            // Map the enamel in faceplate coordinates, including the beveled
+            // return. The transparent print no longer hides its real lighting.
+            plaque.updateWorldMatrix(true, false); plane.updateWorldMatrix(true, false);
+            const matrix = plane.matrixWorld.clone().invert().multiply(plaque.matrixWorld);
+            const position = plaque.geometry.getAttribute('position');
+            const uv = new Float32Array(position.count * 2), point = new THREE.Vector3();
+            const surface = this.surfaces['roster' + team];
+            for (let i = 0; i < position.count; i++) {
+                point.fromBufferAttribute(position, i).applyMatrix4(matrix);
+                uv[i * 2] = point.x / surface.w + .5;
+                uv[i * 2 + 1] = point.y / surface.h + .5;
+            }
+            plaque.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+            plaque.material = new THREE.MeshPhysicalMaterial({ ...enamel, color: '#365e43',
+                roughness: .72, metalness: .16, clearcoat: .28, clearcoatRoughness: .34 });
+        }
+        for (const name of ['score', 'rosterA', 'rosterB']) {
+            const material = this.planes.get(name)?.material;
+            if (!(material instanceof THREE.MeshStandardMaterial)) continue;
+            const finish = name === 'score' ? nickel : enamel;
+            material.normalMap = finish.normalMap;
+            material.normalScale.set(.45, .45);
+            material.roughnessMap = finish.roughnessMap;
+            material.roughness = .95;
+            material.metalness = .04;
+        }
+    }
+    private setupThemePanels() {
+        const model = this.model!;
+        const assemblies: [string, THREE.Object3D[]][] = [
+            ...['A', 'B'].map<[string, THREE.Object3D[]]>(team => {
+                const plaque = this.part(`Front_roster team plaque ${team}`);
+                return ['roster' + team, plaque ? [plaque] : []];
+            }),
+        ];
+        for (const [name, parts] of assemblies) {
+            const surface = this.surfaces[name], plane = this.planes.get(name);
+            if (!parts.length || !plane) continue;
+            const object = new THREE.Group();
+            object.name = 'ThemePanel_' + name;
+            object.position.set(surface.x, surface.y, surface.z);
+            model.add(object);
+            model.updateWorldMatrix(true, true);
+            for (const part of parts) object.attach(part);
+            object.attach(plane);
+            // Clone per source material, so fading one module never affects the
+            // chassis and its static meshes can still be batched by material.
+            const clones = new Map<THREE.Material, THREE.Material>();
+            const materials = new Set<THREE.Material>();
+            const enamel = new Set<THREE.MeshStandardMaterial>();
+            object.traverse(part => {
+                if (!(part instanceof THREE.Mesh)) return;
+                const remap = (source: THREE.Material) => {
+                    let material = source;
+                    if (part !== plane) {
+                        material = clones.get(source) ?? source.clone();
+                        clones.set(source, material);
+                        if (material instanceof THREE.MeshStandardMaterial)
+                            enamel.add(material);
+                    }
+                    if (!material.transparent) material.alphaHash = true;
+                    materials.add(material);
+                    return material;
+                };
+                part.material = Array.isArray(part.material) ? part.material.map(remap) : remap(part.material);
+            });
+            this.themePanels.set(name, { object, rest: object.position.clone(), motion: new RosterMotion(), enamel: [...enamel],
+                materials: [...materials].map(material => ({ material, opacity: material.opacity })) });
+        }
+    }
+    private setupScoreLamps() {
+        // The exported score lamps were flattened shaded spheres over bare
+        // diffuser strips. Rebuild each as a jewel pilot light: a full glass
+        // dome (clearcoat reflections keep it handsome while dark), a smoked
+        // diffuser beneath, and an additive halo that blooms when lit.
+        const haloCanvas = document.createElement('canvas');
+        haloCanvas.width = haloCanvas.height = 128;
+        const c = haloCanvas.getContext('2d')!;
+        const falloff = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+        falloff.addColorStop(0, 'rgba(255,255,255,.85)');
+        falloff.addColorStop(.28, 'rgba(255,255,255,.30)');
+        falloff.addColorStop(.62, 'rgba(255,255,255,.07)');
+        falloff.addColorStop(1, 'rgba(255,255,255,0)');
+        c.fillStyle = falloff;
+        c.fillRect(0, 0, 128, 128);
+        const haloTexture = new THREE.CanvasTexture(haloCanvas);
+        haloTexture.colorSpace = THREE.SRGBColorSpace;
+        // An identity map only turns on the UV varyings the lens shader needs.
+        const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+        white.needsUpdate = true;
+        for (const team of ['A', 'B']) for (const category of ['intercept', 'failure']) for (let k = 0; k < 2; k++) {
+            const name = `${team}_${category}_${k}`;
+            const lens = this.part('ScoreLamp_' + name);
+            if (!(lens instanceof THREE.Mesh)) continue;
+            const failure = category === 'failure';
+            lens.geometry.computeBoundingBox();
+            const seat = lens.geometry.boundingBox!;
+            const cx = (seat.min.x + seat.max.x) / 2, cy = (seat.min.y + seat.max.y) / 2;
+            const radius = Math.max(seat.max.x - seat.min.x, seat.max.y - seat.min.y) / 2;
+            // A slightly pointed dome profile reads as molded glass, not a bead.
+            const profile: THREE.Vector2[] = [];
+            for (let i = 0; i <= 20; i++) {
+                const angle = i / 20 * Math.PI / 2;
+                profile.push(new THREE.Vector2(Math.max(.0015, radius * .985 * Math.pow(Math.sin(angle), .82)),
+                    radius * 1.02 * Math.pow(Math.cos(angle), .72)));
+            }
+            const dome = new THREE.LatheGeometry(profile, 48);
+            dome.rotateX(Math.PI / 2);
+            dome.translate(cx, cy, seat.min.z + .004);
+            lens.geometry.dispose();
+            lens.geometry = dome;
+            const material = new THREE.MeshPhysicalMaterial({
+                roughness: .3, metalness: 0,
+                clearcoat: .9, clearcoatRoughness: .24,
+                emissive: new THREE.Color(failure ? '#f93c28' : '#3cf38b'),
+                emissiveIntensity: .02,
+                map: white,
+            });
+            // A frosted lens is brightest over the filament and falls off
+            // toward the molded rim; the lathe's v coordinate is that profile.
+            material.onBeforeCompile = shader => {
+                shader.vertexShader = 'varying float lampProfile;\n' + shader.vertexShader
+                    .replace('#include <uv_vertex>', '#include <uv_vertex>\n\tlampProfile = uv.y;');
+                shader.fragmentShader = 'varying float lampProfile;\n' + shader.fragmentShader
+                    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+                    \ttotalEmissiveRadiance *= 0.40 + 1.35 * pow(1.0 - lampProfile, 1.6);`);
+            };
+            material.customProgramCacheKey = () => 'score-lamp-lens-v1';
+            lens.material = material;
+            lens.castShadow = false;
+            const halo = new THREE.MeshBasicMaterial({
+                map: haloTexture, color: failure ? '#ff5438' : '#45f29b',
+                transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+                depthWrite: false, toneMapped: false,
+            });
+            const glow = new THREE.Mesh(new THREE.PlaneGeometry(radius * 5.2, radius * 5.2), halo);
+            glow.position.set(cx, cy, seat.max.z + radius * .55);
+            glow.renderOrder = 5;
+            lens.add(glow);
+            for (let n = -2; n <= 2; n++) {
+                // The fluted diffuser strips crossed in front of the dome rim;
+                // the dome alone fills the seat now.
+                const strip = this.part(`Interaction_lens diffuser ${name}${n}`);
+                if (strip instanceof THREE.Mesh) strip.removeFromParent();
+            }
+            this.scoreLamps.set(name, { material, halo,
+                // Even dark, the glass keeps its identity: a green lens reads
+                // green and a red lens red before any current flows.
+                off: new THREE.Color(failure ? '#7c271b' : '#27794f'),
+                on: new THREE.Color(failure ? '#d84a3a' : '#43c98a'),
+                glow: 0, lit: false });
+        }
     }
     private setupNixies() {
         this.model?.traverse(object => {
@@ -792,7 +875,13 @@ export class ConsoleEngine {
         this.content = content;
         this.updateNixies(content.roomCode);
         this.powerOn = local.powerOn;
-        this.crtPower.value = this.powerOn ? 1 : 0;
+        // Only the main display changes palette. Every tube keeps its outgoing
+        // picture until it is dark, so paint's blank power-off frames wait too.
+        this.crtMotion.sync(this.powerOn, { id: content.displayKey, frame: content.frames.screen });
+        for (const [name, tube] of this.crtTubes)
+            if (tube.motion !== this.crtMotion) tube.motion.sync(this.powerOn, { id: name, frame: content.frames[name] });
+        if (this.reduced.matches) for (const tube of this.crtTubes.values()) tube.motion.advance(0, true);
+        this.syncCrt();
         for (const [material, intensity] of this.poweredMaterials) material.emissiveIntensity = this.powerOn ? intensity : 0;
         this.backView = local.backView;
         this.batteryOpen = local.batteryOpen;
@@ -810,6 +899,8 @@ export class ConsoleEngine {
             const player = content.seats[id];
             seat.motion.sync(player === null || player === undefined ? null : { id: player, frame: content.frames['roster' + id] });
         }
+        for (const [name, panel] of this.themePanels)
+            panel.motion.sync({ id: content.paletteKey, frame: content.frames[name], color: content.teamInks[name.slice(-1) as 'A' | 'B'] });
         this.archiveOpen = local.archiveOpen;
         if (!local.archiveOpen) this.paperReaderStarted = false;
         this.receipt.sync(local.archiveOpen, content.paperRecords);
@@ -830,7 +921,7 @@ export class ConsoleEngine {
         this.scopeRateDesiredAngle = 2.182 * (1 - 2 * local.scopeRate);
         this.scopeAxisDesiredAngle = 2.182 * (1 - 2 * local.scopeAxis);
         for (const [name, frame] of Object.entries(content.frames)) {
-            if (/^roster[AB][0-3]$/.test(name)) continue;
+            if (this.crtTubes.has(name) || name === 'screen' || /^roster[AB][0-3]$/.test(name) || this.themePanels.has(name)) continue;
             this.updateFrame(name, frame);
         }
         const lamp = this.model?.getObjectByName('Connection_lens') || this.model?.getObjectByName('Connection lens');
@@ -838,15 +929,25 @@ export class ConsoleEngine {
             lamp.material.emissive.set(content.connected ? '#328248' : '#a66318');
             lamp.material.emissiveIntensity = this.powerOn ? .5 : 0;
         }
-        for (const [name, material] of this.lampMaterials) {
-            const lit = content.lamps[name];
-            const failure = name.includes('failure');
-            material.color.set(lit ? failure ? '#bf4825' : '#c89d31' : failure ? '#47170f' : '#493512');
-            material.emissive.set(failure ? '#ff3511' : '#ffad28');
-            material.emissiveIntensity = this.powerOn ? lit ? .85 : .008 : 0;
-            material.roughness = .26;
-        }
+        for (const [name, lamp] of this.scoreLamps) lamp.lit = !!content.lamps[name];
         this.project();
+    }
+    private syncCrt() {
+        for (const [name, tube] of this.crtTubes) {
+            const { motion, uniforms } = tube;
+            motion.tube.pack(uniforms.scan.value, uniforms.light.value, uniforms.trail.value);
+            const frame = motion.current?.frame;
+            if (!frame || frame === tube.printed) continue;
+            // New words on a lit window arrive as a new signal, which the hold has to find again.
+            const lit = tube.printed !== undefined && motion.tube.on;
+            tube.printed = frame;
+            if (this.updateFrame(name, frame) && lit && name !== 'screen') motion.tube.disturb(.55);
+        }
+        if (import.meta.env.DEV) {
+            this.host.dataset.crtPhase = this.crtMotion.phase;
+            this.host.dataset.crtTheme = this.crtMotion.current?.id ?? '';
+            this.host.dataset.crtLevel = this.crtMotion.level.toFixed(3);
+        }
     }
     // paint() always returns fresh canvases; a downsampled hash skips the GPU
     // upload whenever a surface's pixels are unchanged (the 840x2630 paper
@@ -868,9 +969,10 @@ export class ConsoleEngine {
         this.canvasHashes.set(canvas, hash);
         return hash;
     }
+    /** Returns whether the surface's pixels changed. */
     private updateFrame(name: string, frame: Frame) {
         const plane = this.planes.get(name);
-        if (!plane) return;
+        if (!plane) return false;
         const hash = this.frameHash(frame.canvas);
         let texture = this.textures.get(name);
         if (!texture) {
@@ -889,17 +991,18 @@ export class ConsoleEngine {
                 }
             }
         } else {
-            if (this.frameHashes.get(name) === hash) return;
+            if (this.frameHashes.get(name) === hash) return false;
             texture.image = frame.canvas;
             texture.needsUpdate = true;
         }
         this.frameHashes.set(name, hash);
         this.dirty = true;
+        return true;
     }
     private batchStaticGeometry(root: THREE.Object3D = this.model!, preserveAssemblies = true) {
         // Keep the .blend and GLB fully editable. Only the runtime coalesces
         // static, opaque parts by material; animated assemblies retain names.
-        const moving = /^(ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|FloppyEject|ScopeTuning|ScopeWave|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
+        const moving = /^(ThemePanel_.*|ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|FloppyEject|ScopeTuning|ScopeWave|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
         const batches = new Map<THREE.Material, THREE.Mesh[]>();
         root.updateWorldMatrix(true, true);
         const inverse = root.matrixWorld.clone().invert();
@@ -934,6 +1037,7 @@ export class ConsoleEngine {
             meshes.forEach(mesh => { mesh.removeFromParent(); mesh.geometry.dispose(); });
         }
         if (preserveAssemblies) {
+            for (const panel of this.themePanels.values()) this.batchStaticGeometry(panel.object, false);
             for (const name of ['FloppyTransport', 'FloppyEject', 'ScopeTuning', 'ScopeWave', 'ScopeRate', 'ScopePersistence', 'TransmitLever', 'PowerSwitch', 'BatteryDoor', 'ManualKey', 'ChannelCopy', 'ReceiverNeedle']) {
                 const assembly = this.part(name);
                 if (assembly) this.batchStaticGeometry(assembly, false);
@@ -1065,25 +1169,56 @@ export class ConsoleEngine {
         this.detailOverride = closeup ? 'meter' : null;
         this.resize();
     }
+    facingRear() {
+        this.root.updateWorldMatrix(true, false);
+        return this.root.worldToLocal(this.camera.getWorldPosition(new THREE.Vector3())).z < -1;
+    }
+    beginHandle(side: HandleSide) {
+        if (Math.abs(this.flipProgress - (this.backView ? 1 : 0)) > .02) return false;
+        this.flipDirection = side === 'left' ? 1 : -1;
+        this.handleDrag = 0;
+        this.inspectionTargetYaw = this.inspectionTargetPitch = 0;
+        return true;
+    }
+    pullHandle(progress: number) { this.handleDrag = progress; }
+    releaseHandle() { this.handleDrag = undefined; }
+    turnTo(back: boolean, side: HandleSide = 'left') {
+        if (back) this.flipDirection = side === 'left' ? 1 : -1;
+        this.inspectionTargetYaw = this.inspectionTargetPitch = 0;
+        this.handleDrag = undefined;
+        this.backView = back;
+    }
+    resetInspection() {
+        this.inspectionTargetYaw = this.inspectionTargetPitch = 0;
+        this.zoomTarget = 1;
+    }
     private resize() {
         this.width = this.host.clientWidth;
         this.height = this.host.clientHeight;
         this.renderer.setSize(this.width, this.height, false);
-        const aspect = this.width / this.height;
+        this.fitCamera();
+        this.dirty = true;
+        this.project();
+        // ResizeObserver fires after the frame's draw; repaint the cleared canvas.
+        if (this.width > 0 && this.height > 0) this.renderer.render(this.scene, this.camera);
+    }
+    private fitCamera() {
+        const aspect = Math.max(1, this.width) / Math.max(1, this.height);
         const detail = this.detailOverride !== undefined ? this.detailOverride : import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
-        const normalHeight = Math.max(13.15, 18.6 / aspect);
+        const framing = gameFraming(this.width, this.height);
+        const normalHeight = this.inspectionEnabled ? Math.max(13.15, 19.8 / aspect) : framing.height;
         this.camera.aspect = aspect;
-        const target = new THREE.Vector3(0, .1, -.4);
-        const direction = new THREE.Vector3(-.18, .28, 1).normalize();
+        const target = this.inspectionEnabled ? new THREE.Vector3(0, .1, -.4) : new THREE.Vector3(0, framing.centerY, 1.25);
+        const direction = this.inspectionEnabled ? new THREE.Vector3(-.18, .28, 1).normalize() : new THREE.Vector3(0, 0, 1);
         const distance = normalHeight / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)));
-        this.camera.zoom = 1;
+        this.camera.zoom = this.inspectionEnabled ? this.zoom : 1;
         this.camera.clearViewOffset();
         this.camera.position.copy(target).addScaledVector(direction, distance);
         this.camera.lookAt(target);
         this.camera.updateProjectionMatrix();
         this.camera.updateMatrixWorld();
         const display = detail === 'words' ? this.surfaces.word1 : detail ? this.surfaces[detail] : undefined;
-        if (detail === 'disk' || detail === 'meter' || detail === 'nixie' || detail === 'recorder' || display && (detail === 'screen' || detail === 'scope' || detail === 'words')) {
+        if (detail === 'disk' || detail === 'meter' || detail === 'nixie' || detail === 'recorder' || display && (detail === 'screen' || detail === 'scope' || detail === 'words' || detail === 'score' || detail === 'roster')) {
             // Crop the original camera frustum without moving the camera:
             // close-up and full-console views keep exactly the same perspective.
             this.inspection.rotation.set(this.inspectionPitch, this.inspectionYaw, 0);
@@ -1100,16 +1235,11 @@ export class ConsoleEngine {
             this.camera.setViewOffset(this.width, this.height,
                 (focus.x + 1) * this.width / 2 - w / 2, (1 - focus.y) * this.height / 2 - h / 2, w, h);
         }
-        this.dirty = true;
-        this.project();
-        // Sizing the canvas clears it, and the observer reports after this
-        // frame's tick has already drawn. Draw again before the browser paints,
-        // or the bare page shows through for a frame.
-        if (this.width > 0 && this.height > 0) this.renderer.render(this.scene, this.camera);
     }
     bounds(target: Target) {
-        if (Math.abs(this.flipProgress - (this.backView ? 1 : 0)) > .02) return null;
-        const frame = this.content?.frames[target.surface];
+        if (target.surface === 'screen' && !this.crtMotion.interactive) return null;
+        if (this.handleDrag !== undefined || Math.abs(this.flipProgress - (this.backView ? 1 : 0)) > .02) return null;
+        const frame = target.surface in handleSurfaces ? { width: 1, height: 1 } : this.content?.frames[target.surface];
         const plane = this.planes.get(target.surface);
         const surface = this.surfaces[target.surface];
         if (!frame || !plane || !surface)
@@ -1117,6 +1247,9 @@ export class ConsoleEngine {
         plane.updateWorldMatrix(true, false);
         const curvature = crtProfile(target.surface);
         const eye = plane.worldToLocal(this.camera.getWorldPosition(this.boundsEye));
+        // DOM targets do not participate in depth testing. Cull the opposite
+        // face and edge-on surfaces before they can intercept visible hardware.
+        if (eye.z / eye.length() < .18) return null;
         // Include edge midpoints: a convex display's projected bounds can extend
         // beyond its four corners. Invert raster warp before sampling the face.
         const point = this.boundsPoint;
@@ -1150,18 +1283,38 @@ export class ConsoleEngine {
         const dt = Math.min((now - this.last) / 1000, .1);
         this.last = now;
         let changed = false, ambient = false;
+        const crtInteractive = this.crtMotion.interactive;
+        for (const tube of this.crtTubes.values()) {
+            // A glass that is still changing owes every frame, whatever the ambient pace.
+            changed ||= tube.motion.moving;
+            tube.motion.advance(dt * this.rosterMotionRate, this.reduced.matches);
+        }
+        this.syncCrt();
+        if (crtInteractive !== this.crtMotion.interactive) {
+            this.project();
+            changed = true;
+        }
         const oldInspectionYaw = this.inspectionYaw, oldInspectionPitch = this.inspectionPitch;
         this.inspectionYaw = this.reduced.matches ? this.inspectionTargetYaw :
             THREE.MathUtils.damp(this.inspectionYaw, this.inspectionTargetYaw, 18, dt);
         this.inspectionPitch = this.reduced.matches ? this.inspectionTargetPitch :
             THREE.MathUtils.damp(this.inspectionPitch, this.inspectionTargetPitch, 18, dt);
         this.inspection.rotation.set(this.inspectionPitch, this.inspectionYaw, 0);
+        const oldZoom = this.zoom;
+        this.zoom = this.reduced.matches ? this.zoomTarget : THREE.MathUtils.damp(this.zoom, this.zoomTarget, 18, dt);
+        if (Math.abs(this.zoom - this.zoomTarget) < .0001) this.zoom = this.zoomTarget;
+        if (oldZoom !== this.zoom) {
+            this.camera.zoom = this.zoom;
+            this.camera.updateProjectionMatrix();
+            this.project();
+            changed = true;
+        }
         let backdropMoved = false;
-        if (this.inspectionEnabled && this.backdrop) {
+        if (this.backdrop) {
             // Keep the shadow receiver close head-on, then move it behind the
             // rotated chassis' conservative bounding depth before an edge can
             // cross the visible background.
-            const safeZ = -3.95 - Math.abs(Math.sin(this.inspectionYaw)) * 8.2
+            const safeZ = -3.95 - Math.abs(Math.sin(this.inspectionYaw + this.flipDirection * this.flipProgress * Math.PI)) * 8.2
                 - Math.abs(Math.sin(this.inspectionPitch)) * 5.2;
             const oldZ = this.backdrop.position.z;
             this.backdrop.position.z = safeZ;
@@ -1257,14 +1410,28 @@ export class ConsoleEngine {
             }
             if (previous !== seat.motion.amount) { this.project(); this.renderer.shadowMap.needsUpdate = true; changed = true; }
         }
+        for (const [name, panel] of this.themePanels) {
+            const previous = panel.motion.amount;
+            panel.motion.advance(dt * this.rosterMotionRate, this.reduced.matches);
+            const pose = rosterPose(panel.motion.amount, .5);
+            panel.object.visible = !!panel.motion.current && pose.opacity > 0;
+            panel.object.position.set(panel.rest.x, panel.rest.y + pose.y, panel.rest.z + pose.z);
+            for (const { material, opacity } of panel.materials) material.opacity = opacity * pose.opacity;
+            const frame = panel.motion.current?.frame;
+            if (panel.motion.current) for (const material of panel.enamel) material.color.set(panel.motion.current.color);
+            if (frame && frame !== panel.printed) {
+                this.updateFrame(name, frame);
+                panel.printed = frame;
+            }
+            if (previous !== panel.motion.amount) { this.renderer.shadowMap.needsUpdate = true; changed = true; }
+        }
         const previousFlip = this.flipProgress;
-        const targetFlip = this.backView ? 1 : 0;
+        const targetFlip = this.handleDrag ?? (this.backView ? 1 : 0);
         this.flipProgress = this.reduced.matches ? targetFlip : THREE.MathUtils.damp(this.flipProgress, targetFlip, 7.5, dt);
         if (Math.abs(this.flipProgress - targetFlip) < .0005) this.flipProgress = targetFlip;
-        this.turntable.rotation.y = this.flipProgress * Math.PI;
-        const lift = Math.sin(this.flipProgress * Math.PI) * 7.4;
-        this.turntable.position.set(0, lift * .20, .5 + lift);
-        this.turntable.scale.setScalar(1 - Math.sin(this.flipProgress * Math.PI) * .08);
+        const lift = Math.sin(this.flipProgress * Math.PI);
+        this.turntable.rotation.set(-lift * .09, this.flipDirection * this.flipProgress * Math.PI, -this.flipDirection * lift * .035);
+        this.turntable.position.set(0, lift * .32, .5 + lift * 1.3);
         const oldBatteryAngle = this.batteryAngle;
         this.batteryAngle = this.reduced.matches ? (this.batteryOpen ? 1.85 : 0) :
             THREE.MathUtils.damp(this.batteryAngle, this.batteryOpen ? 1.85 : 0, 11, dt);
@@ -1276,6 +1443,20 @@ export class ConsoleEngine {
             soundSwitch.position.x = this.soundOn ? 4.79 : 5.05;
             this.renderer.shadowMap.needsUpdate = true;
             changed = true;
+        }
+        for (const lamp of this.scoreLamps.values()) {
+            // Ease the lamp like a warming filament: a smoothstep ramp on
+            // diffuse and emissive, and the halo only once the lamp is bright.
+            const target = this.powerOn && lamp.lit ? 1 : 0;
+            const glow = this.reduced.matches ? target : THREE.MathUtils.damp(lamp.glow, target, 5.5, dt);
+            if (Math.abs(glow - lamp.glow) > .0002) { lamp.glow = glow; changed = true; }
+            const soft = lamp.glow * lamp.glow * (3 - 2 * lamp.glow);
+            lamp.material.color.lerpColors(lamp.off, lamp.on, soft);
+            // A faint permanent tint keeps the glass color readable while
+            // dark; the smoothstep carries it to full glow when energized.
+            lamp.material.emissiveIntensity = .09 + .75 * soft;
+            lamp.material.roughness = .30 - .10 * soft;
+            lamp.halo.opacity = .5 * soft * soft;
         }
         if (this.testLamp?.material instanceof THREE.MeshStandardMaterial) {
             const strength = !this.powerOn ? 0 : now < this.testUntil ? .8 + .7 * Math.sin(now * .018) : .03;
@@ -1418,14 +1599,8 @@ export class ConsoleEngine {
         c.beginPath(); c.moveTo(0, plotBottom + .5); c.lineTo(w, plotBottom + .5); c.stroke();
     }
     private drawScope(dt: number) {
-        if (!this.powerOn) {
-            const c = this.scopeCanvas.getContext('2d')!;
-            c.fillStyle = '#07100e';
-            c.fillRect(0, 0, this.scopeCanvas.width, this.scopeCanvas.height);
-            const texture = this.textures.get('scope');
-            if (texture) texture.needsUpdate = true;
-            return;
-        }
+        // Unpowered, the tube keeps its last trace while it collapses; dark glass shows no picture at all.
+        if (!this.powerOn) return;
         // The tube is simulated, not plotted: two oscillators steer one beam and
         // the phosphor keeps what it wrote. Reduced motion shows a long exposure.
         this.monitor.run(dt, { freq: this.scopeFreq, wave: this.scopeWave, rate: this.scopeRate, axis: this.scopeAxis }, this.reduced.matches);
@@ -1494,9 +1669,14 @@ export class ConsoleEngine {
         this.host.removeEventListener('pointermove', this.onInspectionMove, true);
         this.host.removeEventListener('pointerup', this.finishInspection, true);
         this.host.removeEventListener('pointercancel', this.finishInspection, true);
+        this.host.removeEventListener('lostpointercapture', this.finishInspection, true);
         this.host.removeEventListener('auxclick', this.onInspectionAuxClick, true);
+        this.host.removeEventListener('wheel', this.onInspectionWheel);
         delete this.host.dataset.inspection;
         delete this.host.dataset.inspecting;
+        delete this.host.dataset.crtPhase;
+        delete this.host.dataset.crtTheme;
+        delete this.host.dataset.crtLevel;
         this.disposeObject(this.scene);
         for (const texture of this.textures.values())
             texture.dispose();

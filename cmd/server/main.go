@@ -22,6 +22,12 @@ func main() {
 	go hub.Run()
 
 	http.Handle("/", http.FileServer(http.Dir("web/dist")))
+	// Preview is a client-rendered page and must also work on a direct visit.
+	for _, path := range []string{"/preview", "/preview/"} {
+		http.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
+			http.ServeFile(w, r, "web/dist/index.html")
+		})
+	}
 	http.HandleFunc("/ws", hub.ServeWS)
 
 	log.Println("Starting Decrypto server on http://localhost:8080")

@@ -1,5 +1,5 @@
 import { translate, localizeError } from './i18n';
-import { roleState, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
+import { roleState, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
 import type { LocalState, StationState } from './model';
 import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
 export interface Target {
@@ -11,6 +11,7 @@ export interface Target {
     w: number;
     h: number;
     kind?: 'input';
+    input?: { fontSize: number; padding: number; placeholder: string };
     value?: string;
     maxLength?: number;
     disabled?: boolean;
@@ -33,11 +34,12 @@ export interface Content {
     activity: number;
     roomCode: string;
     paperRecords: number;
+    paletteKey: string;
+    teamInks: Record<'A' | 'B', string>;
+    displayKey: string;
 }
 const INK = '#243344', CREAM = '#ece0c4', MUTED = '#a59e8c', DARK = '#111e24';
 const FONT = '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif';
-const teamInk = (team: string) => team === 'A' ? '#365c68' : '#943f30';
-const teamLight = (team: string) => team === 'A' ? '#adced4' : '#edb09a';
 function round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r = 10) {
     c.beginPath();
     c.roundRect(x, y, w, h, r);
@@ -190,16 +192,43 @@ export function knobLabel(id: string, u: LocalState) {
     return u.instrumentVariant === 'signal' && amplitude ? label : `${label} · ${(amplitude ? u.meterAmplitude : u.meterRate).toFixed(2)}`;
 }
 
-export function paint(s: StationState, u: LocalState): Content {
+/** Restrained wear belongs to the lip and silk-screen, never a blanket grunge layer. */
+function plateWear(c: CanvasRenderingContext2D, width: number, height: number) {
+    c.save();
+    c.strokeStyle = '#e3dcc085'; c.lineWidth = .8;
+    c.beginPath(); c.moveTo(5, 1.2); c.lineTo(width - 8, 1.2); c.stroke();
+    c.strokeStyle = '#242e2866';
+    c.beginPath(); c.moveTo(6, height - 1.2); c.lineTo(width - 5, height - 1.2); c.stroke();
+    // Small broken witness marks where hands and retaining clips touch the lip.
+    for (let i = 0; i < 38; i++) {
+        const x = 4 + (i * 137.73 % (width - 12));
+        const y = i % 2 ? .7 : height - 2.1;
+        c.fillStyle = i % 3 ? '#c9c4ae80' : '#32392f70';
+        c.fillRect(x, y, 1.5 + (i * 7 % 9), .6 + i % 3 * .3);
+    }
+    c.restore();
+}
+function printWear(c: CanvasRenderingContext2D, width: number, height: number) {
+    c.save(); c.globalCompositeOperation = 'destination-out';
+    c.fillStyle = '#00000026';
+    for (let i = 0; i < 240; i++)
+        c.fillRect((i * 73.31) % width, (i * 31.71) % height, .6 + i % 3 * .25, .45);
+    c.restore();
+}
+
+export function paint(s: StationState, u: LocalState, inspection = false): Content {
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
+    const teamInk = (team: string) => teamPalette(team, s.myTeam, u.theme).ink;
     const frames: Record<string, Frame> = {};
     const targets: Target[] = [];
     const r = roleState(s, u);
+    const signal = phaseSignal(s, u.theme);
     const teams = rosterTeams(s, u);
     const hasGame = !['home', 'room'].includes(s.phase);
     const waiting = hasGame && !r.active && !['round_result', 'game_over'].includes(s.phase);
-    const resultColor = ['round_result', 'game_over'].includes(s.phase) ? resultTint(s) : r.color;
-    const tint = waiting ? '#a8bcc5' : resultColor;
+    // Action colors always identify the acting side, even while this player waits.
+    // Phase is already conveyed by the title and the position of the lit lamp.
+    const tint = ['round_result', 'game_over'].includes(s.phase) ? resultTint(s) : signal.actingTeam ? signal.color : themeColors(u.theme).own.light;
     function frame(name: string, width: number, height: number, background?: string) {
         const canvas = document.createElement('canvas');
         canvas.width = width;
@@ -217,7 +246,7 @@ export function paint(s: StationState, u: LocalState): Content {
     }
     function target(surface: string, id: string, label: string, x: number, y: number, w: number, h: number, options: Partial<Target> = {}) {
         targets.push({ surface, id, label, x, y, w, h, ...options });
-        if (u.focus === id && !options.disabled && !surface.endsWith('Control')) {
+        if (inspection && u.focus === id && !options.disabled && !surface.endsWith('Control')) {
             const c = frames[surface].canvas.getContext('2d')!;
             c.strokeStyle = tint;
             c.lineWidth = 3;
@@ -243,36 +272,7 @@ export function paint(s: StationState, u: LocalState): Content {
     text(c, hasGame ? t("第 {0} 回合", [String(s.round).padStart(2, '0')]) : t("DECRYPTO  /  通信局"), 55, 49, 19, tint, 500);
     text(c, s.roomCode ? `CH ${s.roomCode}  /  ${s.myTeam ? s.myTeam + t(" 队") : t("待编组")}  /  ${s.connected ? t("已接通") : t("连接中")}` : t("双队通信  /  4–8 人"), 500, 49, 16, MUTED, 400, 338);
     button(c, 'manual', u.manual ? t("返回") : t("手册"), right - 100, 28, 100, 39);
-    if (u.rosterOpen) {
-        text(c, t("频道人员 · 值勤名册"), 55, 112, 36, tint, 600);
-        button(c, 'roster-toggle', t("返回操作"), 799, 88, 146, 47);
-        text(c, s.phase === 'home' ? t("建立或加入频道后，在这里查看队伍与当前行动。") : t("频道 {0} · {1} 人已编组 · 每队 2–4 人", [s.roomCode, s.teamA.length + s.teamB.length]), 55, 164, 21, MUTED, 400, 890);
-        teams.forEach((team, j) => {
-            const x = 55 + j * 457;
-            text(c, t("{0} 队{1}", [team.team, team.own ? t(" / 我方") : '']), x, 215, 27, teamLight(team.team), 600);
-            text(c, t(team.summary), x + 252, 215, 20, teamLight(team.team));
-            line(c, x, 240, 430, '#45514d');
-            team.seats.forEach((seat, i) => {
-                const y = 252 + i * 64;
-                if (seat.player) {
-                    portrait(c, x, y + 6, 45, seat.player.is_ai, teamInk(team.team));
-                    const name = seat.player.nickname;
-                    c.font = `500 25px ${FONT}`;
-                    const nameSize = Math.max(16, Math.min(25, 25 * 350 / Math.max(1, c.measureText(name).width)));
-                    text(c, name, x + 58, y + 16, nameSize, CREAM, 500, 350);
-                    text(c, `${seat.code}${seat.self ? t(" · 你") : ''} · ${seat.player.is_ai ? 'AI' : t("真人")}${seat.owner ? t(" · 房主") : ''} · ${t(seat.status)}${seat.progress ? ` ${seat.progress.step}/${seat.progress.total}` : ''}`, x + 58, y + 44, 18, seat.acting ? tint : MUTED, 400, 350);
-                } else {
-                    text(c, '+', x + 12, y + 25, 29, MUTED);
-                    text(c, t("{0}  空席", [seat.code]), x + 58, y + 16, 23, MUTED);
-                    text(c, t(seat.status), x + 58, y + 44, 18, MUTED);
-                }
-                line(c, x, y + 61, 430, '#2c3a3b');
-            });
-        });
-        const unassigned = s.players.filter(p => ![...s.teamA, ...s.teamB].some(member => member.id === p.id)).length;
-        text(c, unassigned ? t("{0} 人尚未选择队伍 · 在集合界面加入 A 队或 B 队", [unassigned]) : t("姓名牌标记当前行动 · 点击左侧名册收起"), 55, 532, 20, tint, 400, 890);
-    }
-    else if (u.manual) {
+    if (u.manual) {
         text(c, t("让队友听懂，让对手迷失。"), 55, 113, 34, tint, 600);
         const rules = [t("每队至少两人，可以由 AI 补位。"), t("四个秘密词对应编号 1–4，词窗仅我方可见。"), t("加密者按三位密码顺序，各写一条关联线索。"), t("对手先拦截，再由队友解码；前两回合跳过拦截。"), t("截获两次，或对方解码失误两次，即获胜。"), t("数字键选择密码，退格删除；按下红色发报键确认。"), t("点击纸带抽出档案，按队伍对照并写私人笔记。")];
         rules.forEach((t, i) => wrap(c, t, 55, 181 + i * 47, w - 110, 21, CREAM, 2));
@@ -303,7 +303,7 @@ export function paint(s: StationState, u: LocalState): Content {
         const col = (w - 132) / 2;
         ['A', 'B'].forEach((team, j) => {
             const x = 55 + j * (col + 22), people = team === 'A' ? s.teamA : s.teamB;
-            text(c, t("{0} 队  /  {1} 人", [team, people.length]), x, 215, 27, team === 'A' ? '#9fbfd1' : '#e8a28c', 600);
+            text(c, t("{0} 队  /  {1} 人", [team, people.length]), x, 215, 27, teamPalette(team, s.myTeam, u.theme).light, 600);
             line(c, x, 244, col);
             Array.from({ length: 4 }, (_, i) => {
                 const p = people[i], y = 254 + i * 46;
@@ -358,12 +358,15 @@ export function paint(s: StationState, u: LocalState): Content {
                 line(c, 267, y + 17, 0);
                 c.fillStyle = '#504c37';
                 c.fillRect(267, y + 16, 1, 43);
-                text(c, u.clues[i] || t("写下关联线索…"), 288, y + 38, 25, u.clues[i] ? CREAM : '#7e8278', 400, w - 372);
-                target('screen', `clue-${i}`, t("第 {0} 条线索", [i + 1]), 277, y + 3, w - 336, 69, { kind: 'input', value: u.clues[i], maxLength: 40, disabled: !r.active || !s.connected });
-                if (u.focus === `clue-${i}` && !u.clues[i]) {
-                    c.fillStyle = tint;
-                    c.fillRect(288, y + 23, 2, 29);
-                }
+                // During editing, native text, selection and caret share one layout.
+                // The CRT keeps the resting text only, so no duplicate ink can drift.
+                const editable = r.active && s.connected;
+                if (u.focus !== `clue-${i}` || !editable)
+                    text(c, u.clues[i] || t("写下关联线索…"), 288, y + 38, 25, u.clues[i] ? CREAM : '#7e8278', 400, w - 372);
+                target('screen', `clue-${i}`, t("第 {0} 条线索", [i + 1]), 277, y + 3, w - 336, 69, {
+                    kind: 'input', value: u.clues[i], maxLength: 40, disabled: !editable,
+                    input: { fontSize: 25, padding: 11, placeholder: t("写下关联线索…") },
+                });
             }
             else {
                 text(c, `0${i + 1}`, 75, y + 38, 24, MUTED);
@@ -389,7 +392,7 @@ export function paint(s: StationState, u: LocalState): Content {
     } else {
         line(c, 55, 558, 890, '#34423f');
         text(c, hasGame ? t("密钥仅我方可见") : t("每条线索，都是一次试探。"), 55, 577, 14, MUTED);
-        text(c, u.rosterOpen ? t("PERSONNEL / 值勤记录") : u.manual ? t("FIELD GUIDE / 行动手册") : t("D / 密码通信"), 662, 577, 13, MUTED);
+        text(c, u.manual ? t("FIELD GUIDE / 行动手册") : t("D / 密码通信"), 662, 577, 13, MUTED);
     }
     // Fine glass scanlines are deliberately faint, never across the paper.
     c.fillStyle = 'rgba(160,194,180,.025)';
@@ -400,8 +403,10 @@ export function paint(s: StationState, u: LocalState): Content {
         c.lineWidth = 2;
         round(c, x, y, width, height, 8);
         c.stroke();
-        text(c, value || placeholder, x + 18, y + height / 2, 27, value ? CREAM : '#88928b', 400, width - 36);
-        target('screen', id, id === 'name' ? t("特工代号") : t("四位频道编号"), x, y, width, height, { kind: 'input', value, maxLength, disabled: !s.connected });
+        if (u.focus !== id || !s.connected)
+            text(c, value || placeholder, x + 18, y + height / 2, 27, value ? CREAM : '#88928b', 400, width - 36);
+        target('screen', id, id === 'name' ? t("特工代号") : t("四位频道编号"), x, y, width, height, { kind: 'input', value, maxLength, disabled: !s.connected,
+            input: { fontSize: 27, padding: 18, placeholder } });
     }
     for (let i = 0; i < 4; i++) {
         const g = frame('word' + i, 480, 284, '#360a06');
@@ -445,14 +450,16 @@ export function paint(s: StationState, u: LocalState): Content {
     ro.scale(2, 2);
     frames.roster.width = 400; frames.roster.height = 815;
     text(ro, 'DUTY ROSTER', 24, 32, 22, CREAM, 600);
-    text(ro, 'VIEW ↗', 297, 33, 16, '#cbbd9f');
     line(ro, 22, 55, 356, '#657165');
     teams.forEach(team => {
         const accent = teamInk(team.team);
         const plaque = frame('roster' + team.team, 728, 96);
+        // Transparent silkscreen leaves the modeled enamel and bevel visible.
+        plateWear(plaque, 728, 96);
         plaque.scale(2, 2);
         text(plaque, t("{0} 队{1}", [team.team, team.own ? t(" / 我方") : '']), 14, 25, 27, CREAM, 600);
         text(plaque, `${team.count} / 4`, 279, 25, 23, CREAM, 500);
+        printWear(plaque, 364, 48);
         team.seats.forEach((seat, i) => {
             const p = seat.player;
             const card = frame('roster' + team.team + i, 708, 118);
@@ -484,8 +491,6 @@ export function paint(s: StationState, u: LocalState): Content {
             }
         });
     });
-    text(ro, 'PERSONNEL / PRESS TO INSPECT', 54, 802, 14, '#bfb69e');
-    target('roster', 'roster-toggle', u.rosterOpen ? t("收起队员名册，返回操作") : t("查看队员名册与行动状态"), 0, 0, 400, 815);
     frame('channel', 600, 240); // Live room digits are modeled wire cathodes.
     const copy = frame('channelCopy', 240, 160);
     copy.textAlign = 'center';
@@ -494,14 +499,13 @@ export function paint(s: StationState, u: LocalState): Content {
     const lamps: Record<string, boolean> = {};
     const sc = frame('score', 600, 357);
     text(sc, "SCORE", 28, 30, 19, '#414940', 500);
-    text(sc, "INTERCEPT", 155, 65, 24, INK, 600);
-    text(sc, "ERROR", 397, 65, 24, INK, 600);
+    text(sc, "INTERCEPT", 155, 65, 24, '#2e6949', 600);
+    text(sc, "ERROR", 397, 65, 24, '#a44235', 600);
     line(sc, 26, 99, 548, '#7b847b');
     ['A', 'B'].forEach((team, i) => {
         const score = team === 'A' ? s.scoreA : s.scoreB;
         const yy = 153 + i * 103;
-        sc.fillStyle = teamInk(team); round(sc, 28, yy - 29, 60, 58, 3); sc.fill();
-        text(sc, team, 43, yy, 38, CREAM, 600);
+        text(sc, team, 43, yy, 38, '#414940', 600);
         [score.interceptions, score.decrypt_failures].forEach((n, j) => {
             for (let k = 0; k < 2; k++) {
                 lamps[`${team}_${j ? 'failure' : 'intercept'}_${k}`] = k < n;
@@ -512,6 +516,8 @@ export function paint(s: StationState, u: LocalState): Content {
     });
     line(sc, 26, 304, 548, '#7b847b');
     text(sc, "2 INTERCEPTS TO WIN / 2 ERRORS TO LOSE", 68, 334, 19, '#374137');
+    printWear(sc, 600, 357);
+    plateWear(sc, 600, 357);
     const leader = frame('paper', 840, paperTextureHeight, '#eadfc5');
     const records = archiveRows(s, 'all');
     const pixelsPerUnit = paperTextureHeight / paperTextureLength;
@@ -571,7 +577,7 @@ export function paint(s: StationState, u: LocalState): Content {
     text(cl, running ? t("阶段余时 · 约") : t("等待行动"), 34, 199, 22, u.powerOn ? '#a39b79' : '#4b483a');
     for (let i = 0; i < 5; i++) {
         const k = frame('key' + i, 180, 200);
-        const enabled = r.guess && r.active && s.connected && s.connected && !s.recovering && !u.rosterOpen && !u.manual;
+        const enabled = r.guess && r.active && s.connected && s.connected && !s.recovering && !u.manual;
         text(k, i === 4 ? '←' : String(i + 1), i === 4 ? 27 : 53, 101, 96, enabled ? CREAM : '#84908c', 500);
         target('key' + i, 'key-' + i, i === 4 ? t("删除上一位") : t("输入数字 {0}", [i + 1]), 0, 0, 180, 200, { disabled: !enabled });
     }
@@ -579,8 +585,8 @@ export function paint(s: StationState, u: LocalState): Content {
     [t("加密"), t("拦截"), t("解码")].forEach((label, i) => {
         const active = u.powerOn && s.phase === ['encrypting', 'intercept', 'decrypt'][i];
         text(ph, `0${i + 1}`, 23 + i * 177, 28, 18, u.powerOn ? '#a2a492' : '#4b4e42', 500);
-        fitLabel(ph, label, 23 + i * 177, 79, 29, active ? r.color : u.powerOn ? '#a2a492' : '#4b4e42', 400, 148);
-        ph.fillStyle = active ? r.color : '#1b2a32';
+        fitLabel(ph, label, 23 + i * 177, 79, 23, active ? signal.color : u.powerOn ? '#a2a492' : '#4b4e42', 400, 116);
+        ph.fillStyle = active ? signal.color : '#1b2a32';
         round(ph, 25 + i * 177, 129, 104, 17, 8);
         ph.fill();
         if (i < 2) text(ph, '›', 152 + i * 177, 78, 28, u.powerOn ? '#7b857c' : '#3e453d');
@@ -589,7 +595,7 @@ export function paint(s: StationState, u: LocalState): Content {
     const tr = frame('transmitLabel', 600, 164);
     const homeReady = s.phase === 'home' && !!u.name.trim() && (u.mode === 'create' || u.code.length === 4) && s.connected;
     const lobbyReady = s.phase === 'room' && s.canStart && s.ownerID === s.myPlayerID && s.connected;
-    const ready = !!(r.ready || homeReady || lobbyReady || s.phase === 'game_over') && s.connected && !s.recovering && !u.rosterOpen && !u.manual;
+    const ready = !!(r.ready || homeReady || lobbyReady || s.phase === 'game_over') && s.connected && !s.recovering && !u.manual;
     const transmitText = s.phase === 'home' ? u.mode === 'create' ? t("建立频道") : t("接入频道") : s.phase === 'room' ? t("开始行动") : s.phase === 'game_over' ? t("返回通信局") : u.submitted ? t("已发送") : t("发报 · 确认");
     const command = 'ACTION';
     tr.textAlign = 'center';
@@ -652,8 +658,8 @@ export function paint(s: StationState, u: LocalState): Content {
         }
         for (const name of Object.keys(lamps)) lamps[name] = false;
     }
-    return { frames, connected: s.connected, targets: targets.filter(t => rearControls.has(t.id) === u.backView &&
-            (u.powerOn || u.backView || t.id === 'power-toggle')),
+    return { frames, teamInks: { A: teamInk('A'), B: teamInk('B') }, displayKey: u.theme, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: s.connected, targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
+            (u.powerOn || rearControls.has(t.id) || t.id === 'power-toggle')),
         status: !u.powerOn ? t("终端已关闭；对局继续进行，按电源恢复。") : status || `${t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase])} · ${s.connected ? t("已连接") : t("连接中")}`,
         tint, waiting, ready: ready && u.powerOn, lamps, seats, roomCode: u.powerOn ? s.roomCode || '' : '',
         paperRecords: records.length, activity: u.powerOn ? activity : 0 };

@@ -71,7 +71,7 @@ fingertip to reach the scallop, then presses to −0.93. The tail ends 0.16 unit
 behind the fascia; latch compression is only 0.012 units. Ejection first depresses the button and
 releases the latch, then springs the disk out to a supported grip position.
 Reduced motion settles both mechanisms immediately. Inspect with
-`/?preview=encrypting&detail=disk` or `&detail=scope`; `&motion=slow` slows travel.
+`/preview?preview=encrypting&detail=disk` or `&detail=scope`; `&motion=slow` slows travel.
 
 Regenerate only these details against the current editable scene:
 
@@ -100,7 +100,7 @@ digit visibility and excluding Boolean cutters.
 
 ## Interchangeable instrument studies
 
-Development comparison: `/?preview=encrypting&instruments=signal`.
+Development comparison: `/preview?preview=encrypting&instruments=signal`.
 The bottom review bench switches between `signal` (tunable receiver), `tuning`
 (center-zero discriminator), `status` (three-sided mechanical state drum), and
 `original` (the former VU). Add `&detail=meter` for the close-up, or use the
@@ -325,19 +325,21 @@ Run the existing Go server and the frontend dev server (`cd web && npm run dev`)
 If the local pnpm wrapper attempts to reinstall dependencies, `npm run build` and
 `npm test` use the same installed tools without changing the lockfile.
 
-Development-only visual fixtures (no WebSocket connection and no backend writes):
+The public `/preview` route supports orbit, wheel zoom, and handle-driven turnover.
+The live `/` route locks the camera head-on. Both expose quality and language in
+Settings. Development-only visual fixtures (no WebSocket connection and no backend writes):
 
-- `/?preview=encrypting`
-- `/?preview=intercept`
-- `/?preview=decrypt`
-- `/?preview=waiting`
-- `/?preview=room`
-- `/?preview=room-empty` and `/?preview=room-partial` (empty seats and a long nickname)
-- `/?preview=roster-motion` (buttons for human/AI entry, removal and replacement)
+- `/preview?preview=encrypting`
+- `/preview?preview=intercept`
+- `/preview?preview=decrypt`
+- `/preview?preview=waiting`
+- `/preview?preview=room`
+- `/preview?preview=room-empty` and `/preview?preview=room-partial` (empty seats and a long nickname)
+- `/preview?preview=roster-motion` (buttons for human/AI entry, removal and replacement)
   Add `&motion=slow` to inspect the roster travel at one fifth speed. These
   controls are development-only and never connect to the multiplayer server.
-- `/?preview=round_result`
-- `/?preview=game_over`
+- `/preview?preview=round_result`
+- `/preview?preview=game_over`
 
 Add `&quality=high|medium|low|auto` to pin a level for a still or a benchmark
 without touching the saved choice.
@@ -395,9 +397,9 @@ it is fixed when the context is created. The 645k triangles are not the bottlene
 The top-side power toggle flips with a click, Enter or Space. `PowerSwitch`
 swings the pivot ball, nickel bat and red tip together through a 32-degree
 throw; its hex nut, threaded bushing, legend plate and generous click region
-stay fixed. Turning it off blanks the CRTs,
-word windows and electronic readouts, extinguishes the lamps and parks the VU
-needle. Front entry and submission stop until it is switched back on. Connection,
+stay fixed. Turning it off lets the CRTs and word windows die as tubes (see the
+theme paragraph below), blanks the electronic readouts, extinguishes the lamps
+and parks the VU needle. Front entry and submission stop until it is switched back on. Connection,
 room membership and prepared clues/guesses remain intact; a running game continues
 to count down. Reduced motion switches positions immediately.
 
@@ -417,10 +419,66 @@ empty seat reveals join instructions stamped into the well floor. Joining takes
 540 ms and leaving takes 420 ms. Replacement withdraws the old named card before
 inserting the new one, even when both players have the same nickname. Updating
 the same person's status does not replay insertion. Reduced motion settles
-immediately. Click the rack to
-read the expanded roster on the central screen; Escape returns with clues and
-guesses preserved. Entry and transmission are disabled while reading. The printed paper leader is the handle for the public archive. Per-player
+immediately. The rack is a passive display, with no click target or central-screen
+roster view. The printed paper leader is the handle for the public archive. Per-player
 connectivity is not inferred, and ambiguous nickname progress is not attributed.
+
+Settings offers Classic, Amber, Violet and Rose palettes, remembered locally. Each
+palette has one color for the player's team and another for the opponent, shared
+by the active CRT, phase lamps, roster and compact mobile view. The fixed scoreboard
+uses green interception lamps and red decryption-error lamps in every palette;
+its A/B letters use the same neutral ink as SCORE, independent of team and theme,
+and print directly on the metal with no colored background blocks.
+Bulbs and diffuser strips share the same runtime
+material so the exported amber lens cannot obscure the new color.
+
+Team plaques are colored enamel on the modeled plate, with transparent silk-screen
+lettering rather than an opaque color rectangle covering the geometry. Runtime
+PBR pigment, normal and roughness maps provide fine orange-peel relief and satin
+clearcoat; the beveled return receives the same team color. The score plate uses
+directional nickel brushing, with ink following the surface relief. Sparse lip
+scuffs and print pinholes stay deterministic across updates and theme changes.
+`finishes.ts` creates these small maps once per console; they do not require extra
+GLB downloads. DEV `?detail=roster` and `?detail=score` expose the two close-ups.
+
+The six picture tubes (main display, four ruby word windows, vector monitor) switch
+on and off as tubes, not as pictures being scaled. `CrtTube` in `crtMotion.ts` is a
+small electrical simulation in fixed 2 ms substeps: supply rail, cathode heat
+(Richardson emission), anode voltage held by the tube's own capacitance, vertical
+and horizontal deflection, focus, the screen-grid reservoir, beam limiter, sync
+lock and degauss thermistor. No timeline is authored; `crtTuning` holds the
+constants. What follows from them:
+
+- Off: the video amplifier dies first, so the unblanked gun floods a raster that
+  is already collapsing. Vertical deflection goes within about 130 ms, the line
+  shortens to a spot by about 380 ms, and the spot fades through decades until
+  about 900 ms as the grid reservoir drains. The same light in less area is
+  brighter (`crtDensity` integrates to one for every extent), phosphor
+  saturates toward white, and the faceplate scatters a bloom and halo around it.
+  The last full picture stays where it stood as decaying afterglow; it is never
+  squeezed along with the raster. Edges of a raster in flight are blurred over
+  one 24 ms exposure, so nothing reads as a hard-edged card.
+- Cold start: deflection and anode are up long before the cathode emits, so
+  nothing unfolds. The picture fades in from about 250 ms, soft and up to 3%
+  over-sized, shimmering under the degauss field, and is usable after about 1 s.
+- Warm restart: a cathode that is still hot brings the picture back in about
+  0.4 s, with the vertical hold slipping once before it locks.
+
+A theme change is such an off/on cycle of the main tube. `CrtMotion` keeps the
+outgoing texture until the old picture is past recognising (about 350 ms),
+exchanges it in the dark and applies only the latest requested palette. A blank
+power-off frame waits until the last afterglow has gone. Normal game updates do
+not reboot the display. Projected input controls hide until the raster is
+steady, keeping DOM text off a moving picture. Word windows and the vector
+monitor are smaller, quicker tubes with seeded tolerances: they come up and die
+at slightly different moments, each with its own roll. New content on a lit word
+window (new words, conceal/reveal) costs it its vertical hold for about 150 ms.
+The fragment stage lives in `crtShader.ts`; a resting tube takes the old
+single-sample path, so steady frames cost what they did before.
+Reduced motion applies the final state immediately. The two roster team plaques
+still lift out and reseat using `RosterMotion`; the scoreboard stays fixed.
+`&motion=slow` slows both effects for inspection. Colors are applied to runtime
+materials and canvas textures; no alternative GLB models are loaded.
 
 Click clue lines to type with the system IME. In guessing phases, choose an answer
 slot and use the 1–4 physical keys or the keyboard; Backspace removes a digit.
@@ -558,7 +616,8 @@ Restrained barrel distortion keeps frontal raster displacement
 below 2% per axis across the visible content area. Scanlines integrate over the
 projected pixel footprint to avoid distant moire; the previous baked raster was
 removed to avoid stacking two grids. Halation samples bright text and traces,
-preserving dark glass and extinguishing with power. The CRT textures fill their
+preserving dark glass and extinguishing with power; the ruby windows glow from
+one soft mip tap around their glyphs. The CRT textures fill their
 full bounds so barrel distortion cannot expose transparent corner holes.
 The exported ruby slabs serve as matte dark seats beneath the curved glass,
 preventing a second flat specular surface from leaving straight white strips.
@@ -575,7 +634,7 @@ actual lights and environment with restrained physical specular; raster highligh
 painted softboxes, and the previous synthetic reflection shader have been removed.
 Projected input bounds numerically invert the same refraction and raster mapping
 using the current camera, keeping input controls aligned during inspection.
-DEV close-ups: `/?preview=encrypting&detail=screen` (also `words` and `scope`);
+DEV close-ups: `/preview?preview=encrypting&detail=screen` (also `words` and `scope`);
 append `&view=oblique` or `&view=opposite` to compare the two viewing directions.
 Reduced motion freezes the band. Scope history uses source-over
 compositing and is displayed at a bounded 32% opacity beneath a fresh sharp trace.
@@ -589,10 +648,10 @@ scrolling, annotations and per-player local notes. The shortened top toggle is
 64% of its former exposed height; the complete throw still passes 65-pose
 geometry clearance validation (minimum sampled gap 0.0536).
 
-DEV inspection URLs: `/?preview=encrypting&detail=nixie` and
-`/?preview=encrypting&detail=recorder`. `&motion=slow` also slows paper mechanics
+DEV inspection URLs: `/preview?preview=encrypting&detail=nixie` and
+`/preview?preview=encrypting&detail=recorder`. `&motion=slow` also slows paper mechanics
 for inspecting the 420 ms feed/reader entrance and the 800 ms tear/disposal/reader dismissal.
-`/?preview=late-game` shows round 16 with 15 completed public records, varied clues,
+`/preview?preview=late-game` shows round 16 with 15 completed public records, varied clues,
 and one interception/error per team. Pull the paper to inspect a nearly full-length
 receipt and the scrolling DOM archive; `&detail=recorder` gives a close-up.
 `&paper-frame=0.5` runs the real feed and tear mechanics to that point and holds

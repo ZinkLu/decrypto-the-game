@@ -1,5 +1,5 @@
 import type { StationState, LocalState } from './model';
-import { roleState, word } from './model';
+import { roleState, phaseSignal, teamPalette, word } from './model';
 import { translate, localizeError } from './i18n';
 
 type Props = { state: StationState; local: LocalState; ready: boolean; status: string; inert: boolean;
@@ -9,6 +9,7 @@ type Props = { state: StationState; local: LocalState; ready: boolean; status: s
 export default function MobileConsole({ state: s, local: u, ready, status, onAct, onChange, inert }: Props) {
     const t = (key: string, values?: unknown[]) => translate(u.locale, key, values);
     const r = roleState(s, u);
+    const signal = phaseSignal(s, u.theme);
     const lobby = s.phase === 'room', home = s.phase === 'home';
     const owner = s.ownerID === s.myPlayerID;
     const disabled = !s.connected || s.recovering;
@@ -16,7 +17,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
     const action = home ? u.mode === 'create' ? '建立频道' : '接入频道' : lobby ? '开始行动' : s.phase === 'game_over' ? '返回通信局' : u.submitted || s.submitted ? '已发送' : '发报 · 确认';
     return <section className="mobile-console" aria-label={t('便携通信终端')} inert={inert}>
         <header><p className="mobile-brand">DECRYPTO <span>FIELD TERMINAL / 01</span></p>
-            <div className="mobile-title"><h2>{title}</h2>{s.deadline > 0 && <span className="mobile-clock">{u.seconds}s</span>}</div>
+            <div className="mobile-title"><h2 style={signal.actingTeam ? { color: teamPalette(signal.actingTeam, s.myTeam, u.theme).ink } : undefined}>{title}</h2>{s.deadline > 0 && <span className="mobile-clock">{u.seconds}s</span>}</div>
             <p className="mobile-channel">{s.roomCode ? `CH ${s.roomCode}` : t('双队通信  /  4–8 人')} · {s.recovering ? t('正在恢复原座位…') : s.connected ? t('已连接') : t('连接中')}
                 {s.myTeam && ` · ${t('{0} 队', [s.myTeam])}`}</p>
         </header>
@@ -33,7 +34,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
                 const players = team === 'A' ? s.teamA : s.teamB;
                 const own = players.some(p => p.id === s.myPlayerID);
                 return <section className="mobile-roster" key={team}>
-                    <h3>{t('{0} 队 · {1} 人', [team, players.length])}</h3>
+                    <h3 style={{ color: teamPalette(team, s.myTeam, u.theme).ink }}>{t('{0} 队 · {1} 人', [team, players.length])}</h3>
                     <ul>{players.map((p, i) => <li key={p.id}><span>{p.nickname}{p.is_ai ? ' · AI' : ''}{p.id === s.myPlayerID ? t(' · 你') : ''}{p.id === s.ownerID ? t(' · 房主') : ''}{p.disconnected ? ` · ${t('离线 · 等待重连')}` : ''}</span>{owner && p.is_ai && <button disabled={disabled} onClick={() => onAct(`remove-${team}-${i}`)} aria-label={t('移除 {0}', [p.nickname])}>{t('移除')}</button>}</li>)}</ul>
                     <div className="mobile-tabs"><button disabled={disabled || (!own && players.length >= 4)} onClick={() => onAct(`team-${team}`)}>{t(own ? '离开队伍' : '加入 {0} 队', [team])}</button>{owner && <button disabled={disabled || players.length >= 4} onClick={() => onAct(`ai-${team}`)}>{t('增加 AI')}</button>}</div>
                 </section>;
@@ -42,7 +43,12 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
         </>}
         {!home && !lobby && <>
             <div className="mobile-round"><strong>{t('第 {0} / 16 回合', [s.round])}</strong><button data-mobile-archive onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button></div>
-            <div className="mobile-scores">{(['A', 'B'] as const).map(team => { const score = team === 'A' ? s.scoreA : s.scoreB; return <p key={team}>{t('{0} 队     截获 {1} / 2     失误 {2} / 2', [team, score.interceptions, score.decrypt_failures])}</p>; })}</div>
+            <div className="mobile-scores">{(['A', 'B'] as const).map(team => {
+                const score = team === 'A' ? s.scoreA : s.scoreB;
+                return <p key={team}><strong style={{ color: teamPalette(team, s.myTeam, u.theme).ink }}>{t('{0} 队', [team])}</strong>
+                    <span style={{ color: '#2e6949' }}>{t('截获')} {score.interceptions} / 2</span>
+                    <span style={{ color: '#a44235' }}>{t('失误')} {score.decrypt_failures} / 2</span></p>;
+            })}</div>
             {!!s.myWords.length && <section className="mobile-words"><div><h3>{t('我方秘密词')}</h3><button onClick={() => onAct('words')}>{t(u.hiddenWords ? '显示' : '遮住')}</button></div><ol>{s.myWords.map((v, i) => <li key={i}><b>{i + 1}</b> {u.hiddenWords ? '••••' : word(v, u.locale)}</li>)}</ol></section>}
             {s.phase === 'game_over' ? <h3 className="mobile-result">{s.gameOver?.winner ? t('{0} 队获胜', [s.gameOver.winner]) : t('双方平局')}</h3> : <p>{t('本轮加密者：{0}', [s.encryptor])}</p>}
             {r.encrypt && <>

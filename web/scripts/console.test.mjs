@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 
 const source = await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const { roleState, rosterTeams, archiveRows, archiveStart, resultTint, previewState, initialLocal } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
+const { themeChoices, teamPalette, readTheme, saveTheme, roleState, phaseSignal, rosterTeams, archiveRows, archiveStart, resultTint, previewState, initialLocal } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 
 test('only the current actor can transmit a complete, valid message', () => {
   const encrypt = previewState({}, 'encrypting');
@@ -98,4 +98,59 @@ test('settled final round is archived and recovered submissions cannot act twice
   s.recovering=true; assert.equal(roleState(s,u).active,false);
   s.recovering=false; s.submitted=true; assert.equal(roleState(s,u).active,false);
   s.submitted=false; s.deadline=Date.now()-1; assert.equal(roleState(s,u).active,false);
+});
+
+
+test('phase lights identify the acting team for both sides of alternating rounds', () => {
+  for (const myTeam of ['A', 'B']) for (const myRole of ['encryptor', 'teammate', 'opponent']) {
+    const sendingTeam = myRole === 'opponent' ? myTeam === 'A' ? 'B' : 'A' : myTeam;
+    for (const phase of ['encrypting', 'intercept', 'decrypt']) {
+      const state = { ...previewState({}, phase), myTeam, myRole };
+      const expected = phase === 'intercept' ? sendingTeam === 'A' ? 'B' : 'A' : sendingTeam;
+      const signal = phaseSignal(state);
+      assert.equal(signal.actingTeam, expected);
+      assert.equal(signal.color, expected === myTeam ? '#8bc995' : '#83b9ed');
+      // Waiting, submitting early or timing out never changes whose team is acting.
+      assert.deepEqual(phaseSignal({ ...state, waiting: true, submitted: true, deadline: 1 }), signal);
+      assert.equal(rosterTeams(state, initialLocal).find(t => t.team === expected).summary,
+        phase === 'encrypting' ? '正在加密' : phase === 'intercept' ? '正在拦截' : '正在解码');
+    }
+  }
+  for (const phase of ['home', 'room', 'round_result', 'game_over']) {
+    assert.equal(phaseSignal(previewState({}, phase)).actingTeam, '');
+  }
+  assert.equal(phaseSignal({ phase: 'intercept', myTeam: '', myRole: '' }).color, '#a2a492');
+  assert.equal(phaseSignal({ phase: 'decrypt', myTeam: 'A', myRole: 'observer' }).actingTeam, '');
+});
+
+
+test('every theme keeps relative team colors consistent as sides and actions switch', () => {
+  for (const theme of themeChoices) for (const myTeam of ['A', 'B']) {
+    const other = myTeam === 'A' ? 'B' : 'A';
+    assert.notEqual(theme.own.light, theme.opponent.light);
+    assert.notEqual(theme.own.ink, theme.opponent.ink);
+    assert.equal(teamPalette(myTeam, myTeam, theme.id), theme.own);
+    assert.equal(teamPalette(other, myTeam, theme.id), theme.opponent);
+    const state = { ...previewState({}, 'encrypting'), myTeam, myRole: 'teammate' };
+    assert.equal(phaseSignal(state, theme.id).color, theme.own.light);
+    assert.equal(phaseSignal({ ...state, phase: 'intercept' }, theme.id).color, theme.opponent.light);
+    assert.equal(phaseSignal({ ...state, phase: 'decrypt' }, theme.id).color, theme.own.light);
+    assert.equal(teamPalette('A', '', theme.id), theme.own, 'A stays colored before joining');
+    assert.equal(teamPalette('B', '', theme.id), theme.opponent, 'B stays colored before joining');
+    assert.deepEqual(teamPalette('', '', theme.id), { light: '#a2a492', ink: '#596457' }, 'idle stage has no acting team');
+  }
+});
+
+test('theme choice persists, with a safe default for obsolete preferences or blocked storage', () => {
+  const original = globalThis.localStorage;
+  let saved;
+  try {
+    globalThis.localStorage = { getItem: () => saved, setItem: (_, value) => { saved = value; } };
+    assert.equal(readTheme(), 'classic');
+    for (const theme of themeChoices) { saveTheme(theme.id); assert.equal(readTheme(), theme.id); }
+    saved = 'old-theme'; assert.equal(readTheme(), 'classic');
+    globalThis.localStorage = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+    assert.doesNotThrow(() => saveTheme('amber'));
+    assert.equal(readTheme(), 'classic');
+  } finally { globalThis.localStorage = original; }
 });

@@ -4,17 +4,18 @@ body { margin: 0; }
 button,input { font: inherit; }
 .station { width: 100%; min-height: 100svh; }
 .station-viewport { width: 100%; overflow: auto; overscroll-behavior: contain; }
-.station-stage { position: relative; width: 100%; height: 100svh; min-height: 540px; }
+.station-stage { position: relative; width: 100%; height: 100svh; min-height: 0; }
 .station-stage > canvas { display: block; width: 100%; height: 100%; }
 /* A target projected past the stage must not grow the scroll area: a classic scrollbar would resize the stage, which clears the canvas. */
 .station-controls { position: absolute; inset: 0; overflow: clip; pointer-events: none; }
 .station-controls button,.station-controls input { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; color: transparent; caret-color: transparent; opacity: 0; outline: none; pointer-events: auto; border-radius: 5px; min-width: 0; overflow: hidden; white-space: nowrap; }
-.station-controls input { font-size: 22px; padding: 0 8px; }
+.station-controls input { font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif; font-size: 27px; font-weight: 400; line-height: normal; padding: 0 18px; transform-origin: top left; }
 .station-controls button { cursor: pointer; touch-action: manipulation; }
 .station-controls button:disabled,.station-controls input:disabled { cursor: default; pointer-events: none; }
-.station-controls input::selection { color: transparent; background: rgba(238,193,114,.23); }
-.station-controls input:focus { opacity: 1; caret-color: #f1be69; background: rgba(247,204,112,.035); }
+.station-controls input::selection { color: #ece0c4; background: rgba(238,193,114,.23); }
+.station-controls input:focus { opacity: 1; color: #ece0c4; caret-color: #f1be69; }
 .station-controls input::placeholder { color: transparent; }
+.station-controls input:focus::placeholder { color: #88928b; opacity: 1; }
 .station-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: #dedad0; z-index: 2; }
 .station-loading strong { font-size: 28px; letter-spacing: 8px; }
 .station-loading span { font-size: 14px; color: #6d766e; }
@@ -26,7 +27,7 @@ button,input { font: inherit; }
 .station-fallback canvas { display: none; }
 .station-fallback .station-controls { position: static; display: flex; flex-wrap: wrap; gap: 12px; padding: 24px; }
 .station-fallback .station-controls button,.station-fallback .station-controls input { position: static !important; width: auto !important; height: auto !important; min-height: 44px; opacity: 1; color: #eadfc8; background: #233442; padding: 10px 16px; overflow: visible; white-space: normal; }
-.station-fallback .station-controls input { background: #faf2df; color: #233442; caret-color: #233442; border: 1px solid #7e8479; }
+.station-fallback .station-controls input { transform: none !important; font-size: 16px !important; background: #faf2df; color: #233442; caret-color: #233442; border: 1px solid #7e8479; }
 .station-fallback .station-controls :disabled { opacity: .4; }
 .station-fallback .station-controls :focus-visible { outline: 3px solid #be572f; outline-offset: 3px; }
 .fallback-readout { padding: 24px; }
@@ -37,7 +38,7 @@ button,input { font: inherit; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 
 /* Physical controls keep their targets on the projected model. */
-.station-controls button:hover:not(:disabled), .station-controls button:focus-visible {
+.station[data-view="preview"] .station-controls button:hover:not(:disabled), .station-controls button:focus-visible {
   opacity: 1; outline: 2px solid #be783d; outline-offset: 3px; background: #e8c68c12;
 }
 .station-controls [data-control^="scope-"] { touch-action: none; cursor: grab; }
@@ -45,11 +46,12 @@ button,input { font: inherit; }
 .station-workbench { position: fixed; z-index: 2; right: 20px; bottom: 12px; left: 20px; display: flex; align-items: end; justify-content: flex-end; gap: 20px; pointer-events: none; }
 .station-orbit-hint { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); padding: 7px 11px; border: 1px solid #8d8d7b99; border-radius: 2px; background: #eee8dbd9; color: #59645b; box-shadow: 0 2px 8px #28332918; font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
 .station-stage[data-inspecting="true"], .station-stage[data-inspecting="true"] * { cursor: grabbing !important; user-select: none; }
-.station-flip { display: flex; align-items: center; gap: 10px; padding: 10px 15px; min-height: 44px; border: 1px solid #888c7c; border-radius: 3px; color: #2a3b35; background: #eee8db; cursor: pointer; pointer-events: auto; box-shadow: 0 2px 0 #a4a497; font-size: 13px; }
-.station-flip > span { font-size: 23px; line-height: 1; }
-.station-flip small { color: #737768; font-size: 10px; padding-left: 12px; border-left: 1px solid #c0bba9; }
-.station-flip:hover { background: #f8f1df; }
-.station-flip:focus-visible { outline: 3px solid #a65232; outline-offset: 3px; }
+.station-controls .station-handle { touch-action: none; cursor: grab; }
+.station-controls .station-handle[data-control*="Rear"] { cursor: pointer; }
+.station-stage[data-handling], .station-stage[data-handling] * { cursor: grabbing !important; user-select: none; }
+.station[data-view="preview"] .station-stage { touch-action: none; cursor: grab; }
+.station-reset-view { min-height: 36px; padding: 7px 12px; border: 1px solid #8d8d7b99; background: #eee8db; color: #38473b; cursor: pointer; pointer-events: auto; font-size: 12px; }
+.station-reset-view:focus-visible { outline: 2px solid #a65232; outline-offset: 3px; }
 .station-roster-preview { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-right: auto; padding: 7px 10px; background: #eee8db; border: 1px solid #a4a497; pointer-events: auto; font-size: 12px; }
 .station-roster-preview > span { padding-right: 6px; color: #737768; }
 .station-roster-preview button { min-height: 30px; padding: 3px 9px; border: 1px solid #a4a497; background: #f5efdf; color: #2a3b35; cursor: pointer; }
@@ -57,7 +59,12 @@ button,input { font: inherit; }
 .station-roster-preview button:focus-visible { outline: 2px solid #a65232; outline-offset: 2px; }
 .station-rear-status { margin: 0 auto 0 0; background: #eee8dbed; border-left: 2px solid #6b7866; padding: 8px 12px; color: #38473b; font-size: 12px; line-height: 1.7; }
 .station-rear-status span { display: block; color: #737768; font-size: 10px; letter-spacing: .06em; }
-@media (max-width: 600px) { .station-workbench { right: 10px; left: 10px; bottom: 10px; gap: 8px; } .station-orbit-hint { display: none; } .station-flip small { display: none; } .station-rear-status { font-size: 11px; } }
+@media (max-width: 600px) {
+  .station-workbench { right: 10px; left: 10px; bottom: 10px; gap: 8px; }
+  .station-orbit-hint { display: none; }
+  .station[data-view="preview"] .station-orbit-hint { display: block; bottom: 48px; max-width: calc(100vw - 32px); white-space: normal; width: max-content; text-align: center; }
+  .station-rear-status { font-size: 11px; }
+}
 .station-hint { position: fixed; z-index: 3; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 9px 16px; background: #26332e; color: #f0e4c9; font-size: 12px; letter-spacing: .04em; pointer-events: none; box-shadow: 0 3px 12px #17211c20; }
 
 /* A review bench below the machine, keeping every study in the same light. */
@@ -264,7 +271,23 @@ button,input { font: inherit; }
 }
 
 /* Language and graphics quality belong to the session UI, outside the fixed legends. */
-.station-settings { position: absolute; top: 18px; right: 22px; z-index: 6; display: flex; align-items: center; gap: 10px; }
+.station-settings { position: absolute; top: 12px; right: 22px; left: 22px; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 10px; pointer-events: none; }
+.station-settings > * { pointer-events: auto; }
+.station-navigation { display: flex; align-items: center; gap: 22px; }
+.station-navigation a { display: inline-flex; align-items: center; min-height: 36px; color: #656859; text-decoration: none; font-size: 12px; }
+.station-navigation a[aria-current="page"] { color: #283e35; box-shadow: inset 0 -1px #53665a; }
+.station-navigation a:focus-visible, .station-preferences summary:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
+.station-preferences { position: relative; font-size: 12px; color: #59604f; }
+.station-preferences summary { min-height: 36px; padding: 10px 0 10px 12px; cursor: pointer; }
+.station-preferences-panel { position: absolute; top: 44px; right: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; width: 332px; max-width: calc(100vw - 44px); padding: 12px; border: 1px solid #afa994; background: #e5decb; }
+.station-themes { align-self: stretch; min-width: 0; margin: 0; padding: 8px 0 10px; border: 0; border-bottom: 1px solid #afa994; }
+.station-themes legend { padding: 0; color: #666b5a; font-size: 11px; }
+.station-theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.station-settings .station-theme-options button { display: flex; align-items: center; gap: 9px; min-width: 108px; min-height: 44px; text-align: left; font-size: 12px; font-weight: 500; }
+.station-settings .station-theme-options button[aria-pressed="true"] { background: var(--team-own); }
+.station-theme-swatches { display: flex; flex-shrink: 0; }
+.station-theme-swatches i { width: 11px; height: 16px; border: 1px solid #26342a33; border-radius: 8px 0 0 8px; }
+.station-theme-swatches i + i { border-radius: 0 8px 8px 0; margin-left: -1px; }
 .station-language, .station-quality { display: flex; align-items: center; padding: 3px; gap: 2px; border: 1px solid #afa994; background: #e5decb; border-radius: 4px; }
 .station-settings button { min-width: 46px; min-height: 36px; padding: 5px 10px; border: 0; border-radius: 2px; background: transparent; color: #57594a; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
 .station-settings button[aria-pressed="true"] { color: #eee5cf; background: #394c48; }
@@ -279,12 +302,13 @@ button,input { font: inherit; }
 /* A compact task surface shares the same game state as the physical terminal. */
 .mobile-console { display: none; }
 @media (max-width: 850px) {
-  .station:not([data-instruments]):not([data-detail]) > .station-viewport,
-  .station:not([data-instruments]):not([data-detail]) > .station-workbench,
-  .station:not([data-instruments]):not([data-detail]) > .station-hint,
-  .station:not([data-instruments]):not([data-detail]) .station-quality,
+  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-viewport,
+  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-workbench,
+  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-hint,
+  .station[data-view="game"]:not([data-instruments]):not([data-detail]) .station-quality,
   .station > .mobile-hint { display: none; }
-  .station:not([data-instruments]):not([data-detail]) > .mobile-console { display: block; }
+  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .mobile-console { display: block; }
+  .station[data-view="preview"] .station-stage { min-width: 0; min-height: 0; height: 100svh; }
   .mobile-console { max-width: 560px; margin: auto; padding: 70px 20px 12px; color: #273d36; overflow-wrap: anywhere; }
   .mobile-brand { font-weight: 800; letter-spacing: .13em; font-size: 15px; }
   .mobile-brand span { display: block; font: 10px monospace; margin-top: 8px; color: #657066; }
@@ -296,7 +320,7 @@ button,input { font: inherit; }
   .mobile-console h3 { font-size: 17px; }
   .mobile-console button { min-width: 44px; min-height: 44px; padding: 10px 14px; border: 1px solid #909482; border-radius: 3px; background: #f0eadb; color: #273d36; cursor: pointer; }
   .mobile-console button:disabled { opacity: .45; cursor: default; }
-  .mobile-console [aria-pressed="true"] { background: #304d41; border-color: #304d41; color: #f8efd9; }
+  .mobile-console [aria-pressed="true"] { background: var(--team-own, #304d41); border-color: var(--team-own, #304d41); color: #f8efd9; }
   .mobile-console :focus-visible { outline: 3px solid #a1442f; outline-offset: 3px; }
   .mobile-console label { display: block; margin: 18px 0; font-size: 14px; }
   .mobile-console input { display: block; width: 100%; min-width: 0; margin-top: 8px; padding: 13px; background: #f8f0db; border: 1px solid #8c917c; border-radius: 3px; font-size: 16px; color: #203b31; }
@@ -307,7 +331,7 @@ button,input { font: inherit; }
   .mobile-roster li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; margin: 4px 0; }
   .mobile-roster li span { min-width: 0; }
   .mobile-roster li button { flex-shrink: 0; }
-  .mobile-scores p { font-size: 12px; margin: 8px 0; }
+  .mobile-scores p { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; margin: 8px 0; }
   .mobile-words { border-block: 1px solid #a1a48f; margin: 20px 0; padding: 12px 0; }
   .mobile-words h3 { margin: 0; }
   .mobile-words ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); list-style: none; gap: 14px; padding: 0; margin-bottom: 6px; }

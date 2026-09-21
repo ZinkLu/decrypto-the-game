@@ -23,6 +23,19 @@ const context = new Proxy({
 }, { get: (target, key) => key in target ? target[key] : () => {} });
 globalThis.document = { createElement: () => ({ getContext: () => context }) };
 
+test('free inspection exposes both faces for projection while retaining power interlocks', () => {
+  const state = previewState({}, 'encrypting');
+  const front = paint(state, initialLocal).targets.map(t => t.id);
+  const rear = paint(state, { ...initialLocal, backView: true }).targets.map(t => t.id);
+  const inspection = paint(state, initialLocal, true).targets.map(t => t.id);
+  assert.deepEqual(new Set(inspection), new Set([...front, ...rear]));
+  const off = paint(state, { ...initialLocal, powerOn: false }, true).targets.map(t => t.id);
+  assert.ok(off.includes('power-toggle'));
+  assert.ok(off.includes('battery-toggle'));
+  assert.ok(!off.includes('transmit'));
+  assert.ok(!off.includes('scope-wave'));
+});
+
 test('instrument studies expose their own controls without changing public game information', () => {
   const state = previewState({}, 'encrypting');
   const original = paint(state, initialLocal);
@@ -127,15 +140,16 @@ test('hardware exploration preserves clues and guesses and reports toggle state'
   assert.equal(paint(state, { ...local, backView: false }).ready, true);
 });
 
-test('reading the roster pauses entry targets and restores the prepared transmission on return', () => {
+test('roster is a passive display while live seats and entry controls keep updating', () => {
   const s = previewState({}, 'decrypt');
   const u = { ...initialLocal, guess: [3, 1, 4] };
-  const open = paint(s, { ...u, rosterOpen: true });
-  assert.equal(open.ready, false);
-  assert.ok(open.targets.filter(t => t.id.startsWith('key-')).every(t => t.disabled));
-  assert.ok(!open.targets.some(t => t.id.startsWith('slot-')));
-  assert.ok(open.targets.some(t => t.id === 'roster-toggle' && t.surface === 'screen'));
-  assert.equal(paint(s, u).ready, true);
+  const content = paint(s, u);
+  assert.ok(!content.targets.some(t => t.surface.startsWith('roster') || t.surface === 'score'));
+  assert.equal(content.ready, true);
+  assert.ok(content.targets.filter(t => t.id.startsWith('key-')).every(t => !t.disabled));
+  assert.equal(content.seats.A0, s.teamA[0].id);
+  const joined = { ...s, teamA: [...s.teamA.slice(0, 3), { id: 'new-ai', nickname: 'AI', is_ai: true }] };
+  assert.equal(paint(joined, u).seats.A3, 'new-ai');
   assert.deepEqual(u.guess, [3, 1, 4]);
 });
 

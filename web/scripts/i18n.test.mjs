@@ -29,7 +29,7 @@ function fixture(phase) {
   return s;
 }
 test('both locales cover every public game phase, roster, manual and printed display', () => {
-  for (const phase of phases) for (const extra of [{}, { rosterOpen: true }, { manual: true }, { submitted: true }]) {
+  for (const phase of phases) for (const extra of [{}, { manual: true }, { submitted: true }]) {
     const s = fixture(phase), zh = paint(s, { ...initialLocal, ...extra }), en = paint(s, { ...initialLocal, ...extra, locale: 'en' });
     assert.ok(ink(zh).some(value => /[\u3400-\u9fff]/.test(value)), `${phase}: Chinese is rendered`);
     assert.deepEqual([...ink(en), ...en.targets.map(t => t.label)].filter(value => /[\u3400-\u9fff]/.test(value)), [], `${phase}: no untranslated UI`);
@@ -100,4 +100,20 @@ test('keywords share one type scale, with full long phrases on two lines', () =>
   assert.ok(sizeOf(en.frames.word3, 'migratory') >= 44);
   assert.ok(sizeOf(en.frames.word3, 'bird') >= 44);
   assert.ok(!en.frames.word3.canvas.ink.some(value => value.includes('…')));
+});
+
+
+test('only the native editor owns focused input text, including long multilingual clues', () => {
+  const s = fixture('encrypting');
+  const clue = '很长的线索 mixed English 0123456789';
+  const u = { ...initialLocal, clues: [clue, 'Second clue', 'Third clue'] };
+  const idle = paint(s, u), editing = paint(s, { ...u, focus: 'clue-0' });
+  assert.ok(idle.frames.screen.canvas.ink.includes(clue));
+  assert.ok(!editing.frames.screen.canvas.ink.includes(clue));
+  assert.ok(editing.frames.screen.canvas.ink.includes('Second clue'));
+  assert.equal(editing.targets.find(t => t.id === 'clue-0').value, clue);
+  assert.ok(paint({ ...s, connected: false }, { ...u, focus: 'clue-0' }).frames.screen.canvas.ink.includes(clue));
+  const home = fixture('home');
+  assert.ok(!paint(home, { ...initialLocal, name: 'Agent name', focus: 'name' }).frames.screen.canvas.ink.includes('Agent name'));
+  assert.ok(paint(home, { ...initialLocal, name: 'Agent name' }).frames.screen.canvas.ink.includes('Agent name'));
 });

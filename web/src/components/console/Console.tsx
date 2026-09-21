@@ -1,8 +1,8 @@
 import { translate, localizeError, readLocale, saveLocale } from './i18n';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
-import { initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, stepInstrumentValue } from './model';
+import { initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme } from './model';
 import { paint, knobLabel } from './paint';
 import { qualityChoices, qualityProfiles, describeQuality, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import ArchiveSheet from './ArchiveSheet';
@@ -11,8 +11,11 @@ import type { LocalState, InstrumentVariant } from './model';
 import type { Target } from './paint';
 import type { PlayerInfo } from '../../store/gameStore';
 import type { QualityChoice, QualityLevel } from './quality';
+import { consoleRoute, handleSurfaces, handlePull, handleCommit, type HandleSide } from './view';
+const route = consoleRoute(location.pathname, location.search, import.meta.env.DEV);
+const inspection = route.view === 'preview';
 const instrumentPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('instruments');
-const preview = import.meta.env.DEV ? new URLSearchParams(location.search).get('preview') || (instrumentPreview ? 'encrypting' : null) : null;
+const preview = route.scenario;
 const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
 // Deterministic stills and benchmarks pin a level without touching the saved choice.
 const pinnedQuality = import.meta.env.DEV ? qualityChoices.find(choice => choice === new URLSearchParams(location.search).get('quality')) : undefined;
@@ -22,8 +25,8 @@ const scopeControls = ['scope-tune', 'scope-wave', 'scope-rate', 'scope-xy', 'me
 const isScopeControl = (id: string) => scopeControls.includes(id);
 export default function Console() {
     const live = useGameStore();
-    const [u, setU] = useState<LocalState>({ ...initialLocal, locale: readLocale(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal',
-        meterAmplitude: initialInstrument === 'signal' ? 14 : initialInstrument === 'tuning' ? 4 : initialInstrument === 'status' ? 0 : 2 });
+    const [u, setU] = useState<LocalState>(() => ({ ...initialLocal, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal',
+        meterAmplitude: initialInstrument === 'signal' ? 14 : initialInstrument === 'tuning' ? 4 : initialInstrument === 'status' ? 0 : 2 }));
     const [previewPeople, setPreviewPeople] = useState<PlayerInfo[]>([{ id: '0', nickname: '你', is_ai: false }]);
     const previewSerial = useRef(1);
     const s = useMemo(() => {
@@ -46,8 +49,13 @@ export default function Console() {
     // Analog input updates targets and hardware, without repainting all the
     // game screens and the long receipt for each fraction of a knob turn.
     const paintKey = JSON.stringify({ ...u, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
-    const painted = useMemo(() => paint(s, u), [s, paintKey]);
-    const content = useMemo(() => ({ ...painted, targets: painted.targets.map(target =>
+    const painted = useMemo(() => paint(s, u, inspection), [s, paintKey]);
+    const content = useMemo(() => ({ ...painted, targets: [...painted.targets, ...Object.keys(handleSurfaces).filter(surface =>
+        inspection || surface.includes('Rear') === u.backView).map<Target>(surface => ({
+            id: surface, surface, x: 0, y: 0, w: 1, h: 1,
+            label: translate(u.locale, surface.includes('Rear') ? '点击把手连接处，回到正面' :
+                surface.includes('Left') ? '向右拖动左把手，翻到背面' : '向左拖动右把手，翻到背面'),
+        }))].map(target =>
         isScopeControl(target.id) ? { ...target, label: knobLabel(target.id, u) } : target) }),
         [painted, u.scopeFreq, u.scopeWave, u.scopeRate, u.scopeAxis, u.meterAmplitude, u.meterRate]);
     const current = useRef({ s, u, content, level });
@@ -58,13 +66,27 @@ export default function Console() {
     const suppressTuningClick = useRef(false);
     const pullDrag = useRef<{ y: number; moved: boolean } | null>(null);
     const suppressPullClick = useRef(false);
+    const handleDrag = useRef<{ id: string; side: HandleSide; x: number; pointerId: number; progress: number } | null>(null);
+    const handleFocusPending = useRef<string | null>(null);
     const archiveFocusPending = useRef(false);
     const [hint, setHint] = useState('');
     const [announcement, setAnnouncement] = useState('');
     const viewKey = `${s.phase}:${s.round}:${s.myRole}`;
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
-    useEffect(() => { saveLocale(u.locale); document.documentElement.lang = u.locale === 'zh' ? 'zh-CN' : 'en'; document.title = u.locale === 'zh' ? 'Decrypto - 谍报风云' : 'Decrypto'; setAnnouncement(translate(u.locale, '语言已切换'));  }, [u.locale]);
+    useEffect(() => { saveLocale(u.locale); document.documentElement.lang = u.locale === 'zh' ? 'zh-CN' : 'en'; document.title = (u.locale === 'zh' ? 'Decrypto - 谍报风云' : 'Decrypto') + (inspection ? ' · Preview' : ''); setAnnouncement(translate(u.locale, '语言已切换'));  }, [u.locale]);
+    useEffect(() => { saveTheme(u.theme); }, [u.theme]);
     function patch(values: Partial<LocalState>) { setU(old => ({ ...old, ...values })); }
+    function turnConsole(back: boolean, side: HandleSide = 'left') {
+        if (document.activeElement?.matches('.station-handle:focus-visible')) {
+            handleFocusPending.current = back ? `handleRear${side === 'left' ? 'Left' : 'Right'}TopControl` :
+                `handle${side === 'left' ? 'Left' : 'Right'}Control`;
+        }
+        engine.current?.turnTo(back, side);
+        patch({ backView: back, batteryOpen: false, focus: '' });
+        setHint('');
+        setAnnouncement(back ? t('已翻到检修面。可以打开电池仓、试听喇叭或做灯光自检。对局继续进行。') : t('已回到操作面，所有输入仍然保留'));
+        void engine.current?.soundFeedback();
+    }
     function chooseQuality(choice: QualityChoice) {
         // Choosing Auto again measures this device afresh, starting from high.
         if (choice === 'auto') { setAutoLevel('high'); saveAutoQuality('high'); setProbeRun(run => run + 1); }
@@ -74,7 +96,7 @@ export default function Console() {
     }
     function adjustInstrument(control: 'amplitude' | 'rate', steps: number) {
         const local = current.current.u;
-        if (!local.powerOn || local.backView) return;
+        if (!local.powerOn || engine.current?.facingRear()) return;
         const field = control === 'amplitude' ? 'meterAmplitude' : 'meterRate';
         patch({ [field]: stepInstrumentValue(local.instrumentVariant, control, local[field], steps),
             instrumentDemo: local.instrumentVariant === 'signal' && control === 'rate' ? local.instrumentDemo : false });
@@ -84,7 +106,7 @@ export default function Console() {
     // of the spacing between engraved marks, so keys still land on every mark.
     function adjustKnob(id: string, delta: number, notches = false) {
         const local = current.current.u;
-        if (!local.powerOn || local.backView) return;
+        if (!local.powerOn || engine.current?.facingRear()) return;
         const vernier = id === 'scope-tune';
         const turn = notches ? delta * (vernier ? 1 / 28 : .025) : vernier ? delta * .45 : delta;
         if (id.startsWith('meter-')) {
@@ -138,12 +160,23 @@ export default function Console() {
             return;
         for (const target of current.current.content.targets) {
             const node = controls.current.get(target.surface + ':' + target.id);
+            if (handleDrag.current?.id === target.id) continue;
             const bounds = e.bounds(target);
             if (node && !failure) node.style.visibility = bounds ? 'visible' : 'hidden';
             if (node && bounds) {
                 Object.assign(node.style, { left: bounds.left + 'px', top: bounds.top + 'px', width: bounds.width + 'px', height: bounds.height + 'px' });
-                if (target.kind === 'input')
-                    node.style.fontSize = Math.max(12, bounds.height * .36) + 'px';
+                if (target.kind === 'input' && target.input) {
+                    // Keep logical CRT typography and scale the entire native editor,
+                    // including its padding, selection, IME text and caret together.
+                    Object.assign(node.style, { width: target.w + 'px', height: target.h + 'px',
+                        fontSize: target.input.fontSize + 'px', padding: `0 ${target.input.padding}px`,
+                        transform: `scale(${bounds.width / target.w}, ${bounds.height / target.h})`,
+                        caretColor: current.current.content.tint });
+                }
+                if (handleFocusPending.current === target.id) {
+                    handleFocusPending.current = null;
+                    node.focus({ preventScroll: true });
+                }
             }
         }
     }
@@ -162,7 +195,7 @@ export default function Console() {
                     setArchiveVisible(true);
                     setAnnouncement(t("正在拉出纸带并展开密报记录；关闭后撕下小票"));
                 }
-            }, !!preview, instrumentPreview);
+            }, inspection, instrumentPreview);
             instance.setQuality(qualityProfiles[current.current.level]);
             engine.current = instance;
             instance.load().then(() => { if (!cancelled) {
@@ -200,7 +233,7 @@ export default function Console() {
     useEffect(() => {
         pending.current = false;
         setU(old => ({ ...old, clues: ['', '', ''], guess: [0, 0, 0], slot: 0, submitted: false, focus: '', note: '', manual: false,
-            rosterOpen: false, seconds: preview ? 45 : s.phase === 'encrypting' ? 90 : 60 }));
+            seconds: preview ? 45 : s.phase === 'encrypting' ? 90 : 60 }));
         setAnnouncement(s.phase === 'home' ? t("通信终端已就绪") : t("第 {0} 回合，{1}", [s.round, s.phase === 'encrypting' ? t("加密") : s.phase === 'intercept' ? t("拦截") : s.phase === 'decrypt' ? t("解码") : s.phase === 'room' ? t("队伍准备") : t("阶段更新")]));
     }, [viewKey]);
     useEffect(() => {
@@ -228,12 +261,16 @@ export default function Console() {
                 return;
             }
             if (event.key === 'Escape') {
-                if (current.current.u.backView) act('flip-console');
-                else if (current.current.u.rosterOpen) act('roster-toggle');
-                else patch({ archiveOpen: false, manual: false, rosterOpen: false });
+                if (handleDrag.current) {
+                    handleDrag.current = null;
+                    engine.current?.releaseHandle();
+                    stage.current?.removeAttribute('data-handling');
+                    project();
+                }
+                else patch({ archiveOpen: false, manual: false });
                 return;
             }
-            if (!current.current.u.powerOn || current.current.u.backView || current.current.u.rosterOpen || current.current.u.manual) return;
+            if (!current.current.u.powerOn || (engine.current?.facingRear() ?? current.current.u.backView) || current.current.u.manual) return;
             const input = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable);
             if (!input && /^[1-4]$/.test(event.key)) {
                 event.preventDefault();
@@ -281,23 +318,20 @@ export default function Console() {
     function act(id: string) {
         const { s: state, u: local } = current.current;
         const r = roleState(state, local);
-        if (id === 'flip-console') {
-            patch({ backView: !local.backView, batteryOpen: false, focus: '' });
-            document.querySelector<HTMLButtonElement>('.station-flip')?.focus();
-            setHint('');
-            setAnnouncement(local.backView ? t("已回到操作面，所有输入仍然保留") : t("已翻到检修面。可以打开电池仓、试听喇叭或做灯光自检。对局继续进行。"));
-            void engine.current?.soundFeedback();
+        const rear = engine.current?.facingRear() ?? local.backView;
+        if (id in handleSurfaces) {
+            turnConsole(!id.includes('Rear'), id.includes('Left') ? 'left' : 'right');
             return;
         }
         if (id === 'power-toggle') {
-            if (local.backView) return;
-            patch({ powerOn: !local.powerOn, manual: false, rosterOpen: false, archiveOpen: false, focus: 'power-toggle' });
+            if (rear) return;
+            patch({ powerOn: !local.powerOn, manual: false, archiveOpen: false, focus: 'power-toggle' });
             setArchiveVisible(false);
             setAnnouncement(local.powerOn ? t("终端已关闭；对局继续进行，按电源恢复。") : t("终端电源已开启，输入已保留。"));
             void engine.current?.soundFeedback();
             return;
         }
-        if (!local.powerOn && !local.backView) return;
+        if (!local.powerOn && !rear) return;
         if (id === 'battery-toggle') {
             patch({ batteryOpen: !local.batteryOpen });
             setAnnouncement(local.batteryOpen ? t("电池仓已合上") : t("电池仓已打开，四节电池与金属触点可见。再次点击电池仓合上。"));
@@ -305,7 +339,7 @@ export default function Console() {
             return;
         }
         if (id.startsWith('battery-cell-')) {
-            if (!local.backView || !local.batteryOpen) return;
+            if (!rear || !local.batteryOpen) return;
             const index = Number(id.slice(-1));
             const removedBatteries = local.removedBatteries ^ (1 << index);
             patch({ removedBatteries });
@@ -313,7 +347,7 @@ export default function Console() {
             return;
         }
         if (id.startsWith('cable-plug-')) {
-            if (!local.backView) return;
+            if (!rear) return;
             const index = Number(id.slice(-1));
             patch({ unpluggedCables: local.unpluggedCables ^ (1 << index) });
             setAnnouncement(t("{0}已{1}。仅为机械演示。", [[t("网线"), t("串口线"), t("电源线")][index], local.unpluggedCables & (1 << index) ? t("插回") : t("拔出")]));
@@ -330,7 +364,7 @@ export default function Console() {
             setAnnouncement(t("本机指示灯自检中，未改变对局或网络连接"));
             return;
         }
-        if (local.backView) return;
+        if (rear) return;
         if (id === 'receiver-sweep' && local.instrumentVariant === 'signal') {
             patch({ instrumentDemo: !local.instrumentDemo });
             setAnnouncement(local.instrumentDemo ? t("已切回手动调谐") : t("自动信号摆动已开启，旋钮保持原位"));
@@ -344,14 +378,8 @@ export default function Console() {
         if (id.startsWith('scope-') || ['disk-toggle', 'transmit'].includes(id) || id.startsWith('key-'))
             void engine.current?.soundFeedback();
         if (id === 'manual') {
-            patch({ manual: !local.manual, rosterOpen: false });
+            patch({ manual: !local.manual });
             void engine.current?.soundFeedback();
-            return;
-        }
-        if (id === 'roster-toggle') {
-            patch({ rosterOpen: !local.rosterOpen, manual: false, focus: '' });
-            setHint('');
-            setAnnouncement(local.rosterOpen ? t("已返回操作，输入仍然保留") : t("中央屏幕已展开队员名册，按 Escape 返回操作"));
             return;
         }
         if (id === 'words') {
@@ -393,7 +421,7 @@ export default function Console() {
             return;
         }
         if (id.startsWith('key-')) {
-            if (!r.guess || !r.active || !state.connected || local.rosterOpen || local.manual)
+            if (!r.guess || !r.active || !state.connected || local.manual)
                 return;
             const n = Number(id.slice(4));
             const guess = [...local.guess];
@@ -421,7 +449,7 @@ export default function Console() {
         if (preview) {
             if (id === 'transmit' && current.current.content.ready) {
                 engine.current?.pulse(id);
-                patch({ submitted: true, note: "外观预览：提交反馈已演示。实际联机请移除 preview 参数。" });
+                patch({ submitted: true, note: "预览提交已完成。进入游戏页面即可联机游玩。" });
             }
             return;
         }
@@ -481,11 +509,17 @@ export default function Console() {
     const qualityHint = (choice: QualityChoice) => choice === 'auto'
         ? `${t('按本机实测的单帧耗时选择档位；再次点击重新检测')} · ${t('当前')} ${t(qualityLabels[level])}`
         : `${t(qualityLabels[choice])} · ${describeQuality(qualityProfiles[choice], t)}`;
-    return <main className={`station ${failure ? 'station-fallback' : ''}`} data-power={u.powerOn ? 'on' : 'off'}
+    const colors = themeColors(u.theme);
+    return <main style={{ '--team-own': colors.own.ink, '--team-opponent': colors.opponent.ink } as CSSProperties} data-theme={u.theme} className={`station ${failure ? 'station-fallback' : ''}`} data-view={route.view} data-power={u.powerOn ? 'on' : 'off'}
         data-backdrop-blur={qualityProfiles[level].backdropBlur ? undefined : 'off'}
         data-instruments={instrumentPreview || undefined} data-instrument={instrumentPreview ? u.instrumentVariant : undefined}
         data-detail={(instrumentPreview ? instrumentCloseup ? 'meter' : null : detail) || undefined}>
     <div className="station-settings" inert={u.archiveOpen}>
+      <nav className="station-navigation" aria-label={t('页面导航')}>
+        <a href="/" aria-current={!inspection ? 'page' : undefined}>{t('游戏')}</a>
+        <a href="/preview" aria-current={inspection ? 'page' : undefined}>Preview</a>
+      </nav>
+      <details className="station-preferences"><summary>{t('设置')}</summary><div className="station-preferences-panel">
       {!failure && <div className="station-quality" role="group" aria-label={t("画质")}>
         <span aria-hidden="true">{t("画质")}</span>
         {qualityChoices.map(choice => <button key={choice} aria-pressed={quality === choice} title={qualityHint(choice)}
@@ -494,10 +528,26 @@ export default function Console() {
           {t(qualityLabels[choice])}{choice === 'auto' && quality === 'auto' && <small>{t(qualityLabels[level])}</small>}
         </button>)}
       </div>}
+      <fieldset className="station-themes"><legend>{t('主题')}</legend>
+        <div className="station-theme-options">
+          {themeChoices.map(theme => <button key={theme.id} type="button" aria-pressed={u.theme === theme.id}
+            onClick={event => {
+              patch({ theme: theme.id });
+              setAnnouncement(t('主题已切换为{0}', [t(theme.label)]));
+              // Reveal the physical exchange instead of covering it with Settings.
+              const settings = event.currentTarget.closest('details');
+              if (settings) { settings.open = false; settings.querySelector('summary')?.focus({ preventScroll: true }); }
+            }}>
+            <span className="station-theme-swatches" aria-hidden="true"><i style={{ background: theme.own.light }}/><i style={{ background: theme.opponent.light }}/></span>
+            {t(theme.label)}
+          </button>)}
+        </div>
+      </fieldset>
       <div className="station-language" role="group" aria-label="Language / 语言">
         <button lang="zh-CN" aria-pressed={u.locale === 'zh'} onClick={() => patch({ locale: 'zh' })}>中文</button>
         <button lang="en" aria-pressed={u.locale === 'en'} onClick={() => patch({ locale: 'en' })}>EN</button>
       </div>
+      </div></details>
     </div>
     <h1 className="sr-only">{t("Decrypto 谍报风云 · 密码通信终端")}</h1>
     <MobileConsole state={s} local={u} ready={content.ready} status={content.status} onAct={act} onChange={(id, value) => change({ id }, value)} inert={u.archiveOpen}/>
@@ -523,7 +573,7 @@ export default function Console() {
                 disabled: target.disabled,
                 style: failure ? { visibility: 'visible' as const } : undefined,
                 title: target.label,
-                'aria-expanded': target.id === 'archive-toggle' ? u.archiveOpen : target.id === 'battery-toggle' ? u.batteryOpen : target.id === 'roster-toggle' ? u.rosterOpen : undefined,
+                'aria-expanded': target.id === 'archive-toggle' ? u.archiveOpen : target.id === 'battery-toggle' ? u.batteryOpen : undefined,
                 'aria-haspopup': target.id === 'archive-toggle' ? 'dialog' as const : undefined,
                 'aria-pressed': target.id === 'disk-toggle' ? u.diskOut : target.id === 'sound-toggle' ? u.soundOn : target.id === 'manual' ? u.manual : undefined,
                 onMouseEnter: () => setHint(target.id),
@@ -533,7 +583,47 @@ export default function Console() {
                 onBlur: () => { setHint(''); if (current.current.u.focus === target.id)
                     patch({ focus: '' }); },
             };
-            return target.kind === 'input' ? <input key={key} {...common} type="text" value={target.value || ''} maxLength={target.maxLength} placeholder={target.label} autoComplete={target.id === 'name' ? 'nickname' : 'off'} spellCheck={false} onChange={e => change(target, e.target.value)} onKeyDown={e => {
+            if (target.id in handleSurfaces) return <button key={key} {...common} className="station-handle"
+                onClick={e => { if (target.id.includes('Rear') || e.detail === 0 || failure) act(target.id); }}
+                onPointerDown={e => {
+                    if (e.button !== 0 || target.id.includes('Rear')) return;
+                    const side = target.id.includes('Left') ? 'left' : 'right';
+                    if (!engine.current?.beginHandle(side)) return;
+                    e.preventDefault();
+                    handleDrag.current = { id: target.id, side, x: e.clientX, pointerId: e.pointerId, progress: 0 };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    stage.current?.setAttribute('data-handling', 'true');
+                }}
+                onPointerMove={e => {
+                    const drag = handleDrag.current;
+                    if (!drag || drag.pointerId !== e.pointerId) return;
+                    drag.progress = handlePull(drag.side, e.clientX - drag.x, stage.current?.clientWidth || 1);
+                    engine.current?.pullHandle(drag.progress);
+                }}
+                onPointerUp={e => {
+                    const drag = handleDrag.current;
+                    if (!drag || drag.pointerId !== e.pointerId) return;
+                    handleDrag.current = null;
+                    engine.current?.releaseHandle();
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+                    stage.current?.removeAttribute('data-handling');
+                    if (drag.progress >= handleCommit) turnConsole(true, drag.side);
+                    else { setAnnouncement(t('向内拖动把手，即可翻面')); project(); }
+                }}
+                onLostPointerCapture={() => {
+                    if (!handleDrag.current) return;
+                    handleDrag.current = null;
+                    engine.current?.releaseHandle();
+                    stage.current?.removeAttribute('data-handling');
+                    project();
+                }}
+                onPointerCancel={() => {
+                    handleDrag.current = null;
+                    engine.current?.releaseHandle();
+                    stage.current?.removeAttribute('data-handling');
+                    project();
+                }}>{target.label}</button>;
+            return target.kind === 'input' ? <input key={key} {...common} type="text" value={target.value || ''} maxLength={target.maxLength} placeholder={target.input?.placeholder || target.label} autoComplete={target.id === 'name' ? 'nickname' : 'off'} spellCheck={false} onChange={e => change(target, e.target.value)} onKeyDown={e => {
                     if (e.key === 'Enter' && !e.nativeEvent.isComposing && target.id.startsWith('clue-')) {
                         e.preventDefault();
                         const i = Number(target.id.slice(5));
@@ -596,7 +686,8 @@ export default function Console() {
       </div>
     </div>
     {loaded && !failure && <div className="station-workbench" inert={u.archiveOpen}>
-      {preview && <span className="station-orbit-hint" aria-hidden="true">{t("中键拖动 · 旋转检查")}</span>}
+      <span className="station-orbit-hint">{t(inspection ? '拖动机身旋转 · 滚轮缩放 · 拖动把手翻面' : u.backView ? '点击把手连接处，回到正面' : '向内拖动把手，即可翻面')}</span>
+      {inspection && <button className="station-reset-view" onClick={() => engine.current?.resetInspection()}>{t('重置视角')}</button>}
       {preview === 'roster-motion' && !u.backView && <div className="station-roster-preview" aria-label={t("名牌动画预览")}>
         <span>{t("名牌演示")}</span>
         <button disabled={previewPeople.length >= 4} onClick={() => previewRoster('human')}>{t("真人入席")}</button>
@@ -612,9 +703,6 @@ export default function Console() {
         {s.phase === 'home' ? t("尚未接入频道") : s.phase === 'room' ? t("队伍准备中") :
             t("第 {0} 回合 · {1}{2}", [s.round, s.phase === 'encrypting' ? t("加密") : s.phase === 'intercept' ? t("拦截") : s.phase === 'decrypt' ? t("解码") : t("阶段已更新"), roleState(s,u).active ? t(" · 轮到你了") : ''])}
       </p>}
-      <button className="station-flip" onClick={() => act('flip-console')} aria-pressed={u.backView}>
-        <span aria-hidden="true">↶</span>{u.backView ? t("回到操作面") : t("翻到背面")}<small>{u.backView ? 'ESC' : t("检修 / 探索")}</small>
-      </button>
     </div>}
     {instrumentPreview && loaded && !failure && <section className="instrument-comparison" aria-label={t("仪表造型对比")} inert={u.archiveOpen}>
       <div className="instrument-comparison-row">

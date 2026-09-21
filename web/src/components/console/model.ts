@@ -56,6 +56,7 @@ export class ReceiverActivity {
 }
 export interface LocalState {
     locale: 'zh' | 'en';
+    theme: ThemeId;
     scopeFreq: number;
     mode: 'create' | 'join';
     name: string;
@@ -71,7 +72,6 @@ export interface LocalState {
     archiveAnchor: number | null;
     archiveOpen: boolean;
     manual: boolean;
-    rosterOpen: boolean;
     hiddenWords: boolean;
     seconds: number;
     diskOut: boolean;
@@ -91,10 +91,10 @@ export interface LocalState {
 }
 export const initialLocal: LocalState = {
     // FREQ rests on the engraved 2:1 mark: two locked cycles per sweep.
-    locale: 'zh', scopeFreq: 3 / 7,
+    locale: 'zh', theme: 'classic', scopeFreq: 3 / 7,
     mode: 'create', name: '', code: '', clues: ['', '', ''], guess: [0, 0, 0],
     slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
-    archiveOpen: false, manual: false, rosterOpen: false, hiddenWords: false, seconds: 0, diskOut: false,
+    archiveOpen: false, manual: false, hiddenWords: false, seconds: 0, diskOut: false,
     scopeWave: .5, scopeRate: .9, scopeAxis: 0,
     backView: false, batteryOpen: false, soundOn: false, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
@@ -152,9 +152,42 @@ export function roleState(s: StationState, u: LocalState) {
     const active = (encrypt || guess) && !u.submitted && !s.submitted && !s.recovering && (!s.deadline || Date.now() < s.deadline);
     const complete = encrypt ? s.secretDigits.length === 3 && u.clues.every(c => c.trim()) :
         guess && u.guess.every(n => n >= 1 && n <= 4) && new Set(u.guess).size === 3;
-    const color = s.phase === 'intercept' ? '#c8a2ea' : s.phase === 'decrypt' ? '#83c7d1' : '#f1be69';
-    return { encrypt, guess, active, ready: active && complete && s.connected, color,
+    return { encrypt, guess, active, ready: active && complete && s.connected,
         action: encrypt ? 'encrypt' : s.phase === 'intercept' ? 'intercept' : 'decrypt' };
+}
+export const themeChoices = [
+    { id: 'classic', label: '经典', own: { light: '#8bc995', ink: '#365e43' }, opponent: { light: '#83b9ed', ink: '#315d7b' } },
+    { id: 'amber', label: '琥珀', own: { light: '#edc27e', ink: '#795126' }, opponent: { light: '#87c4d2', ink: '#315c6a' } },
+    { id: 'violet', label: '紫罗兰', own: { light: '#c5afe8', ink: '#654981' }, opponent: { light: '#9bcbb6', ink: '#3b6251' } },
+    { id: 'rose', label: '玫瑰', own: { light: '#e6aba1', ink: '#844e4b' }, opponent: { light: '#a9bedf', ink: '#475f80' } },
+] as const;
+export type ThemeId = typeof themeChoices[number]['id'];
+export function themeColors(theme: ThemeId = 'classic') {
+    return themeChoices.find(choice => choice.id === theme) ?? themeChoices[0];
+}
+export function readTheme(): ThemeId {
+    try {
+        const saved = localStorage.getItem('decrypto-theme');
+        return themeChoices.find(choice => choice.id === saved)?.id ?? 'classic';
+    } catch { return 'classic'; }
+}
+export function saveTheme(theme: ThemeId) {
+    try { localStorage.setItem('decrypto-theme', theme); } catch { /* Retain the session choice when storage is blocked. */ }
+}
+/** Team labels keep their colors before joining; active displays pass no team when idle. */
+export function teamPalette(team: string, myTeam: string, theme: ThemeId = 'classic') {
+    if (!team) return { light: '#a2a492', ink: '#596457' };
+    const colors = themeColors(theme);
+    return team === (myTeam || 'A') ? colors.own : colors.opponent;
+}
+/** The sending team keeps its role all round; interception hands action to the other team. */
+export function phaseSignal(s: StationState, theme: ThemeId = 'classic') {
+    const playing = ['encrypting', 'intercept', 'decrypt'].includes(s.phase);
+    const participant = ['encryptor', 'teammate', 'opponent'].includes(s.myRole);
+    const sendingTeam = s.myTeam && participant ? s.myRole === 'opponent' ? s.myTeam === 'A' ? 'B' : 'A' : s.myTeam : '';
+    const actingTeam = !playing ? '' : s.phase === 'intercept' ? sendingTeam === 'A' ? 'B' : sendingTeam === 'B' ? 'A' : '' : sendingTeam;
+    const own = !!actingTeam && actingTeam === s.myTeam;
+    return { sendingTeam, actingTeam, own, color: teamPalette(actingTeam, s.myTeam, theme).light };
 }
 // Presence and progress are public signals; never infer per-player connectivity.
 export function rosterTeams(s: StationState, u: LocalState) {
@@ -162,8 +195,7 @@ export function rosterTeams(s: StationState, u: LocalState) {
     const role = roleState(s, u);
     const everyone = [...s.teamA, ...s.teamB];
     const uniqueName = (name: string) => everyone.filter(p => p.nickname === name).length === 1;
-    const sendingTeam = s.myTeam && s.myRole ? s.myRole === 'opponent' ? s.myTeam === 'A' ? 'B' : 'A' : s.myTeam : '';
-    const actingTeam = s.phase === 'intercept' ? sendingTeam === 'A' ? 'B' : sendingTeam === 'B' ? 'A' : '' : sendingTeam;
+    const { sendingTeam, actingTeam } = phaseSignal(s);
     const signal = s.playerProgress || (s.aiStatus ? { ...s.aiStatus, step: s.aiStatus.completed ?? Math.max(0, s.aiStatus.step - 1) } : null);
     const action = s.phase === 'encrypting' ? 'encrypt' : s.phase === 'intercept' ? 'intercept' : 'decrypt';
     return (['A', 'B'] as const).map(team => {
