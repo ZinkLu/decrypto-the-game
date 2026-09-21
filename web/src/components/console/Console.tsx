@@ -4,14 +4,19 @@ import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
 import { initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, stepInstrumentValue } from './model';
 import { paint, knobLabel } from './paint';
+import { qualityChoices, qualityProfiles, describeQuality, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import ArchiveSheet from './ArchiveSheet';
 import MobileConsole from './MobileConsole';
 import type { LocalState, InstrumentVariant } from './model';
 import type { Target } from './paint';
 import type { PlayerInfo } from '../../store/gameStore';
+import type { QualityChoice, QualityLevel } from './quality';
 const instrumentPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('instruments');
 const preview = import.meta.env.DEV ? new URLSearchParams(location.search).get('preview') || (instrumentPreview ? 'encrypting' : null) : null;
 const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
+// Deterministic stills and benchmarks pin a level without touching the saved choice.
+const pinnedQuality = import.meta.env.DEV ? qualityChoices.find(choice => choice === new URLSearchParams(location.search).get('quality')) : undefined;
+const qualityLabels: Record<QualityChoice, string> = { auto: '自动', high: '高', medium: '中', low: '低' };
 const initialInstrument = instrumentPreview ? instrumentOptions.find(option => option.id === new URLSearchParams(location.search).get('instruments'))?.id || 'signal' : initialLocal.instrumentVariant;
 const scopeControls = ['scope-tune', 'scope-wave', 'scope-rate', 'scope-xy', 'meter-amplitude', 'meter-rate'];
 const isScopeControl = (id: string) => scopeControls.includes(id);
@@ -31,6 +36,10 @@ export default function Console() {
     const [loaded, setLoaded] = useState(false);
     const [failure, setFailure] = useState('');
     const [archiveVisible, setArchiveVisible] = useState(false);
+    const [quality, setQuality] = useState<QualityChoice>(() => pinnedQuality ?? readQuality());
+    const [autoLevel, setAutoLevel] = useState<QualityLevel>(() => pinnedQuality ? 'high' : readAutoQuality());
+    const [probeRun, setProbeRun] = useState(0);
+    const level = quality === 'auto' ? autoLevel : quality;
     const stage = useRef<HTMLDivElement>(null);
     const engine = useRef<ConsoleEngine | null>(null);
     const controls = useRef(new Map<string, HTMLElement>());
@@ -41,8 +50,8 @@ export default function Console() {
     const content = useMemo(() => ({ ...painted, targets: painted.targets.map(target =>
         isScopeControl(target.id) ? { ...target, label: knobLabel(target.id, u) } : target) }),
         [painted, u.scopeFreq, u.scopeWave, u.scopeRate, u.scopeAxis, u.meterAmplitude, u.meterRate]);
-    const current = useRef({ s, u, content });
-    current.current = { s, u, content };
+    const current = useRef({ s, u, content, level });
+    current.current = { s, u, content, level };
     const pending = useRef(false);
     const progressLast = useRef(0);
     const tuningDrag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
@@ -56,6 +65,13 @@ export default function Console() {
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
     useEffect(() => { saveLocale(u.locale); document.documentElement.lang = u.locale === 'zh' ? 'zh-CN' : 'en'; document.title = u.locale === 'zh' ? 'Decrypto - 谍报风云' : 'Decrypto'; setAnnouncement(translate(u.locale, '语言已切换'));  }, [u.locale]);
     function patch(values: Partial<LocalState>) { setU(old => ({ ...old, ...values })); }
+    function chooseQuality(choice: QualityChoice) {
+        // Choosing Auto again measures this device afresh, starting from high.
+        if (choice === 'auto') { setAutoLevel('high'); saveAutoQuality('high'); setProbeRun(run => run + 1); }
+        setQuality(choice);
+        saveQuality(choice);
+        setAnnouncement(t('画质：{0}', [t(qualityLabels[choice])]));
+    }
     function adjustInstrument(control: 'amplitude' | 'rate', steps: number) {
         const local = current.current.u;
         if (!local.powerOn || local.backView) return;
@@ -147,6 +163,7 @@ export default function Console() {
                     setAnnouncement(t("正在拉出纸带并展开密报记录；关闭后撕下小票"));
                 }
             }, !!preview, instrumentPreview);
+            instance.setQuality(qualityProfiles[current.current.level]);
             engine.current = instance;
             instance.load().then(() => { if (!cancelled) {
                 instance!.update(current.current.content, current.current.u);
@@ -161,6 +178,25 @@ export default function Console() {
         return () => { cancelled = true; instance?.dispose(); engine.current = null; };
     }, []);
     useLayoutEffect(() => { engine.current?.update(content, u); project(); }, [content, loaded]);
+    useLayoutEffect(() => { engine.current?.setQuality(qualityProfiles[level]); }, [level]);
+    useEffect(() => {
+        if (!loaded || quality !== 'auto') return;
+        let cancelled = false;
+        // Auto steps down until one synchronised frame fits the budget.
+        void (async () => {
+            for (let settled = current.current.level; engine.current;) {
+                const cost = await engine.current.probe();
+                if (cancelled) return;
+                const next = settleQuality(settled, cost);
+                if (next === settled) return;
+                settled = next;
+                setAutoLevel(next);
+                saveAutoQuality(next);
+                engine.current?.setQuality(qualityProfiles[next]);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [loaded, quality, probeRun]);
     useEffect(() => {
         pending.current = false;
         setU(old => ({ ...old, clues: ['', '', ''], guess: [0, 0, 0], slot: 0, submitted: false, focus: '', note: '', manual: false,
@@ -442,12 +478,26 @@ export default function Console() {
             state.removeAI(team, Number(index));
         }
     }
+    const qualityHint = (choice: QualityChoice) => choice === 'auto'
+        ? `${t('按本机实测的单帧耗时选择档位；再次点击重新检测')} · ${t('当前')} ${t(qualityLabels[level])}`
+        : `${t(qualityLabels[choice])} · ${describeQuality(qualityProfiles[choice], t)}`;
     return <main className={`station ${failure ? 'station-fallback' : ''}`} data-power={u.powerOn ? 'on' : 'off'}
+        data-backdrop-blur={qualityProfiles[level].backdropBlur ? undefined : 'off'}
         data-instruments={instrumentPreview || undefined} data-instrument={instrumentPreview ? u.instrumentVariant : undefined}
         data-detail={(instrumentPreview ? instrumentCloseup ? 'meter' : null : detail) || undefined}>
-    <div className="station-language" role="group" aria-label="Language / 语言" inert={u.archiveOpen}>
-      <button lang="zh-CN" aria-pressed={u.locale === 'zh'} onClick={() => patch({ locale: 'zh' })}>中文</button>
-      <button lang="en" aria-pressed={u.locale === 'en'} onClick={() => patch({ locale: 'en' })}>EN</button>
+    <div className="station-settings" inert={u.archiveOpen}>
+      {!failure && <div className="station-quality" role="group" aria-label={t("画质")}>
+        <span aria-hidden="true">{t("画质")}</span>
+        {qualityChoices.map(choice => <button key={choice} aria-pressed={quality === choice} title={qualityHint(choice)}
+            onClick={() => chooseQuality(choice)} onMouseEnter={() => setHint('quality:' + choice)} onMouseLeave={() => setHint('')}
+            onFocus={() => setHint('quality:' + choice)} onBlur={() => setHint('')}>
+          {t(qualityLabels[choice])}{choice === 'auto' && quality === 'auto' && <small>{t(qualityLabels[level])}</small>}
+        </button>)}
+      </div>}
+      <div className="station-language" role="group" aria-label="Language / 语言">
+        <button lang="zh-CN" aria-pressed={u.locale === 'zh'} onClick={() => patch({ locale: 'zh' })}>中文</button>
+        <button lang="en" aria-pressed={u.locale === 'en'} onClick={() => patch({ locale: 'en' })}>EN</button>
+      </div>
     </div>
     <h1 className="sr-only">{t("Decrypto 谍报风云 · 密码通信终端")}</h1>
     <MobileConsole state={s} local={u} ready={content.ready} status={content.status} onAct={act} onChange={(id, value) => change({ id }, value)} inert={u.archiveOpen}/>
@@ -587,7 +637,8 @@ export default function Console() {
         <span>{t("旋钮可点击、拖动或滚轮调整 · 中键旋转机身")}</span>
       </div>
     </section>}
-    {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{content.targets.find(target => target.id === hint)?.label}</div>}
+    {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{hint.startsWith('quality:')
+        ? qualityHint(hint.slice(8) as QualityChoice) : content.targets.find(target => target.id === hint)?.label}</div>}
     <p className="mobile-hint">{t("横向滑动查看终端 · 下拉纸带查看密报记录")}</p>
     <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${!!preview}`} open={archiveVisible} locale={u.locale} state={s} onClose={closeArchive} onClosed={restoreArchiveFocus}/>
     <div className="sr-only" role="status" aria-live="polite">{announcement}</div>

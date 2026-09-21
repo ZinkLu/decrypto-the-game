@@ -91,16 +91,22 @@ export class ConsoleInstruments {
         for (const [id, root] of this.variants) root.visible = id === this.variant;
     }
 
-    tick(now: number, dt: number, reduced: boolean) {
+    /**
+     * What moved this frame. A `control` the player set is drawn at once; a
+     * `needle` that swings by itself is ambient motion, paced by the quality level.
+     */
+    tick(now: number, dt: number, reduced: boolean): 'control' | 'needle' | false {
         if (this.variant === 'original') return false;
         const t = (now - this.demoStart) / 1000;
         const animate = this.powered && !reduced;
-        let changed = false;
+        let control = false, needle = false;
         const rotate = (name: string, axis: 'x' | 'z', target: number, response = 18) => {
             const part = this.parts.get(name);
             if (!part) return;
             const next = reduced ? target : THREE.MathUtils.damp(part.rotation[axis], target, response, dt);
-            changed ||= Math.abs(part.rotation[axis] - next) > .00001;
+            if (Math.abs(part.rotation[axis] - next) > .00001) {
+                if (/Needle$|Drum$/.test(name)) needle = true; else control = true;
+            }
             part.rotation[axis] = next;
         };
         if (this.variant === 'signal') {
@@ -129,6 +135,6 @@ export class ConsoleInstruments {
             rotate('StatusStep', 'z', .8 - this.amplitude * .8);
             rotate('StatusSpeed', 'z', .85 - this.rate * .425);
         }
-        return changed;
+        return control ? 'control' : needle && 'needle';
     }
 }

@@ -78,8 +78,14 @@ export function crtGeometry(width: number, height: number, profile: CrtProfile) 
 
 // Trace through the outer glass to a separate curved phosphor coating. This
 // same optical path is used by the GPU and inverted for accessible DOM inputs.
+// Without `refraction` (the lite optics) the picture sits on the faceplate and
+// only the raster's barrel warp remains.
 export function crtRasterUv(u: number, v: number, width: number, height: number,
-    profile: CrtProfile, eye: THREE.Vector3) {
+    profile: CrtProfile, eye: THREE.Vector3, refraction = true) {
+    if (!refraction) {
+        const x = u - .5, y = v - .5, scale = 1 + (x * x + y * y) * profile.warp;
+        return { u: .5 + x * scale, v: .5 + y * scale };
+    }
     const px = (u - .5) * width, py = (v - .5) * height, pz = crtHeight(u, v, profile.rise);
     const ux = 2 * u - 1, vy = 2 * v - 1;
     let nx = 2 * profile.rise * ux / width;
@@ -108,15 +114,15 @@ export function crtRasterUv(u: number, v: number, width: number, height: number,
 }
 
 export function crtDisplayUv(u: number, v: number, width: number, height: number,
-    profile: CrtProfile, eye: THREE.Vector3) {
+    profile: CrtProfile, eye: THREE.Vector3, refraction = true) {
     let x = u, y = v;
     const step = .0001;
     // Newton inversion includes refraction and camera position; a fixed radial
     // inverse would leave the real input controls behind when inspecting sideways.
     for (let i = 0; i < 7; i++) {
-        const at = crtRasterUv(x, y, width, height, profile, eye);
-        const dx = crtRasterUv(x + step, y, width, height, profile, eye);
-        const dy = crtRasterUv(x, y + step, width, height, profile, eye);
+        const at = crtRasterUv(x, y, width, height, profile, eye, refraction);
+        const dx = crtRasterUv(x + step, y, width, height, profile, eye, refraction);
+        const dy = crtRasterUv(x, y + step, width, height, profile, eye, refraction);
         const a = (dx.u - at.u) / step, b = (dy.u - at.u) / step;
         const c = (dx.v - at.v) / step, d = (dy.v - at.v) / step;
         const determinant = a * d - b * c;

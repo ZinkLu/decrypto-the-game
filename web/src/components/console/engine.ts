@@ -15,6 +15,7 @@ import { VectorMonitor, scopeResonance, scopeTuning } from './scope';
 import { paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, diskInsertPose, diskEjectPose } from './mechanics';
 import { ReceiptTransport } from './tearing';
 import { ConsoleInstruments } from './instruments';
+import { qualityProfiles, type QualityProfile } from './quality';
 interface Surface {
     x: number;
     y: number;
@@ -129,6 +130,17 @@ export class ConsoleEngine {
     private meterKnobs: THREE.Object3D[] = [];
     private soundSwitch?: THREE.Object3D;
     private dirty = true;
+    private rendered = 0;
+    private ambientOwed = false;
+    private scopeDrawn = 0;
+    private quality: QualityProfile = qualityProfiles.high;
+    private studio: { light: THREE.Light; intensity: number }[] = [];
+    private areaLights: THREE.RectAreaLight[] = [];
+    private keyLight?: THREE.DirectionalLight;
+    private crtMaterials: THREE.Material[] = [];
+    private screenGlass: THREE.Mesh[] = [];
+    private nixieCovers: THREE.Mesh[] = [];
+    private probing?: { warm: number; done: (cost: number) => void };
     private paperShadowSkip = 0;
     private frameHashes = new Map<string, number>();
     private hashCanvas = document.createElement('canvas');
@@ -174,14 +186,13 @@ export class ConsoleEngine {
         private onPaperPull: () => void = () => {}, private inspectionEnabled = false,
         private instrumentPreview = false) {
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
         this.renderer.toneMappingExposure = 1.04;
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.autoUpdate = false;
         this.renderer.shadowMap.needsUpdate = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        this.renderer.shadowMap.type = THREE.PCFShadowMap;
         this.renderer.domElement.setAttribute('aria-hidden', 'true');
         this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost);
         host.prepend(this.renderer.domElement);
@@ -217,7 +228,8 @@ export class ConsoleEngine {
         room.dispose();
         pmrem.dispose();
         this.scene.environmentIntensity = .30;
-        this.scene.add(new THREE.HemisphereLight('#f5e4cb', '#53636d', .26));
+        const sky = new THREE.HemisphereLight('#f5e4cb', '#53636d', .26);
+        this.scene.add(sky);
         const key = new THREE.DirectionalLight('#ffe9c7', 3.4);
         key.position.set(-8, 10, 12);
         key.castShadow = true;
@@ -249,6 +261,9 @@ export class ConsoleEngine {
         rim.lookAt(6.5, 3, 0);
         rim.rotateZ(-.12);
         this.scene.add(rim);
+        this.keyLight = key;
+        this.areaLights = [softbox, rim];
+        this.studio = [sky, key, fill].map(light => ({ light, intensity: light.intensity }));
         const back = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: '#bcb5a5', roughness: .94 }));
         back.position.z = -3.95;
         back.receiveShadow = true;
@@ -266,7 +281,7 @@ export class ConsoleEngine {
         this.drawScopeGraticule();
         this.observer = new ResizeObserver(() => this.resize());
         this.observer.observe(host);
-        this.resize();
+        this.applyQuality();
         this.raf = requestAnimationFrame(this.tick);
     }
     async load() {
@@ -327,6 +342,7 @@ export class ConsoleEngine {
                     plane.worldToLocal(eye.value);
                 };
                 material.onBeforeCompile = shader => {
+                    const lite = this.quality.crtOptics === 'lite';
                     shader.uniforms.crtTime = this.crtTime;
                     shader.uniforms.crtPower = this.crtPower;
                     shader.uniforms.crtProfile = { value: profile };
@@ -338,7 +354,7 @@ export class ConsoleEngine {
                     shader.uniforms.crtRise = { value: curvature.rise };
                     shader.uniforms.crtInnerRise = { value: curvature.innerRise };
                     shader.uniforms.crtDepth = { value: curvature.depth };
-                    shader.fragmentShader = crtOpticsShader + `
+                    shader.fragmentShader = (lite ? '#define CRT_LITE\n' : '') + crtOpticsShader + `
                         uniform float crtTime;
                         uniform float crtPower;
                         uniform float crtProfile;
@@ -356,7 +372,13 @@ export class ConsoleEngine {
                     ` + shader.fragmentShader;
                     shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
                         #ifdef USE_MAP
+                        // Lite optics print the picture on the faceplate: no ray
+                        // through the glass, no fringing and no halation taps.
+                        #ifdef CRT_LITE
+                        vec2 crtCentered = vMapUv - .5;
+                        #else
                         vec2 crtCentered = crtPhosphorUv(vMapUv) - .5;
+                        #endif
                         float crtRadius = dot(crtCentered, crtCentered);
                         vec2 crtRasterUv = .5 + crtCentered * (1.0 + crtRadius * crtCurve);
                         vec2 crtUv = clamp(crtRasterUv, .002, .998);
@@ -371,18 +393,23 @@ export class ConsoleEngine {
                         float crtTearY = .12 + crtHash(vec2(crtTick + crtSeed * 7.3, 8.3)) * .76;
                         float crtTear = (1.0 - smoothstep(.003, .022, abs(crtUv.y - crtTearY))) * crtBurst;
                         crtUv.x = clamp(crtUv.x + crtTear * (crtHash(vec2(crtTick, crtSeed * 9.1 + 2.1)) - .5) * .075, .002, .998);
-                        float crtSplit = (.0012 + crtTear * .009) * crtPower;
                         vec4 crtCenter = texture2D(map, crtUv);
+                        #ifdef CRT_LITE
+                        vec4 sampledDiffuseColor = crtCenter;
+                        #else
+                        float crtSplit = (.0012 + crtTear * .009) * crtPower;
                         vec4 crtLeft = texture2D(map, clamp(crtUv - vec2(crtSplit, 0.0), .002, .998));
                         vec4 crtRight = texture2D(map, clamp(crtUv + vec2(crtSplit, 0.0), .002, .998));
                         vec4 sampledDiffuseColor = crtProfile > .5 && crtProfile < 1.5
                             ? vec4(crtRight.r, crtCenter.g, crtLeft.b, crtCenter.a)
                             : crtCenter;
+                        #endif
                         // Halation follows bright ink and traces only. Dark glass
                         // cannot produce this light, and power-off suppresses it.
                         // Four near taps carry a slightly raised weight instead
                         // of a second far ring; the tiny ruby windows skip it.
                         vec3 crtHalo = vec3(0.0);
+                        #ifndef CRT_LITE
                         if (crtProfile < .5 || crtProfile > 1.5) {
                             vec2 glowStep = vec2(.0022 / crtAspect, .0022);
                             crtHalo = (crtEmission(map, crtUv + vec2(glowStep.x, 0.0))
@@ -390,6 +417,7 @@ export class ConsoleEngine {
                                 + crtEmission(map, crtUv + vec2(0.0, glowStep.y))
                                 + crtEmission(map, crtUv - vec2(0.0, glowStep.y))) * .24;
                         }
+                        #endif
                         sampledDiffuseColor.rgb += crtHalo * .36 * crtPower;
                         sampledDiffuseColor.rgb *= 1.0 + .12 * crtPower;
                         // A dark inner border separates the emitting coating
@@ -431,7 +459,8 @@ export class ConsoleEngine {
                         #endif
                     `);
                 };
-                material.customProgramCacheKey = () => `console-crt-optics-v8-${profile}`;
+                material.customProgramCacheKey = () => `console-crt-optics-v9-${profile}-${this.quality.crtOptics}`;
+                this.crtMaterials.push(material);
                 this.addScreenGlass(name, plane);
             }
         }
@@ -648,7 +677,7 @@ export class ConsoleEngine {
                 removedBatteries: this.removedBatteries, unpluggedCables: this.unpluggedCables,
                 meterAmplitude: this.meterAmplitude, meterRate: this.meterRate,
                 instrumentVariant: this.instrumentVariant, instrumentDemo: this.instrumentDemo });
-        this.resize();
+        this.applyQuality();
     }
     private addScreenGlass(name: string, display: THREE.Mesh) {
         const material = new THREE.MeshPhysicalMaterial({
@@ -674,6 +703,7 @@ export class ConsoleEngine {
         glass.renderOrder = 6;
         glass.castShadow = glass.receiveShadow = false;
         display.add(glass);
+        this.screenGlass.push(glass);
     }
     private setupNixies() {
         this.model?.traverse(object => {
@@ -708,6 +738,7 @@ export class ConsoleEngine {
                 };
                 acrylic.customProgramCacheKey = () => 'clear-acrylic-specular-v1';
                 object.renderOrder = 7;
+                this.nixieCovers.push(object);
             }
             if (/^Nixie_.*glass$/.test(object.name)) {
                 object.castShadow = false; object.receiveShadow = false;
@@ -715,6 +746,7 @@ export class ConsoleEngine {
                 glass.depthWrite = false; glass.side = THREE.FrontSide;
                 glass.opacity = .105; glass.roughness = .075; glass.metalness = .05;
                 object.renderOrder = 5;
+                this.nixieCovers.push(object);
             }
         });
         for (let slot = 0; slot < 4; slot++) {
@@ -983,6 +1015,52 @@ export class ConsoleEngine {
         this.paperReaderStarted = true;
         this.onPaperPull();
     }
+    setQuality(profile: QualityProfile) {
+        if (profile === this.quality) return;
+        this.quality = profile;
+        this.applyQuality();
+    }
+    private applyQuality() {
+        const quality = this.quality;
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.pixelRatio));
+        // Without the softbox and rim, the remaining sources rise to the same
+        // mean exposure (matched on the lit front of the late-game console).
+        for (const light of this.areaLights) light.visible = quality.areaLights;
+        for (const { light, intensity } of this.studio) light.intensity = intensity * (quality.areaLights ? 1 : 1.26);
+        if (this.keyLight) this.keyLight.castShadow = quality.shadows;
+        for (const glass of this.screenGlass) glass.visible = quality.screenGlass;
+        for (const cover of this.nixieCovers) cover.visible = quality.nixieCover;
+        // The cache key names the optics, so this selects the other program.
+        for (const material of this.crtMaterials) material.needsUpdate = true;
+        this.renderer.shadowMap.needsUpdate = true;
+        // Also reprojects the DOM inputs, whose mapping follows the optics.
+        this.resize();
+    }
+    /** Cost in ms of one frame at the current quality, measured once `warm` frames have settled the pipelines. */
+    probe(warm = 8) {
+        this.probing?.done(NaN);
+        return new Promise<number>(done => { this.probing = { warm, done }; });
+    }
+    /**
+     * Reading a pixel back makes the GPU's share of a frame count, whatever
+     * rate the display or a power saver paces frames at. Frames run back to
+     * back for a quarter second because an idle GPU clocks down and stretches
+     * its frames (an M4 Max read 8 ms for a 5 ms frame after 120 ms, and the
+     * true cost after 250); the settled half shows what the device sustains.
+     * The pause follows the much longer stall of the first compiled frame.
+     */
+    private frameCost() {
+        const gl = this.renderer.getContext(), pixel = new Uint8Array(4), costs: number[] = [];
+        const deadline = performance.now() + 250;
+        do {
+            const started = performance.now();
+            this.renderer.render(this.scene, this.camera);
+            gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
+            costs.push(performance.now() - started);
+        } while (costs.length < 2 || performance.now() < deadline);
+        const settled = costs.slice(costs.length >> 1).sort((a, b) => a - b);
+        return settled[settled.length >> 1];
+    }
     inspectInstrument(closeup: boolean) {
         this.detailOverride = closeup ? 'meter' : null;
         this.resize();
@@ -1042,7 +1120,7 @@ export class ConsoleEngine {
         for (const fy of [0, .5, 1]) for (const fx of [0, .5, 1]) {
             const u = (target.x + target.w * fx) / frame.width;
             const v = 1 - (target.y + target.h * fy) / frame.height;
-            const uv = curvature ? crtDisplayUv(u, v, surface.w, surface.h, curvature, eye) : { u, v };
+            const uv = curvature ? crtDisplayUv(u, v, surface.w, surface.h, curvature, eye, this.quality.crtOptics === 'full') : { u, v };
             point.set((uv.u - .5) * surface.w, (uv.v - .5) * surface.h,
                 curvature ? crtHeight(uv.u, uv.v, curvature.rise) : 0)
                 .applyMatrix4(plane.matrixWorld).project(this.camera);
@@ -1067,7 +1145,7 @@ export class ConsoleEngine {
             return;
         const dt = Math.min((now - this.last) / 1000, .1);
         this.last = now;
-        let changed = false;
+        let changed = false, ambient = false;
         const oldInspectionYaw = this.inspectionYaw, oldInspectionPitch = this.inspectionPitch;
         this.inspectionYaw = this.reduced.matches ? this.inspectionTargetYaw :
             THREE.MathUtils.damp(this.inspectionYaw, this.inspectionTargetYaw, 18, dt);
@@ -1129,12 +1207,14 @@ export class ConsoleEngine {
             const meterTarget = this.powerOn ? this.reduced.matches ? 0 : wave * level : -.82;
             this.meterAngle = this.reduced.matches ? meterTarget : THREE.MathUtils.damp(this.meterAngle, meterTarget, 12, dt);
             if (this.receiverNeedle) this.receiverNeedle.rotation.z = -this.meterAngle;
-            if (Math.abs(oldMeter - this.meterAngle) > .0001) changed = true;
+            if (Math.abs(oldMeter - this.meterAngle) > .0001) ambient = true;
             for (const [knob, value] of [[this.meterKnobs[0], this.meterAmplitude], [this.meterKnobs[1], this.meterRate]] as const) {
                 if (knob) knob.rotation.z = -.85 + value * .425;
             }
         }
-        if (this.instruments?.tick(now, dt, this.reduced.matches)) changed = true;
+        const instruments = this.instruments?.tick(now, dt, this.reduced.matches);
+        if (instruments === 'control') changed = true;
+        else if (instruments === 'needle') ambient = true;
         for (const [name, item] of this.removable) {
             const battery = name.startsWith('BatteryCell_');
             const index = battery ? Number(name.slice(-1)) : ['RJ45', 'Serial', 'DC'].indexOf(name.slice(10));
@@ -1267,25 +1347,38 @@ export class ConsoleEngine {
                 this.pulses.delete(id);
         }
         const live = this.powerOn && !this.reduced.matches;
-        if (this.flipProgress < .65 && (live || this.dirty)) this.drawScope(dt);
-        this.crtTime.value = this.reduced.matches ? 0 : now / 1000;
-        // Power-on keeps the CRT raster, scope and VU needle alive, so those
-        // frames always render. Otherwise a frame renders only when state
-        // actually changed (tracked by `dirty` and `changed`).
-        if (live || changed || this.dirty) {
-            this.dirty = false;
-            this.renderer.render(this.scene, this.camera);
+        // Power-on keeps the CRT raster, scope and needle alive. Frames that
+        // carry nothing else are ambient and paced by the quality level; any
+        // state the player changed (`dirty`, `changed`) renders at once. A
+        // stage without a size (the phone layout hides it) renders nothing.
+        const probing = this.probing;
+        // A paced-out needle movement stays owed, so its resting pose is drawn.
+        this.ambientOwed ||= ambient;
+        const due = this.width > 0 && this.height > 0 && (changed || this.dirty || !!probing ||
+            (live || this.ambientOwed) && now - this.rendered >= 1000 / this.quality.ambientFps - 2);
+        if (due && this.flipProgress < .65 && (live || this.dirty)) {
+            // The beam runs for all the time since the phosphor was last shown.
+            this.drawScope(Math.min((now - this.scopeDrawn) / 1000, .1));
+            this.scopeDrawn = now;
         }
-        if (import.meta.env.DEV) {
+        this.crtTime.value = this.reduced.matches ? 0 : now / 1000;
+        if (due) {
+            this.dirty = this.ambientOwed = false;
+            this.rendered = now;
             this.scopeFrames++;
-            if (now - this.scopeFpsStarted >= 750) {
-                this.renderer.domElement.dataset.scopeFps = (this.scopeFrames * 1000 / (now - this.scopeFpsStarted)).toFixed(1);
-                this.renderer.domElement.dataset.drawCalls = String(this.renderer.info.render.calls);
-                this.renderer.domElement.dataset.triangles = String(this.renderer.info.render.triangles);
-                this.renderer.domElement.dataset.face = this.backView ? 'rear' : 'front';
-                this.scopeFrames = 0;
-                this.scopeFpsStarted = now;
+            this.renderer.render(this.scene, this.camera);
+            if (probing && probing.warm-- <= 0) {
+                this.probing = undefined;
+                probing.done(this.frameCost());
             }
+        }
+        if (import.meta.env.DEV && now - this.scopeFpsStarted >= 750) {
+            this.renderer.domElement.dataset.scopeFps = (this.scopeFrames * 1000 / (now - this.scopeFpsStarted)).toFixed(1);
+            this.renderer.domElement.dataset.drawCalls = String(this.renderer.info.render.calls);
+            this.renderer.domElement.dataset.triangles = String(this.renderer.info.render.triangles);
+            this.renderer.domElement.dataset.face = this.backView ? 'rear' : 'front';
+            this.scopeFrames = 0;
+            this.scopeFpsStarted = now;
         }
     };
     private drawScopeGraticule() {
@@ -1388,6 +1481,8 @@ export class ConsoleEngine {
     } }); }
     dispose() {
         this.disposed = true;
+        this.probing?.done(NaN);
+        this.probing = undefined;
         cancelAnimationFrame(this.raf);
         this.observer.disconnect();
         this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);

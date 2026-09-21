@@ -262,11 +262,17 @@ button,input { font: inherit; }
   .archive-dismiss { top: 8px; right: 10px; }
 }
 
-/* The language selector belongs to the session UI, outside the fixed legends. */
-.station-language { position: absolute; top: 18px; right: 22px; z-index: 6; display: flex; padding: 3px; gap: 2px; border: 1px solid #afa994; background: #e5decb; border-radius: 4px; }
-.station-language button { min-width: 46px; min-height: 36px; padding: 5px 10px; border: 0; border-radius: 2px; background: transparent; color: #57594a; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
-.station-language button[aria-pressed="true"] { color: #eee5cf; background: #394c48; }
-.station-language button:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
+/* Language and graphics quality belong to the session UI, outside the fixed legends. */
+.station-settings { position: absolute; top: 18px; right: 22px; z-index: 6; display: flex; align-items: center; gap: 10px; }
+.station-language, .station-quality { display: flex; align-items: center; padding: 3px; gap: 2px; border: 1px solid #afa994; background: #e5decb; border-radius: 4px; }
+.station-settings button { min-width: 46px; min-height: 36px; padding: 5px 10px; border: 0; border-radius: 2px; background: transparent; color: #57594a; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.station-settings button[aria-pressed="true"] { color: #eee5cf; background: #394c48; }
+.station-settings button:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
+.station-quality > span { padding: 0 8px 0 9px; color: #7a7764; font-size: 11px; font-weight: 600; letter-spacing: .12em; }
+.station-quality button { min-width: 40px; }
+/* Auto names the level it settled on. */
+.station-quality small { margin-left: 6px; padding-left: 6px; border-left: 1px solid #eee5cf66; font-size: 11px; font-weight: 500; }
+.station[data-backdrop-blur="off"] .archive-dialog::backdrop { backdrop-filter: none; }
 .station-controls [data-control^="scope-"] { touch-action: none; }
 
 /* A compact task surface shares the same game state as the physical terminal. */
@@ -275,6 +281,7 @@ button,input { font: inherit; }
   .station:not([data-instruments]):not([data-detail]) > .station-viewport,
   .station:not([data-instruments]):not([data-detail]) > .station-workbench,
   .station:not([data-instruments]):not([data-detail]) > .station-hint,
+  .station:not([data-instruments]):not([data-detail]) .station-quality,
   .station > .mobile-hint { display: none; }
   .station:not([data-instruments]):not([data-detail]) > .mobile-console { display: block; }
   .mobile-console { max-width: 560px; margin: auto; padding: 70px 20px 12px; color: #273d36; overflow-wrap: anywhere; }

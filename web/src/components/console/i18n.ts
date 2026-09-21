@@ -352,7 +352,26 @@ export const messages: Record<string, string> = {
     "按时间顺序": "OLDEST → LATEST",
     "通信结束 ·": "END OF TRANSMISSION ·",
     "密钥 / 0{0}": "KEY / 0{0}",
-    "D / 密码通信": "D / FIELD COMMUNICATIONS"
+    "D / 密码通信": "D / FIELD COMMUNICATIONS",
+    "画质": "Quality",
+    "自动": "Auto",
+    "高": "High",
+    "中": "Med",
+    "低": "Low",
+    "画质：{0}": "Graphics quality: {0}",
+    "按本机实测的单帧耗时选择档位；再次点击重新检测": "Picks a level from this device's measured frame time; click again to measure afresh",
+    "当前": "now",
+    "分辨率上限 {0}×": "Resolution up to {0}\u00d7",
+    "面光源": "Area lights",
+    "阴影": "Shadows",
+    "屏幕玻璃": "Screen glass",
+    "辉光管罩": "Nixie cover",
+    "背景模糊": "Backdrop blur",
+    "开": "on",
+    "关": "off",
+    "CRT 光学完整": "Full CRT optics",
+    "CRT 光学简化": "Simplified CRT optics",
+    "待机 {0} 帧": "Idle {0} fps"
 };
 export function translate(locale: Locale, message: string, values: unknown[] = []): string {
     let source = locale === 'en' ? messages[message] ?? message : message;

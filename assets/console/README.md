@@ -303,6 +303,8 @@ The `.blend` contains the physical chassis; live lettering is supplied by Three.
 - `model.ts`: action eligibility, archive visibility and development fixtures.
 - `rosterMotion.ts`: identity-aware insertion/retraction, retaining outgoing ink
   until the card is hidden; rapid changes resolve to the latest occupant.
+- `quality.ts`: the graphics quality levels, the switches each one owns, Auto's
+  step-down rule and the saved choice. See "Graphics quality" below.
 
 Geometry and surface URLs share the revision in `ConsoleEngine.load()`; bump it
 when exporting a new model to prevent old geometry and new labels being mixed
@@ -336,6 +338,57 @@ Development-only visual fixtures (no WebSocket connection and no backend writes)
   controls are development-only and never connect to the multiplayer server.
 - `/?preview=round_result`
 - `/?preview=game_over`
+
+Add `&quality=high|medium|low|auto` to pin a level for a still or a benchmark
+without touching the saved choice.
+
+## Graphics quality
+
+Quality is session UI beside the language selector, outside the console and its
+fixed legends: 自动 / 高 / 中 / 低 (Auto / High / Med / Low). The choice is kept in
+`localStorage`. Hovering a level lists exactly what it switches, generated from
+the same `qualityProfiles` table the engine applies, so the hint cannot drift
+from the behaviour. Every switch changes live; nothing reloads. The phone layout
+replaces the 3D stage, so the selector is hidden there and a stage without a
+size renders nothing at all.
+
+| Switch | High | Medium | Low | Alone saves (GPU / software raster) |
+| --- | --- | --- | --- | --- |
+| `pixelRatio` cap | 2 | 1.5 | 1 | 34% at 1.5, 51% at 1 |
+| `areaLights` (softbox and rim `RectAreaLight`) | on | off | off | 46% / 28% |
+| `shadows` (PCF, 1024 map) | on | on | off | 20% / 13%, plus each map refresh (189 calls, 492k triangles) |
+| `screenGlass` (physical glass on six CRTs) | on | on | off | 22% / 10% |
+| `nixieCover` (clearcoat acrylic, tube glass) | on | on | off | 15% / 8% |
+| `crtOptics` | full | full | lite | up to 15% / 12% |
+| `ambientFps` | 60 | 30 | 30 | halves the steady load |
+| `backdropBlur` behind the archive sheet | on | on | off | not measured |
+
+Savings were measured one switch at a time on the late-game console at 2880x1800
+(Apple M4 Max, 5.9 ms per synchronised frame) and, for ratios only, on a software
+rasteriser at 1440x900. They overlap, so they do not add up. Whole levels on the
+same machine: high 5.2 ms, medium 2.6 ms, low 1.8 ms. Environment reflections
+stay on at every level: removing them costs the metals their look and saved
+nothing further once the other low switches were off. MSAA also stays, because
+it is fixed when the context is created. The 645k triangles are not the bottleneck.
+
+- With the area lights off, the key, fill and sky rise by 1.26 to the same mean
+  exposure; the visible change is a slightly firmer cast shadow.
+- `lite` optics print the picture on the faceplate: no ray through the glass, no
+  halation taps and no colour fringing; raster rows, roll, flicker and grain stay.
+  `bounds()` passes the same choice to `crtDisplayUv`, because the DOM inputs
+  must invert whichever optical path the shader draws.
+- Only ambient frames are paced: frames in which nothing but the raster, the
+  beam and the needle moved. Anything the player changes renders at once, and
+  the scope runs its beam for all the time since the phosphor was last shown.
+  Quality never shortens or removes an interaction animation, and it is
+  independent of `prefers-reduced-motion`.
+- Auto measures instead of guessing from hardware names. After the first frames
+  it renders back to back for a quarter second, reading one pixel back per frame
+  so the GPU's share counts; the burst is needed because an idle GPU clocks down
+  and would otherwise report stretched frames. A level is kept when a frame fits
+  13 ms. Auto only steps down (straight to low when even medium could not fit),
+  remembers the result for the next visit, and measures afresh from high when
+  Auto is chosen again.
 
 ## Controls
 
@@ -575,6 +628,6 @@ The entire console now shares a 28-degree perspective camera. Its distance
 adapts to the viewport while keeping a consistent inspection direction. Detail
 URLs crop this same camera frustum without repositioning or flattening it.
 The global lighting balances a warm upper-left key, cool fill and two broad
-studio sources against restrained environment light. Variance shadow maps
+studio sources against restrained environment light. Filtered (PCF) shadow maps
 soften the machine's cast shadow and the contacts between its hardware. Copy-key
 travel is relative to its exported mounting depth, including after model changes.

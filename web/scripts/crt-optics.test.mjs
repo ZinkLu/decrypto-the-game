@@ -70,6 +70,22 @@ test('CRT input regions follow the refracted picture throughout the inspection r
   }
 });
 
+test('lite CRT optics keep the inputs on a picture that no longer shifts with the eye', () => {
+  for (const name of displays) {
+    const { w, h } = surfaces[name], profile = crtProfile(name);
+    const left = new Vector3(-12, 4, 26), right = new Vector3(12, -4, 26);
+    for (const u of [0, .06, .28, .5, .78, .94, 1]) for (const v of [0, .07, .35, .5, .75, .93, 1]) {
+      assert.deepEqual(crtRasterUv(u, v, w, h, profile, left, false), crtRasterUv(u, v, w, h, profile, right, false));
+      const face = crtDisplayUv(u, v, w, h, profile, left, false);
+      const ink = crtRasterUv(face.u, face.v, w, h, profile, left, false);
+      assert.ok(Math.hypot(ink.u - u, ink.v - v) < .00001, `${name}: input misses its visible ink`);
+    }
+    // The barrel warp is shared, so both optics agree where the glass adds nothing: dead centre, seen head-on.
+    const ahead = new Vector3(0, 0, 26);
+    assert.deepEqual(crtRasterUv(.5, .5, w, h, profile, ahead, false), crtRasterUv(.5, .5, w, h, profile, ahead));
+  }
+});
+
 test('CRT refraction preserves image orientation without folding the raster', () => {
   for (const name of displays) {
     const { w, h } = surfaces[name], profile = crtProfile(name), step = .0001;
