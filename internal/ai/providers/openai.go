@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/internal/ai"
 )
@@ -16,6 +17,7 @@ import (
 // OpenAIProvider calls any OpenAI-compatible chat completions API.
 // Works with OpenAI, DeepSeek, Ollama, vLLM, Together AI, etc.
 type OpenAIProvider struct {
+	Client  *http.Client
 	APIKey  string
 	Model   string
 	BaseURL string // e.g. "https://api.openai.com/v1" or "http://localhost:11434/v1"
@@ -35,6 +37,7 @@ func NewOpenAIProvider(apiKey, baseURL, model string) *OpenAIProvider {
 	}
 	return &OpenAIProvider{
 		APIKey:  apiKey,
+		Client:  &http.Client{Timeout: 35 * time.Second},
 		Model:   model,
 		BaseURL: baseURL,
 	}
@@ -52,13 +55,18 @@ type openaiRequest struct {
 }
 
 type openaiChoice struct {
-	Message struct {
+	FinishReason string `json:"finish_reason"`
+	Message      struct {
 		Content          string `json:"content"`
 		ReasoningContent string `json:"reasoning_content,omitempty"`
 	} `json:"message"`
 }
 
 type openaiResponse struct {
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
 	Choices []openaiChoice `json:"choices"`
 }
 
@@ -94,13 +102,17 @@ func (p *OpenAIProvider) Complete(ctx context.Context, messages []ai.Message) (s
 		req.Header.Set("Authorization", "Bearer "+p.APIKey)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	client := p.Client
+	if client == nil {
+		client = &http.Client{Timeout: 35 * time.Second}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("openai: http request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	respBytes, err := io.ReadAll(resp.Body)
+	respBytes, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
 		return "", fmt.Errorf("openai: read response body: %w", err)
 	}
@@ -119,8 +131,9 @@ func (p *OpenAIProvider) Complete(ctx context.Context, messages []ai.Message) (s
 	}
 
 	choice := openaiResp.Choices[0]
-	if reasoning := choice.Message.ReasoningContent; reasoning != "" {
-		log.Printf("[AI] OpenAI reasoning_content:\n%s", reasoning)
+	log.Printf("[AI] completion finish=%s prompt_tokens=%d completion_tokens=%d", choice.FinishReason, openaiResp.Usage.PromptTokens, openaiResp.Usage.CompletionTokens)
+	if strings.TrimSpace(choice.Message.Content) == "" || choice.FinishReason == "length" {
+		return "", fmt.Errorf("openai: empty or incomplete answer (finish_reason=%s)", choice.FinishReason)
 	}
 
 	return choice.Message.Content, nil

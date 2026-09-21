@@ -15,14 +15,19 @@ export class WebSocketService {
 
   connect() {
     this.intentionalDisconnect = false;
-    this.ws = new WebSocket(this.url);
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+    const socket = new WebSocket(this.url);
+    this.ws = socket;
 
-    this.ws.onopen = () => {
+    socket.onopen = () => {
+      if (this.ws !== socket) return;
       this.reconnectDelay = 1000;
       this.handler("_connected", {});
     };
 
-    this.ws.onclose = () => {
+    socket.onclose = () => {
+      if (this.ws !== socket) return;
+      this.ws = null;
       if (!this.intentionalDisconnect) this.handler("_disconnected", {});
       // Only auto-reconnect if the close was NOT intentional
       if (!this.intentionalDisconnect) {
@@ -30,11 +35,12 @@ export class WebSocketService {
       }
     };
 
-    this.ws.onerror = () => {
-      this.ws?.close();
+    socket.onerror = () => {
+      socket.close();
     };
 
-    this.ws.onmessage = (event: MessageEvent) => {
+    socket.onmessage = (event: MessageEvent) => {
+      if (this.ws !== socket) return;
       try {
         const msg = JSON.parse(event.data as string) as {
           type: string;
@@ -66,7 +72,9 @@ export class WebSocketService {
   }
 
   private scheduleReconnect() {
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10000);
       this.connect();
     }, this.reconnectDelay);

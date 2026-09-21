@@ -19,9 +19,10 @@ var aiNamesB = []string{
 
 // PlayerInfo holds basic info about a room participant.
 type PlayerInfo struct {
-	ID       string
-	Nickname string
-	IsAI     bool
+	ID           string
+	Nickname     string
+	IsAI         bool
+	Disconnected bool
 }
 
 // Room represents a game lobby with two teams.
@@ -32,6 +33,7 @@ type Room struct {
 	TeamB     []*PlayerInfo
 	Started   bool
 	SessionID string // set when game starts
+	members   map[string]*member
 	mu        sync.Mutex
 }
 
@@ -44,6 +46,7 @@ func NewRoom(code string, owner *PlayerInfo) *Room {
 		OwnerID: owner.ID,
 		TeamA:   []*PlayerInfo{owner},
 		TeamB:   []*PlayerInfo{},
+		members: map[string]*member{owner.ID: {player: owner, token: newToken()}},
 	}
 	return r
 }
@@ -70,9 +73,6 @@ func (r *Room) AddToTeam(player *PlayerInfo, team string) error {
 		return fmt.Errorf("invalid team %q: must be A or B", team)
 	}
 
-	// Remove from other team if present.
-	*other = removeByID(*other, player.ID)
-
 	// Check if already in target team.
 	for _, p := range *target {
 		if p.ID == player.ID {
@@ -84,6 +84,11 @@ func (r *Room) AddToTeam(player *PlayerInfo, team string) error {
 		return fmt.Errorf("team %s is full (max %d players)", team, maxTeamSize)
 	}
 
+	*other = removeByID(*other, player.ID)
+	if _, exists := r.members[player.ID]; !exists {
+		r.members[player.ID] = &member{player: player, token: newToken()}
+	}
+	player = r.members[player.ID].player
 	*target = append(*target, player)
 	return nil
 }
@@ -198,7 +203,7 @@ func (r *Room) CanStart() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	return len(r.TeamA) >= 2 && len(r.TeamB) >= 2
+	return r.canStartLocked()
 }
 
 // GetAllPlayers returns a flat slice of all players across both teams.

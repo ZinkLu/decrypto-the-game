@@ -127,7 +127,7 @@ export function roleState(s: StationState, u: LocalState) {
     const encrypt = s.phase === 'encrypting' && s.myRole === 'encryptor' && !s.waiting;
     const guess = ((s.phase === 'intercept' && s.myRole === 'opponent') ||
         (s.phase === 'decrypt' && s.myRole === 'teammate')) && !s.waiting;
-    const active = (encrypt || guess) && !u.submitted;
+    const active = (encrypt || guess) && !u.submitted && !s.submitted && !s.recovering && (!s.deadline || Date.now() < s.deadline);
     const complete = encrypt ? s.secretDigits.length === 3 && u.clues.every(c => c.trim()) :
         guess && u.guess.every(n => n >= 1 && n <= 4) && new Set(u.guess).size === 3;
     const color = s.phase === 'intercept' ? '#c8a2ea' : s.phase === 'decrypt' ? '#83c7d1' : '#f1be69';
@@ -142,7 +142,7 @@ export function rosterTeams(s: StationState, u: LocalState) {
     const uniqueName = (name: string) => everyone.filter(p => p.nickname === name).length === 1;
     const sendingTeam = s.myTeam && s.myRole ? s.myRole === 'opponent' ? s.myTeam === 'A' ? 'B' : 'A' : s.myTeam : '';
     const actingTeam = s.phase === 'intercept' ? sendingTeam === 'A' ? 'B' : sendingTeam === 'B' ? 'A' : '' : sendingTeam;
-    const signal = s.playerProgress || s.aiStatus;
+    const signal = s.playerProgress || (s.aiStatus ? { ...s.aiStatus, step: s.aiStatus.completed ?? Math.max(0, s.aiStatus.step - 1) } : null);
     const action = s.phase === 'encrypting' ? 'encrypt' : s.phase === 'intercept' ? 'intercept' : 'decrypt';
     return (['A', 'B'] as const).map(team => {
         const people = team === 'A' ? s.teamA : s.teamB;
@@ -159,7 +159,7 @@ export function rosterTeams(s: StationState, u: LocalState) {
                 const reported = acting && !!player && signal?.action === action && signal.player === player.nickname && uniqueName(player.nickname) ? signal : null;
                 const progress = playing && self && (role.active || u.submitted) ? { step: role.encrypt ? u.clues.filter(c => c.trim()).length : u.guess.filter(Boolean).length, total: 3 } : reported;
                 const status = !player ? s.phase === 'home' ? '接入后编组' : s.phase === 'room' ? '邀请好友 / AI' : '空席' :
-                    s.phase === 'room' ? '已入席' : !playing ? '待命' : self && u.submitted || reported && 'state' in reported && reported.state === 'submitted' ? '已提交' :
+                    player.disconnected ? '离线 · 等待重连' : s.phase === 'room' ? '已入席' : !playing ? '待命' : self && u.submitted || reported && 'state' in reported && reported.state === 'submitted' ? '已提交' :
                     acting ? s.phase === 'encrypting' ? '加密中' : s.phase === 'intercept' ? '拦截中' : '解码中' : '监听中';
                 return { player, self, owner, encryptor, acting, progress, status, code: `${team}${index + 1}` };
             }),
@@ -168,7 +168,7 @@ export function rosterTeams(s: StationState, u: LocalState) {
 }
 export function archiveRows(s: StationState, team: string) {
     // Never reconstruct a public answer from this player's private secretDigits.
-    return s.history.filter(r => (team === 'all' || r.team === team) && r.round < s.round)
+    return s.history.filter(r => (team === 'all' || r.team === team) && (r.round < s.round || (s.phase === 'game_over' || s.phase === 'round_result') && r.round === s.round && !!r.secret?.length))
         .slice().sort((a, b) => b.round - a.round);
 }
 export function archiveStart(s: StationState, u: LocalState) {

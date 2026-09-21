@@ -16,15 +16,36 @@ const (
 	maxMessageSize = 4096
 )
 
+type Identity struct{ PlayerID, Nickname, RoomCode string }
+
+func (c *Client) Identity() Identity { c.mu.Lock(); defer c.mu.Unlock(); return c.identity }
+func (c *Client) SetIdentity(playerID, nickname string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.identity.PlayerID = playerID
+	c.identity.Nickname = nickname
+}
+func (c *Client) setRoom(code string) { c.mu.Lock(); defer c.mu.Unlock(); c.identity.RoomCode = code }
+
+// A separate done channel avoids sends racing with closing the outbound queue.
+func (c *Client) Close() {
+	c.closeOnce.Do(func() {
+		close(c.done)
+		if c.conn != nil {
+			c.conn.Close()
+		}
+	})
+}
+
 // Client wraps a single WebSocket connection.
 type Client struct {
-	hub      *Hub
-	conn     *websocket.Conn
-	send     chan []byte
-	PlayerID string
-	Nickname string
-	RoomCode string
-	mu       sync.Mutex
+	hub       *Hub
+	conn      *websocket.Conn
+	send      chan []byte
+	identity  Identity
+	done      chan struct{}
+	closeOnce sync.Once
+	mu        sync.Mutex
 }
 
 // NewClient constructs a new Client.
@@ -33,6 +54,7 @@ func NewClient(hub *Hub, conn *websocket.Conn) *Client {
 		hub:  hub,
 		conn: conn,
 		send: make(chan []byte, 256),
+		done: make(chan struct{}),
 	}
 }
 
@@ -45,9 +67,16 @@ func (c *Client) SendMessage(msg ServerMessage) {
 		return
 	}
 	select {
+	case <-c.done:
+		return
+	default:
+	}
+	select {
+	case <-c.done:
+		return
 	case c.send <- data:
 	default:
-		log.Printf("ws: send channel full for player %s, dropping message", c.PlayerID)
+		log.Printf("ws: send channel full for player %s, dropping message", c.Identity().PlayerID)
 	}
 }
 
@@ -79,14 +108,14 @@ func (c *Client) ReadPump() {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("ws: read error for player %s: %v", c.PlayerID, err)
+				log.Printf("ws: read error for player %s: %v", c.Identity().PlayerID, err)
 			}
 			break
 		}
 
 		var msg ClientMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
-			log.Printf("ws: unmarshal error from player %s: %v", c.PlayerID, err)
+			log.Printf("ws: unmarshal error from player %s: %v", c.Identity().PlayerID, err)
 			c.SendError("invalid message format")
 			continue
 		}
@@ -106,6 +135,8 @@ func (c *Client) WritePump() {
 
 	for {
 		select {
+		case <-c.done:
+			return
 		case message, ok := <-c.send:
 			c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {

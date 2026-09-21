@@ -13,6 +13,9 @@ test('multiplayer protocol state survives incremental messages and disconnects c
   const require = createRequire(import.meta.url);
   const previousWindow = globalThis.window;
   const previousWebSocket = globalThis.WebSocket;
+  const previousStorage = globalThis.sessionStorage;
+  const saved = new Map();
+  globalThis.sessionStorage = { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) };
   const sockets = [];
   class FakeSocket {
     static OPEN = 1;
@@ -66,10 +69,46 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     assert.equal(store.getState().roomCode, null);
     assert.equal(store.getState().connected, false);
     assert.match(store.getState().error, /连接已中断/);
+    store.getState().reset(); store.getState().connect();
+    const live = sockets.at(-1); live.onopen();
+    live.receive('room_created', { room_code: '1234', my_player_id: 'me', resume_token: 'test-token' });
+    const deadline = Date.now() + 50000;
+    live.receive('phase_change', { phase: 'encrypting', round: 3, your_role: 'encryptor', secret_digits: [2, 4, 1], deadline });
+    store.getState().submitClues(['a', 'b', 'c']);
+    assert.equal(live.sent.at(-1).data.round, 3, 'outbound actions identify their round');
+    live.receive('room_state', { started: true, team_a: [{id:'me'}] });
+    assert.equal(store.getState().phase, 'encrypting', 'presence updates do not return active games to lobby');
+    live.close();
+    assert.equal(store.getState().recovering, true);
+    assert.equal(store.getState().phase, 'encrypting');
+    store.getState().wsService.connect();
+    const recovered = sockets.at(-1); recovered.onopen();
+    assert.deepEqual(recovered.sent.at(-1), { type:'resume_room', data: {room_code:'1234',resume_token:'test-token'} });
+    recovered.receive('room_resumed', {room_code:'1234',my_player_id:'me'});
+    recovered.receive('full_sync', { room:{room_code:'1234'},game:{phase:'encrypting',round:3,your_role:'encryptor',secret_digits:[2,4,1],deadline,submitted:true} });
+    assert.equal(store.getState().recovering, false);
+    assert.equal(store.getState().submitted, true);
+    assert.equal(store.getState().deadline, deadline);
+    live.receive('phase_change', {phase:'room'}); live.close();
+    assert.equal(store.getState().phase, 'encrypting', 'stale sockets cannot replace recovered state');
+    recovered.receive('ai_thinking', {action:'encrypt',player:'AI',step:3,completed:2,state:'thinking'});
+    assert.equal(store.getState().aiStatus.completed, 2);
+    recovered.receive('ai_acted', {action:'encrypt',player:'AI',step:3,completed:3,state:'fallback',notice:'AI 未能完成回答'});
+    recovered.receive('ai_thinking', {action:'encrypt',player:'AI',step:3,completed:2,state:'retrying',notice:'retry'});
+    assert.equal(store.getState().aiNotice, 'AI 未能完成回答');
+    store.getState().disconnect(); store.getState().connect();
+    const refreshed = sockets.at(-1); refreshed.onopen();
+    assert.equal(refreshed.sent.at(-1).type, 'resume_room', 'a reload restores the per-tab credential');
+    refreshed.receive('full_sync', {game:{phase:'game_over',round:3,history:[{round:3,secret:[2,4,1]}],game_over:{winner:'B'}}});
+    assert.equal(store.getState().gameOver.winner, 'B'); assert.equal(store.getState().history.length, 1);
+    refreshed.receive('error', {code:'resume_expired',message:'room resume expired; please create or join a room'});
+    assert.equal(store.getState().phase, 'home'); assert.equal(saved.size, 0);
+
   } finally {
     store?.getState().disconnect();
     globalThis.window = previousWindow;
     globalThis.WebSocket = previousWebSocket;
+    globalThis.sessionStorage = previousStorage;
     await rm(dir, { recursive: true, force: true });
   }
 });

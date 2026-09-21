@@ -87,3 +87,15 @@ test('roster distinguishes vacant seats, owner, self, AI and local completion', 
   assert.equal(active.seats[0].status, '已提交');
   assert.equal(active.seats[3].player.is_ai, true);
 });
+
+test('settled final round is archived and recovered submissions cannot act twice', () => {
+  const s = previewState({}, 'game_over');
+  s.history = [{round:s.round,team:'A',clues:['a','b','c'],secret:[1,2,3]}];
+  assert.equal(archiveRows(s,'all').length, 1);
+  s.phase='encrypting'; assert.equal(archiveRows(s,'all').length, 0);
+  s.myRole='encryptor'; s.waiting=false; s.connected=true; s.secretDigits=[1,2,3];
+  const u={...initialLocal,clues:['a','b','c']};
+  s.recovering=true; assert.equal(roleState(s,u).active,false);
+  s.recovering=false; s.submitted=true; assert.equal(roleState(s,u).active,false);
+  s.submitted=false; s.deadline=Date.now()-1; assert.equal(roleState(s,u).active,false);
+});

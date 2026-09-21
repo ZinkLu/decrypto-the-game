@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/internal/ai"
@@ -26,31 +27,44 @@ type Bridge struct {
 	DecryptCh   chan [3]int
 	AIPlayer    *ai.AIPlayer
 	cancel      context.CancelFunc
+	mu          sync.Mutex
+	startOnce   sync.Once
+	views       map[string]ws.GameSyncData
+	phase       string
+	round       int
+	deadline    time.Time
+	accepted    bool
+	roundNotice string
+	Timing      Timings
 }
 
 // NewBridge creates a Bridge from room data, initialises the core Session,
 // and registers the bridge in the global registry.
 func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
-	teamAPlayers := make([]*core.Player, len(r.TeamA))
-	for i, p := range r.TeamA {
+	roster, err := r.BeginGame()
+	if err != nil {
+		return nil, err
+	}
+	teamAPlayers := make([]*core.Player, len(roster.TeamA))
+	for i, p := range roster.TeamA {
 		teamAPlayers[i] = &core.Player{UID: p.ID, NickName: p.Nickname}
 	}
 
-	teamBPlayers := make([]*core.Player, len(r.TeamB))
-	for i, p := range r.TeamB {
+	teamBPlayers := make([]*core.Player, len(roster.TeamB))
+	for i, p := range roster.TeamB {
 		teamBPlayers[i] = &core.Player{UID: p.ID, NickName: p.Nickname}
 	}
 
 	session, err := core.NewWithTeams(r.Code, teamAPlayers, teamBPlayers)
 	if err != nil {
+		r.AbortStart()
 		return nil, err
 	}
 
-	r.SessionID = session.SessionID()
-	r.Started = true
-
 	b := &Bridge{
 		Room:        r,
+		Timing:      DefaultTimings,
+		views:       make(map[string]ws.GameSyncData),
 		Session:     session,
 		Hub:         hub,
 		CluesCh:     make(chan [3]string, 1),
@@ -60,14 +74,14 @@ func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
 
 	// Wire up AI player if any team has AI members.
 	hasAI := false
-	for _, p := range r.TeamA {
+	for _, p := range roster.TeamA {
 		if p.IsAI {
 			hasAI = true
 			break
 		}
 	}
 	if !hasAI {
-		for _, p := range r.TeamB {
+		for _, p := range roster.TeamB {
 			if p.IsAI {
 				hasAI = true
 				break
@@ -98,17 +112,18 @@ func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
 
 // Start launches AutoForward in a background goroutine.
 func (b *Bridge) Start() {
-	ctx, cancel := context.WithCancel(context.Background())
-	b.cancel = cancel
-
-	go func() {
-		defer RemoveBridge(b.Session.SessionID())
-		b.Session.AutoForward(ctx)
-	}()
+	b.startOnce.Do(func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		b.mu.Lock()
+		b.cancel = cancel
+		b.mu.Unlock()
+		go b.Session.AutoForward(ctx)
+	})
 }
 
-// Stop cancels the AutoForward goroutine.
 func (b *Bridge) Stop() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if b.cancel != nil {
 		b.cancel()
 	}
@@ -147,7 +162,7 @@ func initHandler(ctx context.Context, r *core.Round, ts core.TeamState) bool {
 	} else {
 		// Give players time to review the previous round result.
 		select {
-		case <-time.After(5 * time.Second):
+		case <-time.After(b.Timing.BetweenRounds):
 		case <-ctx.Done():
 			return true
 		}
@@ -166,10 +181,12 @@ func encryptHandler(ctx context.Context, r *core.Round, t *core.Team, p *core.Pl
 	log.Printf("[PHASE] Round %d → ENCRYPTING | encryptor=%s (AI=%v) | team=%s",
 		r.GetNumberOfRounds(), p.NickName, isAI(p.UID), b.teamLabel(t))
 	b.broadcastPhaseChange("encrypting", r)
+	defer b.closeInput()
 
 	// Check if the encryptor is an AI player.
 	if isAI(p.UID) {
-		return handleAIEncrypt(ctx, b, r), false
+		clues := handleAIEncrypt(ctx, b, r)
+		return clues, ctx.Err() != nil
 	}
 
 	// Block on channel waiting for player input.
@@ -190,7 +207,7 @@ func encryptHandler(ctx context.Context, r *core.Round, t *core.Team, p *core.Pl
 		_ = scoreA
 		_ = scoreB
 		return clues, false
-	case <-time.After(90 * time.Second):
+	case <-time.After(b.remaining()):
 		log.Printf("bridge: encryptHandler: timeout waiting for clues in session %s", r.GetGameSession().SessionID())
 		return [3]string{"...", "...", "..."}, false
 	case <-ctx.Done():
@@ -208,15 +225,17 @@ func interceptHandler(ctx context.Context, r *core.Round, opponent *core.Team, t
 	log.Printf("[PHASE] Round %d → INTERCEPT | opponent team=%s allAI=%v",
 		r.GetNumberOfRounds(), b.teamLabel(opponent), b.isTeamAllAI(opponent))
 	b.broadcastPhaseChange("intercept", r)
+	defer b.closeInput()
 
 	if b.isTeamAllAI(opponent) {
-		return handleAIIntercept(ctx, b, r), false
+		guess := handleAIGuess(ctx, b, r, true)
+		return guess, ctx.Err() != nil
 	}
 
 	select {
 	case guess := <-b.InterceptCh:
 		return guess, false
-	case <-time.After(60 * time.Second):
+	case <-time.After(b.remaining()):
 		log.Printf("bridge: interceptHandler: timeout waiting for intercept in session %s", r.GetGameSession().SessionID())
 		return [3]int{0, 0, 0}, false
 	case <-ctx.Done():
@@ -245,7 +264,7 @@ func interceptFailHandler(ctx context.Context, r *core.Round, opponent *core.Tea
 	b.broadcastRoundResult(r, boolPtr(false), nil)
 
 	select {
-	case <-time.After(3 * time.Second):
+	case <-time.After(b.Timing.AfterIntercept):
 	case <-ctx.Done():
 		return true
 	}
@@ -264,15 +283,17 @@ func decryptHandler(ctx context.Context, r *core.Round, t *core.Team, ts core.Te
 	log.Printf("[PHASE] Round %d → DECRYPT | team=%s allAI=%v decryptorsAllAI=%v encryptor=%s",
 		r.GetNumberOfRounds(), b.teamLabel(t), b.isTeamAllAI(t), decryptorsAllAI, r.EncryptPlayer().NickName)
 	b.broadcastPhaseChange("decrypt", r)
+	defer b.closeInput()
 
 	if decryptorsAllAI {
-		return handleAIDecrypt(ctx, b, r), false
+		guess := handleAIGuess(ctx, b, r, false)
+		return guess, ctx.Err() != nil
 	}
 
 	select {
 	case guess := <-b.DecryptCh:
 		return guess, false
-	case <-time.After(60 * time.Second):
+	case <-time.After(b.remaining()):
 		log.Printf("bridge: decryptHandler: timeout waiting for decrypt in session %s", r.GetGameSession().SessionID())
 		return [3]int{0, 0, 0}, false
 	case <-ctx.Done():
@@ -303,7 +324,10 @@ func decryptFailHandler(ctx context.Context, r *core.Round, t *core.Team, ts cor
 }
 
 func doneHandler(ctx context.Context, r *core.Round, ts core.TeamState) bool {
-	return false
+	if b, ok := GetBridge(r.GetGameSession().SessionID()); ok {
+		b.finishRound(r)
+	}
+	return ctx.Err() != nil
 }
 
 func gameOverHandler(ctx context.Context, s *core.Session, winner *core.Team) bool {
@@ -328,7 +352,12 @@ func (b *Bridge) playerTeamLabel(playerID string) string {
 			return "A"
 		}
 	}
-	return "B"
+	for _, p := range teams[1].Members() {
+		if p.UID == playerID {
+			return "B"
+		}
+	}
+	return ""
 }
 
 // teamLabel returns "A" or "B" by comparing the team to Session's first team.
@@ -352,7 +381,10 @@ func (b *Bridge) playerRole(playerID string, round *core.Round) string {
 			return "teammate"
 		}
 	}
-	return "opponent"
+	if b.playerTeamLabel(playerID) != "" {
+		return "opponent"
+	}
+	return "observer"
 }
 
 // buildHistory traverses the previous-round chain and builds a history slice.
@@ -402,10 +434,10 @@ func (b *Bridge) buildScores() (ws.ScoreInfo, ws.ScoreInfo) {
 func (b *Bridge) broadcastToEachPlayer(buildMsg func(playerID string) *ws.ServerMessage) {
 	clients := b.Hub.GetRoomClients(b.Room.Code)
 	for _, c := range clients {
-		if c.PlayerID == "" {
+		if c.Identity().PlayerID == "" {
 			continue
 		}
-		msg := buildMsg(c.PlayerID)
+		msg := buildMsg(c.Identity().PlayerID)
 		if msg != nil {
 			c.SendMessage(*msg)
 		}
@@ -420,11 +452,13 @@ func (b *Bridge) broadcastGameStart(round *core.Round) {
 		teamLabel := b.playerTeamLabel(playerID)
 		role := b.playerRole(playerID, round)
 
-		var words [4]string
+		var words []string
 		if teamLabel == "A" {
-			words = teams[0].GetWords()
-		} else {
-			words = teams[1].GetWords()
+			w := teams[0].GetWords()
+			words = w[:]
+		} else if teamLabel == "B" {
+			w := teams[1].GetWords()
+			words = w[:]
 		}
 
 		return &ws.ServerMessage{
@@ -441,85 +475,54 @@ func (b *Bridge) broadcastGameStart(round *core.Round) {
 
 // broadcastPhaseChange sends a personalized phase_change message to each player.
 func (b *Bridge) broadcastPhaseChange(phase string, round *core.Round) {
+	b.setPhase(phase, round)
 	b.broadcastToEachPlayer(func(playerID string) *ws.ServerMessage {
-		role := b.playerRole(playerID, round)
-		encryptor := round.EncryptPlayer()
-
-		data := ws.PhaseChangeData{
-			Phase:     phase,
-			Round:     int(round.GetNumberOfRounds()),
-			YourRole:  role,
-			Encryptor: encryptor.NickName,
-			History:   b.buildHistory(round),
+		v := b.Sync(playerID)
+		if v == nil {
+			return nil
 		}
-
-		switch phase {
-		case "encrypting":
-			if role == "encryptor" {
-				digits := round.GetSecretDigits()
-				secretWords := round.GetSecretWords()
-				data.SecretDigits = digits[:]
-				data.SecretWords = secretWords[:]
-			} else {
-				data.Waiting = true
-			}
-
-		case "intercept":
-			if role == "opponent" {
-				clues := round.GetEncryptedMessage()
-				data.Clues = clues[:]
-			} else {
-				data.Waiting = true
-			}
-
-		case "decrypt":
-			if role == "teammate" {
-				clues := round.GetEncryptedMessage()
-				data.Clues = clues[:]
-			} else if role == "encryptor" {
-				// Encryptor watches teammates decode; they already know the answer.
-				digits := round.GetSecretDigits()
-				data.SecretDigits = digits[:]
-				data.Waiting = true
-			} else {
-				data.Waiting = true
-			}
-
-		case "new_round":
-			// No special data; just the phase and round info.
-		}
-
-		return &ws.ServerMessage{
-			Type: ws.MsgPhaseChange,
-			Data: data,
-		}
+		return &ws.ServerMessage{Type: ws.MsgPhaseChange, Data: ws.PhaseChangeData{
+			Phase: phase, Round: v.Round, YourRole: v.YourRole, Encryptor: v.Encryptor, SecretDigits: v.SecretDigits,
+			SecretWords: v.SecretWords, Clues: v.Clues, History: v.History, Waiting: v.Waiting, Deadline: v.Deadline, Notice: v.Notice}}
 	})
 }
 
 // broadcastRoundResult sends round_result to the room.
 func (b *Bridge) broadcastRoundResult(round *core.Round, interceptSuccess *bool, decryptSuccess *bool) {
 	scoreA, scoreB := b.buildScores()
+	b.mu.Lock()
+	b.phase = "round_result"
+	b.accepted = true
+	for id, v := range b.views {
+		result := ws.RoundResultData{Round: int(round.GetNumberOfRounds()), ScoreA: scoreA, ScoreB: scoreB}
+		if v.RoundResult != nil {
+			result.InterceptSuccess = v.RoundResult.InterceptSuccess
+			result.DecryptSuccess = v.RoundResult.DecryptSuccess
+		}
+		if interceptSuccess != nil {
+			result.InterceptSuccess = interceptSuccess
+		}
+		if decryptSuccess != nil {
+			result.DecryptSuccess = decryptSuccess
+		}
+		v.RoundResult = &result
+		v.Phase = "round_result"
+		v.ScoreA = scoreA
+		v.ScoreB = scoreB
+		v.Deadline = 0
+		b.views[id] = v
+	}
+	b.mu.Unlock()
 
 	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
 		Type: ws.MsgRoundResult,
 		Data: ws.RoundResultData{
+			Notice:           b.roundNotice,
+			Round:            int(round.GetNumberOfRounds()),
 			InterceptSuccess: interceptSuccess,
 			DecryptSuccess:   decryptSuccess,
 			ScoreA:           scoreA,
 			ScoreB:           scoreB,
-		},
-	})
-}
-
-// broadcastAIStatus sends an ai_thinking or ai_acted message to the room.
-func (b *Bridge) broadcastAIStatus(msgType, action, player string, step, total int) {
-	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
-		Type: msgType,
-		Data: ws.AIStatusData{
-			Action: action,
-			Player: player,
-			Step:   step,
-			Total:  total,
 		},
 	})
 }
@@ -554,14 +557,22 @@ func (b *Bridge) broadcastGameOver(winner *core.Team) {
 		winnerLabel = &label
 	}
 
-	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
-		Type: ws.MsgGameOver,
-		Data: ws.GameOverData{
-			Winner: winnerLabel,
-			ScoreA: scoreA,
-			ScoreB: scoreB,
-		},
-	})
+	r := b.Session.GetCurrentRound()
+	result := &ws.GameOverData{Notice: b.roundNotice, Winner: winnerLabel, ScoreA: scoreA, ScoreB: scoreB, Round: int(r.GetNumberOfRounds()), History: append(b.buildHistory(r), b.historyRow(r))}
+	b.mu.Lock()
+	b.phase = "game_over"
+	b.accepted = true
+	for id, v := range b.views {
+		v.Phase = "game_over"
+		v.GameOver = result
+		v.History = result.History
+		v.ScoreA = scoreA
+		v.ScoreB = scoreB
+		v.Deadline = 0
+		b.views[id] = v
+	}
+	b.mu.Unlock()
+	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{Type: ws.MsgGameOver, Data: result})
 }
 
 // isTeamAllAI returns true if every member of the team is an AI player.
@@ -594,100 +605,6 @@ func (b *Bridge) areDecryptorsAllAI(team *core.Team, encryptorUID string) bool {
 
 func isAI(uid string) bool {
 	return len(uid) > 3 && uid[:3] == "ai-"
-}
-
-func handleAIEncrypt(ctx context.Context, b *Bridge, r *core.Round) [3]string {
-	digits := r.GetSecretDigits()
-	words := r.GetCurrentTeam().GetWords()
-	playerName := r.EncryptPlayer().NickName
-	log.Printf("[AI-ENCRYPT] Round %d | AI %s encrypting | secret digits=%v | words=%v",
-		r.GetNumberOfRounds(), playerName, digits, words)
-
-	var clues [3]string
-	history := formatHistoryForAI(b, r)
-	var generated []string
-
-	for i := 0; i < 3; i++ {
-		b.broadcastAIStatus(ws.MsgAIThinking, "encrypt", playerName, i+1, 3)
-
-		if b.AIPlayer == nil {
-			time.Sleep(2 * time.Second)
-			clues[i] = fmt.Sprintf("clue%d", i+1)
-		} else {
-			clues[i] = b.AIPlayer.GenerateSingleClue(ctx, digits[i], words, history, generated)
-			generated = append(generated, clues[i])
-		}
-
-		log.Printf("[AI-ENCRYPT] Round %d | step %d/3 | AI %s → %q",
-			r.GetNumberOfRounds(), i+1, playerName, clues[i])
-		b.broadcastAIStatus(ws.MsgAIActed, "encrypt", playerName, i+1, 3)
-	}
-	return clues
-}
-
-func handleAIIntercept(ctx context.Context, b *Bridge, r *core.Round) [3]int {
-	clues := r.GetEncryptedMessage()
-	log.Printf("[AI-INTERCEPT] Round %d | Opponent AI team intercepting | clues=%v",
-		r.GetNumberOfRounds(), clues)
-
-	var guess [3]int
-	history := formatHistoryForAI(b, r)
-	var guessed []int
-	var emptyWords [4]string
-
-	for i := 0; i < 3; i++ {
-		b.broadcastAIStatus(ws.MsgAIThinking, "intercept", "AI Agent", i+1, 3)
-
-		if b.AIPlayer == nil {
-			time.Sleep(2 * time.Second)
-			guess[i] = i + 1
-		} else {
-			guess[i] = b.AIPlayer.GuessSingleNumber(ctx, clues[i], emptyWords, true, history, guessed)
-			guessed = append(guessed, guess[i])
-		}
-
-		log.Printf("[AI-INTERCEPT] Round %d | step %d/3 | guess → %d",
-			r.GetNumberOfRounds(), i+1, guess[i])
-		b.broadcastAIStatus(ws.MsgAIActed, "intercept", "AI Agent", i+1, 3)
-	}
-	return guess
-}
-
-func handleAIDecrypt(ctx context.Context, b *Bridge, r *core.Round) [3]int {
-	clues := r.GetEncryptedMessage()
-	words := r.GetCurrentTeam().GetWords()
-	log.Printf("[AI-DECRYPT] Round %d | AI team decrypting | clues=%v | words=%v",
-		r.GetNumberOfRounds(), clues, words)
-
-	var guess [3]int
-	history := formatHistoryForAI(b, r)
-	var guessed []int
-
-	for i := 0; i < 3; i++ {
-		// Mirror human's "editing + focus=i+1" broadcast so observers see this
-		// slot enter `thinking` state on their selector oscilloscopes.
-		b.broadcastAIProgress("decrypt", "AI Agent", "editing", len(guessed), i+1, guessed)
-		b.broadcastAIStatus(ws.MsgAIThinking, "decrypt", "AI Agent", i+1, 3)
-
-		if b.AIPlayer == nil {
-			time.Sleep(2 * time.Second)
-			digits := r.GetSecretDigits()
-			guess[i] = digits[i]
-			guessed = append(guessed, guess[i])
-		} else {
-			guess[i] = b.AIPlayer.GuessSingleNumber(ctx, clues[i], words, false, history, guessed)
-			guessed = append(guessed, guess[i])
-		}
-
-		log.Printf("[AI-DECRYPT] Round %d | step %d/3 | guess → %d",
-			r.GetNumberOfRounds(), i+1, guess[i])
-		// Broadcast the freshly chosen digit so the oscilloscope "locks" onto it.
-		b.broadcastAIProgress("decrypt", "AI Agent", "editing", len(guessed), 0, guessed)
-		b.broadcastAIStatus(ws.MsgAIActed, "decrypt", "AI Agent", i+1, 3)
-	}
-	// Final submit-state marker so observers know the AI's sequence is sealed.
-	b.broadcastAIProgress("decrypt", "AI Agent", "submitted", 3, 0, guessed)
-	return guess
 }
 
 // formatHistoryForAI builds a human-readable history string from previous rounds.

@@ -1,0 +1,95 @@
+[
+  {
+    "name": "four_decimal_digits",
+    "pass": true
+  },
+  {
+    "name": "full_team_switch_preserves_original_seat",
+    "pass": true
+  },
+  {
+    "name": "nonowner_add_ai_rejected",
+    "pass": true
+  },
+  {
+    "name": "insufficient_players_rejected",
+    "pass": true
+  },
+  {
+    "name": "owner_transferred_to_online_human",
+    "pass": true
+  },
+  {
+    "name": "new_owner_can_manage",
+    "pass": true
+  },
+  {
+    "name": "observer_no_team_or_words",
+    "pass": true
+  },
+  {
+    "name": "observer_sync_no_secrets",
+    "pass": true
+  },
+  {
+    "name": "duplicate_start_rejected",
+    "pass": true
+  },
+  {
+    "name": "early_enemy_decrypt_rejected",
+    "pass": true
+  },
+  {
+    "name": "observer_clues_rejected",
+    "pass": true
+  },
+  {
+    "name": "empty_clues_rejected",
+    "pass": true
+  },
+  {
+    "name": "stale_round_rejected",
+    "pass": true
+  },
+  {
+    "name": "extra_clues_rejected",
+    "pass": true
+  },
+  {
+    "name": "resume_requires_credential",
+    "pass": true
+  },
+  {
+    "name": "active_seat_restored",
+    "pass": true
+  },
+  {
+    "name": "deadline_not_reset_by_resume",
+    "pass": true
+  },
+  {
+    "name": "invalid_guesses_rejected",
+    "pass": true
+  },
+  {
+    "name": "valid_action_after_rejections_finishes_round",
+    "pass": true
+  },
+  {
+    "name": "complete_16_round_game",
+    "pass": true,
+    "seconds": 117.26
+  },
+  {
+    "name": "final_round_in_archive",
+    "pass": true
+  },
+  {
+    "name": "final_sync_retained",
+    "pass": true
+  },
+  {
+    "name": "finished_game_can_resume",
+    "pass": true
+  }
+]

@@ -5,8 +5,8 @@ import (
 	"sync"
 )
 
-// codeChars excludes I, O, 0, and 1 to avoid visual confusion.
-const codeChars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+// Numeric codes match the four physical 0–9 nixie tubes.
+const codeChars = "0123456789"
 
 const codeLength = 4
 
@@ -30,6 +30,9 @@ func (m *Manager) CreateRoom(owner *PlayerInfo) *Room {
 	defer m.mu.Unlock()
 
 	code := m.generateUniqueCode()
+	if code == "" {
+		return nil
+	}
 	r := NewRoom(code, owner)
 	m.rooms[code] = r
 	return r
@@ -67,6 +70,9 @@ func (m *Manager) FindRoomByPlayer(playerID string) *Room {
 // generateUniqueCode generates a random 4-char code not already in use.
 // Must be called with m.mu held (write lock).
 func (m *Manager) generateUniqueCode() string {
+	if len(m.rooms) >= 10000 {
+		return ""
+	}
 	for {
 		code := randomCode()
 		if _, exists := m.rooms[code]; !exists {

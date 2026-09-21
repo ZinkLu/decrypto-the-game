@@ -46,14 +46,14 @@ func (h *Hub) Run() {
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				close(client.send)
+				client.Close()
 
 				// Remove from room if the client was in one.
-				if client.RoomCode != "" {
-					if room, exists := h.rooms[client.RoomCode]; exists {
+				if client.Identity().RoomCode != "" {
+					if room, exists := h.rooms[client.Identity().RoomCode]; exists {
 						delete(room, client)
 						if len(room) == 0 {
-							delete(h.rooms, client.RoomCode)
+							delete(h.rooms, client.Identity().RoomCode)
 						}
 					}
 				}
@@ -75,16 +75,16 @@ func (h *Hub) JoinRoom(client *Client, roomCode string) {
 	defer h.mu.Unlock()
 
 	// Leave old room if any.
-	if client.RoomCode != "" && client.RoomCode != roomCode {
-		if oldRoom, exists := h.rooms[client.RoomCode]; exists {
+	if client.Identity().RoomCode != "" && client.Identity().RoomCode != roomCode {
+		if oldRoom, exists := h.rooms[client.Identity().RoomCode]; exists {
 			delete(oldRoom, client)
 			if len(oldRoom) == 0 {
-				delete(h.rooms, client.RoomCode)
+				delete(h.rooms, client.Identity().RoomCode)
 			}
 		}
 	}
 
-	client.RoomCode = roomCode
+	client.setRoom(roomCode)
 
 	if h.rooms[roomCode] == nil {
 		h.rooms[roomCode] = make(map[*Client]bool)
@@ -114,7 +114,7 @@ func (h *Hub) SendToPlayer(roomCode, playerID string, msg ServerMessage) {
 	room := h.rooms[roomCode]
 	var target *Client
 	for c := range room {
-		if c.PlayerID == playerID {
+		if c.Identity().PlayerID == playerID {
 			target = c
 			break
 		}

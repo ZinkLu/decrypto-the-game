@@ -232,7 +232,7 @@ export function paint(s: StationState, u: LocalState): Content {
     frames.screen.height = 830 / 1.4;
     const w = 1000;
     const right = w - 55;
-    const status = (s.error ? localizeError(u.locale, s.error) : '') || (u.note ? t(u.note) : '') || (u.submitted ? t("密报已发送，等待服务器确认。") : '');
+    const status = (s.error ? localizeError(u.locale, s.error) : s.aiNotice ? t(s.aiNotice) : '') || (u.note ? t(u.note) : '') || (u.submitted ? t("密报已发送，等待服务器确认。") : '');
     text(c, hasGame ? t("第 {0} 回合", [String(s.round).padStart(2, '0')]) : t("DECRYPTO  /  通信局"), 55, 49, 19, tint, 500);
     text(c, s.roomCode ? `CH ${s.roomCode}  /  ${s.myTeam ? s.myTeam + t(" 队") : t("待编组")}  /  ${s.connected ? t("已接通") : t("连接中")}` : t("双队通信  /  4–8 人"), 500, 49, 16, MUTED, 400, 338);
     button(c, 'manual', u.manual ? t("返回") : t("手册"), right - 100, 28, 100, 39);
@@ -281,7 +281,7 @@ export function paint(s: StationState, u: LocalState): Content {
         field('name', u.name, t("输入你的昵称"), 55, 320, w - 110, 61, 20);
         if (u.mode === 'join') {
             text(c, t("四位频道编号"), 55, 413, 21, tint);
-            field('code', u.code, t("例如 A1B2"), 55, 437, w - 110, 61, 4);
+            field('code', u.code, t("例如 1234"), 55, 437, w - 110, 61, 4);
         }
         else {
             text(c, t("4–8 位玩家 · 支持 AI 队友"), 55, 437, 23, CREAM);
@@ -370,8 +370,8 @@ export function paint(s: StationState, u: LocalState): Content {
                 }
             }
         });
-        const progress = s.playerProgress || s.aiStatus;
-        const foot = u.submitted ? t("已提交，等待其他玩家。") : r.active ? r.encrypt ? t("已填写 {0} / 3 · 按下右侧红键提交", [u.clues.filter(v => v.trim()).length]) : t("当前密码  {0} · 按下红键确认", [u.guess.map(n => n || '—').join(' · ')]) : progress ? t("{0} · 已完成 {1} / {2}", [progress.player, progress.step, progress.total]) : t("链路已接通 · 等待信号");
+        const progress = s.aiStatus ? { ...s.aiStatus, step: s.aiStatus.completed ?? Math.max(0, s.aiStatus.step - 1) } : s.playerProgress;
+        const foot = u.submitted ? t("已提交，等待其他玩家。") : r.active ? r.encrypt ? t("已填写 {0} / 3 · 按下右侧红键提交", [u.clues.filter(v => v.trim()).length]) : t("当前密码  {0} · 按下红键确认", [u.guess.map(n => n || '—').join(' · ')]) : s.aiStatus && ["thinking", "retrying"].includes(s.aiStatus.state || "thinking") ? t("AI 正在推理第 {0} 条 · 已完成 {1}/3", [s.aiStatus.step, progress?.step ?? 0]) : progress ? t("{0} · 已完成 {1} / {2}", [progress.player, progress.step, progress.total]) : t("链路已接通 · 等待信号");
         text(c, foot, 55, 525, 21, tint, 400, w - 110);
     }
     if (status) {
@@ -564,7 +564,7 @@ export function paint(s: StationState, u: LocalState): Content {
     text(cl, running ? t("阶段余时 · 约") : t("等待行动"), 34, 199, 22, u.powerOn ? '#a39b79' : '#4b483a');
     for (let i = 0; i < 5; i++) {
         const k = frame('key' + i, 180, 200);
-        const enabled = r.guess && r.active && s.connected && !u.rosterOpen && !u.manual;
+        const enabled = r.guess && r.active && s.connected && s.connected && !s.recovering && !u.rosterOpen && !u.manual;
         text(k, i === 4 ? '←' : String(i + 1), i === 4 ? 27 : 53, 101, 96, enabled ? CREAM : '#84908c', 500);
         target('key' + i, 'key-' + i, i === 4 ? t("删除上一位") : t("输入数字 {0}", [i + 1]), 0, 0, 180, 200, { disabled: !enabled });
     }
@@ -582,7 +582,7 @@ export function paint(s: StationState, u: LocalState): Content {
     const tr = frame('transmitLabel', 600, 164);
     const homeReady = s.phase === 'home' && !!u.name.trim() && (u.mode === 'create' || u.code.length === 4) && s.connected;
     const lobbyReady = s.phase === 'room' && s.canStart && s.ownerID === s.myPlayerID && s.connected;
-    const ready = !!(r.ready || homeReady || lobbyReady || s.phase === 'game_over') && !u.rosterOpen && !u.manual;
+    const ready = !!(r.ready || homeReady || lobbyReady || s.phase === 'game_over') && s.connected && !s.recovering && !u.rosterOpen && !u.manual;
     const transmitText = s.phase === 'home' ? u.mode === 'create' ? t("建立频道") : t("接入频道") : s.phase === 'room' ? t("开始行动") : s.phase === 'game_over' ? t("返回通信局") : u.submitted ? t("已发送") : t("发报 · 确认");
     const command = 'ACTION';
     tr.textAlign = 'center';

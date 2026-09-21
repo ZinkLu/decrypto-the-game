@@ -268,3 +268,51 @@ button,input { font: inherit; }
 .station-language button[aria-pressed="true"] { color: #eee5cf; background: #394c48; }
 .station-language button:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
 .station-controls [data-control^="scope-"] { touch-action: none; }
+
+/* A compact task surface shares the same game state as the physical terminal. */
+.mobile-console { display: none; }
+@media (max-width: 850px) {
+  .station:not([data-instruments]):not([data-detail]) > .station-viewport,
+  .station:not([data-instruments]):not([data-detail]) > .station-workbench,
+  .station:not([data-instruments]):not([data-detail]) > .station-hint,
+  .station > .mobile-hint { display: none; }
+  .station:not([data-instruments]):not([data-detail]) > .mobile-console { display: block; }
+  .mobile-console { max-width: 560px; margin: auto; padding: 70px 20px 12px; color: #273d36; overflow-wrap: anywhere; }
+  .mobile-brand { font-weight: 800; letter-spacing: .13em; font-size: 15px; }
+  .mobile-brand span { display: block; font: 10px monospace; margin-top: 8px; color: #657066; }
+  .mobile-title,.mobile-round,.mobile-words > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .mobile-title h2 { font-family: 'Songti SC', serif; font-size: 38px; margin: 12px 0; }
+  .mobile-clock { font: 24px monospace; color: #9c3e29; font-variant-numeric: tabular-nums; }
+  .mobile-channel { padding-bottom: 20px; border-bottom: 2px solid #536055; font: 13px monospace; }
+  .mobile-console p { line-height: 1.65; font-size: 14px; }
+  .mobile-console h3 { font-size: 17px; }
+  .mobile-console button { min-width: 44px; min-height: 44px; padding: 10px 14px; border: 1px solid #909482; border-radius: 3px; background: #f0eadb; color: #273d36; cursor: pointer; }
+  .mobile-console button:disabled { opacity: .45; cursor: default; }
+  .mobile-console [aria-pressed="true"] { background: #304d41; border-color: #304d41; color: #f8efd9; }
+  .mobile-console :focus-visible { outline: 3px solid #a1442f; outline-offset: 3px; }
+  .mobile-console label { display: block; margin: 18px 0; font-size: 14px; }
+  .mobile-console input { display: block; width: 100%; min-width: 0; margin-top: 8px; padding: 13px; background: #f8f0db; border: 1px solid #8c917c; border-radius: 3px; font-size: 16px; color: #203b31; }
+  .mobile-tabs { display: flex; gap: 10px; }
+  .mobile-tabs > button { flex: 1; }
+  .mobile-roster { padding: 8px 0 20px; border-bottom: 1px solid #9b9e8c; }
+  .mobile-roster ul { list-style: none; padding: 0; }
+  .mobile-roster li { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; margin: 4px 0; }
+  .mobile-roster li span { min-width: 0; }
+  .mobile-roster li button { flex-shrink: 0; }
+  .mobile-scores p { font-size: 12px; margin: 8px 0; }
+  .mobile-words { border-block: 1px solid #a1a48f; margin: 20px 0; padding: 12px 0; }
+  .mobile-words h3 { margin: 0; }
+  .mobile-words ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); list-style: none; gap: 14px; padding: 0; margin-bottom: 6px; }
+  .mobile-words b { color: #956239; font: 19px Georgia,serif; margin-right: 5px; }
+  .mobile-clues { padding-left: 22px; line-height: 2; }
+  .mobile-digits,.mobile-keypad { display: flex; gap: 8px; margin: 12px 0; }
+  .mobile-digits button { flex: 1; font: 28px monospace; }
+  .mobile-keypad button { flex: 1; padding-inline: 4px; }
+  .mobile-result { font-family: 'Songti SC',serif; font-size: 30px !important; color: #9b422c; }
+  .mobile-status { padding-left: 12px; border-left: 3px solid #9b422c; }
+  .mobile-console details { margin: 24px 0 12px; font-size: 14px; }
+  .mobile-console summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
+  .mobile-console footer { position: sticky; bottom: 0; padding: 12px 0 max(12px, env(safe-area-inset-bottom)); background: #dedad0; }
+  .mobile-console .mobile-action { width: 100%; background: #9b3d2b; border-color: #773122; color: #fff1d7; box-shadow: 0 3px 0 #773122; }
+  .mobile-action span { font: 11px monospace; letter-spacing: .15em; margin-right: 18px; }
+}

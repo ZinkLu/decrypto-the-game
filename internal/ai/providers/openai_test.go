@@ -1,0 +1,50 @@
+package providers
+
+import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+)
+
+type transport func(*http.Request) (*http.Response, error)
+
+func (f transport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+func TestCompletionRequiresFinalAnswer(t *testing.T) {
+	for _, tc := range []struct {
+		body  string
+		valid bool
+	}{
+		{`{"choices":[{"finish_reason":"stop","message":{"content":"3"}}]}`, true},
+		{`{"choices":[{"finish_reason":"stop","message":{"content":"","reasoning_content":"thinking only"}}]}`, false},
+		{`{"choices":[{"finish_reason":"length","message":{"content":"3"}}]}`, false},
+		{`{"choices":[]}`, false},
+	} {
+		p := NewOpenAIProvider("test-only", "http://model.invalid/v1", "test")
+		p.Client = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+			if r.URL.Path != "/v1/chat/completions" || r.Header.Get("Authorization") != "Bearer test-only" {
+				t.Error("wrong request endpoint or auth")
+			}
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
+		})}
+		_, err := p.Complete(context.Background(), nil)
+		if (err == nil) != tc.valid {
+			t.Fatalf("valid=%v error=%v", tc.valid, err)
+		}
+	}
+}
+
+func TestTransportHonorsDeadline(t *testing.T) {
+	p := NewOpenAIProvider("", "http://model.invalid/v1", "test")
+	p.Client = &http.Client{Timeout: 10 * time.Millisecond, Transport: transport(func(r *http.Request) (*http.Response, error) { <-r.Context().Done(); return nil, r.Context().Err() })}
+	start := time.Now()
+	if _, err := p.Complete(context.Background(), nil); err == nil {
+		t.Fatal("timeout missing")
+	}
+	if time.Since(start) > time.Second {
+		t.Fatal("timeout did not bound request")
+	}
+}

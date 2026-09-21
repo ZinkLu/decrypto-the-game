@@ -6,6 +6,7 @@ import "encoding/json"
 const (
 	MsgCreateRoom      = "create_room"
 	MsgJoinRoom        = "join_room"
+	MsgResumeRoom      = "resume_room"
 	MsgSelectTeam      = "select_team"
 	MsgLeaveTeam       = "leave_team"
 	MsgAddAI           = "add_ai"
@@ -29,9 +30,9 @@ const (
 	MsgGameOver       = "game_over"
 	MsgFullSync       = "full_sync"
 	MsgAIThinking     = "ai_thinking"
-	MsgAIActed          = "ai_acted"
-	MsgPlayerProgress   = "player_progress"
-	MsgError            = "error"
+	MsgAIActed        = "ai_acted"
+	MsgPlayerProgress = "player_progress"
+	MsgError          = "error"
 )
 
 // ClientMessage is a message sent from client to server.
@@ -60,6 +61,11 @@ type JoinRoomData struct {
 }
 
 // SelectTeamData is the data payload for MsgSelectTeam.
+type ResumeRoomData struct {
+	RoomCode string `json:"room_code"`
+	Token    string `json:"resume_token"`
+}
+
 type SelectTeamData struct {
 	Team string `json:"team"`
 }
@@ -77,11 +83,13 @@ type RemoveAIData struct {
 
 // SubmitCluesData is the data payload for MsgSubmitClues.
 type SubmitCluesData struct {
+	Round int       `json:"round"`
 	Clues [3]string `json:"clues"`
 }
 
 // SubmitGuessData is the data payload for MsgSubmitIntercept and MsgSubmitDecrypt.
 type SubmitGuessData struct {
+	Round int    `json:"round"`
 	Guess [3]int `json:"guess"`
 }
 
@@ -89,19 +97,22 @@ type SubmitGuessData struct {
 
 // RoomCreatedData is the data payload for MsgRoomCreated.
 type RoomCreatedData struct {
-	RoomCode   string `json:"room_code"`
-	MyPlayerID string `json:"my_player_id"`
+	RoomCode    string `json:"room_code"`
+	MyPlayerID  string `json:"my_player_id"`
+	ResumeToken string `json:"resume_token,omitempty"`
 }
 
 // PlayerInfo represents a player in the room.
 type PlayerInfo struct {
-	ID       string `json:"id"`
-	Nickname string `json:"nickname"`
-	IsAI     bool   `json:"is_ai"`
+	ID           string `json:"id"`
+	Nickname     string `json:"nickname"`
+	IsAI         bool   `json:"is_ai"`
+	Disconnected bool   `json:"disconnected,omitempty"`
 }
 
 // RoomStateData is the data payload for MsgRoomState.
 type RoomStateData struct {
+	Started    bool         `json:"started"`
 	RoomCode   string       `json:"room_code"`
 	Players    []PlayerInfo `json:"players"`
 	TeamA      []PlayerInfo `json:"team_a"`
@@ -121,16 +132,18 @@ type GameStartData struct {
 
 // RoundHistoryRow represents a single row in the round history.
 type RoundHistoryRow struct {
-	Round     int    `json:"round"`
-	Team      string `json:"team"`
+	Round     int      `json:"round"`
+	Team      string   `json:"team"`
 	Clues     []string `json:"clues"`
-	Secret    []int  `json:"secret,omitempty"`
-	Intercept []int  `json:"intercept,omitempty"`
-	Decrypt   []int  `json:"decrypt,omitempty"`
+	Secret    []int    `json:"secret,omitempty"`
+	Intercept []int    `json:"intercept,omitempty"`
+	Decrypt   []int    `json:"decrypt,omitempty"`
 }
 
 // PhaseChangeData is the data payload for MsgPhaseChange.
 type PhaseChangeData struct {
+	Notice       string            `json:"notice,omitempty"`
+	Deadline     int64             `json:"deadline"`
 	Phase        string            `json:"phase"`
 	Round        int               `json:"round"`
 	YourRole     string            `json:"your_role"`
@@ -150,21 +163,36 @@ type ScoreInfo struct {
 
 // RoundResultData is the data payload for MsgRoundResult.
 type RoundResultData struct {
-	InterceptSuccess *bool     `json:"intercept_success,omitempty"`
-	DecryptSuccess   *bool     `json:"decrypt_success,omitempty"`
-	ScoreA           ScoreInfo `json:"score_a"`
-	ScoreB           ScoreInfo `json:"score_b"`
+	Notice           string            `json:"notice,omitempty"`
+	Round            int               `json:"round"`
+	History          []RoundHistoryRow `json:"history,omitempty"`
+	Complete         bool              `json:"complete,omitempty"`
+	InterceptSuccess *bool             `json:"intercept_success,omitempty"`
+	DecryptSuccess   *bool             `json:"decrypt_success,omitempty"`
+	ScoreA           ScoreInfo         `json:"score_a"`
+	ScoreB           ScoreInfo         `json:"score_b"`
 }
 
 // GameOverData is the data payload for MsgGameOver.
 type GameOverData struct {
-	Winner *string   `json:"winner,omitempty"`
-	ScoreA ScoreInfo `json:"score_a"`
-	ScoreB ScoreInfo `json:"score_b"`
+	Notice  string            `json:"notice,omitempty"`
+	Round   int               `json:"round"`
+	History []RoundHistoryRow `json:"history"`
+	Winner  *string           `json:"winner,omitempty"`
+	ScoreA  ScoreInfo         `json:"score_a"`
+	ScoreB  ScoreInfo         `json:"score_b"`
 }
 
 // GameSyncData holds the in-game state for a full sync.
 type GameSyncData struct {
+	RoundResult  *RoundResultData  `json:"round_result,omitempty"`
+	Deadline     int64             `json:"deadline"`
+	Encryptor    string            `json:"encryptor"`
+	Waiting      bool              `json:"waiting"`
+	Submitted    bool              `json:"submitted"`
+	GameOver     *GameOverData     `json:"game_over,omitempty"`
+	AIStatus     *AIStatusData     `json:"ai_status,omitempty"`
+	Notice       string            `json:"notice,omitempty"`
 	Phase        string            `json:"phase"`
 	Round        int               `json:"round"`
 	YourRole     string            `json:"your_role"`
@@ -186,10 +214,13 @@ type FullSyncData struct {
 
 // AIStatusData is the data payload for MsgAIThinking and MsgAIActed.
 type AIStatusData struct {
-	Action string `json:"action"` // "encrypt", "intercept", "decrypt"
-	Player string `json:"player"` // AI player nickname
-	Step   int    `json:"step"`   // current step (1-based)
-	Total  int    `json:"total"`  // total steps
+	Completed int    `json:"completed"`
+	State     string `json:"state"`
+	Notice    string `json:"notice,omitempty"`
+	Action    string `json:"action"` // "encrypt", "intercept", "decrypt"
+	Player    string `json:"player"` // AI player nickname
+	Step      int    `json:"step"`   // current step (1-based)
+	Total     int    `json:"total"`  // total steps
 }
 
 // ProgressData is the client payload for MsgProgress.
@@ -199,6 +230,7 @@ type AIStatusData struct {
 // Guesses carries the current per-slot choice for decrypt/intercept actions
 // (0 for unfilled); used to light up selector oscilloscopes on observer pages.
 type ProgressData struct {
+	Round   int    `json:"round"`
 	Action  string `json:"action"`            // "encrypt", "intercept", "decrypt"
 	State   string `json:"state,omitempty"`   // "idle" | "editing" | "submitted"
 	Step    int    `json:"step"`              // completed count (0-3)
@@ -220,5 +252,6 @@ type PlayerProgressData struct {
 
 // ErrorData is the data payload for MsgError.
 type ErrorData struct {
+	Code    string `json:"code,omitempty"`
 	Message string `json:"message"`
 }

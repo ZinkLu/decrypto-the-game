@@ -5,6 +5,7 @@ export interface PlayerInfo {
   id: string;
   nickname: string;
   is_ai: boolean;
+  disconnected?: boolean;
 }
 
 export interface ScoreInfo {
@@ -30,9 +31,14 @@ export type GamePhase =
   | "round_result"
   | "game_over";
 
-export type PlayerRole = "encryptor" | "teammate" | "opponent" | "";
+export type PlayerRole = "encryptor" | "teammate" | "opponent" | "observer" | "";
 
 interface GameStore {
+  resumeToken: string;
+  recovering: boolean;
+  deadline: number;
+  submitted: boolean;
+  aiNotice: string;
   error: string | null;
   clearError: () => void;
   // Connection
@@ -70,6 +76,8 @@ interface GameStore {
   aiStatus: {
     action: string;
     player: string;
+    state?: string;
+    completed?: number;
     step: number;
     total: number;
   } | null;
@@ -110,6 +118,11 @@ interface GameStore {
 }
 
 const initialState = {
+  resumeToken: "",
+  recovering: false,
+  deadline: 0,
+  submitted: false,
+  aiNotice: "",
   error: null as string | null,
   connected: false,
   wsService: null as WebSocketService | null,
@@ -141,6 +154,8 @@ const initialState = {
   aiStatus: null as {
     action: string;
     player: string;
+    state?: string;
+    completed?: number;
     step: number;
     total: number;
   } | null,
@@ -165,6 +180,20 @@ type SetFn = (
 
 type GetFn = () => GameStore;
 
+const sessionKey = "decrypto-session-v1";
+function savedSession(): { roomCode: string; resumeToken: string } | null {
+  try {
+    const value = JSON.parse(sessionStorage.getItem(sessionKey) || "null");
+    return typeof value?.roomCode === "string" && typeof value?.resumeToken === "string" && value.resumeToken ? value : null;
+  } catch { return null; }
+}
+function saveSession(value: { roomCode: string; resumeToken: string } | null) {
+  try {
+    if (value) sessionStorage.setItem(sessionKey, JSON.stringify(value));
+    else sessionStorage.removeItem(sessionKey);
+  } catch { /* Resume still works in memory when storage is blocked. */ }
+}
+
 function handleServerMessage(
   set: SetFn,
   get: GetFn,
@@ -176,26 +205,29 @@ function handleServerMessage(
   switch (type) {
     case "_connected":
       set({ connected: true });
-      if (get().roomCode) {
-        get().wsService?.send("request_sync", {});
+      if (get().roomCode && get().resumeToken) {
+        set({ recovering: true });
+        get().wsService?.send("resume_room", { room_code: get().roomCode, resume_token: get().resumeToken });
       }
       break;
 
     case "_disconnected":
-      if (get().roomCode) {
-        set({
-          ...initialState,
-          wsService: get().wsService,
-          error:
-            "连接已中断。当前服务器暂不支持找回原座位，请重新建立或加入房间。",
-        });
-      } else {
-        set({ connected: false });
-      }
+      if (get().resumeToken) {
+        set({ connected: false, recovering: true, error: "连接已中断，正在恢复原座位…" });
+      } else if (get().roomCode) {
+        set({ ...initialState, wsService: get().wsService, error: "连接已中断，请重新加入房间。" });
+      } else set({ connected: false });
+      break;
+
+    case "room_resumed":
+      set({ roomCode: d.room_code as string, myPlayerID: d.my_player_id as string });
       break;
 
     case "room_created":
+      if (d.resume_token) saveSession({ roomCode: d.room_code as string, resumeToken: d.resume_token as string });
       set({
+        resumeToken: (d.resume_token as string) ?? "",
+        recovering: false,
         roomCode: d.room_code as string,
         myPlayerID: (d.my_player_id as string) ?? "",
         phase: "room",
@@ -204,7 +236,7 @@ function handleServerMessage(
 
     case "room_state":
       set({
-        phase: "room",
+        phase: d.started ? get().phase : "room",
         roomCode: (d.room_code as string) ?? get().roomCode,
         players: (d.players as PlayerInfo[]) ?? [],
         teamA: (d.team_a as PlayerInfo[]) ?? [],
@@ -225,6 +257,7 @@ function handleServerMessage(
       break;
 
     case "phase_change": {
+      set({ deadline: Number(d.deadline) || 0, submitted: false, aiNotice: String(d.notice || ""), recovering: false });
       const newPhase = d.phase as string;
       if (newPhase === "new_round") {
         // Map new_round to the correct GamePhase based on role
@@ -272,6 +305,9 @@ function handleServerMessage(
 
     case "round_result":
       set({
+        aiNotice: String(d.notice || get().aiNotice),
+        deadline: 0,
+        history: (d.history as RoundHistoryRow[]) ?? get().history,
         roundResult: {
           ...get().roundResult,
           ...(typeof d.intercept_success === "boolean"
@@ -289,6 +325,10 @@ function handleServerMessage(
 
     case "game_over":
       set({
+        aiNotice: String(d.notice || get().aiNotice),
+        deadline: 0,
+        round: Number(d.round) || get().round,
+        history: (d.history as RoundHistoryRow[]) ?? get().history,
         gameOver: { winner: (d.winner as string | null) ?? null },
         scoreA: (d.score_a as ScoreInfo) ?? get().scoreA,
         scoreB: (d.score_b as ScoreInfo) ?? get().scoreB,
@@ -297,6 +337,7 @@ function handleServerMessage(
       break;
 
     case "full_sync": {
+      set({ recovering: false, error: null });
       const roomData = d.room as Record<string, unknown> | undefined;
       const gameData = d.game as Record<string, unknown> | undefined;
 
@@ -314,6 +355,12 @@ function handleServerMessage(
 
       if (gameData) {
         set({
+          deadline: Number(gameData.deadline) || 0,
+          submitted: !!gameData.submitted,
+          roundResult: (gameData.round_result as GameStore["roundResult"]) ?? null,
+          aiStatus: (gameData.ai_status as GameStore["aiStatus"]) ?? null,
+          aiNotice: String(gameData.notice || ""),
+          gameOver: gameData.game_over ? { winner: (gameData.game_over as { winner?: string }).winner ?? null } : null,
           round: (gameData.round as number) ?? get().round,
           myRole: (gameData.your_role as PlayerRole) ?? get().myRole,
           myTeam: (gameData.your_team as string) ?? get().myTeam,
@@ -342,18 +389,12 @@ function handleServerMessage(
     }
 
     case "ai_thinking":
-      set({
-        aiStatus: {
-          action: d.action as string,
-          player: d.player as string,
-          step: (d.step as number) ?? 1,
-          total: (d.total as number) ?? 3,
-        },
-      });
-      break;
-
     case "ai_acted":
-      set({ aiStatus: null });
+      set({
+        aiStatus: { action: String(d.action), player: String(d.player), state: String(d.state || 'thinking'),
+          step: Number(d.step) || 1, completed: Number(d.completed) || 0, total: Number(d.total) || 3 },
+        aiNotice: get().aiNotice.startsWith('AI 未能') ? get().aiNotice : String(d.notice || ''),
+      });
       break;
 
     case "player_progress":
@@ -371,6 +412,10 @@ function handleServerMessage(
       break;
 
     case "error":
+      if (d.code === "resume_expired") {
+        saveSession(null);
+        set({ ...initialState, connected: get().connected, wsService: get().wsService });
+      }
       set({ error: translateError(String(d.message ?? "操作失败，请重试。")) });
       break;
 
@@ -406,7 +451,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const ws = new WebSocketService(url, (type: string, data: unknown) => {
       handleServerMessage(set, get, type, data);
     });
-    set({ wsService: ws });
+    const previous = get().resumeToken ? null : savedSession();
+    set({ wsService: ws, ...(previous ? { ...previous, recovering: true } : {}) });
     ws.connect();
   },
 
@@ -444,19 +490,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   submitClues(clues: [string, string, string]) {
-    get().wsService?.send("submit_clues", { clues });
+    get().wsService?.send("submit_clues", { clues, round: get().round });
   },
 
   submitIntercept(guess: [number, number, number]) {
-    get().wsService?.send("submit_intercept", { guess });
+    get().wsService?.send("submit_intercept", { guess, round: get().round });
   },
 
   submitDecrypt(guess: [number, number, number]) {
-    get().wsService?.send("submit_decrypt", { guess });
+    get().wsService?.send("submit_decrypt", { guess, round: get().round });
   },
 
   sendProgress(action, step, opts) {
     get().wsService?.send("progress", {
+      round: get().round,
       action,
       step,
       total: 3,
@@ -471,6 +518,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   reset() {
+    saveSession(null);
     get().wsService?.disconnect();
     set({ ...initialState });
   },

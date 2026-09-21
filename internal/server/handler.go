@@ -2,469 +2,304 @@ package server
 
 import (
 	"encoding/json"
-	"log"
-
-	"github.com/google/uuid"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
 
 	"github.com/ZinkLu/decrypto-the-game/internal/game"
 	"github.com/ZinkLu/decrypto-the-game/internal/room"
 	"github.com/ZinkLu/decrypto-the-game/internal/ws"
-
-	"github.com/ZinkLu/decrypto-the-game/internal/core"
+	"github.com/google/uuid"
 )
 
-// Handler is the central WebSocket message dispatcher.
+// Room operations are serialized; the game goroutine exposes synchronized snapshots.
 type Handler struct {
 	RoomManager *room.Manager
 	Hub         *ws.Hub
+	mu          sync.Mutex
+	active      map[string]*ws.Client
+	expiry      map[string]*time.Timer
 }
 
-// NewHandler constructs a Handler with the given RoomManager and Hub.
-// hub may be nil at construction time and set later via Handler.Hub.
-func NewHandler(roomManager *room.Manager, hub *ws.Hub) *Handler {
-	return &Handler{
-		RoomManager: roomManager,
-		Hub:         hub,
+func NewHandler(manager *room.Manager, hub *ws.Hub) *Handler {
+	return &Handler{RoomManager: manager, Hub: hub, active: map[string]*ws.Client{}, expiry: map[string]*time.Timer{}}
+}
+
+func validName(name string) bool {
+	return strings.TrimSpace(name) != "" && utf8.RuneCountInString(name) <= 20
+}
+
+func (h *Handler) attach(client *ws.Client, r *room.Room, p *room.PlayerInfo, token string, resume bool) {
+	if old := h.active[p.ID]; old != nil && old != client {
+		old.Close()
+	}
+	client.SetIdentity(p.ID, p.Nickname)
+	h.active[p.ID] = client
+	h.Hub.JoinRoom(client, r.Code)
+	if timer := h.expiry[r.Code]; timer != nil {
+		timer.Stop()
+		delete(h.expiry, r.Code)
+	}
+	typ := ws.MsgRoomCreated
+	if resume {
+		typ = "room_resumed"
+	}
+	client.SendMessage(ws.ServerMessage{Type: typ, Data: ws.RoomCreatedData{RoomCode: r.Code, MyPlayerID: p.ID, ResumeToken: token}})
+	h.broadcastRoomState(r)
+	if resume {
+		h.sendSync(client, r)
 	}
 }
 
-// HandleMessage dispatches inbound client messages to the appropriate handler.
 func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
-	switch msg.Type {
-
-	// ----- Room operations -----
-
-	case ws.MsgCreateRoom:
-		var data ws.CreateRoomData
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			client.SendError("invalid create_room data")
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	identity := client.Identity()
+	if identity.PlayerID != "" && h.active[identity.PlayerID] != client {
+		return
+	}
+	r := h.RoomManager.GetRoom(identity.RoomCode)
+	if msg.Type == "_disconnect" {
+		if r == nil {
 			return
 		}
-		client.PlayerID = uuid.NewString()
-		client.Nickname = data.Nickname
-
-		owner := &room.PlayerInfo{
-			ID:       client.PlayerID,
-			Nickname: client.Nickname,
-		}
-		r := h.RoomManager.CreateRoom(owner)
-		h.Hub.JoinRoom(client, r.Code)
-
-		client.SendMessage(ws.ServerMessage{
-			Type: ws.MsgRoomCreated,
-			Data: ws.RoomCreatedData{RoomCode: r.Code, MyPlayerID: client.PlayerID},
-		})
+		delete(h.active, identity.PlayerID)
+		r.Disconnect(identity.PlayerID)
 		h.broadcastRoomState(r)
-
-	case ws.MsgJoinRoom:
-		var data ws.JoinRoomData
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			client.SendError("invalid join_room data")
+		if r.OnlineHumans() == 0 {
+			if timer := h.expiry[r.Code]; timer != nil {
+				timer.Stop()
+			}
+			// Preserve active and finished sessions for ten minutes after the last human disconnects.
+			h.expiry[r.Code] = time.AfterFunc(10*time.Minute, func() {
+				h.mu.Lock()
+				defer h.mu.Unlock()
+				if r.OnlineHumans() != 0 {
+					return
+				}
+				if b, ok := game.GetBridge(r.Snapshot().SessionID); ok {
+					b.Stop()
+					game.RemoveBridge(b.Session.SessionID())
+				}
+				h.RoomManager.RemoveRoom(r.Code)
+				delete(h.expiry, r.Code)
+			})
+		}
+		return
+	}
+	switch msg.Type {
+	case ws.MsgCreateRoom:
+		if identity.PlayerID != "" {
+			client.SendError("already in a room")
 			return
 		}
-		r := h.RoomManager.GetRoom(data.RoomCode)
+		var d ws.CreateRoomData
+		if json.Unmarshal(msg.Data, &d) != nil || !validName(d.Nickname) {
+			client.SendError("nickname must contain 1 to 20 characters")
+			return
+		}
+		p := &room.PlayerInfo{ID: uuid.NewString(), Nickname: strings.TrimSpace(d.Nickname)}
+		r = h.RoomManager.CreateRoom(p)
+		if r == nil {
+			client.SendError("room capacity reached; try later")
+			return
+		}
+		h.attach(client, r, p, r.Token(p.ID), false)
+		return
+	case ws.MsgJoinRoom:
+		if identity.PlayerID != "" {
+			client.SendError("already in a room")
+			return
+		}
+		var d ws.JoinRoomData
+		if json.Unmarshal(msg.Data, &d) != nil || !validName(d.Nickname) {
+			client.SendError("nickname must contain 1 to 20 characters")
+			return
+		}
+		r = h.RoomManager.GetRoom(strings.ToUpper(strings.TrimSpace(d.RoomCode)))
 		if r == nil {
 			client.SendError("room not found")
 			return
 		}
-		if r.Started {
-			client.SendError("game already started")
+		p := &room.PlayerInfo{ID: uuid.NewString(), Nickname: strings.TrimSpace(d.Nickname)}
+		token, err := r.Join(p)
+		if err != nil {
+			client.SendError(err.Error())
 			return
 		}
-		client.PlayerID = uuid.NewString()
-		client.Nickname = data.Nickname
-
-		h.Hub.JoinRoom(client, r.Code)
-		h.broadcastRoomState(r)
-
+		h.attach(client, r, p, token, false)
+		return
+	case ws.MsgResumeRoom:
+		if identity.PlayerID != "" {
+			client.SendError("already in a room")
+			return
+		}
+		var d ws.ResumeRoomData
+		if json.Unmarshal(msg.Data, &d) != nil {
+			h.resumeError(client)
+			return
+		}
+		r = h.RoomManager.GetRoom(d.RoomCode)
+		if r == nil {
+			h.resumeError(client)
+			return
+		}
+		p, err := r.Resume(d.Token)
+		if err != nil {
+			h.resumeError(client)
+			return
+		}
+		h.attach(client, r, p, d.Token, true)
+		return
+	}
+	if r == nil || identity.PlayerID == "" {
+		client.SendError("room not found")
+		return
+	}
+	state := r.Snapshot()
+	switch msg.Type {
 	case ws.MsgSelectTeam:
-		var data ws.SelectTeamData
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
+		var d ws.SelectTeamData
+		if json.Unmarshal(msg.Data, &d) != nil {
 			client.SendError("invalid select_team data")
 			return
 		}
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
-			client.SendError("room not found")
+		// Use the room's membership record, including its connection state.
+		var player *room.PlayerInfo
+		for _, p := range state.Players {
+			if p.ID == identity.PlayerID {
+				player = p
+				break
+			}
+		}
+		if player == nil {
+			client.SendError("player not found")
 			return
 		}
-		player := &room.PlayerInfo{
-			ID:       client.PlayerID,
-			Nickname: client.Nickname,
-		}
-		if err := r.AddToTeam(player, data.Team); err != nil {
+		if err := r.AddToTeam(player, d.Team); err != nil {
 			client.SendError(err.Error())
 			return
 		}
 		h.broadcastRoomState(r)
-
 	case ws.MsgLeaveTeam:
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
-			client.SendError("room not found")
+		if err := r.LeaveTeam(identity.PlayerID); err != nil {
+			client.SendError(err.Error())
 			return
 		}
-		r.RemovePlayer(client.PlayerID)
 		h.broadcastRoomState(r)
-
 	case ws.MsgAddAI:
-		var data ws.AddAIData
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
+		var d ws.AddAIData
+		if json.Unmarshal(msg.Data, &d) != nil {
 			client.SendError("invalid add_ai data")
 			return
 		}
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
-			client.SendError("room not found")
-			return
-		}
-		if r.OwnerID != client.PlayerID {
+		if state.OwnerID != identity.PlayerID {
 			client.SendError("only the room owner can add AI players")
 			return
 		}
-		if err := r.AddAI(data.Team); err != nil {
+		if err := r.AddAI(d.Team); err != nil {
 			client.SendError(err.Error())
 			return
 		}
 		h.broadcastRoomState(r)
-
 	case ws.MsgRemoveAI:
-		var data ws.RemoveAIData
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
+		var d ws.RemoveAIData
+		if json.Unmarshal(msg.Data, &d) != nil {
 			client.SendError("invalid remove_ai data")
 			return
 		}
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
-			client.SendError("room not found")
-			return
-		}
-		if r.OwnerID != client.PlayerID {
+		if state.OwnerID != identity.PlayerID {
 			client.SendError("only the room owner can remove AI players")
 			return
 		}
-		if err := r.RemoveAI(data.Team, data.Index); err != nil {
+		if err := r.RemoveAI(d.Team, d.Index); err != nil {
 			client.SendError(err.Error())
 			return
 		}
 		h.broadcastRoomState(r)
-
 	case ws.MsgStartGame:
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
-			client.SendError("room not found")
-			return
-		}
-		if r.OwnerID != client.PlayerID {
+		if state.OwnerID != identity.PlayerID {
 			client.SendError("only the room owner can start the game")
 			return
 		}
-		if !r.CanStart() {
-			client.SendError("not enough players to start (need at least 2 per team)")
-			return
-		}
-		bridge, err := game.NewBridge(r, h.Hub)
+		b, err := game.NewBridge(r, h.Hub)
 		if err != nil {
-			log.Printf("server: failed to create bridge: %v", err)
-			client.SendError("failed to start game: " + err.Error())
+			client.SendError(err.Error())
 			return
 		}
-		bridge.Start()
-
-	// ----- Game operations -----
-
-	case ws.MsgSubmitClues:
-		var data ws.SubmitCluesData
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			client.SendError("invalid submit_clues data")
-			return
-		}
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
-			client.SendError("room not found")
-			return
-		}
-		bridge, ok := game.GetBridge(r.SessionID)
-		if !ok {
-			client.SendError("game session not found")
-			return
-		}
-		round := bridge.Session.GetCurrentRound()
-		if round == nil || round.EncryptPlayer().UID != client.PlayerID {
-			client.SendError("you are not the current encryptor")
-			return
-		}
-		select {
-		case bridge.CluesCh <- data.Clues:
-		default:
-			client.SendError("clues already submitted")
-		}
-
-	case ws.MsgSubmitIntercept:
-		var data ws.SubmitGuessData
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			client.SendError("invalid submit_intercept data")
-			return
-		}
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
-			client.SendError("room not found")
-			return
-		}
-		bridge, ok := game.GetBridge(r.SessionID)
-		if !ok {
-			client.SendError("game session not found")
-			return
-		}
-		select {
-		case bridge.InterceptCh <- data.Guess:
-		default:
-			client.SendError("intercept already submitted")
-		}
-
-	case ws.MsgSubmitDecrypt:
-		var data ws.SubmitGuessData
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			client.SendError("invalid submit_decrypt data")
-			return
-		}
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
-			client.SendError("room not found")
-			return
-		}
-		bridge, ok := game.GetBridge(r.SessionID)
-		if !ok {
-			client.SendError("game session not found")
-			return
-		}
-		select {
-		case bridge.DecryptCh <- data.Guess:
-		default:
-			client.SendError("decrypt already submitted")
-		}
-
-	case ws.MsgProgress:
-		var data ws.ProgressData
-		if err := json.Unmarshal(msg.Data, &data); err != nil {
-			client.SendError("invalid progress data")
-			return
-		}
-		if data.Step < 0 || data.Step > 3 {
-			return
-		}
-		if data.Focus < 0 || data.Focus > 3 {
-			return
-		}
-		switch data.State {
-		case "", "idle", "editing", "submitted":
-		default:
-			return
-		}
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
-			return
-		}
-		h.Hub.BroadcastToRoom(r.Code, ws.ServerMessage{
-			Type: ws.MsgPlayerProgress,
-			Data: ws.PlayerProgressData{
-				Action:  data.Action,
-				Player:  client.Nickname,
-				State:   data.State,
-				Step:    data.Step,
-				Focus:   data.Focus,
-				Guesses: data.Guesses,
-				Total:   3,
-			},
-		})
-
+		b.Start()
 	case ws.MsgRequestSync:
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		syncData := &ws.FullSyncData{}
-		if r != nil {
-			syncData.Room = h.buildRoomStateData(r)
-			syncData.Room.MyPlayerID = client.PlayerID
-		}
-		if r != nil && r.SessionID != "" {
-			bridge, ok := game.GetBridge(r.SessionID)
-			if ok {
-				syncData.Game = h.buildGameSyncData(client, bridge)
-			}
-		}
-		client.SendMessage(ws.ServerMessage{
-			Type: ws.MsgFullSync,
-			Data: syncData,
-		})
-
-	// ----- Disconnect pseudo-message -----
-
-	case "_disconnect":
-		r := h.RoomManager.GetRoom(client.RoomCode)
-		if r == nil {
+		h.sendSync(client, r)
+	case ws.MsgSubmitClues, ws.MsgSubmitIntercept, ws.MsgSubmitDecrypt, ws.MsgProgress:
+		b, ok := game.GetBridge(state.SessionID)
+		if !ok {
+			client.SendError("game session not found")
 			return
 		}
-		if !r.Started {
-			r.RemovePlayer(client.PlayerID)
-			h.broadcastRoomState(r)
+		var err error
+		switch msg.Type {
+		case ws.MsgSubmitClues:
+			var d ws.SubmitCluesData
+			err = json.Unmarshal(msg.Data, &d)
+			if err == nil {
+				err = b.SubmitClues(identity.PlayerID, d)
+			}
+		case ws.MsgSubmitIntercept, ws.MsgSubmitDecrypt:
+			var d ws.SubmitGuessData
+			err = json.Unmarshal(msg.Data, &d)
+			phase := "decrypt"
+			if msg.Type == ws.MsgSubmitIntercept {
+				phase = "intercept"
+			}
+			if err == nil {
+				err = b.SubmitGuess(identity.PlayerID, phase, d)
+			}
+		case ws.MsgProgress:
+			var d ws.ProgressData
+			if json.Unmarshal(msg.Data, &d) != nil || b.ValidateProgress(identity.PlayerID, d) != nil {
+				return
+			}
+			h.Hub.BroadcastToRoom(r.Code, ws.ServerMessage{Type: ws.MsgPlayerProgress, Data: ws.PlayerProgressData{Action: d.Action, Player: identity.Nickname, State: d.State, Step: d.Step, Focus: d.Focus, Guesses: d.Guesses, Total: 3}})
 		}
-
+		if err != nil {
+			client.SendError(err.Error())
+		}
 	default:
-		log.Printf("server: unknown message type %q from player %s", msg.Type, client.PlayerID)
 		client.SendError("unknown message type: " + msg.Type)
 	}
 }
 
-// broadcastRoomState sends a personalized room state to each client in the room,
-// so that each client receives their own my_player_id.
+func (h *Handler) resumeError(client *ws.Client) {
+	client.SendMessage(ws.ServerMessage{Type: ws.MsgError, Data: ws.ErrorData{Code: "resume_expired", Message: "room resume expired; please create or join a room"}})
+}
+
+func (h *Handler) sendSync(client *ws.Client, r *room.Room) {
+	data := &ws.FullSyncData{Room: h.buildRoomStateData(r)}
+	data.Room.MyPlayerID = client.Identity().PlayerID
+	if b, ok := game.GetBridge(r.Snapshot().SessionID); ok {
+		data.Game = b.Sync(client.Identity().PlayerID)
+	}
+	client.SendMessage(ws.ServerMessage{Type: ws.MsgFullSync, Data: data})
+}
+
 func (h *Handler) broadcastRoomState(r *room.Room) {
 	base := h.buildRoomStateData(r)
-	clients := h.Hub.GetRoomClients(r.Code)
-	for _, c := range clients {
-		data := *base
-		data.MyPlayerID = c.PlayerID
-		c.SendMessage(ws.ServerMessage{
-			Type: ws.MsgRoomState,
-			Data: &data,
-		})
+	for _, c := range h.Hub.GetRoomClients(r.Code) {
+		d := *base
+		d.MyPlayerID = c.Identity().PlayerID
+		c.SendMessage(ws.ServerMessage{Type: ws.MsgRoomState, Data: d})
 	}
 }
 
-// buildRoomStateData converts a room into the wire-format RoomStateData.
 func (h *Handler) buildRoomStateData(r *room.Room) *ws.RoomStateData {
-	toPlayerInfoSlice := func(players []*room.PlayerInfo) []ws.PlayerInfo {
-		out := make([]ws.PlayerInfo, len(players))
-		for i, p := range players {
-			out[i] = ws.PlayerInfo{
-				ID:       p.ID,
-				Nickname: p.Nickname,
-				IsAI:     p.IsAI,
-			}
+	s := r.Snapshot()
+	convert := func(players []*room.PlayerInfo) []ws.PlayerInfo {
+		out := make([]ws.PlayerInfo, 0, len(players))
+		for _, p := range players {
+			out = append(out, ws.PlayerInfo{ID: p.ID, Nickname: p.Nickname, IsAI: p.IsAI, Disconnected: p.Disconnected})
 		}
 		return out
 	}
-
-	allPlayers := r.GetAllPlayers()
-
-	return &ws.RoomStateData{
-		RoomCode: r.Code,
-		Players:  toPlayerInfoSlice(allPlayers),
-		TeamA:    toPlayerInfoSlice(r.TeamA),
-		TeamB:    toPlayerInfoSlice(r.TeamB),
-		OwnerID:  r.OwnerID,
-		CanStart: r.CanStart(),
-	}
-}
-
-// buildGameSyncData constructs a GameSyncData for the requesting client from the active bridge.
-func (h *Handler) buildGameSyncData(client *ws.Client, bridge *game.Bridge) *ws.GameSyncData {
-	round := bridge.Session.GetCurrentRound()
-	teams := bridge.Session.GetTeams()
-
-	scoreA := ws.ScoreInfo{
-		Interceptions:   int(teams[0].InterceptedCounts),
-		DecryptFailures: int(teams[0].DecryptWrongCounts),
-	}
-	scoreB := ws.ScoreInfo{
-		Interceptions:   int(teams[1].InterceptedCounts),
-		DecryptFailures: int(teams[1].DecryptWrongCounts),
-	}
-
-	if round == nil {
-		return &ws.GameSyncData{
-			Phase:  "waiting",
-			ScoreA: scoreA,
-			ScoreB: scoreB,
-		}
-	}
-
-	// Determine which team the client is on ("A" or "B") and their words.
-	teamLabel := "A"
-	var words [4]string
-	for _, p := range teams[0].Members() {
-		if p.UID == client.PlayerID {
-			words = teams[0].GetWords()
-			teamLabel = "A"
-			break
-		}
-	}
-	for _, p := range teams[1].Members() {
-		if p.UID == client.PlayerID {
-			words = teams[1].GetWords()
-			teamLabel = "B"
-			break
-		}
-	}
-
-	// Determine the player's role in the current round.
-	role := "observer"
-	if round.EncryptPlayer().UID == client.PlayerID {
-		role = "encryptor"
-	} else {
-		currentTeam := round.GetCurrentTeam()
-		for _, p := range currentTeam.Members() {
-			if p.UID == client.PlayerID {
-				role = "teammate"
-				break
-			}
-		}
-		if role == "observer" {
-			// Check opponent team.
-			opponent := round.GetOpponent()
-			for _, p := range opponent.Members() {
-				if p.UID == client.PlayerID {
-					role = "opponent"
-					break
-				}
-			}
-		}
-	}
-
-	state := round.GetTeamState()
-	phase := stateToPhase(state)
-
-	syncData := &ws.GameSyncData{
-		Phase:    phase,
-		Round:    int(round.GetNumberOfRounds()),
-		YourRole: role,
-		YourTeam: teamLabel,
-		Words:    words[:],
-		ScoreA:   scoreA,
-		ScoreB:   scoreB,
-	}
-
-	// Include clues if they are available (encrypting phase done or later).
-	encryptedMsg := round.GetEncryptedMessage()
-	if encryptedMsg[0] != "" {
-		syncData.Clues = encryptedMsg[:]
-	}
-
-	// If the client is the encryptor, share the secret digits/words.
-	if role == "encryptor" {
-		digits := round.GetSecretDigits()
-		secretWords := round.GetSecretWords()
-		syncData.SecretDigits = digits[:]
-		syncData.SecretWords = secretWords[:]
-	}
-
-	return syncData
-}
-
-// stateToPhase converts a core TeamState to the string phase name used on the wire.
-func stateToPhase(state core.TeamState) string {
-	switch state {
-	case core.NEW:
-		return "new"
-	case core.INIT:
-		return "init"
-	case core.ENCRYPTING:
-		return "encrypting"
-	case core.INTERCEPT:
-		return "intercept"
-	case core.DECRYPT:
-		return "decrypt"
-	case core.DONE:
-		return "done"
-	default:
-		return "unknown"
-	}
+	return &ws.RoomStateData{RoomCode: s.Code, OwnerID: s.OwnerID, Started: s.Started, CanStart: s.CanStart, Players: convert(s.Players), TeamA: convert(s.TeamA), TeamB: convert(s.TeamB)}
 }

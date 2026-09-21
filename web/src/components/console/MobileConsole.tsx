@@ -1,0 +1,64 @@
+import type { StationState, LocalState } from './model';
+import { roleState, word } from './model';
+import { translate, localizeError } from './i18n';
+
+type Props = { state: StationState; local: LocalState; ready: boolean; status: string; inert: boolean;
+    onAct: (id: string) => void; onChange: (id: string, value: string) => void };
+
+// The compact surface shares the desktop drafts, validation and actions.
+export default function MobileConsole({ state: s, local: u, ready, status, onAct, onChange, inert }: Props) {
+    const t = (key: string, values?: unknown[]) => translate(u.locale, key, values);
+    const r = roleState(s, u);
+    const lobby = s.phase === 'room', home = s.phase === 'home';
+    const owner = s.ownerID === s.myPlayerID;
+    const disabled = !s.connected || s.recovering;
+    const title = t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase]);
+    const action = home ? u.mode === 'create' ? '建立频道' : '接入频道' : lobby ? '开始行动' : s.phase === 'game_over' ? '返回通信局' : u.submitted || s.submitted ? '已发送' : '发报 · 确认';
+    return <section className="mobile-console" aria-label={t('便携通信终端')} inert={inert}>
+        <header><p className="mobile-brand">DECRYPTO <span>FIELD TERMINAL / 01</span></p>
+            <div className="mobile-title"><h2>{title}</h2>{s.deadline > 0 && <span className="mobile-clock">{u.seconds}s</span>}</div>
+            <p className="mobile-channel">{s.roomCode ? `CH ${s.roomCode}` : t('双队通信  /  4–8 人')} · {s.recovering ? t('正在恢复原座位…') : s.connected ? t('已连接') : t('连接中')}
+                {s.myTeam && ` · ${t('{0} 队', [s.myTeam])}`}</p>
+        </header>
+        {home && <>
+            <div className="mobile-tabs"><button aria-pressed={u.mode === 'create'} onClick={() => onAct('mode-create')}>{t('建立频道')}</button><button aria-pressed={u.mode === 'join'} onClick={() => onAct('mode-join')}>{t('接入频道')}</button></div>
+            <label>{t('呼号')}<input autoComplete="nickname" value={u.name} maxLength={20} onChange={e => onChange('name', e.target.value)}/></label>
+            {u.mode === 'join' && <label>{t('四位频道编号')}<input inputMode="numeric" autoComplete="off" value={u.code} maxLength={4} placeholder="1234" onChange={e => onChange('code', e.target.value)}/></label>}
+            <p>{t('每队至少两人，可以由 AI 补位。')}</p>
+        </>}
+        {lobby && <>
+            <button onClick={() => onAct('copy-code')}>{t('复制频道编号')}</button>
+            <p>{t('每队至少两人，可以由 AI 补位。')}</p>
+            {(['A', 'B'] as const).map(team => {
+                const players = team === 'A' ? s.teamA : s.teamB;
+                const own = players.some(p => p.id === s.myPlayerID);
+                return <section className="mobile-roster" key={team}>
+                    <h3>{t('{0} 队 · {1} 人', [team, players.length])}</h3>
+                    <ul>{players.map((p, i) => <li key={p.id}><span>{p.nickname}{p.is_ai ? ' · AI' : ''}{p.id === s.myPlayerID ? t(' · 你') : ''}{p.id === s.ownerID ? t(' · 房主') : ''}{p.disconnected ? ` · ${t('离线 · 等待重连')}` : ''}</span>{owner && p.is_ai && <button disabled={disabled} onClick={() => onAct(`remove-${team}-${i}`)} aria-label={t('移除 {0}', [p.nickname])}>{t('移除')}</button>}</li>)}</ul>
+                    <div className="mobile-tabs"><button disabled={disabled || (!own && players.length >= 4)} onClick={() => onAct(`team-${team}`)}>{t(own ? '离开队伍' : '加入 {0} 队', [team])}</button>{owner && <button disabled={disabled || players.length >= 4} onClick={() => onAct(`ai-${team}`)}>{t('增加 AI')}</button>}</div>
+                </section>;
+            })}
+            {!owner && <p>{t('等待房主开始行动')}</p>}
+        </>}
+        {!home && !lobby && <>
+            <div className="mobile-round"><strong>{t('第 {0} / 16 回合', [s.round])}</strong><button data-mobile-archive onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button></div>
+            <div className="mobile-scores">{(['A', 'B'] as const).map(team => { const score = team === 'A' ? s.scoreA : s.scoreB; return <p key={team}>{t('{0} 队     截获 {1} / 2     失误 {2} / 2', [team, score.interceptions, score.decrypt_failures])}</p>; })}</div>
+            {!!s.myWords.length && <section className="mobile-words"><div><h3>{t('我方秘密词')}</h3><button onClick={() => onAct('words')}>{t(u.hiddenWords ? '显示' : '遮住')}</button></div><ol>{s.myWords.map((v, i) => <li key={i}><b>{i + 1}</b> {u.hiddenWords ? '••••' : word(v, u.locale)}</li>)}</ol></section>}
+            {s.phase === 'game_over' ? <h3 className="mobile-result">{s.gameOver?.winner ? t('{0} 队获胜', [s.gameOver.winner]) : t('双方平局')}</h3> : <p>{t('本轮加密者：{0}', [s.encryptor])}</p>}
+            {r.encrypt && <>
+                <p>{t('本轮私密密码：{0}', [s.secretDigits.join(' · ')])}</p>
+                {u.clues.map((value, i) => <label key={i}>{t('线索 {0}', [i + 1])}<input value={value} maxLength={80} disabled={!r.active || disabled} onChange={e => onChange(`clue-${i}`, e.target.value)}/></label>)}
+            </>}
+            {!r.encrypt && s.clues.length > 0 && <ol className="mobile-clues">{s.clues.map((v, i) => <li key={i}>{v}</li>)}</ol>}
+            {r.guess && <>
+                <div className="mobile-digits">{u.guess.map((n, i) => <button key={i} aria-label={t('密码第 {0} 位', [i + 1])} aria-pressed={u.slot === i} disabled={!r.active || disabled} onClick={() => onAct(`slot-${i}`)}>{n || '—'}</button>)}</div>
+                <div className="mobile-keypad">{[1, 2, 3, 4].map(n => <button key={n} disabled={!r.active || disabled} onClick={() => onAct(`key-${n - 1}`)}>{n}</button>)}<button disabled={!r.active || disabled} onClick={() => onAct('key-4')}>{t('退格')}</button></div>
+            </>}
+            {!r.active && !['round_result', 'game_over'].includes(s.phase) && <p role="status">{s.aiStatus && ['thinking', 'retrying'].includes(s.aiStatus.state || '') ? t('AI 正在推理第 {0} 条 · 已完成 {1}/3', [s.aiStatus.step, s.aiStatus.completed || 0]) : t('链路已接通 · 等待信号')}</p>}
+            {s.roundResult && <p>{s.roundResult.intercept_success !== undefined && t(s.roundResult.intercept_success ? '拦截成功' : '拦截失败')} · {s.roundResult.decrypt_success !== undefined && t(s.roundResult.decrypt_success ? '解码成功' : '解码失败')}</p>}
+        </>}
+        <p className="mobile-status" role={s.error ? 'alert' : 'status'}>{s.error ? localizeError(u.locale, s.error) : status}</p>
+        <details><summary>{t('手册')}</summary>{['四个秘密词对应编号 1–4，词窗仅我方可见。', '加密者按三位密码顺序，各写一条关联线索。', '对手先拦截，再由队友解码；前两回合跳过拦截。', '截获两次，或让对方失误两次，即可获胜。'].map(text => <p key={text}>{t(text)}</p>)}</details>
+        <footer><button className="mobile-action" disabled={!ready || disabled} onClick={() => onAct('transmit')}><span>ACTION</span>{t(action)}</button></footer>
+    </section>;
+}

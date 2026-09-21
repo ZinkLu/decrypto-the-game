@@ -50,7 +50,12 @@ func (lp *LocalProvider) Provide() [4]string {
 }
 
 func NewLocalProvider() *LocalProvider {
-	if file, err := os.Open("words.txt"); err == nil {
+	path := os.Getenv("DECRYPTO_WORDS_PATH")
+	if path == "" {
+		path = "words.txt"
+	}
+	if file, err := os.Open(path); err == nil {
+		defer file.Close()
 		if content, err := io.ReadAll(file); err == nil {
 			wordList := strings.Split(string(content), "\n")
 

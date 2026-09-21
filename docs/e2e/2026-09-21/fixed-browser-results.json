@@ -1,0 +1,73 @@
+{
+  "date": "2026-09-21",
+  "asset": {
+    "file": "web/public/models/decrypto-console.glb",
+    "revision": "console-details-20260920-v25",
+    "sha256": "37dfe9137b8dce2bb9207fc40b01822f04577b1f643b5ace904d78e7b51451d1",
+    "unchanged": true
+  },
+  "desktop": {
+    "viewport": [
+      1280,
+      900
+    ],
+    "room": "9505",
+    "model": "unsloth/Qwen3.8-27B-GGUF",
+    "rounds": 5,
+    "winner": "B",
+    "aiCompletions": 18,
+    "checks": [
+      "create using physical ACTION",
+      "join second browser and choose team",
+      "add/remove AI and ready-state gating",
+      "nixie code matches central display",
+      "active refresh restores seat, words and secret without resetting deadline",
+      "CRT clue fields and physical digit keys",
+      "human encrypt, decrypt and intercept",
+      "AI encrypt, decrypt and intercept",
+      "AI thinking 1 of 3 displays completed 0 of 3",
+      "score lamps and final winner agree",
+      "physical receipt includes final round (5 of 5)",
+      "close receipt",
+      "final refresh restores game and history",
+      "return to home"
+    ],
+    "jsErrors": []
+  },
+  "mobile": {
+    "viewports": [
+      [
+        390,
+        844
+      ],
+      [
+        320,
+        740
+      ]
+    ],
+    "room": "0913",
+    "rounds": 3,
+    "winner": "B",
+    "controlledWebSocketPeers": 3,
+    "additionalModelCalls": 0,
+    "checks": [
+      "create and lobby",
+      "clue inputs and ACTION reachable without horizontal pan",
+      "duplicate guess refused",
+      "digit keypad and submit",
+      "two decryption failures end game",
+      "final result and archive (9505)",
+      "return home (9505)"
+    ],
+    "layout": {
+      "viewportWidth": 320,
+      "documentScrollWidth": 305
+    },
+    "jsErrors": []
+  },
+  "limits": [
+    "Desktop AI match used real model; controlled peers were used only for protocol and mobile state coverage.",
+    "Failure and timeout injection covered by automated tests, not by intentionally interrupting the real model.",
+    "No real phone hardware, browser matrix or long-duration load test."
+  ]
+}

@@ -5,6 +5,7 @@ import { ConsoleEngine } from './engine';
 import { initialLocal, previewState, roleState, rosterTeams, archiveRows, nextScopeMode, instrumentSteps, word, instrumentOptions, stepInstrumentValue } from './model';
 import { paint, knobLabel } from './paint';
 import ArchiveSheet from './ArchiveSheet';
+import MobileConsole from './MobileConsole';
 import type { LocalState, InstrumentVariant } from './model';
 import type { Target } from './paint';
 import type { PlayerInfo } from '../../store/gameStore';
@@ -106,7 +107,8 @@ export default function Console() {
     function restoreArchiveFocus() {
         if (!archiveFocusPending.current || current.current.u.archiveOpen || document.querySelector('.archive-dialog[open]')) return;
         archiveFocusPending.current = false;
-        controls.current.get('paper:archive-toggle')?.focus();
+        if (matchMedia('(max-width: 850px)').matches) document.querySelector<HTMLButtonElement>('[data-mobile-archive]')?.focus();
+        else controls.current.get('paper:archive-toggle')?.focus();
     }
     useEffect(restoreArchiveFocus, [u.archiveOpen]);
     function project() {
@@ -159,11 +161,16 @@ export default function Console() {
         setU(old => ({ ...old, clues: ['', '', ''], guess: [0, 0, 0], slot: 0, submitted: false, focus: '', note: '', manual: false,
             rosterOpen: false, seconds: preview ? 45 : s.phase === 'encrypting' ? 90 : 60 }));
         setAnnouncement(s.phase === 'home' ? t("通信终端已就绪") : t("第 {0} 回合，{1}", [s.round, s.phase === 'encrypting' ? t("加密") : s.phase === 'intercept' ? t("拦截") : s.phase === 'decrypt' ? t("解码") : s.phase === 'room' ? t("队伍准备") : t("阶段更新")]));
-        if (preview || ['home', 'room', 'round_result', 'game_over'].includes(s.phase)) return;
-        const deadline = Date.now() + (s.phase === 'encrypting' ? 90 : 60) * 1000;
-        const timer = window.setInterval(() => setU(old => ({ ...old, seconds: Math.max(0, Math.ceil((deadline - Date.now()) / 1000)) })), 1000);
-        return () => clearInterval(timer);
     }, [viewKey]);
+    useEffect(() => {
+        if (preview) return;
+        const update = () => setU(old => ({ ...old, seconds: s.deadline ? Math.max(0, Math.ceil((s.deadline - Date.now()) / 1000)) : 0 }));
+        update();
+        if (!s.deadline) return;
+        const timer = window.setInterval(update, 250);
+        return () => clearInterval(timer);
+    }, [s.deadline, viewKey]);
+    useEffect(() => { if (!s.recovering) patch({ submitted: s.submitted }); }, [s.submitted, s.recovering]);
     useEffect(() => { if (s.error) {
         pending.current = false;
         patch({ submitted: false });
@@ -215,7 +222,7 @@ export default function Console() {
             return;
         state.sendProgress(r.action, r.encrypt ? clues.filter(c => c.trim()).length : guess.filter(Boolean).length, { state: 'editing', focus: slot + 1, ...(r.guess ? { guesses: guess } : {}) });
     }
-    function change(target: Target, value: string) {
+    function change(target: Pick<Target, 'id'>, value: string) {
         const local = current.current.u;
         if (!local.powerOn) return;
         if (target.id === 'name')
@@ -321,7 +328,7 @@ export default function Console() {
             patch({ archiveOpen: true });
             setAnnouncement(t("正在拉出纸带并展开密报记录"));
             void engine.current?.soundFeedback();
-            if (failure || !engine.current) setArchiveVisible(true);
+            if (failure || !engine.current || matchMedia('(max-width: 850px)').matches) setArchiveVisible(true);
             return;
         }
         if (id === 'disk-toggle' || id === 'disk-eject') {
@@ -372,7 +379,7 @@ export default function Console() {
             engine.current?.pulse(id);
             return;
         }
-        if (!state.connected || pending.current)
+        if (!state.connected || state.recovering || pending.current)
             return;
         if (preview) {
             if (id === 'transmit' && current.current.content.ready) {
@@ -442,6 +449,7 @@ export default function Console() {
       <button lang="en" aria-pressed={u.locale === 'en'} onClick={() => patch({ locale: 'en' })}>EN</button>
     </div>
     <h1 className="sr-only">{t("Decrypto 谍报风云 · 密码通信终端")}</h1>
+    <MobileConsole state={s} local={u} ready={content.ready} status={content.status} onAct={act} onChange={(id, value) => change({ id }, value)} inert={u.archiveOpen}/>
     <div className="station-viewport" inert={u.archiveOpen}>
       <div className="station-stage" ref={stage}>
         {!loaded && !failure && <div className="station-loading"><strong>DECRYPTO</strong><span>{t("正在启动密码终端…")}</span></div>}

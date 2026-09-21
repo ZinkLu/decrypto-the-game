@@ -1,0 +1,25 @@
+2026/09/21 00:09:47 [AI-ENCRYPT] Round 2 | AI Lebedev encrypting | secret digits=[1 3 4] | words=[国王[king] 冷[cold] 风暴[storm] 杂志[magazine]]
+2026/09/21 00:10:01 [AI-ENCRYPT] Round 2 | step 1/3 | AI Lebedev → "棋"
+2026/09/21 00:10:17 [AI-ENCRYPT] Round 2 | step 2/3 | AI Lebedev → "雷"
+2026/09/21 00:10:36 [AI-ENCRYPT] Round 2 | step 3/3 | AI Lebedev → "刊"
+2026/09/21 00:10:36 [AI-DECRYPT] Round 2 | AI team decrypting | clues=[棋 雷 刊] | words=[国王[king] 冷[cold] 风暴[storm] 杂志[magazine]]
+2026/09/21 00:10:41 [AI-DECRYPT] Round 2 | step 1/3 | guess → 1
+2026/09/21 00:10:45 [AI-DECRYPT] Round 2 | step 2/3 | guess → 3
+2026/09/21 00:10:51 [AI-DECRYPT] Round 2 | step 3/3 | guess → 4
+2026/09/21 00:11:39 [AI-INTERCEPT] Round 3 | Opponent AI team intercepting | clues=[钟乳石 港口 流感]
+2026/09/21 00:11:56 [AI-INTERCEPT] Round 3 | step 1/3 | guess → 2
+2026/09/21 00:12:10 [AI-INTERCEPT] Round 3 | step 2/3 | guess → 3
+2026/09/21 00:12:27 [AI-INTERCEPT] Round 3 | step 3/3 | guess → 4
+2026/09/21 00:13:00 [AI-ENCRYPT] Round 4 | AI Petrov encrypting | secret digits=[2 3 4] | words=[国王[king] 冷[cold] 风暴[storm] 杂志[magazine]]
+2026/09/21 00:13:16 [AI-ENCRYPT] Round 4 | step 1/3 | AI Petrov → "冰箱"
+2026/09/21 00:13:48 [AI-ENCRYPT] Round 4 | step 2/3 | AI Petrov → "闪电"
+2026/09/21 00:14:01 [AI-ENCRYPT] Round 4 | step 3/3 | AI Petrov → "油墨"
+2026/09/21 00:15:05 [AI-INTERCEPT] Round 5 | Opponent AI team intercepting | clues=[蝙蝠 避风 阿拉伯]
+2026/09/21 00:15:26 [AI-INTERCEPT] Round 5 | step 1/3 | guess → 1
+2026/09/21 00:15:47 [AI-INTERCEPT] Round 5 | step 2/3 | guess → 3
+2026/09/21 00:16:20 [AI] GuessSingleNumber invalid response "", fallback to 1
+2026/09/21 00:16:20 [AI-INTERCEPT] Round 5 | step 3/3 | guess → 1
+2026/09/21 00:16:44 [AI-ENCRYPT] Round 6 | AI Lebedev encrypting | secret digits=[2 4 3] | words=[国王[king] 冷[cold] 风暴[storm] 杂志[magazine]]
+2026/09/21 00:17:03 [AI-ENCRYPT] Round 6 | step 1/3 | AI Lebedev → "哆嗦"
+2026/09/21 00:17:17 [AI-ENCRYPT] Round 6 | step 2/3 | AI Lebedev → "订阅"
+2026/09/21 00:17:35 [AI-ENCRYPT] Round 6 | step 3/3 | AI Lebedev → "海燕"

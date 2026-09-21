@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 const systemPrompt = `你是一个正在玩 Decrypto（谍报风云）桌游的 AI 玩家。
@@ -31,7 +32,7 @@ func NewAIPlayer(provider LLMProvider) *AIPlayer {
 
 // GenerateSingleClue asks the AI to produce 1 clue word for a specific secret digit.
 // alreadyGenerated contains clues produced so far in this round (for context).
-func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digit int, words [4]string, history string, alreadyGenerated []string) string {
+func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digit int, words [4]string, history string, alreadyGenerated []string) (string, error) {
 	targetWord := words[digit-1]
 
 	var prevContext string
@@ -66,29 +67,29 @@ func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digit int, words [4]s
 	resp, err := a.Provider.Complete(ctx, messages)
 	if err != nil {
 		log.Printf("[AI] GenerateSingleClue error: %v", err)
-		return fmt.Sprintf("clue%d", digit)
+		return "", err
 	}
 
 	clue := strings.TrimSpace(resp)
 	// Remove quotes if wrapped
-	clue = strings.Trim(clue, "\"'\u201c\u201d\u2018\u2019")
-	if clue == "" {
-		clue = fmt.Sprintf("clue%d", digit)
+	clue = strings.TrimSpace(strings.Trim(clue, "\"'\u201c\u201d\u2018\u2019"))
+	if clue == "" || utf8.RuneCountInString(clue) > 80 {
+		return "", fmt.Errorf("invalid clue output")
 	}
 	log.Printf("[AI] GenerateSingleClue digit=%d word=%s → %q", digit, targetWord, clue)
-	return clue
+	return clue, nil
 }
 
 // GuessSingleNumber asks the AI to guess the number (1-4) for a single clue.
 // alreadyGuessed contains numbers guessed so far in this round (for context).
-func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clue string, words [4]string, isIntercept bool, history string, alreadyGuessed []int) int {
+func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clue string, words [4]string, isIntercept bool, history string, alreadyGuessed []int) (int, error) {
 	var prevContext string
 	if len(alreadyGuessed) > 0 {
 		parts := make([]string, len(alreadyGuessed))
 		for i, n := range alreadyGuessed {
 			parts[i] = strconv.Itoa(n)
 		}
-		prevContext = fmt.Sprintf("\n你本轮已经猜测的编号：%s", strings.Join(parts, ", "))
+		prevContext = fmt.Sprintf("\n你本轮已经猜测的编号：%s。不能再次使用这些编号，三个编号必须各不相同。", strings.Join(parts, ", "))
 	}
 
 	var prompt string
@@ -126,17 +127,21 @@ func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clue string, words [4]
 	resp, err := a.Provider.Complete(ctx, messages)
 	if err != nil {
 		log.Printf("[AI] GuessSingleNumber error: %v", err)
-		return 1
+		return 0, err
 	}
 
 	trimmed := strings.TrimSpace(resp)
 	n, err := strconv.Atoi(trimmed)
 	if err != nil || n < 1 || n > 4 {
-		log.Printf("[AI] GuessSingleNumber invalid response %q, fallback to 1", trimmed)
-		return 1
+		return 0, fmt.Errorf("invalid guess output: %q", trimmed)
+	}
+	for _, previous := range alreadyGuessed {
+		if n == previous {
+			return 0, fmt.Errorf("duplicate guess output: %d", n)
+		}
 	}
 	log.Printf("[AI] GuessSingleNumber clue=%q → %d", clue, n)
-	return n
+	return n, nil
 }
 
 // parseClues splits a comma-separated response into exactly 3 clue strings.
