@@ -1,12 +1,23 @@
 import * as THREE from 'three';
 import { crtOpticsShader } from './crt';
 import type { CrtKind } from './crtMotion';
+import { dotGrid, type WordDisplay } from './dotMatrix';
 
 export interface CrtUniforms {
     scan: { value: THREE.Vector4 };
     light: { value: THREE.Vector4 };
     trail: { value: THREE.Vector4 };
 }
+export interface DotUniforms {
+    drive: { value: THREE.Vector4 };
+    panel: { value: THREE.Vector4 };
+}
+/** Die colours follow the palette; one pair serves all four modules. */
+export const dotInks = { word: { value: new THREE.Color('#ff2a12') }, legend: { value: new THREE.Color('#ff2a12') } };
+export const dotUniforms = (): DotUniforms => ({
+    drive: { value: new THREE.Vector4(1, 1, 0, 0) },
+    panel: { value: new THREE.Vector4(0, dotGrid.cols, 0, 0) },
+});
 export const crtUniforms = (): CrtUniforms => ({
     scan: { value: new THREE.Vector4(1, 1, 0, .004) },
     light: { value: new THREE.Vector4(1, 0, 1, 0) },
@@ -31,6 +42,9 @@ interface Options {
     size: THREE.Vector2;
     curvature: { warp: number; rise: number; innerRise: number; depth: number };
     spot: number;
+    /** Keyword windows can be fitted with a dot-matrix module instead of a tube. */
+    display?: () => WordDisplay;
+    dots?: DotUniforms;
 }
 
 /** The picture tube's fragment stage: optics, raster, and the beam the tube state describes. */
@@ -47,11 +61,25 @@ export function shadeCrt(material: THREE.Material, options: Options) {
             crtEye: options.eye, crtSize: { value: size },
             crtRise: { value: curvature.rise }, crtInnerRise: { value: curvature.innerRise }, crtDepth: { value: curvature.depth },
         });
+        const display = options.display?.() ?? 'crt';
+        if (display !== 'crt' && options.dots) {
+            // Square cells on a module that leaves the window a dark margin.
+            const across = .94, cell = size.x * across / dotGrid.cols;
+            Object.assign(shader.uniforms, {
+                dotDrive: options.dots.drive, dotPanel: options.dots.panel, dotInkWord: dotInks.word, dotInkLegend: dotInks.legend,
+                dotSize: { value: new THREE.Vector2(dotGrid.cols, dotGrid.rows) },
+                dotFit: { value: new THREE.Vector2(1 / across, size.y / (dotGrid.rows * cell)) },
+                dotBandRows: { value: new THREE.Vector2(dotGrid.bandTop, dotGrid.bandBottom) }, dotGap: { value: dotGrid.gap },
+            });
+            shader.fragmentShader = (options.lite() ? '#define CRT_LITE\n' : '')
+                + crtOpticsShader + crtTubeShader + dotDeclarations + shader.fragmentShader.replace('#include <map_fragment>', dotMatrixShader);
+            return;
+        }
         shader.fragmentShader = (options.lite() ? '#define CRT_LITE\n' : '') + crtOpticsShader + crtTubeShader + shader.fragmentShader
             .replace('#include <map_fragment>', crtPictureShader)
             .replace('#include <dithering_fragment>', crtRasterShader);
     };
-    material.customProgramCacheKey = () => `console-crt-tube-v1-${options.kind}-${options.lite() ? 'lite' : 'full'}`;
+    material.customProgramCacheKey = () => `console-crt-tube-v1-${options.kind}-${options.display?.() ?? 'crt'}-${options.lite() ? 'lite' : 'full'}`;
 }
 
 const crtTubeShader = `
@@ -251,5 +279,60 @@ const crtRasterShader = `
         gl_FragColor.rgb += vec3(.16, .035, .018) * crtTear * crtGlowing * crtPicture;
         gl_FragColor.rgb += (crtNoise - .5) * (.055 + .16 * crtUnstable) * crtBurst * crtGlowing * crtPicture;
     }
+    #endif
+`;
+
+// Two-colour LED dots behind a smoked contrast filter. Nothing scans and nothing
+// persists; what the driver clocks in is what glows. The texture's red channel
+// drives the keyword dies, its green channel the legend dies.
+const dotDeclarations = `
+    uniform vec4 dotDrive;
+    uniform vec4 dotPanel;
+    uniform vec2 dotSize;
+    uniform vec2 dotFit;
+    uniform vec2 dotBandRows;
+    uniform float dotGap;
+    uniform vec3 dotInkWord;
+    uniform vec3 dotInkLegend;
+`;
+const dotMatrixShader = `
+    #ifdef USE_MAP
+    // The module sits a little behind its filter window, so it shifts with the eye.
+    #ifdef CRT_LITE
+    vec2 dotUv = vMapUv;
+    #else
+    vec2 dotUv = crtPhosphorUv(vMapUv);
+    #endif
+    vec2 dotCells = (dotUv - .5) * dotFit * dotSize + .5 * dotSize;
+    vec2 dotCell = floor(dotCells);
+    vec2 dotLocal = fract(dotCells) - .5;
+    float dotInside = step(0.0, dotCell.x) * step(dotCell.x, dotSize.x - 1.0) * step(0.0, dotCell.y) * step(dotCell.y, dotSize.y - 1.0);
+    float dotRow = dotSize.y - 1.0 - dotCell.y;
+    // A keyword wider than the module crawls through its band as a marquee.
+    float dotStrip = max(dotPanel.y, dotSize.x);
+    float dotSource = dotCell.x;
+    if (dotStrip > dotSize.x + .5 && dotRow >= dotBandRows.x && dotRow <= dotBandRows.y) dotSource = mod(dotCell.x + dotPanel.x, dotStrip + dotGap);
+    float dotValid = step(dotSource, dotStrip - .5);
+    vec2 dotSignal = smoothstep(.10, .30, textureLod(map, vec2((dotSource + .5) / dotStrip, (dotCell.y + .5) / dotSize.y), 0.0).rg) * dotValid;
+    // Columns are clocked in from the left; a lamp test lights every keyword die.
+    float dotLoaded = step(dotCell.x + .5, dotDrive.y * dotSize.x);
+    vec2 dotLevel = max(dotSignal * dotLoaded, vec2(dotDrive.z, 0.0)) * dotInside;
+    // Below a few pixels a dot cannot be drawn; the cell then carries the same light evenly.
+    float dotResolved = 1.0 - smoothstep(.22, .55, max(fwidth(dotCells.x), fwidth(dotCells.y)));
+    float dotLens = 1.0 - smoothstep(.33, .45, length(dotLocal));
+    float dotCore = exp(-dot(dotLocal, dotLocal) / .028);
+    float dotShape = mix(.36, dotLens * .5 + dotCore * 1.15, dotResolved);
+    // Diodes are binned, not matched, and a row-scanned panel beats against the frame rate.
+    float dotUnit = 1.0 + (crtHash(dotCell + dotPanel.z * 17.0) - .5) * .22;
+    dotUnit *= 1.0 + .05 * sin(6.2831853 * (dotRow / dotSize.y * 2.0 - crtTime * 3.7));
+    vec3 dotGlow = dotInkWord * dotLevel.x + dotInkLegend * dotLevel.y;
+    vec3 dotEmit = mix(dotGlow, dotGlow * .45 + vec3(.55) * (dotLevel.x + dotLevel.y), dotCore * dotResolved * .5) * dotShape * dotUnit;
+    // Light scattered inside the filter window.
+    vec2 dotSpill = max(textureLod(map, vec2((dotSource + dotLocal.x + .5) / dotStrip, dotCells.y / dotSize.y), 2.2).rg * dotValid
+        * (1.0 - smoothstep(-2.0, 2.0, dotCells.x - dotDrive.y * dotSize.x)), vec2(dotDrive.z * .6, 0.0));
+    dotEmit += (dotInkWord * dotSpill.x + dotInkLegend * dotSpill.y) * .22 * dotInside;
+    vec3 dotWindow = vec3(.0034) + dotInkWord * .0016;
+    vec4 sampledDiffuseColor = vec4(dotWindow * (1.0 + 2.6 * dotLens * dotResolved * dotInside) + dotEmit * max(dotDrive.x, 0.0), 1.0);
+    diffuseColor *= sampledDiffuseColor;
     #endif
 `;

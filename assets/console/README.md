@@ -98,6 +98,35 @@ comparison, replaces only the receiver assembly, and registers its switch surfac
 It exports all 40 room-code digit variants while preserving the editable scene's
 digit visibility and excluding Boolean cutters.
 
+## Keyword windows
+
+The four keyword windows are two-colour LED dot-matrix modules (64x36) behind a
+smoked contrast filter: the electronic counterpart of the original's red film
+windows, in a console that digitises the whole board game. Die colours follow the
+palette: the keyword glows in the player's team colour, index and status in the
+other team's; the diode saturates the palette's pastel ink to a pure hue.
+`paint.ts` draws one texel per diode, red channel for the keyword dies and green
+for the legend dies; `dotMatrixShader` in `crtShader.ts` draws each as a lens
+with a hot die, binned brightness, a row-scan beat and light spilled into the
+filter, and blends to an evenly lit cell once a dot falls below a few pixels.
+The controller (`DotDriver` in `dotMatrix.ts`) proves every dot at start-up,
+clears, then clocks the columns in; a new word is clocked in the same way, and
+the panel dies with its supply in about 0.1 s, with no afterglow.
+
+Development comparison: `/?words=led` or `/?words=crt` (add `&detail=words`)
+opens a bottom bench that swaps in the earlier ruby-filtered tubes, cycles word
+sets that exercise every layout, and offers the close-up. A neon plasma module
+was tried on the same grid and dropped: it differed from the LED only in colour,
+which the palette now provides.
+
+Dot-matrix keywords use 16-dot ideographs (12 for five characters), the classic
+sign size and in scale with the rest of the console; larger cells read as
+shouting. Latin words use a 5x7 sign font doubled or double-height, split over
+two lines at a space, and crawl as a marquee only when
+still wider than the module (eleven letters). The window's index sits framed in
+the header beside KEY, HIDDEN, STANDBY or NO LINK. A canvas of another size needs
+fresh GPU storage, so `updateFrame` disposes the texture when its size changes.
+
 ## Interchangeable instrument studies
 
 Development comparison: `/preview?preview=encrypting&instruments=signal`.
@@ -599,7 +628,10 @@ shoulders and exhaust tips, twelve pins per tube, ceramic sockets, mica discs,
 support rods, a fine modeled anode mesh and ten individually spaced wire cathodes.
 Forty `Nixie_Digit_{slot}_{digit}` meshes retain digit/slot and curved-path metadata.
 The browser selects one per tube from the actual room code; a matching soft
-corona surrounds the emitting geometry. Power off extinguishes all cathodes.
+corona surrounds the emitting geometry: a tight neon sheath, a wide bloom and a
+haze that fills the envelope, plus a dim orange pool thrown onto the recess behind
+each lit tube. Every tube breathes a few percent on its own; reduced motion holds
+them still. Power off extinguishes all cathodes and pools.
 The source was informed by the [CC0 BlendSwap reference](https://blendswap.com/blend/10631);
 its download was unavailable, so no third-party geometry was imported.
 
@@ -632,6 +664,10 @@ convexity, rim slope, bounded distortion, parallax and inverse input alignment.
 Glass reflections use the scene's
 actual lights and environment with restrained physical specular; raster highlights,
 painted softboxes, and the previous synthetic reflection shader have been removed.
+The SIGNAL meter's crystal uses the same lights, but was exported as ordinary
+alpha (7% opacity), which faded its reflections with it. At run time it becomes
+a slightly convex pane whose mirrored light is added over the pale dial: trading
+background for reflection, as the dark tubes do, cancels out on ivory.
 Projected input bounds numerically invert the same refraction and raster mapping
 using the current camera, keeping input controls aligned during inspection.
 DEV close-ups: `/preview?preview=encrypting&detail=screen` (also `words` and `scope`);

@@ -10,7 +10,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { crtFinish, type Content, type Frame, type Target } from './paint';
 import { RosterMotion, rosterPose } from './rosterMotion';
 import { CrtMotion, crtRestSpot, type CrtKind } from './crtMotion';
-import { shadeCrt, crtUniforms, type CrtUniforms } from './crtShader';
+import { shadeCrt, crtUniforms, dotUniforms, dotInks, type CrtUniforms, type DotUniforms } from './crtShader';
+import { DotDriver, dotGrid, type WordDisplay } from './dotMatrix';
 import { plateFinish } from './finishes';
 import { crtProfile, crtGeometry, crtHeight, crtDisplayUv } from './crt';
 import { initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState } from './model';
@@ -31,6 +32,9 @@ interface Surface {
     lit?: boolean;
     digitScale?: number;
 }
+/** Canvas margin, in corona pixels, for the glow a Nixie throws beyond its cathode. */
+const nixieHalo = 84;
+
 export class ConsoleEngine {
     private renderer: THREE.WebGLRenderer;
     private scene = new THREE.Scene();
@@ -92,11 +96,14 @@ export class ConsoleEngine {
     private paperRoller?: THREE.Object3D;
     private paperNipY = 0;
     private nixieDigits: { mesh: THREE.Mesh; slot: number; digit: number }[] = [];
-    private nixieCoronas: { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture; paths: string[]; code: string }[] = [];
+    private nixieCoronas: { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture; material: THREE.MeshBasicMaterial; spill: THREE.MeshBasicMaterial; paths: string[]; code: string }[] = [];
     private crtTime = { value: 0 };
     // Every tube has its own supply tolerances, so no two come up or die alike.
     private crtTubes = new Map<string, { motion: CrtMotion<{ id: string; frame?: Frame }>; uniforms: CrtUniforms; printed?: Frame }>();
     private crtMotion = new CrtMotion<{ id: string; frame?: Frame }>();
+    // The keyword windows can be fitted with dot-matrix modules instead of tubes.
+    private wordDisplay: WordDisplay = initialLocal.wordDisplay;
+    private dotModules = new Map<string, { driver: DotDriver; uniforms: DotUniforms; printed?: Frame }>();
     private rollerRest = new THREE.Quaternion();
     private receipt = new ReceiptTransport();
     private paperReaderStarted = false;
@@ -372,8 +379,11 @@ export class ConsoleEngine {
                 const uniforms = crtUniforms();
                 const motion = name === 'screen' ? this.crtMotion : new CrtMotion<{ id: string; frame?: Frame }>(kind, seed);
                 this.crtTubes.set(name, { motion, uniforms });
+                const dots = kind === 'word' ? dotUniforms() : undefined;
+                if (dots) this.dotModules.set(name, { driver: new DotDriver(seed), uniforms: dots });
                 shadeCrt(material, { kind, seed, lite: () => this.quality.crtOptics === 'lite', time: this.crtTime, eye,
-                    tube: uniforms, size: new THREE.Vector2(s.w, s.h), curvature, spot: crtRestSpot(kind) });
+                    tube: uniforms, size: new THREE.Vector2(s.w, s.h), curvature, spot: crtRestSpot(kind),
+                    display: () => kind === 'word' ? this.wordDisplay : 'crt', dots });
                 this.crtMaterials.push(material);
                 this.addScreenGlass(name, plane);
             }
@@ -455,6 +465,21 @@ export class ConsoleEngine {
         this.copyKey = this.part('ChannelCopy');
         this.copyKeyRestZ = this.copyKey?.position.z ?? 0;
         this.setupNixies();
+        // The meter's crystal was exported as ordinary alpha, which faded its
+        // reflections along with the glass: at 7% opacity it looked uncovered.
+        const crystal = this.part('SignalGlass');
+        if (crystal instanceof THREE.Mesh) {
+            // A dead-flat pane facing the camera mirrors only the dim room behind
+            // it. Meter crystals are pressed slightly convex, which is what lets
+            // them catch the key light the way the tube faces do.
+            const box = crystal.geometry.boundingBox ?? new THREE.Box3().setFromBufferAttribute(crystal.geometry.getAttribute('position') as THREE.BufferAttribute);
+            const size = box.getSize(new THREE.Vector3());
+            crystal.geometry.dispose();
+            crystal.geometry = crtGeometry(size.x, size.y, { rise: .07, radius: .05, columns: 48, rows: 24, warp: 0, depth: 0, innerRise: 0, seat: 0 });
+            crystal.material = this.glassMaterial(true);
+            crystal.renderOrder = 6;
+            crystal.castShadow = crystal.receiveShadow = false;
+        }
         this.paperRoller = this.part('Paper roller');
         if (this.paperRoller) this.rollerRest.copy(this.paperRoller.quaternion);
         const paper = this.part('Paper back');
@@ -585,17 +610,21 @@ export class ConsoleEngine {
             this.update(this.content, { locale: this.locale, scopeFreq: this.scopeFreq, diskOut: this.diskOut, scopeWave: this.scopeWave,
                 scopeRate: this.scopeRate, scopeAxis: this.scopeAxis,
                 backView: this.backView, batteryOpen: this.batteryOpen, soundOn: this.soundOn,
-                powerOn: this.powerOn,
+                powerOn: this.powerOn, wordDisplay: this.wordDisplay,
                 archiveOpen: this.archiveOpen, manual: this.manual,
                 removedBatteries: this.removedBatteries, unpluggedCables: this.unpluggedCables,
                 meterAmplitude: this.meterAmplitude, meterRate: this.meterRate,
                 instrumentVariant: this.instrumentVariant, instrumentDemo: this.instrumentDemo });
         this.applyQuality();
     }
-    private addScreenGlass(name: string, display: THREE.Mesh) {
+    /** Clear glass whose reflections do not fade with its transparency. */
+    private glassMaterial(bright = false) {
+        // Over a dark tube the pane may trade background for reflection. Over a pale
+        // dial that trade cancels the reflection out, so there the mirrored light is
+        // added on top, and the pane only takes the few percent real glass keeps.
         const material = new THREE.MeshPhysicalMaterial({
-            color: '#091412', metalness: 0, roughness: .22,
-            ior: 1.52, specularIntensity: .35, envMapIntensity: .30,
+            color: '#091412', metalness: 0, roughness: bright ? .09 : .22,
+            ior: 1.52, specularIntensity: bright ? 1 : .35, envMapIntensity: bright ? 1 : .30, premultipliedAlpha: bright,
             transparent: true, opacity: 1, depthWrite: false,
         });
         // Keep the physical specular response independent of the clear substrate.
@@ -605,12 +634,20 @@ export class ConsoleEngine {
             shader.fragmentShader = shader.fragmentShader.replace('#include <opaque_fragment>', `
                 vec3 glassReflection = reflectedLight.directSpecular + reflectedLight.indirectSpecular;
                 float glassPeak = max(max(glassReflection.r, glassReflection.g), glassReflection.b);
+                #ifdef GLASS_ADDITIVE
+                gl_FragColor = vec4(glassReflection, .06);
+                #else
                 float glassAlpha = clamp(.006 + glassPeak, .006, .32);
                 gl_FragColor = vec4((diffuseColor.rgb * .006 + glassReflection) / glassAlpha, glassAlpha);
+                #endif
             `);
         };
-        material.customProgramCacheKey = () => 'crt-physical-glass-v1';
-        const glass = new THREE.Mesh(display.geometry.clone(), material);
+        if (bright) material.defines = { ...material.defines, GLASS_ADDITIVE: '' };
+        material.customProgramCacheKey = () => `crt-physical-glass-v2-${bright}`;
+        return material;
+    }
+    private addScreenGlass(name: string, display: THREE.Mesh) {
+        const glass = new THREE.Mesh(display.geometry.clone(), this.glassMaterial());
         glass.name = `Runtime CRT glass ${name}`;
         glass.position.z = .006;
         glass.renderOrder = 6;
@@ -833,18 +870,37 @@ export class ConsoleEngine {
             }
         });
         for (let slot = 0; slot < 4; slot++) {
-            const canvas = document.createElement('canvas'); canvas.width = 180; canvas.height = 270;
+            // The glow reaches well past the cathode: the canvas keeps the digit's
+            // scale and adds a margin for the neon sheath and the lit envelope.
+            const canvas = document.createElement('canvas'); canvas.width = 180 + nixieHalo * 2; canvas.height = 270 + nixieHalo * 2;
             const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
             const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false,
                 blending: THREE.AdditiveBlending, toneMapped: false, opacity: .85 });
-            const channel = this.surfaces.channel;
-            const glow = new THREE.Mesh(new THREE.PlaneGeometry(.40, .60 * (channel.digitScale ?? 1)), material);
+            const channel = this.surfaces.channel, scale = channel.digitScale ?? 1;
+            const glow = new THREE.Mesh(new THREE.PlaneGeometry(.40 * canvas.width / 180, .60 * scale * canvas.height / 270), material);
             glow.position.set(channel.x + (slot - 1.5) * .52, channel.y, channel.z - .097); glow.renderOrder = 4;
             this.root.add(glow); this.textures.set('nixie' + slot, texture);
             const paths = Array.from({ length: 10 }, (_, digit) =>
                 this.nixieDigits.find(d => d.slot === slot && d.digit === digit)?.mesh.userData.cathode_path || '');
-            this.nixieCoronas.push({ canvas, texture, paths, code: '?' });
+            // What the glow throws onto the recess: a wide, dim pool behind each lit tube.
+            const spill = new THREE.Mesh(new THREE.PlaneGeometry(.78, .95 * scale), new THREE.MeshBasicMaterial({ map: this.nixieSpill(),
+                transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, opacity: 0 }));
+            spill.position.set(glow.position.x, channel.y - .04, channel.z - .19); spill.renderOrder = 3;
+            this.root.add(spill);
+            this.nixieCoronas.push({ canvas, texture, material, spill: spill.material, paths, code: '?' });
         }
+    }
+    private nixieSpillTexture?: THREE.CanvasTexture;
+    private nixieSpill() {
+        if (this.nixieSpillTexture) return this.nixieSpillTexture;
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 128;
+        const c = canvas.getContext('2d')!, pool = c.createRadialGradient(64, 64, 4, 64, 64, 64);
+        pool.addColorStop(0, 'rgba(255, 88, 22, .55)'); pool.addColorStop(.45, 'rgba(255, 66, 12, .20)'); pool.addColorStop(1, 'rgba(255, 60, 10, 0)');
+        c.fillStyle = pool; c.fillRect(0, 0, 128, 128);
+        const texture = this.nixieSpillTexture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        this.textures.set('nixieSpill', texture);
+        return texture;
     }
     private updateNixies(code: string) {
         for (const { mesh, slot, digit } of this.nixieDigits) mesh.visible = code[slot] === String(digit);
@@ -853,17 +909,23 @@ export class ConsoleEngine {
             if (tube.code === digit) return;
             tube.code = digit;
             const c = tube.canvas.getContext('2d')!;
-            c.clearRect(0, 0, 180, 270);
+            c.clearRect(0, 0, tube.canvas.width, tube.canvas.height);
             if (digit && tube.paths[Number(digit)]) {
-                c.save(); c.translate(22.5, 18); c.scale(1.35, 1.4625);
+                // Neon fills the envelope with a soft orange haze, densest around the lit cathode.
+                const haze = c.createRadialGradient(tube.canvas.width / 2, tube.canvas.height / 2, 10, tube.canvas.width / 2, tube.canvas.height / 2, tube.canvas.height * .34);
+                haze.addColorStop(0, 'rgba(255, 96, 26, .22)'); haze.addColorStop(.5, 'rgba(255, 72, 14, .08)'); haze.addColorStop(1, 'rgba(255, 60, 10, 0)');
+                c.fillStyle = haze; c.fillRect(0, 0, tube.canvas.width, tube.canvas.height);
+                c.save(); c.translate(22.5 + nixieHalo, 18 + nixieHalo); c.scale(1.35, 1.4625);
                 c.lineCap = c.lineJoin = 'round';
                 const path = new Path2D(tube.paths[Number(digit)]);
                 c.strokeStyle = '#ff4109'; c.shadowColor = '#ff490c';
-                c.globalAlpha = .22; c.lineWidth = 5; c.shadowBlur = 14; c.stroke(path);
-                c.globalAlpha = .40; c.lineWidth = 2.7; c.shadowBlur = 5; c.stroke(path);
+                c.globalAlpha = .20; c.lineWidth = 7; c.shadowBlur = 24; c.stroke(path);
+                c.globalAlpha = .28; c.lineWidth = 5; c.shadowBlur = 13; c.stroke(path);
+                c.globalAlpha = .46; c.lineWidth = 2.7; c.shadowBlur = 6; c.stroke(path);
                 c.restore();
             }
             tube.texture.needsUpdate = true;
+            tube.spill.opacity = digit ? .24 : 0;
         });
     }
     private part(name: string) {
@@ -875,11 +937,21 @@ export class ConsoleEngine {
         this.content = content;
         this.updateNixies(content.roomCode);
         this.powerOn = local.powerOn;
+        if (this.wordDisplay !== local.wordDisplay) this.fitWordDisplay(local.wordDisplay);
         // Only the main display changes palette. Every tube keeps its outgoing
         // picture until it is dark, so paint's blank power-off frames wait too.
         this.crtMotion.sync(this.powerOn, { id: content.displayKey, frame: content.frames.screen });
         for (const [name, tube] of this.crtTubes)
             if (tube.motion !== this.crtMotion) tube.motion.sync(this.powerOn, { id: name, frame: content.frames[name] });
+        for (const { driver } of this.dotModules.values()) {
+            driver.power(this.powerOn);
+            if (this.reduced.matches) driver.settle(this.powerOn);
+        }
+        // Dies emit a pure hue: the palette's pastel inks name it, the diode saturates it.
+        for (const [ink, color] of [[dotInks.word, content.wordInks.word], [dotInks.legend, content.wordInks.legend]] as const) {
+            const hsl = ink.value.set(color).getHSL({ h: 0, s: 0, l: 0 });
+            ink.value.setHSL(hsl.h, 1, .54);
+        }
         if (this.reduced.matches) for (const tube of this.crtTubes.values()) tube.motion.advance(0, true);
         this.syncCrt();
         for (const [material, intensity] of this.poweredMaterials) material.emissiveIntensity = this.powerOn ? intensity : 0;
@@ -932,9 +1004,38 @@ export class ConsoleEngine {
         for (const [name, lamp] of this.scoreLamps) lamp.lit = !!content.lamps[name];
         this.project();
     }
+    /** Swaps the keyword windows' hardware; the newly fitted modules start from cold. */
+    private fitWordDisplay(display: WordDisplay) {
+        this.wordDisplay = display;
+        for (const [name, tube] of this.crtTubes) {
+            if (!this.dotModules.has(name)) continue;
+            this.planes.get(name)!.material.needsUpdate = true;
+            tube.printed = undefined;
+            tube.motion.tube.settle(false);
+        }
+        for (const module of this.dotModules.values()) {
+            module.printed = undefined;
+            module.driver.settle(false);
+            module.driver.power(this.powerOn);
+            if (this.reduced.matches) module.driver.settle(this.powerOn);
+        }
+        this.dirty = true;
+    }
     private syncCrt() {
+        for (const [name, module] of this.dotModules) {
+            if (this.wordDisplay === 'crt') break;
+            const { driver } = module, frame = this.content?.frames[name];
+            driver.pack(module.uniforms.drive.value, module.uniforms.panel.value);
+            // A dying panel keeps its last message: paint's blank frame waits for dark dots.
+            if (!frame || frame === module.printed || !this.powerOn && driver.lit) continue;
+            const lit = module.printed !== undefined && driver.on;
+            module.printed = frame;
+            driver.strip = Math.max(dotGrid.cols, frame.canvas.width);
+            if (this.updateFrame(name, frame) && lit) driver.load();
+        }
         for (const [name, tube] of this.crtTubes) {
             const { motion, uniforms } = tube;
+            if (this.wordDisplay !== 'crt' && this.dotModules.has(name)) continue;
             motion.tube.pack(uniforms.scan.value, uniforms.light.value, uniforms.trail.value);
             const frame = motion.current?.frame;
             if (!frame || frame === tube.printed) continue;
@@ -992,6 +1093,10 @@ export class ConsoleEngine {
             }
         } else {
             if (this.frameHashes.get(name) === hash) return false;
+            // GPU storage is allocated once per texture: a canvas of another size
+            // (a marquee strip, a differently fitted keyword module) needs a fresh one.
+            const before = texture.image as HTMLCanvasElement;
+            if (before.width !== frame.canvas.width || before.height !== frame.canvas.height) texture.dispose();
             texture.image = frame.canvas;
             texture.needsUpdate = true;
         }
@@ -1165,8 +1270,9 @@ export class ConsoleEngine {
         const settled = costs.slice(costs.length >> 1).sort((a, b) => a - b);
         return settled[settled.length >> 1];
     }
-    inspectInstrument(closeup: boolean) {
-        this.detailOverride = closeup ? 'meter' : null;
+    inspectInstrument(closeup: boolean) { this.inspectDetail(closeup ? 'meter' : null); }
+    inspectDetail(detail: string | null) {
+        this.detailOverride = detail;
         this.resize();
     }
     facingRear() {
@@ -1288,6 +1394,10 @@ export class ConsoleEngine {
             // A glass that is still changing owes every frame, whatever the ambient pace.
             changed ||= tube.motion.moving;
             tube.motion.advance(dt * this.rosterMotionRate, this.reduced.matches);
+        }
+        if (this.wordDisplay !== 'crt') for (const { driver } of this.dotModules.values()) {
+            changed ||= driver.moving;
+            if (this.reduced.matches) driver.settle(this.powerOn); else driver.step(dt * this.rosterMotionRate);
         }
         this.syncCrt();
         if (crtInteractive !== this.crtMotion.interactive) {
@@ -1547,6 +1657,12 @@ export class ConsoleEngine {
             this.scopeDrawn = now;
         }
         this.crtTime.value = this.reduced.matches ? 0 : now / 1000;
+        // A glow discharge is never quite still: each tube breathes a little on its own.
+        this.nixieCoronas.forEach((tube, slot) => {
+            const breath = this.reduced.matches ? 1 : 1 + .04 * Math.sin(now * .0131 + slot * 2.1) + .025 * Math.sin(now * .0473 + slot * 1.3);
+            tube.material.opacity = .85 * breath;
+            if (tube.spill.opacity > 0) tube.spill.opacity = .24 * breath;
+        });
         if (due) {
             this.dirty = this.ambientOwed = false;
             this.rendered = now;

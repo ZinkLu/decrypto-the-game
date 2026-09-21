@@ -2,7 +2,8 @@ import { translate, localizeError, readLocale, saveLocale } from './i18n';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
-import { initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme } from './model';
+import { initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme } from './model';
+import type { WordDisplay } from './dotMatrix';
 import { paint, knobLabel } from './paint';
 import { qualityChoices, qualityProfiles, describeQuality, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import ArchiveSheet from './ArchiveSheet';
@@ -15,6 +16,14 @@ import { consoleRoute, handleSurfaces, handlePull, handleCommit, type HandleSide
 const route = consoleRoute(location.pathname, location.search, import.meta.env.DEV);
 const inspection = route.view === 'preview';
 const instrumentPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('instruments');
+// DEV bench for the keyword windows' hardware: `/?words=led` or `crt`.
+const wordBench = import.meta.env.DEV && !instrumentPreview && new URLSearchParams(location.search).has('words');
+const initialWordDisplay = wordBench ? wordDisplayOptions.find(option => option.id === new URLSearchParams(location.search).get('words'))?.id || 'led' : initialLocal.wordDisplay;
+// Bench word sets cover every layout: one to five ideographs, doubled and tall sign type, two lines and a marquee.
+const benchWords = [
+    ['亚特兰蒂斯[atlantis]', '龙[dragon]', '巴黎圣母院[notre dame]', '莎士比亚[shakespeare]'],
+    ['潜水员[scuba diver]', '王牌[ace]', '听诊器[stethoscope]', '百万富翁[millionaire]'],
+];
 const preview = route.scenario;
 const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
 // Deterministic stills and benchmarks pin a level without touching the saved choice.
@@ -25,17 +34,22 @@ const scopeControls = ['scope-tune', 'scope-wave', 'scope-rate', 'scope-xy', 'me
 const isScopeControl = (id: string) => scopeControls.includes(id);
 export default function Console() {
     const live = useGameStore();
-    const [u, setU] = useState<LocalState>(() => ({ ...initialLocal, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal',
+    const [u, setU] = useState<LocalState>(() => ({ ...initialLocal, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal', wordDisplay: initialWordDisplay,
         meterAmplitude: initialInstrument === 'signal' ? 14 : initialInstrument === 'tuning' ? 4 : initialInstrument === 'status' ? 0 : 2 }));
     const [previewPeople, setPreviewPeople] = useState<PlayerInfo[]>([{ id: '0', nickname: '你', is_ai: false }]);
     const previewSerial = useRef(1);
+    const [benchWordSet, setBenchWordSet] = useState(0);
     const s = useMemo(() => {
-        if (preview !== 'roster-motion') return preview ? previewState(live, preview, u.locale) : live;
+        if (preview !== 'roster-motion') {
+            const state = preview ? previewState(live, preview, u.locale) : live;
+            return wordBench && benchWordSet && state.myWords.length ? { ...state, myWords: benchWords[benchWordSet - 1] } : state;
+        }
         const state = previewState(live, 'room-partial', u.locale);
         return { ...state, teamA: previewPeople, players: [...previewPeople, ...state.teamB],
             canStart: previewPeople.length >= 2 };
-    }, [live, previewPeople, u.locale]);
+    }, [live, previewPeople, u.locale, benchWordSet]);
     const [instrumentCloseup, setInstrumentCloseup] = useState(detail === 'meter');
+    const [wordCloseup, setWordCloseup] = useState(detail === 'words');
     const [loaded, setLoaded] = useState(false);
     const [failure, setFailure] = useState('');
     const [archiveVisible, setArchiveVisible] = useState(false);
@@ -125,6 +139,20 @@ export default function Console() {
         history.replaceState(null, '', url);
         setHint('');
         setAnnouncement(t("已试装{0}", [t(instrumentOptions.find(option => option.id === variant)?.label || '')]));
+    }
+    function selectWordDisplay(display: WordDisplay) {
+        patch({ wordDisplay: display });
+        const url = new URL(location.href);
+        url.searchParams.set('words', display);
+        history.replaceState(null, '', url);
+        setAnnouncement(t("已试装{0}", [t(wordDisplayOptions.find(option => option.id === display)?.label || '')]));
+    }
+    function inspectWords(closeup: boolean) {
+        setWordCloseup(closeup);
+        engine.current?.inspectDetail(closeup ? 'words' : null);
+        const url = new URL(location.href);
+        if (closeup) url.searchParams.set('detail', 'words'); else url.searchParams.delete('detail');
+        history.replaceState(null, '', url);
     }
     function inspectInstrument(closeup: boolean) {
         setInstrumentCloseup(closeup);
@@ -512,8 +540,8 @@ export default function Console() {
     const colors = themeColors(u.theme);
     return <main style={{ '--team-own': colors.own.ink, '--team-opponent': colors.opponent.ink } as CSSProperties} data-theme={u.theme} className={`station ${failure ? 'station-fallback' : ''}`} data-view={route.view} data-power={u.powerOn ? 'on' : 'off'}
         data-backdrop-blur={qualityProfiles[level].backdropBlur ? undefined : 'off'}
-        data-instruments={instrumentPreview || undefined} data-instrument={instrumentPreview ? u.instrumentVariant : undefined}
-        data-detail={(instrumentPreview ? instrumentCloseup ? 'meter' : null : detail) || undefined}>
+        data-instruments={instrumentPreview || wordBench || undefined} data-instrument={instrumentPreview ? u.instrumentVariant : undefined}
+        data-detail={(instrumentPreview ? instrumentCloseup ? 'meter' : null : wordBench ? wordCloseup ? 'words' : null : detail) || undefined}>
     <div className="station-settings" inert={u.archiveOpen}>
       <nav className="station-navigation" aria-label={t('页面导航')}>
         <a href="/" aria-current={!inspection ? 'page' : undefined}>{t('游戏')}</a>
@@ -723,6 +751,24 @@ export default function Console() {
       <div className="instrument-comparison-row instrument-description">
         <p>{t(instrumentOptions.find(option => option.id === u.instrumentVariant)?.description || '')}</p>
         <span>{t("旋钮可点击、拖动或滚轮调整 · 中键旋转机身")}</span>
+      </div>
+    </section>}
+    {wordBench && loaded && !failure && <section className="instrument-comparison" aria-label={t("词窗方案对比")} inert={u.archiveOpen}>
+      <div className="instrument-comparison-row">
+        <span className="instrument-comparison-title">{t("词窗试装")}</span>
+        <div className="instrument-options" role="group" aria-label={t("选择词窗方案")}>
+          {wordDisplayOptions.map(option => <button key={option.id} aria-pressed={u.wordDisplay === option.id}
+              onClick={() => selectWordDisplay(option.id)}>{t(option.label)}</button>)}
+        </div>
+        <div className="instrument-view" role="group" aria-label={t("观察距离")}>
+          <button aria-pressed={!wordCloseup} onClick={() => inspectWords(false)}>{t("整机")}</button>
+          <button aria-pressed={wordCloseup} onClick={() => inspectWords(true)}>{t("看细节")}</button>
+        </div>
+        <button className="instrument-demo" disabled={!u.powerOn} onClick={() => setBenchWordSet(set => (set + 1) % (benchWords.length + 1))}>{t("换一组词")}</button>
+      </div>
+      <div className="instrument-comparison-row instrument-description">
+        <p>{t(wordDisplayOptions.find(option => option.id === u.wordDisplay)?.description || '')}</p>
+        <span>{t("点击词窗遮住或显示 · 拨动顶部电源开关看上电与断电")}</span>
       </div>
     </section>}
     {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{hint.startsWith('quality:')

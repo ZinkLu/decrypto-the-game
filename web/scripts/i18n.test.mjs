@@ -5,10 +5,10 @@ import ts from 'typescript';
 const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const load = async name => compile(await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8'));
-const modelUrl = url(await load('model')), mechanicsUrl = url(await load('mechanics')), i18nUrl = url(await load('i18n'));
+const modelUrl = url(await load('model')), mechanicsUrl = url(await load('mechanics')), i18nUrl = url(await load('i18n')), dotMatrixUrl = url(await load('dotMatrix'));
 const { initialLocal, previewState, scopeTimebase, scopeRatio, stepInstrumentValue, receiverSignal, word } = await import(modelUrl);
 const { messages, translate, readLocale, saveLocale } = await import(i18nUrl);
-const { paint } = await import(url((await load('paint')).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./i18n'", JSON.stringify(i18nUrl))));
+const { paint } = await import(url((await load('paint')).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl))));
 globalThis.document = { createElement: () => {
   const ink = [], draws = [];
   const canvas = { ink, draws, getContext: () => context };
@@ -42,7 +42,10 @@ test('language switching preserves user text and fixed legends while localizing 
   const zh = paint(s, u), en = paint(s, { ...u, locale: 'en' });
   assert.ok(en.frames.rosterA0.canvas.ink.includes('手册'));
   assert.ok(en.frames.screen.canvas.ink.includes('等待线索…'));
-  assert.ok(en.frames.word0.canvas.ink.includes('lighthouse'));
+  // LED keyword modules set Latin words in their sign font, dot by dot; only ideographs are type.
+  assert.deepEqual(en.frames.word0.canvas.ink, []);
+  assert.ok(zh.frames.word0.canvas.ink.includes('灯塔'));
+  assert.ok(paint(s, { ...u, locale: 'en', wordDisplay: 'crt' }).frames.word0.canvas.ink.includes('lighthouse'));
   for (const phase of phases) {
     const output = paint(fixture(phase), { ...u, locale: 'en', powerOn: phase !== 'home' });
     assert.deepEqual(output.frames.transmitLabel.canvas.ink, en.frames.transmitLabel.canvas.ink);
@@ -90,9 +93,20 @@ test('real preview fixtures print the selected language on the receipt', () => {
   s.history[0].clues = ['自定义中文线索', 'second', 'third'];
   assert.ok(paint(s, { ...initialLocal, locale: 'en' }).frames.paper.canvas.ink.some(value => value.includes('自定义中文线索')), 'actual player clues are not rewritten');
 });
-test('keywords share one type scale, with full long phrases on two lines', () => {
+test('LED keywords keep the sign size, and only a word wider than the module becomes a strip', () => {
   const s = previewState({}, 'encrypting');
   const zh = paint(s, initialLocal), en = paint(s, { ...initialLocal, locale: 'en' });
+  assert.equal(zh.frames.word1.canvas.draws.find(draw => draw.value === '海岸').size, 16);
+  assert.deepEqual([zh.frames.word1.canvas.width, zh.frames.word1.canvas.height], [64, 36]);
+  assert.equal(en.frames.word3.canvas.width, 64, 'migratory bird takes two lines');
+  s.myWords = ['莎士比亚[shakespeare]', '海岸[coast]', '玫瑰[rose]', '亚特兰蒂斯[atlantis]'];
+  assert.equal(paint(s, { ...initialLocal, locale: 'en' }).frames.word0.canvas.width, 65, 'eleven letters crawl');
+  assert.equal(paint(s, initialLocal).frames.word3.canvas.draws.find(draw => draw.value === '亚特兰蒂斯').size, 12);
+  assert.deepEqual(zh.targets.find(target => target.surface === 'word1'), { ...zh.targets.find(target => target.surface === 'word1'), x: 0, y: 0, w: 64, h: 36 });
+});
+test('the earlier tube windows share one type scale, with full long phrases on two lines', () => {
+  const s = previewState({}, 'encrypting');
+  const zh = paint(s, { ...initialLocal, wordDisplay: 'crt' }), en = paint(s, { ...initialLocal, wordDisplay: 'crt', locale: 'en' });
   const sizeOf = (frame, value) => frame.canvas.draws.find(draw => draw.value === value)?.size;
   assert.equal(sizeOf(zh.frames.word1, '海岸'), 60);
   assert.equal(sizeOf(en.frames.word1, 'coast'), 60);

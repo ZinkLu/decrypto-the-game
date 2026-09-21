@@ -5,7 +5,7 @@ export function consoleRoute(pathname: string, search: string, development: bool
     const view: ConsoleView = pathname.replace(/\/+$/, '') === '/preview' ? 'preview' : 'game';
     const params = new URLSearchParams(search);
     return { view, scenario: development ? params.get('preview') ||
-        (params.has('instruments') || view === 'preview' ? 'encrypting' : null) :
+        (params.has('instruments') || params.has('words') || view === 'preview' ? 'encrypting' : null) :
         view === 'preview' ? 'encrypting' : null };
 }
 

@@ -1,5 +1,11 @@
 import type { useGameStore } from '../../store/gameStore';
+import type { WordDisplay } from './dotMatrix';
 export type StationState = ReturnType<typeof useGameStore.getState>;
+/** Hardware of the four keyword windows; the DEV bench (`?words=led`) keeps the earlier tubes for comparison. */
+export const wordDisplayOptions: { id: WordDisplay; label: string; description: string }[] = [
+    { id: 'led', label: 'A · 双色 LED 点阵', description: '双色发光二极管点阵，颜色随主题：关键词用我方色，编号与状态用对方色。上电先全亮自检，再逐列载入；断电随电源跌落熄灭。换词逐列刷新，过长的词横向走字。' },
+    { id: 'crt', label: 'B · 红色滤光小 CRT', description: '此前的方案：四支加红色滤光的小显像管，带扫描线、冷启动预热、关机塌缩成亮线与光点，换信号时场同步滑移。' },
+];
 export type InstrumentVariant = 'original' | 'signal' | 'tuning' | 'status';
 export const instrumentOptions: { id: InstrumentVariant; label: string; description: string }[] = [
     { id: 'signal', label: 'A · 调谐接收机', description: 'AUTO 让表针随机摆动，旋钮保持原位。MAN 可手动调谐；右侧调整增益。' },
@@ -88,6 +94,7 @@ export interface LocalState {
     meterRate: number;
     instrumentVariant: InstrumentVariant;
     instrumentDemo: boolean;
+    wordDisplay: WordDisplay;
 }
 export const initialLocal: LocalState = {
     // FREQ rests on the engraved 2:1 mark: two locked cycles per sweep.
@@ -98,9 +105,9 @@ export const initialLocal: LocalState = {
     scopeWave: .5, scopeRate: .9, scopeAxis: 0,
     backView: false, batteryOpen: false, soundOn: false, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
-    instrumentVariant: 'signal', instrumentDemo: true,
+    instrumentVariant: 'signal', instrumentDemo: true, wordDisplay: 'led',
 };
-export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo'>;
+export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo' | 'wordDisplay'>;
 export function nextScopeValue(value: number, length: number, direction = 1) {
     return (value + direction % length + length) % length;
 }
