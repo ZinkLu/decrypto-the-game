@@ -10,7 +10,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { crtFinish, type Content, type Frame, type Target } from './paint';
 import { RosterMotion, rosterPose } from './rosterMotion';
 import { crtProfile, crtGeometry, crtHeight, crtDisplayUv, crtOpticsShader } from './crt';
-import { initialLocal, scopeModes, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState } from './model';
+import { initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState } from './model';
 import { VectorMonitor, scopeResonance, scopeTuning } from './scope';
 import { paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, diskInsertPose, diskEjectPose } from './mechanics';
 import { ReceiptTransport } from './tearing';
@@ -71,6 +71,7 @@ export class ConsoleEngine {
     private diskRest = new THREE.Vector3();
     private diskAxis = new THREE.Vector3(0, 0, 1);
     private tuningKnob: THREE.Object3D = new THREE.Group();
+    private waveKnob: THREE.Object3D = new THREE.Group();
     private rateKnob: THREE.Object3D = new THREE.Group();
     private persistenceKnob: THREE.Object3D = new THREE.Group();
     private diskOut = false;
@@ -105,7 +106,9 @@ export class ConsoleEngine {
     private rosterCards = new Map<string, { object: THREE.Object3D; rest: THREE.Vector3; travel: number;
         motion: RosterMotion<{ id: string; frame: Frame }>; printed?: Frame; materials: THREE.Material[] }>();
     private lampMaterials = new Map<string, THREE.MeshStandardMaterial>();
-    private scopeMode = initialLocal.scopeMode;
+    private scopeWave = initialLocal.scopeWave;
+    private scopeWaveAngle = 0;
+    private scopeWaveDesiredAngle = 0;
     private scopeAngle = 0;
     private scopeDesiredAngle = 0;
     private locale: Locale = 'zh';
@@ -269,7 +272,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'console-details-20260921-v28';
+        const revision = 'console-details-20260921-v32';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -435,9 +438,10 @@ export class ConsoleEngine {
         // Blender owns the assemblies: the fixed drive housing must never eject.
         const disk = this.part('FloppyTransport');
         const knob = this.part('ScopeTuning');
+        const wave = this.part('ScopeWave');
         const rate = this.part('ScopeRate');
         const persistence = this.part('ScopePersistence');
-        if (!disk || !knob || !rate || !persistence) throw new Error('终端机械组件不完整。');
+        if (!disk || !knob || !wave || !rate || !persistence) throw new Error('终端机械组件不完整。');
         this.disk = disk;
         this.ejectButton = this.part('FloppyEject');
         if (this.ejectButton) this.ejectButtonRest.copy(this.ejectButton.position);
@@ -446,6 +450,7 @@ export class ConsoleEngine {
         this.diskMotion = undefined;
         this.diskTravel = this.diskOut ? diskEjectedTravel : diskSeatTravel;
         this.tuningKnob = knob;
+        this.waveKnob = wave;
         this.rateKnob = rate;
         this.persistenceKnob = persistence;
         const battery = this.part('BatteryDoor');
@@ -635,7 +640,7 @@ export class ConsoleEngine {
         this.textures.set('scope', scope);
         this.planes.get('scope')!.material.map = scope;
         if (this.content)
-            this.update(this.content, { locale: this.locale, scopeFreq: this.scopeFreq, diskOut: this.diskOut, scopeMode: this.scopeMode,
+            this.update(this.content, { locale: this.locale, scopeFreq: this.scopeFreq, diskOut: this.diskOut, scopeWave: this.scopeWave,
                 scopeRate: this.scopeRate, scopeAxis: this.scopeAxis,
                 backView: this.backView, batteryOpen: this.batteryOpen, soundOn: this.soundOn,
                 powerOn: this.powerOn,
@@ -782,13 +787,14 @@ export class ConsoleEngine {
             this.diskOut = local.diskOut;
         }
         this.locale = local.locale;
-        this.scopeMode = local.scopeMode;
+        this.scopeWave = local.scopeWave;
         this.scopeFreq = local.scopeFreq;
         this.scopeRate = local.scopeRate;
         this.scopeAxis = local.scopeAxis;
         // Analog knobs have physical end stops and retain every fractional turn.
         // Each pointer sweeps exactly between the outer index marks of its dial.
         this.scopeDesiredAngle = Math.PI * .75 * (1 - 2 * local.scopeFreq);
+        this.scopeWaveDesiredAngle = 2.182 * (1 - 2 * local.scopeWave);
         this.scopeRateDesiredAngle = 2.182 * (1 - 2 * local.scopeRate);
         this.scopeAxisDesiredAngle = 2.182 * (1 - 2 * local.scopeAxis);
         for (const [name, frame] of Object.entries(content.frames)) {
@@ -861,7 +867,7 @@ export class ConsoleEngine {
     private batchStaticGeometry(root: THREE.Object3D = this.model!, preserveAssemblies = true) {
         // Keep the .blend and GLB fully editable. Only the runtime coalesces
         // static, opaque parts by material; animated assemblies retain names.
-        const moving = /^(ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|FloppyEject|ScopeTuning|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
+        const moving = /^(ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|FloppyEject|ScopeTuning|ScopeWave|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
         const batches = new Map<THREE.Material, THREE.Mesh[]>();
         root.updateWorldMatrix(true, true);
         const inverse = root.matrixWorld.clone().invert();
@@ -896,7 +902,7 @@ export class ConsoleEngine {
             meshes.forEach(mesh => { mesh.removeFromParent(); mesh.geometry.dispose(); });
         }
         if (preserveAssemblies) {
-            for (const name of ['FloppyTransport', 'FloppyEject', 'ScopeTuning', 'ScopeRate', 'ScopePersistence', 'TransmitLever', 'PowerSwitch', 'BatteryDoor', 'ManualKey', 'ChannelCopy', 'ReceiverNeedle']) {
+            for (const name of ['FloppyTransport', 'FloppyEject', 'ScopeTuning', 'ScopeWave', 'ScopeRate', 'ScopePersistence', 'TransmitLever', 'PowerSwitch', 'BatteryDoor', 'ManualKey', 'ChannelCopy', 'ReceiverNeedle']) {
                 const assembly = this.part(name);
                 if (assembly) this.batchStaticGeometry(assembly, false);
             }
@@ -1197,6 +1203,7 @@ export class ConsoleEngine {
             this.diskMotion !== undefined ||
             Math.abs(this.diskTravel - (this.diskOut ? diskEjectedTravel : diskSeatTravel)) > .0001 ||
             Math.abs(this.scopeAngle - this.scopeDesiredAngle) > .0001 ||
+            Math.abs(this.scopeWaveAngle - this.scopeWaveDesiredAngle) > .0001 ||
             Math.abs(this.scopeRateAngle - this.scopeRateDesiredAngle) > .0001 ||
             Math.abs(this.scopeAxisAngle - this.scopeAxisDesiredAngle) > .0001 || this.pulses.size > 0) {
             this.renderer.shadowMap.needsUpdate = true;
@@ -1231,6 +1238,8 @@ export class ConsoleEngine {
         }
         this.scopeAngle = this.reduced.matches ? this.scopeDesiredAngle : THREE.MathUtils.damp(this.scopeAngle, this.scopeDesiredAngle, 16, dt);
         this.tuningKnob.rotation.z = this.scopeAngle;
+        this.scopeWaveAngle = this.reduced.matches ? this.scopeWaveDesiredAngle : THREE.MathUtils.damp(this.scopeWaveAngle, this.scopeWaveDesiredAngle, 16, dt);
+        this.waveKnob.rotation.z = this.scopeWaveAngle;
         this.scopeRateAngle = this.reduced.matches ? this.scopeRateDesiredAngle : THREE.MathUtils.damp(this.scopeRateAngle, this.scopeRateDesiredAngle, 16, dt);
         this.rateKnob.rotation.z = this.scopeRateAngle;
         this.scopeAxisAngle = this.reduced.matches ? this.scopeAxisDesiredAngle : THREE.MathUtils.damp(this.scopeAxisAngle, this.scopeAxisDesiredAngle, 16, dt);
@@ -1322,7 +1331,7 @@ export class ConsoleEngine {
         }
         // The tube is simulated, not plotted: two oscillators steer one beam and
         // the phosphor keeps what it wrote. Reduced motion shows a long exposure.
-        this.monitor.run(dt, { freq: this.scopeFreq, rate: this.scopeRate, axis: this.scopeAxis, mode: this.scopeMode }, this.reduced.matches);
+        this.monitor.run(dt, { freq: this.scopeFreq, wave: this.scopeWave, rate: this.scopeRate, axis: this.scopeAxis }, this.reduced.matches);
         // LOCK lamp: a phase detector seen through a slow, warm filament. Fast
         // slipping blurs to a half glow; near a tongue it beats ever more slowly,
         // then steadies as the oscillators lock, brightest dead in tune.
@@ -1352,7 +1361,8 @@ export class ConsoleEngine {
         const ratio = scopeRatio(this.scopeFreq), hz = scopeSweepHz(this.scopeRate), resonance = scopeResonance(ratio);
         c.fillStyle = 'rgba(211, 239, 232, .86)';
         c.font = '17px "PingFang SC", sans-serif';
-        c.fillText(`${translate(this.locale, scopeModes[this.scopeMode])} · ${scopeFigures(ratio * hz)} Hz`, 20, 319);
+        const blend = scopeWaveBlend(this.scopeWave), shape = translate(this.locale, scopeModes[blend.from]);
+        c.fillText(`${blend.mix ? `${shape}›${translate(this.locale, scopeModes[blend.to])}` : shape} · ${scopeFigures(ratio * hz)} Hz`, 20, 319);
         c.textAlign = 'right';
         // Inside a tongue the oscillators hold a whole-number ratio and the figure stands.
         if (!resonance?.locked) c.fillStyle = '#c99d65';

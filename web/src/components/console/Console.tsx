@@ -2,7 +2,7 @@ import { translate, localizeError, readLocale, saveLocale } from './i18n';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
-import { initialLocal, previewState, roleState, rosterTeams, archiveRows, nextScopeMode, instrumentSteps, word, instrumentOptions, stepInstrumentValue } from './model';
+import { initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, stepInstrumentValue } from './model';
 import { paint, knobLabel } from './paint';
 import ArchiveSheet from './ArchiveSheet';
 import MobileConsole from './MobileConsole';
@@ -13,7 +13,7 @@ const instrumentPreview = import.meta.env.DEV && new URLSearchParams(location.se
 const preview = import.meta.env.DEV ? new URLSearchParams(location.search).get('preview') || (instrumentPreview ? 'encrypting' : null) : null;
 const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
 const initialInstrument = instrumentPreview ? instrumentOptions.find(option => option.id === new URLSearchParams(location.search).get('instruments'))?.id || 'signal' : initialLocal.instrumentVariant;
-const scopeControls = ['scope-tune', 'scope-rate', 'scope-xy', 'meter-amplitude', 'meter-rate'];
+const scopeControls = ['scope-tune', 'scope-wave', 'scope-rate', 'scope-xy', 'meter-amplitude', 'meter-rate'];
 const isScopeControl = (id: string) => scopeControls.includes(id);
 export default function Console() {
     const live = useGameStore();
@@ -36,11 +36,11 @@ export default function Console() {
     const controls = useRef(new Map<string, HTMLElement>());
     // Analog input updates targets and hardware, without repainting all the
     // game screens and the long receipt for each fraction of a knob turn.
-    const paintKey = JSON.stringify({ ...u, scopeFreq: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
+    const paintKey = JSON.stringify({ ...u, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
     const painted = useMemo(() => paint(s, u), [s, paintKey]);
     const content = useMemo(() => ({ ...painted, targets: painted.targets.map(target =>
         isScopeControl(target.id) ? { ...target, label: knobLabel(target.id, u) } : target) }),
-        [painted, u.scopeFreq, u.scopeRate, u.scopeAxis, u.meterAmplitude, u.meterRate]);
+        [painted, u.scopeFreq, u.scopeWave, u.scopeRate, u.scopeAxis, u.meterAmplitude, u.meterRate]);
     const current = useRef({ s, u, content });
     current.current = { s, u, content };
     const pending = useRef(false);
@@ -76,7 +76,7 @@ export default function Console() {
             adjustInstrument(control, turn * (instrumentSteps(local.instrumentVariant, control) - 1));
             return;
         }
-        const field = vernier ? 'scopeFreq' : id === 'scope-rate' ? 'scopeRate' : 'scopeAxis';
+        const field = vernier ? 'scopeFreq' : id === 'scope-wave' ? 'scopeWave' : id === 'scope-rate' ? 'scopeRate' : 'scopeAxis';
         setU(old => ({ ...old, [field]: Math.max(0, Math.min(1, old[field] + turn)) }));
     }
     function selectInstrument(variant: InstrumentVariant) {
@@ -341,10 +341,6 @@ export default function Console() {
             setAnnouncement(local.diskOut ? t("软盘已插入") : t("软盘已弹出，再次点击插入"));
             return;
         }
-        if (id === 'scope-mode') {
-            patch({ scopeMode: nextScopeMode(local.scopeMode) });
-            return;
-        }
         if (id.startsWith('scope-')) {
             adjustKnob(id.replace('-prev', '').replace('scope-prev', 'scope-tune'), id.endsWith('-prev') || id === 'scope-prev' ? -1 : 1, true);
             return;
@@ -471,7 +467,7 @@ export default function Console() {
                 role: isScopeControl(target.id) ? 'slider' : target.id === 'power-toggle' || target.id === 'receiver-sweep' ? 'switch' : undefined,
                 'aria-valuemin': isScopeControl(target.id) ? 0 : undefined,
                 'aria-valuemax': isScopeControl(target.id) ? 100 : undefined,
-                'aria-valuenow': isScopeControl(target.id) ? Math.round((target.id === 'scope-tune' ? u.scopeFreq : target.id === 'scope-rate' ? u.scopeRate : target.id === 'scope-xy' ? u.scopeAxis : target.id === 'meter-amplitude' ? u.meterAmplitude / (instrumentSteps(u.instrumentVariant, 'amplitude') - 1) : u.meterRate / 4) * 1000) / 10 : undefined,
+                'aria-valuenow': isScopeControl(target.id) ? Math.round((target.id === 'scope-tune' ? u.scopeFreq : target.id === 'scope-wave' ? u.scopeWave : target.id === 'scope-rate' ? u.scopeRate : target.id === 'scope-xy' ? u.scopeAxis : target.id === 'meter-amplitude' ? u.meterAmplitude / (instrumentSteps(u.instrumentVariant, 'amplitude') - 1) : u.meterRate / 4) * 1000) / 10 : undefined,
                 'aria-valuetext': isScopeControl(target.id) ? target.label : undefined,
                 'aria-checked': target.id === 'power-toggle' ? u.powerOn : target.id === 'receiver-sweep' ? u.instrumentDemo : undefined,
                 disabled: target.disabled,

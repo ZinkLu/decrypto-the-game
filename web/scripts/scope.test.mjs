@@ -14,10 +14,10 @@ async function moduleUrl(name) {
   moduleUrls.set(name, url);
   return url;
 }
-const { initialLocal, scopeModes, scopeMarks, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle } = await import(await moduleUrl('model'));
+const { initialLocal, scopeModes, scopeWaveBlend, scopeMarks, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle } = await import(await moduleUrl('model'));
 const { scopeTuning, scopeWaveforms, waveSample, scopeResonance, ScopeSignal, Phosphor, VectorMonitor } = await import(await moduleUrl('scope'));
 
-const rest = { freq: initialLocal.scopeFreq, rate: initialLocal.scopeRate, axis: initialLocal.scopeAxis, mode: initialLocal.scopeMode };
+const rest = { freq: initialLocal.scopeFreq, wave: initialLocal.scopeWave, rate: initialLocal.scopeRate, axis: initialLocal.scopeAxis };
 const frame = 1 / 60;
 /** Slip between the oscillators around a p:q tongue, as a fraction of a cycle in [-.5, .5). */
 const slip = (signal, p, q) => { const phase = q * signal.signal - p * signal.reference; return phase - Math.round(phase); };
@@ -57,14 +57,39 @@ test('TIME/DIV speeds the sweep clockwise and X-Y turns a quarter of a revolutio
   assert.equal(scopeAxisAngle(-1), 0); assert.equal(scopeAxisAngle(2), Math.PI / 2);
 });
 
-test('every waveform is periodic, bounded and distinct', () => {
-  const waves = Array.from({ length: scopeWaveforms }, (_, mode) => Array.from({ length: 200 }, (_, n) => waveSample(mode, n / 200)));
-  for (const [mode, wave] of waves.entries()) {
+test('the five engraved waveforms are periodic, bounded and distinct, with sine at rest', () => {
+  const cycle = shape => Array.from({ length: 200 }, (_, n) => waveSample(shape, n / 200));
+  const waves = Array.from({ length: scopeWaveforms }, (_, mark) => cycle(mark));
+  for (const [mark, wave] of waves.entries()) {
     assert.ok(wave.every(level => Number.isFinite(level) && Math.abs(level) <= 1));
-    for (const phase of [0, .13, .5, .77]) assert.ok(Math.abs(waveSample(mode, phase) - waveSample(mode, phase + 3)) < 1e-9);
+    for (const phase of [0, .13, .5, .77]) assert.ok(Math.abs(waveSample(mark, phase) - waveSample(mark, phase + 3)) < 1e-9);
     assert.ok(Math.max(...wave) - Math.min(...wave) > 1.3, 'fills the deflection');
   }
   assert.equal(new Set(waves.map(wave => JSON.stringify(wave))).size, scopeWaveforms);
+  assert.equal(scopeModes[Math.round(initialLocal.scopeWave * 4)], '正弦');
+  cycle(initialLocal.scopeWave * 4).forEach((level, n) => assert.ok(Math.abs(level - Math.sin(n / 200 * Math.PI * 2)) < 1e-12));
+  // A sawtooth is a long rise and a short fall; a pulse is high a fifth of the time.
+  assert.ok(Math.abs(waves[0].filter((level, n) => level > waves[0][(n + 199) % 200]).length / 200 - .97) < .02);
+  assert.ok(Math.abs(waves[4].filter(level => level > .3).length / 200 - .2) < .03);
+});
+
+test('WAVE blends steplessly: no position of the dial jumps, including across the engraved marks', () => {
+  for (let shape = 0; shape < 4; shape += .02) {
+    let change = 0;
+    for (let n = 0; n < 400; n++) change += Math.abs(waveSample(shape + .02, n / 400) - waveSample(shape, n / 400)) / 400;
+    assert.ok(change < .03, `shape ${shape.toFixed(2)} moves ${change}`);
+  }
+  assert.deepEqual(scopeWaveBlend(.5), { from: 2, to: 2, mix: 0 });
+  assert.deepEqual(scopeWaveBlend(.51), { from: 2, to: 2, mix: 0 });
+  assert.deepEqual(scopeWaveBlend(1.4), { from: 4, to: 4, mix: 0 });
+  const between = scopeWaveBlend(.6);
+  assert.deepEqual([between.from, between.to], [2, 3]); assert.ok(Math.abs(between.mix - .4) < 1e-9);
+  // A sudden turn still melts on the tube: the blend settles through its network.
+  const { centerY, deflection } = scopeTuning, signal = new ScopeSignal();
+  const flat = trace => strokes(trace).filter(([, , , y1]) => Math.abs(y1 - centerY) > deflection * .9).length / trace.count;
+  assert.ok(flat(signal.advance(frame, { ...rest, wave: .75 })) < .5, 'the first frame is still mostly sine');
+  for (let n = 0; n < 60; n++) signal.advance(frame, { ...rest, wave: .75 });
+  assert.ok(flat(signal.advance(frame, { ...rest, wave: .75 })) > .8, 'then the square wave dwells on its rails');
 });
 
 test('inside a tongue the oscillators lock and hold the Adler phase for the remaining detune', () => {
@@ -152,15 +177,23 @@ test('turning X-Y rolls the same locked signal into its Lissajous figure', () =>
 });
 
 test('the phosphor conserves beam energy, decays exponentially and burns brighter under a slow beam', () => {
-  const total = phosphor => phosphor.energy.reduce((sum, level) => sum + level, 0);
+  const sum = levels => levels.reduce((all, level) => all + level, 0);
+  const total = phosphor => sum(phosphor.energy);
   const peak = phosphor => phosphor.energy.reduce((most, level) => Math.max(most, level), 0);
   const tube = new Phosphor();
   tube.deposit(100.3, 80.7, 180.9, 140.2, 5);
-  assert.ok(Math.abs(total(tube) - 5) < 1e-3);
-  tube.decay(.1, .085);
+  assert.ok(Math.abs(total(tube) - 5) < 1e-3 && Math.abs(sum(tube.exposure) - 5) < 1e-3, 'a long exposure shows a stroke in full');
+  tube.age(.1, .085);
   assert.ok(Math.abs(total(tube) - 5 * Math.exp(-.1 / .085)) < 1e-3);
-  tube.decay(60, .085);
+  // The frame shows the glow averaged over its interval, as a shutter would.
+  assert.ok(Math.abs(sum(tube.exposure) - 5 * .85 * (1 - Math.exp(-.1 / .085))) < 1e-3);
+  tube.age(60, .085);
   assert.equal(total(tube), 0, 'faint glow is flushed to true black');
+  // A stroke written late in a frame has faded less by its end, but was exposed for less of it.
+  const early = new Phosphor(), late = new Phosphor();
+  for (const [screen, moment] of [[early, .1], [late, .9]]) { screen.age(1 / 60, .022); screen.deposit(100, 100, 140, 100, 1, moment); }
+  assert.ok(total(late) > total(early) && sum(late.exposure) < sum(early.exposure));
+  assert.ok(Math.abs(total(early) - Math.exp(-.9 / 60 / .022)) < 1e-3);
   const slow = new Phosphor(), fast = new Phosphor();
   slow.deposit(100, 100, 110, 100, 1); fast.deposit(100, 100, 300, 100, 1);
   assert.ok(peak(slow) > peak(fast) * 10, 'the same energy over a shorter stroke is brighter');
@@ -171,7 +204,7 @@ test('the phosphor conserves beam energy, decays exponentially and burns brighte
   assert.ok(total(edge) > .3 && total(edge) < .7, 'a stroke crossing the edge keeps only its visible part');
   const pixels = new Uint8ClampedArray(tube.width * tube.height * 4);
   const ramp = new Phosphor();
-  for (let column = 0; column < 300; column++) ramp.energy[column] = column / 25;
+  for (let column = 0; column < 300; column++) ramp.exposure[column] = column / 25;
   ramp.expose(pixels);
   assert.equal(pixels[3], 0);
   for (let column = 1; column < 300; column++) assert.ok(pixels[column * 4 + 3] >= pixels[(column - 1) * 4 + 3]);
@@ -185,9 +218,9 @@ test('a standing figure is equally bright at every TIME/DIV, down to a visible m
     let most = 0;
     for (let n = 0; n < seconds * 60; n++) {
       monitor.run(frame, { ...rest, rate });
-      if (n > seconds * 45) most = Math.max(most, monitor.phosphor.energy.reduce((peak, level) => Math.max(peak, level), 0));
+      if (n > seconds * 45) most = Math.max(most, monitor.phosphor.exposure.reduce((peak, level) => Math.max(peak, level), 0));
     }
-    const lit = monitor.phosphor.energy.reduce((count, level) => count + (level > .05 ? 1 : 0), 0);
+    const lit = monitor.phosphor.exposure.reduce((count, level) => count + (level > .05 ? 1 : 0), 0);
     return { most, lit };
   };
   const fast = brightness(1), rest90 = brightness(initialLocal.scopeRate), slow = brightness(.2);
@@ -198,16 +231,36 @@ test('a standing figure is equally bright at every TIME/DIV, down to a visible m
   assert.ok(slow.lit > rest90.lit * .5);
 });
 
+test('a standing trace holds steady while the afterglow of a departed one is gone within a few frames', () => {
+  const monitor = new VectorMonitor(), { width, centerX, centerY, sweepReach, deflection } = scopeTuning;
+  const shown = (x, y) => Math.max(...[-2, -1, 0, 1, 2].map(row => monitor.phosphor.exposure[(y + row) * width + x]));
+  // The resting 2:1 sine: its first crest, and the steep crossing a quarter of the way along.
+  const crest = [Math.round(centerX - sweepReach + sweepReach / 4), centerY - deflection], steep = [Math.round(centerX - sweepReach / 2), centerY];
+  for (let n = 0; n < 240; n++) monitor.run(frame, rest);
+  const levels = { crest: [], steep: [] };
+  for (let n = 0; n < 120; n++) { monitor.run(frame, rest); levels.crest.push(shown(...crest)); levels.steep.push(shown(...steep)); }
+  for (const [part, seen] of Object.entries(levels)) {
+    const brightness = seen.map(level => 1 - Math.exp(-level));
+    assert.ok(Math.max(...brightness) - Math.min(...brightness) < .09, `${part} shimmers by ${Math.max(...brightness) - Math.min(...brightness)}`);
+  }
+  assert.ok(Math.min(...levels.crest) > 2.5 && Math.min(...levels.steep) > .7, 'and stays bright');
+  // The beam moves away: only the glow remains, ageing frame by frame.
+  const fading = [];
+  for (let n = 0; n < 9; n++) { monitor.phosphor.age(frame, scopeTuning.persistence); fading.push(1 - Math.exp(-shown(...crest))); }
+  assert.ok(fading[0] > .5, 'a real afterglow, not a strobe');
+  assert.ok(fading[5] < .1 && fading[8] < .03, `ghosts linger: ${fading.map(level => level.toFixed(2))}`);
+});
+
 test('reduced motion shows the whole standing figure as one repeatable exposure', () => {
   const monitor = new VectorMonitor();
   monitor.run(0, rest, true);
-  const first = Array.from(monitor.phosphor.energy);
+  const first = Array.from(monitor.phosphor.exposure);
   monitor.run(.5, rest, true);
-  assert.deepEqual(Array.from(monitor.phosphor.energy), first);
+  assert.deepEqual(Array.from(monitor.phosphor.exposure), first);
   const columns = new Set();
   first.forEach((level, index) => { if (level > .2) columns.add(index % monitor.phosphor.width); });
   assert.ok(columns.size > 330, 'both cycles of the resting 2:1 sine are present');
   // An unlocked setting still resolves to a finite, closed representative.
   monitor.run(0, { ...rest, freq: .5, axis: 1 }, true);
-  assert.ok(monitor.phosphor.energy.every(Number.isFinite) && monitor.phosphor.energy.some(level => level > .2));
+  assert.ok(monitor.phosphor.exposure.every(Number.isFinite) && monitor.phosphor.exposure.some(level => level > .2));
 });

@@ -1,5 +1,5 @@
 import { translate, localizeError } from './i18n';
-import { roleState, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
+import { roleState, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
 import type { LocalState, StationState } from './model';
 import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
 export interface Target {
@@ -170,6 +170,10 @@ function portrait(c: CanvasRenderingContext2D, x: number, y: number, size: numbe
 export function knobLabel(id: string, u: LocalState) {
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
     if (id === 'scope-tune') return t('信号频率 {0} Hz · Y:X {1}', [scopeFigures(scopeRatio(u.scopeFreq) * scopeSweepHz(u.scopeRate)), scopeRatio(u.scopeFreq).toFixed(3)]);
+    if (id === 'scope-wave') {
+        const blend = scopeWaveBlend(u.scopeWave);
+        return blend.mix ? t('波形 · {0} → {1} {2}%', [t(scopeModes[blend.from]), t(scopeModes[blend.to]), Math.round(blend.mix * 100)]) : t('波形 · {0}', [t(scopeModes[blend.from])]);
+    }
     if (id === 'scope-rate') return t('扫描时基 {0} ms/格', [scopeFigures(scopeTimebase(u.scopeRate) * 1000)]);
     if (id === 'scope-xy') {
         const turned = Math.round(scopeAxisAngle(u.scopeAxis) * 180 / Math.PI);
@@ -547,10 +551,10 @@ export function paint(s: StationState, u: LocalState): Content {
     target('disk', 'disk-toggle', u.diskOut ? t("插入软盘") : t("弹出软盘"), 0, 0, 400, 200);
     frame('diskEjectControl', 100, 100);
     target('diskEjectControl', 'disk-eject', t('弹出软盘'), 0, 0, 100, 100, { disabled: u.diskOut });
-    frame('scopeModeControl', 420, 350);
-    target('scopeModeControl', 'scope-mode', t("点击屏幕切换波形 · {0}", [t(scopeModes[u.scopeMode])]), 0, 0, 420, 350);
     frame('scopeKnob', 100, 100);
     target('scopeKnob', 'scope-tune', knobLabel('scope-tune', u), 0, 0, 100, 100);
+    frame('scopeWaveKnob', 100, 100);
+    target('scopeWaveKnob', 'scope-wave', knobLabel('scope-wave', u), 0, 0, 100, 100);
     frame('scopeRateKnob', 100, 100);
     target('scopeRateKnob', 'scope-rate', knobLabel('scope-rate', u), 0, 0, 100, 100);
     frame('scopePersistenceKnob', 100, 100);

@@ -75,7 +75,7 @@ export interface LocalState {
     hiddenWords: boolean;
     seconds: number;
     diskOut: boolean;
-    scopeMode: number;
+    scopeWave: number;
     scopeRate: number;
     scopeAxis: number;
     backView: boolean;
@@ -95,25 +95,30 @@ export const initialLocal: LocalState = {
     mode: 'create', name: '', code: '', clues: ['', '', ''], guess: [0, 0, 0],
     slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
     archiveOpen: false, manual: false, rosterOpen: false, hiddenWords: false, seconds: 0, diskOut: false,
-    scopeMode: 0, scopeRate: .9, scopeAxis: 0,
+    scopeWave: .5, scopeRate: .9, scopeAxis: 0,
     backView: false, batteryOpen: false, soundOn: false, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
     instrumentVariant: 'signal', instrumentDemo: true,
 };
-export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'scopeMode' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo'>;
-export const scopeModes = ['正弦', '三角', '方波', '锯齿', '脉冲'];
+export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo'>;
 export function nextScopeValue(value: number, length: number, direction = 1) {
     return (value + direction % length + length) % length;
 }
-export function nextScopeMode(mode: number, direction = 1) {
-    return nextScopeValue(mode, scopeModes.length, direction);
-}
 export const word = (s = '', locale: 'zh' | 'en' = 'zh') => locale === 'en' ? s.match(/\[([^\]]+)\]/)?.[1] || s.split('[')[0] : s.split('[')[0];
-// The monitor's three dials. FREQ sets the CAL OUT oscillator as a multiple of
+// The monitor's four dials. FREQ sets the CAL OUT oscillator as a multiple of
 // the sweep reference; its eight engraved marks are calibrated to these
-// ratios. TIME/DIV sets the reference itself, and X-Y pans the horizontal
-// amplifier from the sweep ramp (0) to the reference sine (a quarter turn).
+// ratios. WAVE blends between the generator's five engraved shapes. TIME/DIV
+// sets the reference itself, and X-Y pans the horizontal amplifier from the
+// sweep ramp (0) to the reference sine (a quarter turn).
 const clampControl = (value: number) => Math.max(0, Math.min(1, value));
+export const scopeModes = ['锯齿', '三角', '正弦', '方波', '脉冲'];
+/** Where WAVE points: on an engraved shape, or part of the way between two. */
+export function scopeWaveBlend(value: number) {
+    const position = clampControl(value) * (scopeModes.length - 1), near = Math.round(position);
+    if (Math.abs(position - near) < .08) return { from: near, to: near, mix: 0 };
+    const from = Math.floor(position);
+    return { from, to: from + 1, mix: position - from };
+}
 export const scopeMarks: [number, number][] = [[1, 1], [4, 3], [3, 2], [2, 1], [5, 2], [3, 1], [4, 1], [5, 1]];
 export function scopeRatio(value: number) {
     const position = clampControl(value) * (scopeMarks.length - 1);

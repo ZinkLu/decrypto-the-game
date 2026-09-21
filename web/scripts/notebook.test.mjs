@@ -21,7 +21,7 @@ const { paperPose, receiptVertex, paperSeam, paperFeedDuration, paperCutDuration
   paperTearDuration, paperExtendedLength, paperTextureLength, paperRestLength, paperRefillDuration, paperLengthForRecords } = await moduleFrom('mechanics');
 const { ReceiptTransport, rowFractions, sheetRows } = await moduleFrom('tearing');
 const { rosterPose } = await moduleFrom('rosterMotion');
-const { nextScopeMode, nextScopeValue } = await moduleFrom('model');
+const { nextScopeValue } = await moduleFrom('model');
 function meanDepth(paper) {
   let total = 0, count = 0;
   for (let i = 0; i <= paper.rows; i++) for (let j = 0; j <= paper.columns; j++) { total += paper.sample(j, i).z; count++; }
@@ -35,9 +35,7 @@ test('notes survive serialization, tolerate corrupt storage and separate players
   assert.equal(parseNotes(JSON.stringify({ general: '字'.repeat(11000) })).general.length, 10000);
   assert.equal(new Set([notesKey('5821', 'a', false), notesKey('5821', 'b', false), notesKey('5822', 'a', false), notesKey('5821', 'a', true)]).size, 4);
 });
-test('waveform selector wraps around its five shapes', () => {
-  assert.equal(nextScopeMode(4), 0);
-  assert.equal(nextScopeMode(0, -1), 4);
+test('stepped selectors wrap in both directions', () => {
   assert.equal(nextScopeValue(4, 5), 0);
   assert.equal(nextScopeValue(0, 4, -1), 3);
 });
@@ -55,6 +53,12 @@ test('exported model keeps housing fixed and paper registered at the feed nip', 
     'ScopeDetail_dial knurled rim', 'ScopeDetail_dial ivory cap', 'ScopeDetail_dial hub'])
     assert.ok(tuningParts.has(name), `${name} must rotate with ScopeTuning`);
   assert.equal([...tuningParts].filter(name => name.startsWith('ScopeDetail_dial knurl ')).length, 20);
+  const waveParts = node('ScopeWave').children.map(i => gltf.nodes[i].name);
+  for (const name of ['ScopeDetail_wave knob body', 'ScopeDetail_wave knob cap', 'ScopeDetail_wave pointer'])
+    assert.ok(waveParts.includes(name), `${name} must rotate with ScopeWave`);
+  assert.equal(waveParts.filter(name => name.startsWith('ScopeDetail_wave knurl ')).length, 12);
+  for (let mark = 0; mark < 5; mark++) for (const fixed of [`ScopeDetail_wave index ${mark}`, `ScopeDetail_wave glyph ${mark}`])
+    assert.ok(node(fixed) && !waveParts.includes(fixed), `${fixed} stays engraved on the panel`);
   for (const name of ['ScopeRate', 'ScopePersistence', 'Instrument_signal', 'SignalNeedle', 'SignalGlass',
     'SignalTuning', 'SignalGain', 'SignalSweep']) assert.ok(node(name), name);
   assert.ok(!gltf.nodes.some(n => /^(ConsoleDetail_(monitor toggle|sync toggle|sync lamp)|Archive scroll wheel|Wheel knurl)/.test(n.name)));
@@ -80,9 +84,15 @@ test('exported model keeps housing fixed and paper registered at the feed nip', 
   assert.ok(surfaces.powerControl.y > 5.37, 'toggle stays on the top side of the sleeve');
   assert.ok(surfaces.powerControl.h >= .8 && surfaces.powerControl.w >= 1.4, 'stable target covers both switch positions');
   assert.ok(surfaces.channel.y - surfaces.channel.h / 2 - (surfaces.score.y + surfaces.score.h / 2) > .3, 'code and score have separate readable areas');
-  for (const key of ['scopeKnob', 'scopeRateKnob', 'scopePersistenceKnob']) {
+  const dials = ['scopeKnob', 'scopeWaveKnob', 'scopeRateKnob', 'scopePersistenceKnob'];
+  for (const key of dials) {
     assert.ok(surfaces[key].y + surfaces[key].h / 2 < surfaces.scope.y - surfaces.scope.h / 2 - .15, 'all scope controls clear the CRT hood');
   }
+  dials.slice(1).forEach((key, n) => assert.ok(surfaces[key].x - surfaces[dials[n]].x >= (surfaces[key].w + surfaces[dials[n]].w) / 2 - 1e-9,
+    `${key} keeps its own grip beside ${dials[n]}`));
+  for (const [key, part] of [['scopeWaveKnob', 'ScopeWave'], ['scopeRateKnob', 'ScopeRate'], ['scopePersistenceKnob', 'ScopePersistence']])
+    assert.ok(Math.abs(surfaces[key].x - node(part).translation[0]) < 1e-6, `${key} is registered to ${part}`);
+  assert.ok(!surfaces.scopeModeControl, 'the tube is a display, not a push button');
   assert.ok(!gltf.nodes.some(n => n.name.startsWith('Vent slot') || n.name.startsWith('PanelRefine_vent cutter')), 'old fake slots and Boolean cutters never render');
   assert.ok(node('PanelRefine_vent plenum'), 'real openings have a recessed plenum');
   const diskY = node('FloppyTransport').translation[1] + node('Floppy paper label').translation[1];

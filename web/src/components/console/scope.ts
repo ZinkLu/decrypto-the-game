@@ -20,10 +20,11 @@ export const scopeTuning = {
     // (p * q)^.25` wide and still bends the slip out to `lockReach` widths.
     lockStrength: .016,
     lockReach: 6,
-    shapeSettle: .07, // seconds for the waveform selector's coupling network
-    // The glow outlasts about one sweep, and never less than the phosphor itself.
-    persistence: .085,
-    persistenceSweeps: .9,
+    shapeSettle: .07, // seconds for the WAVE blend's coupling network
+    // A short afterglow keeps moving figures crisp. Slow sweeps glow for a
+    // share of one sweep instead, so the spot still draws a whole figure.
+    persistence: .022,
+    persistenceSweeps: .6,
     maxPersistence: 3,
     beamEnergy: 2400, // per sweep; brightness then follows dwell time alone
     beamRadius: 1.4,
@@ -32,18 +33,29 @@ export const scopeTuning = {
 
 const turn = Math.PI * 2;
 
-/** One cycle per unit phase. Shapes rise as the cycle begins, so a locked
- *  sweep opens the way a rising-edge trigger would. */
-export function waveSample(mode: number, phase: number) {
-    const t = phase - Math.floor(phase);
-    switch (mode) {
-        case 1: return 2 / Math.PI * Math.asin(Math.sin(turn * t));
-        // An overdriven amplifier: finite slew leaves faint risers on the tube.
-        case 2: return Math.tanh(Math.sin(turn * t) * 14);
-        case 3: { const u = (t + .485) % 1; return u < .97 ? u / .485 - 1 : 1 - (u - .97) / .015; }
-        case 4: return -.4 + .68 * (1 + Math.tanh((Math.sin(turn * (t + .13)) - Math.cos(Math.PI * .2)) * 30));
-        default: return Math.sin(turn * t);
+/**
+ * WAVE blends through a function generator's outputs, and each stretch of the
+ * dial is one circuit parameter: the integrator's symmetry (sawtooth to
+ * triangle), the diode shaper (triangle to sine), amplifier overdrive (sine to
+ * square, whose finite slew leaves faint risers) and the comparator's duty
+ * (square to pulse). `shape` runs 0 to 4 across the engraved marks. One cycle
+ * per unit phase; shapes rise as the cycle begins, so a locked sweep opens the
+ * way a rising-edge trigger would.
+ */
+export function waveSample(shape: number, phase: number) {
+    const t = phase - Math.floor(phase), sine = Math.sin(turn * t);
+    if (shape < 1) {
+        const rise = .97 - .47 * Math.max(0, shape), u = (t + rise / 2) % 1;
+        return u < rise ? 2 * u / rise - 1 : 1 - 2 * (u - rise) / (1 - rise);
     }
+    if (shape < 2) return (2 - shape) * 2 / Math.PI * Math.asin(sine) + (shape - 1) * sine;
+    if (shape < 3) {
+        const drive = 14 * (shape - 2) ** 2.2;
+        return drive < .001 ? sine : Math.tanh(drive * sine) / Math.tanh(drive);
+    }
+    const narrow = Math.min(1, shape - 3), level = Math.cos(Math.PI * (.5 - .3 * narrow));
+    const high = .5 + .5 * Math.tanh((Math.sin(turn * (t + Math.asin(level) / turn - .02 * narrow)) - level) * (14 + 16 * narrow));
+    return -1 + .6 * narrow + (2 - .64 * narrow) * high;
 }
 export const scopeWaveforms = 5;
 
@@ -68,7 +80,7 @@ export function scopeResonance(ratio: number) {
     return Math.abs(nearest.detune) <= scopeTuning.lockReach ? nearest : null;
 }
 
-export interface ScopeControls { freq: number; rate: number; axis: number; mode: number }
+export interface ScopeControls { freq: number; wave: number; rate: number; axis: number }
 /** Beam strokes as x0, y0, x1, y1 and the share of one sweep spent on each. */
 export interface ScopeTrace { segments: Float32Array; count: number }
 
@@ -79,7 +91,7 @@ export class ScopeSignal {
     /** Phase detector against the nearest tongue, averaged over the last run:
      *  1 dead in step, less toward a tongue's edge, beating between -1 and 1 in a slip. */
     coherence = 1;
-    private shape = Array.from({ length: scopeWaveforms }, (_, mode) => mode ? 0 : 1);
+    private shape = (scopeWaveforms - 1) / 2;
     private segments = new Float32Array(5 * (2 * scopeTuning.maxSubsteps + 2));
     private count = 0;
     private cos = 1;
@@ -89,9 +101,7 @@ export class ScopeSignal {
             + this.sin * scopeTuning.deflection * Math.sin(turn * phase);
     }
     private y(phase: number) {
-        let level = 0;
-        for (let mode = 0; mode < scopeWaveforms; mode++) if (this.shape[mode] > .001) level += this.shape[mode] * waveSample(mode, phase);
-        return scopeTuning.centerY - scopeTuning.deflection * level;
+        return scopeTuning.centerY - scopeTuning.deflection * waveSample(this.shape, phase);
     }
     private stroke(x0: number, y0: number, x1: number, y1: number, share: number) {
         if (!(share > 0)) return;
@@ -109,9 +119,8 @@ export class ScopeSignal {
         const ratio = scopeRatio(controls.freq), sweeps = scopeSweepHz(controls.rate) * elapsed;
         const nearest = nearestResonance(ratio), resonance = Math.abs(nearest.detune) <= scopeTuning.lockReach ? nearest : null;
         this.view(controls);
-        // The selector switches through an RC network, so shapes melt into each other.
-        const settle = 1 - Math.exp(-elapsed / scopeTuning.shapeSettle);
-        for (let mode = 0; mode < scopeWaveforms; mode++) this.shape[mode] += ((mode === controls.mode ? 1 : 0) - this.shape[mode]) * settle;
+        // The blend settles through an RC network, so even a notched turn melts.
+        this.shape += (Math.max(0, Math.min(1, controls.wave)) * (scopeWaveforms - 1) - this.shape) * (1 - Math.exp(-elapsed / scopeTuning.shapeSettle));
         const steps = Math.max(1, Math.min(scopeTuning.maxSubsteps, Math.ceil(sweeps * Math.max(1, ratio) * scopeTuning.samplesPerCycle)));
         const step = sweeps / steps;
         let x = this.x(this.reference), y = this.y(this.signal), inStep = 0;
@@ -144,7 +153,7 @@ export class ScopeSignal {
     still(controls: ScopeControls): ScopeTrace {
         const ratio = scopeRatio(controls.freq), resonance = scopeResonance(ratio);
         this.view(controls);
-        this.shape = this.shape.map((_, mode) => mode === controls.mode ? 1 : 0);
+        this.shape = Math.max(0, Math.min(1, controls.wave)) * (scopeWaveforms - 1);
         const sweeps = resonance ? resonance.q : 6, slope = resonance ? resonance.p / resonance.q : ratio;
         const offset = resonance?.locked ? Math.asin(resonance.detune) / turn / resonance.q : 0;
         this.coherence = resonance?.locked ? Math.sqrt(1 - resonance.detune ** 2) : 0;
@@ -158,33 +167,59 @@ export class ScopeSignal {
     }
 }
 
-/** Float energy per pixel: exact exponential decay and dwell-time exposure. */
+/**
+ * Float energy per pixel, exposed by dwell time. `energy` is the coating's glow
+ * at the end of a frame and fades exponentially. `exposure` is what the frame
+ * shows: the glow averaged over the frame's interval, as a shutter would see
+ * it. Averaging removes the beat between a beam that re-writes a trace fifty
+ * times a second and a display that samples it sixty times, so the afterglow
+ * can be short and a moving figure stays crisp without shimmering.
+ */
 export class Phosphor {
     readonly energy: Float32Array;
+    readonly exposure: Float32Array;
+    private elapsed = 0;
+    private persistence = 1;
+    private kept = 1;
+    private seen = 1;
     private tone = new Uint8ClampedArray(1024 * 4);
     private across = new Float32Array(4);
     private down = new Float32Array(4);
     constructor(readonly width = scopeTuning.width, readonly height = scopeTuning.height) {
         this.energy = new Float32Array(width * height);
+        this.exposure = new Float32Array(width * height);
         for (let n = 0; n < 1024; n++) {
             // The coating saturates; an overdriven trace burns from green toward white.
             const energy = n / 128, hot = Math.max(0, Math.min(1, (energy - .8) / 3.7)), white = hot * hot * (3 - 2 * hot);
             this.tone.set([150 + 82 * white, 232 + 23 * white, 110 + 90 * white, 255 * (1 - Math.exp(-energy))], n * 4);
         }
     }
-    clear() { this.energy.fill(0); }
-    decay(seconds: number, persistence: number) {
-        const keep = Math.exp(-Math.max(0, seconds) / persistence), energy = this.energy;
+    clear() { this.energy.fill(0); this.exposure.fill(0); }
+    /** Strokes written next are shown in full at once: a long exposure. */
+    settle() { this.elapsed = 0; }
+    /** Opens a frame `seconds` long; the old glow fades through it. */
+    age(seconds: number, persistence: number) {
+        const elapsed = Math.max(0, seconds), energy = this.energy, exposure = this.exposure;
+        const keep = Math.exp(-elapsed / persistence), mean = elapsed ? persistence / elapsed * (1 - keep) : 1;
         for (let n = 0; n < energy.length; n++) {
-            const left = energy[n] * keep;
-            energy[n] = left < 1e-4 ? 0 : left;
+            const glow = energy[n];
+            exposure[n] = glow * mean;
+            energy[n] = glow * keep < 1e-4 ? 0 : glow * keep;
         }
+        this.elapsed = elapsed; this.persistence = persistence;
     }
-    /** The beam spends `energy` crossing this stroke: slow strokes burn brighter. */
-    deposit(x0: number, y0: number, x1: number, y1: number, energy: number) {
+    /**
+     * The beam spends `energy` crossing this stroke: slow strokes burn brighter.
+     * `moment` is when in the open frame it was written, 0 at the start to 1 at
+     * the end. A late stroke has faded less by the end of the frame, but was on
+     * the screen for less of the exposure.
+     */
+    deposit(x0: number, y0: number, x1: number, y1: number, energy: number, moment = .5) {
         const reach = scopeTuning.beamRadius;
         if (!(energy > 0) || Math.max(x0, x1) < -reach || Math.min(x0, x1) > this.width + reach ||
             Math.max(y0, y1) < -reach || Math.min(y0, y1) > this.height + reach) return;
+        this.kept = Math.exp(-(1 - moment) * this.elapsed / this.persistence);
+        this.seen = this.elapsed ? this.persistence / this.elapsed * (1 - this.kept) : 1;
         const stamps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / scopeTuning.stampSpacing));
         for (let n = 0; n < stamps; n++) {
             const t = (n + .5) / stamps;
@@ -214,16 +249,19 @@ export class Phosphor {
             if (row < 0 || row >= this.height) continue;
             for (let i = 0; i < columns; i++) {
                 const column = left + i;
-                if (column >= 0 && column < this.width) this.energy[row * this.width + column] += unit * across[i] * down[j];
+                if (column < 0 || column >= this.width) continue;
+                const share = unit * across[i] * down[j];
+                this.energy[row * this.width + column] += share * this.kept;
+                this.exposure[row * this.width + column] += share * this.seen;
             }
         }
     }
-    /** Writes the glow as RGBA; alpha carries the brightness for additive compositing. */
+    /** Writes the exposure as RGBA; alpha carries the brightness for additive compositing. */
     expose(pixels: Uint8ClampedArray) {
-        const tone = this.tone, energy = this.energy;
-        for (let n = 0, out = 0; n < energy.length; n++, out += 4) {
-            const level = energy[n];
-            if (level === 0) { pixels[out + 3] = 0; continue; }
+        const tone = this.tone, exposure = this.exposure;
+        for (let n = 0, out = 0; n < exposure.length; n++, out += 4) {
+            const level = exposure[n];
+            if (level < .004) { pixels[out + 3] = 0; continue; }
             const index = (level >= 7.99 ? 1023 : level * 128 | 0) * 4;
             pixels[out] = tone[index]; pixels[out + 1] = tone[index + 1]; pixels[out + 2] = tone[index + 2]; pixels[out + 3] = tone[index + 3];
         }
@@ -238,13 +276,16 @@ export class VectorMonitor {
     run(seconds: number, controls: ScopeControls, still = false) {
         const hz = scopeSweepHz(controls.rate);
         const persistence = Math.min(scopeTuning.maxPersistence, Math.max(scopeTuning.persistence, scopeTuning.persistenceSweeps / hz));
-        if (still) this.phosphor.clear(); else this.phosphor.decay(seconds, persistence);
+        if (still) { this.phosphor.clear(); this.phosphor.settle(); }
+        else this.phosphor.age(Math.min(scopeTuning.maxStep, seconds), persistence);
         const trace = still ? this.signal.still(controls) : this.signal.advance(seconds, controls);
         // Beam current tracks the sweep so a standing figure is equally bright at
         // every TIME/DIV; what remains is dwell time, the slow parts of a curve.
-        const energy = scopeTuning.beamEnergy * (still ? 1 : 1 - Math.exp(-1 / (hz * persistence)));
+        // Fast sweeps pile passes up within the afterglow; slow ones show one pass.
+        const energy = scopeTuning.beamEnergy * (still ? 1 : Math.min(1, 1 / (hz * persistence)));
         const strokes = trace.segments;
+        // Strokes arrive in the order, and at the even pace, the beam wrote them.
         for (let n = 0, at = 0; n < trace.count; n++, at += 5)
-            this.phosphor.deposit(strokes[at], strokes[at + 1], strokes[at + 2], strokes[at + 3], strokes[at + 4] * energy);
+            this.phosphor.deposit(strokes[at], strokes[at + 1], strokes[at + 2], strokes[at + 3], strokes[at + 4] * energy, (n + .5) / trace.count);
     }
 }

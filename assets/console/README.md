@@ -15,7 +15,12 @@ use their supplied translation. Authored preview clues have both languages. Keyw
 The vector monitor is simulated from the tube outward (`scope.ts`): two
 oscillators steer one beam, and a floating-point phosphor keeps what it wrote.
 Brightness is dwell time, so sine crests burn brighter than zero crossings and
-square-wave risers stay faint. It rests on a locked 2:1 sine in Y/T.
+square-wave risers stay faint. The afterglow is deliberately short (a departed
+trace is below a tenth of its brightness within about 80 ms), so drifting and
+tumbling figures stay crisp instead of smearing. Each frame shows the glow
+averaged over its own interval, as a shutter would, which removes the beat
+between a 48 Hz beam and a 60 Hz display that a short afterglow would otherwise
+expose as shimmer. It rests on a locked 2:1 sine in Y/T.
 
 - **FREQ**, the large vernier dial, tunes the CAL OUT oscillator from 1:1 to 5:1
   of the sweep reference. Its eight engraved marks are calibrated to 1:1, 4:3,
@@ -23,6 +28,11 @@ square-wave risers stay faint. It rests on a locked 2:1 sine in Y/T.
   oscillators pull on each other (Adler's equation): inside a p:q tongue the
   figure locks and fine tuning tilts its phase; just outside, it slips with a
   hesitation each turn; far away it runs free as a woven mesh.
+- **WAVE** blends steplessly through the generator's five engraved shapes, and
+  each stretch of the dial is one circuit parameter: integrator symmetry
+  (sawtooth to triangle), the diode shaper (triangle to sine, the resting
+  mark at the top), amplifier overdrive (sine to square) and comparator duty
+  (square to pulse). A sudden turn still melts while the blend settles.
 - **TIME/DIV** spans 200 to 1.25 ms/div and slows both oscillators together, so
   a figure keeps its shape while the line resolves into a moving spot with a
   fading trail. Beam current and persistence track the sweep, keeping standing
@@ -32,13 +42,15 @@ square-wave risers stay faint. It rests on a locked 2:1 sine in Y/T.
   space curve; this quarter turn rolls one into the other.
 
 The LOCK lamp is a phase detector behind a slow filament: it beats while the
-oscillators slip, steadies as they lock and is brightest dead in tune. Click the
-CRT to step through sine, triangle, square, sawtooth and pulse; shapes melt into
-each other while the selector settles. Knobs have end stops. Drag,
+oscillators slip, steadies as they lock and is brightest dead in tune. The tube
+itself is only a display. Generator dials (FREQ, WAVE) sit left of the tube
+dials (TIME/DIV, X-Y); the row and its legends are placed so the mark above each
+dial clears the CRT hood and the leaning knobs clear the legends. Knobs have end
+stops. Drag,
 scroll or use arrow keys; Shift gives fine adjustment, Home/End go to the limits,
 and FREQ's arrow steps are quarter-marks so keys land on every calibrated ratio.
 Reduced motion shows each standing figure as one long exposure. Analog input
-reuses game-screen and receipt canvases. Engrave the dial legends with:
+reuses game-screen and receipt canvases. Lay out and engrave the controls with:
 
 ```sh
 blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_scope_controls.py
