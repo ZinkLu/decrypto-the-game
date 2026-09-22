@@ -19,7 +19,7 @@ async function moduleFrom(name) { return import(await moduleUrl(name)); }
 const { parseNotes, notesKey } = await moduleFrom('notebook');
 const { paperPose, receiptVertex, paperSeam, paperFeedDuration, paperCutDuration,
   paperTearDuration, paperExtendedLength, paperTextureLength, paperRestLength, paperRefillDuration, paperLengthForRecords } = await moduleFrom('mechanics');
-const { ReceiptTransport, rowFractions, sheetRows } = await moduleFrom('tearing');
+const { ReceiptTransport, rowFractions, sheetRows, paperStillFrame, defaultPaperStillFrame } = await moduleFrom('tearing');
 const { rosterPose } = await moduleFrom('rosterMotion');
 const { nextScopeValue } = await moduleFrom('model');
 function meanDepth(paper) {
@@ -516,6 +516,48 @@ test('short, long and half-fed stock all part inside the cut budget and leave to
     assert.ok(sheet.detachedAt > 60 && sheet.detachedAt < paperCutDuration - 10, `${records} records: parted at ${sheet.detachedAt}ms`);
     assert.ok(previousDepth > .4, `${records} records: carried clear of the recorder before fading (${previousDepth.toFixed(2)})`);
   }
+});
+
+test('stock of any length tears as a stiff sheet: it bends over the teeth but never furls or drapes', () => {
+  // Paper resists bending at a radius set by the stock, not by the mesh. A
+  // yield or crease threshold taken as a fraction of a stencil's span makes
+  // long stock take a set at a radius as large as the sheet, and the archive
+  // then hangs, wrinkles and rolls up across its width like cloth.
+  for (const records of [0, 4, 16]) {
+    const paper = new ReceiptTransport();
+    paper.sync(true, records); paper.advance(paperFeedDuration); paper.sync(false);
+    const sheet = paper.sheet;
+    let narrowest = 1, sharpest = 0;
+    const at = (i, j) => sheet.sample(j, i);
+    for (let ms = 20; ms <= paperTearDuration; ms += 20) {
+      paper.advance(20);
+      if (paper.phase !== 'tearing') break;
+      // The free tip carries its thermal curl and the tooth line is serrated;
+      // the body between them is what has to stay flat across the web.
+      for (let i = 2; i < sheet.rows - 1; i++) {
+        const left = at(i, 0), right = at(i, sheet.columns);
+        narrowest = Math.min(narrowest, Math.hypot(right.x - left.x, right.y - left.y, right.z - left.z) / paper.width);
+        for (let j = 1; j < sheet.columns; j++) {
+          const a = at(i, j - 1), m = at(i, j), b = at(i, j + 1);
+          const span = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) || 1;
+          sharpest = Math.max(sharpest, Math.hypot(m.x - (a.x + b.x) / 2, m.y - (a.y + b.y) / 2, m.z - (a.z + b.z) / 2) / span);
+        }
+      }
+    }
+    assert.ok(narrowest > .8, `${records} records: the sheet furled to ${(narrowest * 100).toFixed(0)}% of its width`);
+    assert.ok(sharpest < 1, `${records} records: the web kinked at ${sharpest.toFixed(1)} of a stencil span`);
+  }
+});
+
+test('paper-frame without a usable number means the torn sheet in flight', () => {
+  assert.equal(paperStillFrame(null), null);
+  assert.equal(paperStillFrame(''), defaultPaperStillFrame);
+  assert.equal(paperStillFrame('  '), defaultPaperStillFrame);
+  assert.equal(paperStillFrame('late'), defaultPaperStillFrame);
+  assert.equal(paperStillFrame('0.25'), .25);
+  assert.equal(paperStillFrame('0'), 0);
+  assert.equal(paperStillFrame('2'), 1);
+  assert.equal(defaultPaperStillFrame, .6);
 });
 
 test('development stills run the real mechanics to a frame and then hold', () => {

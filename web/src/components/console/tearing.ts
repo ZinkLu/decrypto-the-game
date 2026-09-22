@@ -16,17 +16,31 @@ export const tuning = {
     // neighbours (fine) and its second neighbours (coarse), which gives paper
     // its flatness: a small curvature already produces a restoring force.
     stiffness: { structural: 1, shear: 1, bend: 1, coarseBend: 1, broadBend: 1 },
-    // Paper takes a set instead of springing back: past the yield deflection
-    // a stencil's rest bend follows the current bend, and a stencil folded
-    // beyond the crease fraction of its span becomes a limp permanent crease.
-    plastic: { yield: .10, rate: .5 },
-    crease: { threshold: .30, stiffness: .08 },
+    // Paper takes a set instead of springing back, but only once it is bent
+    // past the yield deflection *beyond the set it already holds*: inside that
+    // band it is elastic about its current shape, which is what keeps a sheet
+    // flat. `rate` is the creep per second, so it does not scale with substeps.
+    // Yielding and creasing are properties of the stock, so both thresholds are
+    // the radius it is bent to, not a fraction of a stencil's span: a fraction
+    // would let the wide stencils of long stock take a set at a radius as big
+    // as the sheet, and a long archive would furl up like cloth. A stencil
+    // folded tighter than the crease radius becomes a limp permanent crease;
+    // `floor` keeps the narrow cross-web stencils from creasing on ripples.
+    plastic: { radius: .10, rate: 6 },
+    crease: { radius: .012, floor: .30, stiffness: .08 },
     // Loads across the tooth line and away from the console shear the fibers.
     // Straight tension along the feed is mostly carried by the nip instead.
     feedTensionWeight: .25,
-    fiberStrength: .0050,
+    // Rated so the crack still runs through the middle of the rip: a stiffer
+    // web hands the pull to the fibers sooner, so it needs stronger fibers.
+    fiberStrength: .012,
     // How quickly a fiber's measured load follows the pull; lower filters noise.
     loadResponse: 1,
+    // Once detached, each particle is bounded by its material distance to the
+    // pinch. The bound only catches what the in-plane sweeps left, so it is
+    // taken up over a few substeps: a full one-pass projection is a rope
+    // snapping taut, and it flicks the free corner back in a single frame.
+    tether: .1,
     hand: {
         // The preload swings the pinch on an arc about the tooth line, so the
         // stock hinges over the teeth without slack or stretch before the rip.
@@ -69,8 +83,11 @@ export function handMotion(time: number, radius = .42) {
     const hand = tuning.hand;
     const preload = smoothstep(0, hand.preloadEnd, time);
     const rip = smoothstep(hand.ripStart, hand.ripEnd, time);
+    // The carry starts from rest: a profile with an initial slope would step
+    // the pinch's velocity the instant the rip ends, and the detached sheet,
+    // held only there, would pivot about the pinch and whip its tail.
     const c = Math.max(0, Math.min(1, (time - hand.carryStart) / (paperTearDuration - hand.carryStart)));
-    const carry = 1 - (1 - c) * (1 - c);
+    const carry = c * c * (3 - 2 * c);
     const angle = hand.swing * preload, arc = radius * hand.swingRadius;
     return {
         x: hand.rip[0] * rip + hand.carry[0] * carry,
@@ -120,6 +137,7 @@ export class TornSheet {
     private readonly pinRest: Float64Array;
     private readonly gripAttach: Int32Array;
     private readonly gripRest: Float64Array;
+    private readonly toothInvMass: number;
 
     constructor(readonly length: number, readonly width: number, extension: number) {
         const columns = this.columns + 1, rows = this.rows + 1, count = columns * rows;
@@ -127,6 +145,18 @@ export class TornSheet {
         this.pos = new Float64Array(count * 3);
         this.prev = new Float64Array(count * 3);
         this.invMass = new Float64Array(count).fill(1);
+        // A particle carries the strip of stock between its neighbouring rows.
+        // Rows crowd toward the tooth line, so equal masses would leave the
+        // tail of long stock many times too light, and it would flutter about
+        // the pinch instead of swinging with it. Evenly spaced rows, which is
+        // what short stock gets, come out at 1 as before.
+        const strip = (i: number) => (this.fractions[Math.min(rows - 1, i + 1)] - this.fractions[Math.max(0, i - 1)]) /
+            (i > 0 && i < rows - 1 ? 2 : 1);
+        for (let i = 0; i < rows; i++) {
+            const inverse = 1 / (this.rows * Math.max(1e-6, strip(i)));
+            for (let j = 0; j < columns; j++) this.invMass[i * columns + j] = inverse;
+        }
+        this.toothInvMass = 1 / (this.rows * Math.max(1e-6, strip(0)));
         this.reaction = new Float64Array(count * 3);
         this.load = new Float64Array(columns);
         this.baseline = new Float64Array(columns);
@@ -189,8 +219,8 @@ export class TornSheet {
             this.gripAttach[p] = best;
             this.gripRest[p] = bestDistance;
         }
-        // Constraint order matters for a single pass. Soft bending and shear
-        // go first; then in-plane structure sweeps outward from the pinch: down
+        // Constraint order matters for a single pass. Shear goes first; then
+        // in-plane structure sweeps outward from the pinch: down
         // the hanging stock, up to the tooth line, and leftward along each row,
         // so one pass carries the hand's motion through the whole sheet and the
         // fibers, measured last, only feel what the sheet cannot accommodate.
@@ -206,6 +236,13 @@ export class TornSheet {
             if (i >= 2 && i + 2 < rows) bend(p - 2 * columns, p, p + 2 * columns, tuning.stiffness.coarseBend);
             if (j >= 4 && j + 4 < columns) bend(p - 4, p, p + 4, tuning.stiffness.broadBend);
             if (i >= 4 && i + 4 < rows) bend(p - 4 * columns, p, p + 4 * columns, tuning.stiffness.broadBend);
+            // Across the web the sheet is only 64 cells wide, and a bow over half of
+            // it is invisible to stencils four cells wide: the free bottom edge
+            // then flaps after the rip's sideways drag and snaps back in a frame.
+            // Two wider stencils give the plate its width-scale stiffness; along
+            // the web the rows already reach far because they crowd at the teeth.
+            if (j >= 8 && j + 8 < columns) bend(p - 8, p, p + 8, tuning.stiffness.broadBend);
+            if (j >= 16 && j + 16 < columns) bend(p - 16, p, p + 16, tuning.stiffness.broadBend);
         }
         this.bA = Int32Array.from(bA); this.bM = Int32Array.from(bM); this.bB = Int32Array.from(bB); this.bStiff = Float64Array.from(bStiff);
         this.bAlpha = new Float64Array(bA.length); this.bBeta = new Float64Array(bA.length);
@@ -290,11 +327,15 @@ export class TornSheet {
             pos[index] += vx; pos[index + 1] += vy - fall; pos[index + 2] += vz;
         }
         reaction.fill(0);
-        this.flatten();
         this.project(0);
         // Extra in-plane sweeps keep the stock inextensible near the pinch
         // when the last fibers part and the sheet swings free.
         for (let n = 1; n < tuning.structuralPasses; n++) this.project(this.structuralStart);
+        // Bending is projected after them, not before: three in-plane sweeps
+        // undo most of a bending correction that precedes them, which leaves
+        // the plate softer than its stiffness says and lets the free corners
+        // wobble like jelly instead of swinging as one stiff sheet.
+        this.flatten();
         let gripForce = 0;
         for (let p = 0; p < invMass.length; p++) {
             if (invMass[p] === 0) continue;
@@ -318,7 +359,7 @@ export class TornSheet {
             const dx = pos[index] - pos[g], dy = pos[index + 1] - pos[g + 1], dz = pos[index + 2] - pos[g + 2];
             const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (distance > this.gripRest[p]) {
-                const f = (distance - this.gripRest[p]) / distance;
+                const f = tuning.tether * (distance - this.gripRest[p]) / distance;
                 pos[index] -= f * dx; pos[index + 1] -= f * dy; pos[index + 2] -= f * dz;
                 gripForce += distance - this.gripRest[p];
             }
@@ -353,8 +394,10 @@ export class TornSheet {
     private flatten() {
         const pos = this.pos, invMass = this.invMass;
         const bA = this.bA, bM = this.bM, bB = this.bB, alpha = this.bAlpha, beta = this.bBeta, rest = this.bRest, span = this.bSpan;
-        const creaseThreshold = tuning.crease.threshold, creaseStiffness = tuning.crease.stiffness;
-        const yieldFraction = tuning.plastic.yield, plasticRate = tuning.plastic.rate;
+        const creaseStiffness = tuning.crease.stiffness, creaseFloor = tuning.crease.floor;
+        const plasticCreep = Math.min(1, tuning.plastic.rate * substep / 1000);
+        // Sagitta of an arc of the given radius over the stencil's own chord.
+        const sagitta = (radius: number, chord: number) => chord * chord / (8 * radius);
         for (let c = 0; c < bA.length; c++) {
             const a = bA[c], m = bM[c], b = bB[c];
             const wa = invMass[a], wm = invMass[m], wb = invMass[b];
@@ -366,10 +409,17 @@ export class TornSheet {
             const deflection = Math.sqrt(dx * dx + dy * dy + dz * dz);
             if (deflection < 1e-9) continue;
             // Paper folded hard creases: the stencil keeps its bend and stays limp.
-            // Milder bends past the yield point still take a permanent set.
+            // Milder bends creep toward the current bend, but only by however
+            // far they exceed the yield band around the set already taken. A
+            // set that simply chased the bend would leave no restoring force at
+            // all, and the sheet would hang and drape like cloth.
             if (!this.creased[c]) {
-                if (deflection > creaseThreshold * span[c]) { this.creased[c] = 1; rest[c] = deflection; }
-                else if (deflection > yieldFraction * span[c] && deflection > rest[c]) rest[c] += (deflection - rest[c]) * plasticRate;
+                if (deflection > Math.max(sagitta(tuning.crease.radius, span[c]), creaseFloor * span[c])) {
+                    this.creased[c] = 1; rest[c] = deflection;
+                } else {
+                    const excess = deflection - rest[c] - sagitta(tuning.plastic.radius, span[c]);
+                    if (excess > 0) rest[c] += excess * plasticCreep;
+                }
             }
             const k = this.creased[c] ? creaseStiffness : this.bStiff[c];
             const s = k * (deflection - rest[c]) / (w * deflection);
@@ -401,10 +451,22 @@ export class TornSheet {
 
     private snap(j: number) {
         this.broken[j] = 1;
-        this.invMass[j] = 1;
+        this.invMass[j] = this.toothInvMass;
         this.brokenCount++;
         if (this.brokenCount === this.columns + 1) this.detachedAt = this.time;
     }
+}
+
+/**
+ * Frame for a development still from the `paper-frame` URL parameter: absent
+ * means no still; present without a usable number means the torn sheet in
+ * flight, which is the frame worth checking most often.
+ */
+export const defaultPaperStillFrame = .6;
+export function paperStillFrame(value: string | null, fallback = defaultPaperStillFrame) {
+    if (value === null) return null;
+    const frame = value.trim() === '' ? NaN : Number(value);
+    return Number.isFinite(frame) ? Math.max(0, Math.min(1, frame)) : fallback;
 }
 
 type ReceiptPhase = 'idle' | 'feeding' | 'reading' | 'tearing' | 'refilling';

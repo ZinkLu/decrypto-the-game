@@ -20,7 +20,7 @@ import { crtProfile, crtGeometry, crtHeight, crtDisplayUv } from './crt';
 import { initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState, type KeyDiskState } from './model';
 import { VectorMonitor, scopeResonance, scopeTuning } from './scope';
 import { paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, keyDiskPose } from './mechanics';
-import { ReceiptTransport } from './tearing';
+import { ReceiptTransport, paperStillFrame } from './tearing';
 import { ConsoleInstruments } from './instruments';
 import { qualityProfiles, type QualityProfile } from './quality';
 import { gameFraming, handleSurfaces, inspectionZoom, type HandleSide } from './view';
@@ -563,10 +563,10 @@ export class ConsoleEngine {
             this.paperHead = head;
             this.paper = paper;
             // Deterministic development stills run the same mechanics to a frame.
-            const frame = import.meta.env.DEV ? new URLSearchParams(location.search).get('paper-frame') : null;
-            if (frame !== null && Number.isFinite(Number(frame))) {
+            const frame = import.meta.env.DEV ? paperStillFrame(new URLSearchParams(location.search).get('paper-frame')) : null;
+            if (frame !== null) {
                 const phase = new URLSearchParams(location.search).get('paper-phase');
-                this.receipt.still(phase === 'feed' ? 'feed' : phase === 'refill' ? 'refill' : 'tear', Number(frame), this.content?.paperRecords ?? 0);
+                this.receipt.still(phase === 'feed' ? 'feed' : phase === 'refill' ? 'refill' : 'tear', frame, this.content?.paperRecords ?? 0);
             }
             this.syncPaperGeometry();
             this.receipt.warmUp();
