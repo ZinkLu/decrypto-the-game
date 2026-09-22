@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { crtOpticsShader } from './crt';
 import type { CrtKind } from './crtMotion';
 import { dotGrid, type WordDisplay } from './dotMatrix';
+import { defaultDotFilter, dotFilterDefine, dotFilteringShader, type DotFilter } from './dotFiltering';
 
 export interface CrtUniforms {
     scan: { value: THREE.Vector4 };
@@ -12,8 +13,8 @@ export interface DotUniforms {
     drive: { value: THREE.Vector4 };
     panel: { value: THREE.Vector4 };
 }
-/** Die colours follow the palette; one pair serves all four modules. */
-export const dotInks = { word: { value: new THREE.Color('#ff2a12') }, legend: { value: new THREE.Color('#ff2a12') } };
+/** One shared semantic palette bus serves all four LED modules. */
+export const dotInks = { word: { value: new THREE.Color('#8bc995') }, legend: { value: new THREE.Color('#d9cda9') }, warning: { value: new THREE.Color('#e6a07e') } };
 export const dotUniforms = (): DotUniforms => ({
     drive: { value: new THREE.Vector4(1, 1, 0, 0) },
     panel: { value: new THREE.Vector4(0, dotGrid.cols, 0, 0) },
@@ -44,6 +45,7 @@ interface Options {
     spot: number;
     /** Keyword windows can be fitted with a dot-matrix module instead of a tube. */
     display?: () => WordDisplay;
+    filter?: () => DotFilter;
     dots?: DotUniforms;
 }
 
@@ -66,20 +68,20 @@ export function shadeCrt(material: THREE.Material, options: Options) {
             // Square cells on a module that leaves the window a dark margin.
             const across = .94, cell = size.x * across / dotGrid.cols;
             Object.assign(shader.uniforms, {
-                dotDrive: options.dots.drive, dotPanel: options.dots.panel, dotInkWord: dotInks.word, dotInkLegend: dotInks.legend,
+                dotDrive: options.dots.drive, dotPanel: options.dots.panel, dotInkWord: dotInks.word, dotInkLegend: dotInks.legend, dotInkWarning: dotInks.warning,
                 dotSize: { value: new THREE.Vector2(dotGrid.cols, dotGrid.rows) },
                 dotFit: { value: new THREE.Vector2(1 / across, size.y / (dotGrid.rows * cell)) },
-                dotBandRows: { value: new THREE.Vector2(dotGrid.bandTop, dotGrid.bandBottom) }, dotGap: { value: dotGrid.gap },
+                dotBandRows: { value: new THREE.Vector2(dotGrid.bandTop, dotGrid.bandBottom) }, dotGap: { value: dotGrid.gap }, dotInset: { value: dotGrid.inset },
             });
-            shader.fragmentShader = (options.lite() ? '#define CRT_LITE\n' : '')
-                + crtOpticsShader + crtTubeShader + dotDeclarations + shader.fragmentShader.replace('#include <map_fragment>', dotMatrixShader);
+            shader.fragmentShader = `#define DOT_FILTER ${dotFilterDefine[options.filter?.() ?? defaultDotFilter]}\n` + (options.lite() ? '#define CRT_LITE\n' : '')
+                + crtOpticsShader + crtTubeShader + dotDeclarations + dotFilteringShader + shader.fragmentShader.replace('#include <map_fragment>', dotMatrixShader);
             return;
         }
         shader.fragmentShader = (options.lite() ? '#define CRT_LITE\n' : '') + crtOpticsShader + crtTubeShader + shader.fragmentShader
             .replace('#include <map_fragment>', crtPictureShader)
             .replace('#include <dithering_fragment>', crtRasterShader);
     };
-    material.customProgramCacheKey = () => `console-crt-tube-v1-${options.kind}-${options.display?.() ?? 'crt'}-${options.lite() ? 'lite' : 'full'}`;
+    material.customProgramCacheKey = () => `console-crt-tube-v2-${options.kind}-${options.display?.() ?? 'crt'}-${options.filter?.() ?? defaultDotFilter}-${options.lite() ? 'lite' : 'full'}`;
 }
 
 const crtTubeShader = `
@@ -282,9 +284,9 @@ const crtRasterShader = `
     #endif
 `;
 
-// Two-colour LED dots behind a smoked contrast filter. Nothing scans and nothing
-// persists; what the driver clocks in is what glows. The texture's red channel
-// drives the keyword dies, its green channel the legend dies.
+// LED dots behind a smoked contrast filter. Nothing scans and nothing persists;
+// what the driver clocks in is what glows. The source's RGB channels address the
+// keyword dies, the legend dies and the warning dies, one texel per lamp.
 const dotDeclarations = `
     uniform vec4 dotDrive;
     uniform vec4 dotPanel;
@@ -292,8 +294,10 @@ const dotDeclarations = `
     uniform vec2 dotFit;
     uniform vec2 dotBandRows;
     uniform float dotGap;
+    uniform float dotInset;
     uniform vec3 dotInkWord;
     uniform vec3 dotInkLegend;
+    uniform vec3 dotInkWarning;
 `;
 const dotMatrixShader = `
     #ifdef USE_MAP
@@ -304,35 +308,89 @@ const dotMatrixShader = `
     vec2 dotUv = crtPhosphorUv(vMapUv);
     #endif
     vec2 dotCells = (dotUv - .5) * dotFit * dotSize + .5 * dotSize;
+    // Cells per screen pixel. A lamp can only be drawn while it spans a few pixels.
+    // Below that its cell carries the same light evenly, so the window's size, the
+    // pixel ratio and a tilted console change what is resolved, never beat against the grid.
+    float dotFootprint = max(length(dFdx(dotCells)), length(dFdy(dotCells)));
+    float dotResolved = 1.0 - smoothstep(.20, .46, dotFootprint);
     vec2 dotCell = floor(dotCells);
+    // Read whole lamps, with the step between two of them one screen pixel wide: cells
+    // stay crisp while they span pixels and turn into plain filtering once they do not.
+    vec2 dotBetween = dotCells - .5;
+    vec2 dotReadCell = floor(dotBetween) + clamp((fract(dotBetween) - .5) / max(dotFootprint, .001) + .5, 0.0, 1.0);
     vec2 dotLocal = fract(dotCells) - .5;
     float dotInside = step(0.0, dotCell.x) * step(dotCell.x, dotSize.x - 1.0) * step(0.0, dotCell.y) * step(dotCell.y, dotSize.y - 1.0);
     float dotRow = dotSize.y - 1.0 - dotCell.y;
     // A keyword wider than the module crawls through its band as a marquee.
     float dotStrip = max(dotPanel.y, dotSize.x);
-    float dotSource = dotCell.x;
-    if (dotStrip > dotSize.x + .5 && dotRow >= dotBandRows.x && dotRow <= dotBandRows.y) dotSource = mod(dotCell.x + dotPanel.x, dotStrip + dotGap);
-    float dotValid = step(dotSource, dotStrip - .5);
-    vec2 dotSignal = smoothstep(.10, .30, textureLod(map, vec2((dotSource + .5) / dotStrip, (dotCell.y + .5) / dotSize.y), 0.0).rg) * dotValid;
-    // Columns are clocked in from the left; a lamp test lights every keyword die.
+    float dotSource = dotReadCell.x;
+    float dotWordBand = step(dotBandRows.x, dotRow) * step(dotRow, dotBandRows.y);
+    float dotBandClip = step(dotInset, dotCell.x) * step(dotCell.x, dotSize.x - dotInset - 1.0);
+    if (dotStrip > dotSize.x + .5 && dotWordBand > .5)
+        dotSource = mod(dotReadCell.x - dotInset + dotPanel.x, dotStrip - 2.0 * dotInset + dotGap) + dotInset;
+    float dotValid = step(dotSource, dotStrip - .5) * mix(1.0, dotBandClip, dotWordBand);
+    vec2 dotSampleUv = vec2((dotSource + .5) / dotStrip, (dotReadCell.y + .5) / dotSize.y);
+    // The painter's antialiased coverage is the lamp's duty cycle: a thin stroke of an
+    // ideograph lights two half-bright lamps. Far away, whole cells are integrated instead.
+    float dotLod = max(0.0, log2(dotFootprint));
+    vec3 dotSignal = smoothstep(.30, .78, pow(max(textureLod(map, dotSampleUv, dotLod).rgb, vec3(0.0)), vec3(.4545))) * dotValid;
+    // Columns are clocked in from the left; the self-test lights every tenth keyword column.
     float dotLoaded = step(dotCell.x + .5, dotDrive.y * dotSize.x);
-    vec2 dotLevel = max(dotSignal * dotLoaded, vec2(dotDrive.z, 0.0)) * dotInside;
-    // Below a few pixels a dot cannot be drawn; the cell then carries the same light evenly.
-    float dotResolved = 1.0 - smoothstep(.22, .55, max(fwidth(dotCells.x), fwidth(dotCells.y)));
-    float dotLens = 1.0 - smoothstep(.33, .45, length(dotLocal));
-    float dotCore = exp(-dot(dotLocal, dotLocal) / .028);
-    float dotShape = mix(.36, dotLens * .5 + dotCore * 1.15, dotResolved);
-    // Diodes are binned, not matched, and a row-scanned panel beats against the frame rate.
-    float dotUnit = 1.0 + (crtHash(dotCell + dotPanel.z * 17.0) - .5) * .22;
-    dotUnit *= 1.0 + .05 * sin(6.2831853 * (dotRow / dotSize.y * 2.0 - crtTime * 3.7));
-    vec3 dotGlow = dotInkWord * dotLevel.x + dotInkLegend * dotLevel.y;
-    vec3 dotEmit = mix(dotGlow, dotGlow * .45 + vec3(.55) * (dotLevel.x + dotLevel.y), dotCore * dotResolved * .5) * dotShape * dotUnit;
-    // Light scattered inside the filter window.
-    vec2 dotSpill = max(textureLod(map, vec2((dotSource + dotLocal.x + .5) / dotStrip, dotCells.y / dotSize.y), 2.2).rg * dotValid
-        * (1.0 - smoothstep(-2.0, 2.0, dotCells.x - dotDrive.y * dotSize.x)), vec2(dotDrive.z * .6, 0.0));
-    dotEmit += (dotInkWord * dotSpill.x + dotInkLegend * dotSpill.y) * .22 * dotInside;
-    vec3 dotWindow = vec3(.0034) + dotInkWord * .0016;
-    vec4 sampledDiffuseColor = vec4(dotWindow * (1.0 + 2.6 * dotLens * dotResolved * dotInside) + dotEmit * max(dotDrive.x, 0.0), 1.0);
+    float dotBanks = step(floor(dotRow / 10.0) + .5, dotDrive.w * ceil(dotSize.y / 10.0));
+    float dotTest = dotDrive.z * (1.0 - step(1.0, mod(dotCell.x, 10.0)));
+    vec3 dotLevel = max(dotSignal * dotLoaded, vec3(dotTest, 0.0, 0.0)) * dotInside * dotBanks;
+    // A diffused lens with a hotter die at its centre. The even light of an unresolved
+    // cell is the lamp's mean over that cell, so zooming changes detail and not brightness.
+    float dotReach = length(dotLocal), dotAa = max(.03, dotFootprint * .7);
+    float dotLens = 1.0 - smoothstep(.36 - dotAa, .36 + dotAa, dotReach);
+    float dotCore = exp(-dotReach * dotReach / .022);
+    float dotShape = mix(.48, dotLens * .92 + dotCore * .55, dotResolved);
+    // Diodes are binned, not matched.
+    float dotUnit = 1.0 + (crtHash(dotCell + dotPanel.z * 17.0) - .5) * .12 * dotResolved;
+    vec3 dotGlow = dotInkWord * dotLevel.r + dotInkLegend * dotLevel.g + dotInkWarning * dotLevel.b;
+    float dotSum = dotLevel.r + dotLevel.g + dotLevel.b;
+    vec3 dotEmit = mix(dotGlow, dotGlow * .6 + vec3(.4) * dotSum, dotCore * dotResolved * .5) * dotShape * dotUnit * 1.25;
+    #if DOT_FILTER > 0
+    vec2 dotDx = dFdx(dotCells), dotDy = dFdy(dotCells);
+    vec2 dotPixel = abs(dotDx) + abs(dotDy);
+    // Once a pixel covers many complete lamps, use the mip-filtered duty cycle.
+    // Both experimental integrators converge to the same mean emission.
+    vec3 dotMean = (dotGlow * .48 + (vec3(dotSum) - dotGlow) * .20 * .13) * 1.25;
+    vec3 dotFiltered = dotMean, dotFlat = dotMean;
+    if (dotFootprint < 2.5) {
+        #if DOT_FILTER == 3
+        dotFiltered = ledSupersample(map, dotCells, dotDx, dotDy);
+        #else
+        ledArea(map, dotCells, dotPixel, dotFiltered, dotFlat);
+        #endif
+        dotFiltered = mix(dotFiltered, dotMean, smoothstep(1.75, 2.5, dotFootprint));
+        dotFlat = mix(dotFlat, dotMean, smoothstep(1.75, 2.5, dotFootprint));
+    }
+    #if DOT_FILTER == 2
+    dotFiltered = ledLod(dotFiltered, dotFlat, dotCells, dotPixel, dotFootprint);
+    #endif
+    dotEmit = dotFiltered;
+    #endif
+    // Visible scatter stays close to each stroke, with dark space around the word.
+    // The cover's reflection should not turn it into a wash across the window.
+    vec2 dotHaloUv = vec2((dotSource - dotReadCell.x + dotCells.x) / dotStrip, dotCells.y / dotSize.y);
+    vec2 dotHaloStep = 1.0 / vec2(dotStrip, dotSize.y);
+    vec3 dotHalo = vec3(0.0);
+    // Two small rings with a smooth falloff; no wide wash behind the whole word.
+    for (int i = 0; i < 6; i++) {
+        float dotTurn = 1.0471976 * float(i);
+        vec2 dotTap = vec2(cos(dotTurn), sin(dotTurn)) * dotHaloStep;
+        vec2 dotSkew = vec2(cos(dotTurn + .5236), sin(dotTurn + .5236)) * dotHaloStep;
+        dotHalo += textureLod(map, dotHaloUv + dotTap * 2.0, max(1.0, dotLod)).rgb * .046
+            + textureLod(map, dotHaloUv + dotSkew * 4.8, max(1.9, dotLod)).rgb * .044;
+    }
+    dotHalo = pow(dotHalo, vec3(1.6)) * 1.5;
+    // Scatter follows the columns as they load and the supply as it falls.
+    dotHalo *= step(dotSource, dotStrip - .5) * (1.0 - smoothstep(-4.0, 4.0, dotCells.x - dotDrive.y * dotSize.x));
+    dotHalo = max(dotHalo, vec3(dotDrive.z * .06, 0.0, 0.0)) * dotDrive.w;
+    dotEmit += (dotInkWord * dotHalo.r + dotInkLegend * dotHalo.g + dotInkWarning * dotHalo.b) * .60;
+    vec3 dotWindow = vec3(.0028) + dotInkLegend * .0007;
+    vec4 sampledDiffuseColor = vec4(dotWindow * (1.0 + 1.2 * mix(.4, dotLens, dotResolved) * dotInside) + dotEmit * max(dotDrive.x, 0.0), 1.0);
     diffuseColor *= sampledDiffuseColor;
     #endif
 `;

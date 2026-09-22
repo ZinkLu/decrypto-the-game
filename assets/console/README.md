@@ -98,17 +98,70 @@ comparison, replaces only the receiver assembly, and registers its switch surfac
 It exports all 40 room-code digit variants while preserving the editable scene's
 digit visibility and excluding Boolean cutters.
 
+## Mechanical score register
+
+The scoreboard now uses four recessed twin windows and eight bistable flags.
+Each flag is a thick charcoal blade with warm ivory enamel on its reverse:
+intercepts reveal a vertical tally, errors reveal a muted brown cross. The
+horizontal axle, end bearings, deep well, rear partition, satin rim and thin
+clear cover are modeled parts. Four Boolean apertures cut through the actual
+score plate. The blade's full turning envelope clears the back and glass.
+The center partitions end behind the flags to keep their marks visible obliquely.
+Folded hems frame the blades; turned bushings, dark seating rings and bracket
+feet connect the shafts to the rear well. Small vertex-colored contact pools
+ground the feet without per-frame shadow-map updates. The enamel is matte,
+with slightly brighter bevels and satin collars.
+
+`scoreRegister.json` describes the manufacturing layout and materials;
+`refine_score_register.py` regenerates only this assembly against the current
+editable console. Both `.blend` and GLB retain eight named `ScoreFlag_*` pivots.
+The runtime turns those pivots, keeping their faces and marks together, while
+static surrounds can still batch with the rest of the scene. Restoring a game
+seats its score immediately; subsequent changes release after 22 ms, turn through
+180 degrees in 170 ms and settle with 1.2 degrees of recoil over 64 ms. Concurrent
+pulses stagger by 22 ms. A quiet dry click marks the first stop contact when the
+rear sound switch is enabled. Reduced motion seats flags immediately and silently.
+Bistable flags retain the
+last commanded score without power and catch up when the supply returns.
+
+```sh
+blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_score_register.py
+```
+
+The pass is repeatable, leaves the rest of the console intact, and exports all
+40 room-code digits while restoring their editable visibility. The former lamp
+studies are superseded by this register.
+
+Review at `/preview?score=flags&preview=round_result&detail=score&view=oblique`.
+The development-only bench cycles each team's interceptions and errors through
+0, 1 and 2, and resets all four groups. Drag the machine to inspect the cavity
+and glass, add `motion=slow` to inspect the rotation, or remove `detail=score`
+to judge it at the full console scale.
+These controls do not write to a live game.
+
 ## Keyword windows
 
-The four keyword windows are two-colour LED dot-matrix modules (64x36) behind a
-smoked contrast filter: the electronic counterpart of the original's red film
-windows, in a console that digitises the whole board game. Die colours follow the
-palette: the keyword glows in the player's team colour, index and status in the
-other team's; the diode saturates the palette's pastel ink to a pure hue.
-`paint.ts` draws one texel per diode, red channel for the keyword dies and green
-for the legend dies; `dotMatrixShader` in `crtShader.ts` draws each as a lens
-with a hot die, binned brightness, a row-scan beat and light spilled into the
-filter, and blends to an evenly lit cell once a dot falls below a few pixels.
+The four keyword windows are LED dot-matrix modules (120x70) behind a smoked
+contrast filter: the electronic counterpart of the original's red film windows,
+in a console that digitises the whole board game. Die colours follow the
+palette: the keyword glows in the player's team colour, index and legends in the
+palette's neutral, warnings in its warning colour. `paint.ts` draws one texel per
+lamp, a channel per die colour, and a stroke's antialiased coverage becomes that
+lamp's duty cycle. `dotMatrixShader` in `crtShader.ts` draws each lamp as a lens
+with a hotter die and binned brightness, and adds the light scattered inside the
+filter window as a faint halo around words; a tight halo around each stroke
+only blurred the type.
+
+How much of a lamp is drawn follows its size on screen (cells per pixel, from
+the derivatives), not the camera: lamps are full lenses above about five pixels
+and blend to an evenly lit cell of the same mean brightness by about two. Cells
+are read whole, with a one-pixel step between neighbours, so type stays crisp. The
+window's size, a quality level's pixel ratio and a tilted console therefore
+change how much detail is resolved and never beat against the grid. Drawing
+lenses at one to two pixels per lamp is what produced moire. Emission stays
+near the ink's own level: the material is not tone mapped, so overdriven lamps
+clip to white.
+
 The controller (`DotDriver` in `dotMatrix.ts`) proves every dot at start-up,
 clears, then clocks the columns in; a new word is clocked in the same way, and
 the panel dies with its supply in about 0.1 s, with no afterglow.
@@ -119,12 +172,16 @@ sets that exercise every layout, and offers the close-up. A neon plasma module
 was tried on the same grid and dropped: it differed from the LED only in colour,
 which the palette now provides.
 
-Dot-matrix keywords use 16-dot ideographs (12 for five characters), the classic
-sign size and in scale with the rest of the console; larger cells read as
-shouting. Latin words use a 5x7 sign font doubled or double-height, split over
-two lines at a space, and crawl as a marquee only when
-still wider than the module (eleven letters). The window's index sits framed in
-the header beside KEY, HIDDEN, STANDBY or NO LINK. A canvas of another size needs
+The grid is a judgement: keywords stand 20 dots tall and legends 12. That is
+fine enough for every stroke of a
+five-character keyword on one line and coarse enough that single lamps show at the
+ordinary viewing distance (about three pixels each); at 240x140 and still at
+144x84 the module read as a screen, at 64x36 ideographs lost strokes. Both
+scripts use the outline face, medium for keywords and regular for legends, and
+the duty curve keeps strokes one or two lamps wide. Words that do not fit shrink
+to 15 dots, then
+split over two lines, and only then crawl as a marquee with every character
+kept. A canvas of another size needs
 fresh GPU storage, so `updateFrame` disposes the texture when its size changes.
 
 ## Interchangeable instrument studies

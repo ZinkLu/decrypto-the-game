@@ -50,7 +50,7 @@ test('instrument studies expose their own controls without changing public game 
     const controls = content.targets.filter(t => t.id.startsWith('meter-'));
     assert.equal(controls.length, 2);
     words.forEach((word, i) => assert.ok(controls[i].label.includes(word)));
-    assert.deepEqual(content.lamps, original.lamps);
+    assert.deepEqual(content.scoreFlags, original.scoreFlags);
     assert.deepEqual(content.seats, original.seats);
     assert.equal(content.ready, original.ready);
     assert.equal(content.roomCode, original.roomCode);
@@ -163,13 +163,13 @@ test('fixed lettering is separate from push keys and actual game state drives in
   assert.equal(idle.targets.find(t => t.id === 'transmit').surface, 'transmitControl');
   assert.deepEqual(idle.targets.filter(t => t.id === 'archive-toggle').map(t => t.surface), ['paper']);
   assert.deepEqual(idle.targets.filter(t => t.id.startsWith('meter-')).map(t => t.surface), ['MeterAmplitudeControl', 'MeterRateControl']);
-  assert.equal(Object.values(idle.lamps).filter(Boolean).length, s.scoreA.interceptions + s.scoreA.decrypt_failures + s.scoreB.interceptions + s.scoreB.decrypt_failures);
+  assert.equal(Object.values(idle.scoreFlags).filter(Boolean).length, s.scoreA.interceptions + s.scoreA.decrypt_failures + s.scoreB.interceptions + s.scoreB.decrypt_failures);
   assert.equal(idle.activity, 0);
   assert.equal(paint(s, { ...initialLocal, clues: ['花园', '', ''] }).activity, 1 / 3);
   assert.equal(paint(s, { ...initialLocal, clues: ['花园', '航行', '羽毛'] }).activity, 1);
   const home = paint(previewState({}, 'home'), initialLocal);
   assert.equal(home.activity, 0);
-  assert.ok(Object.values(home.lamps).every(value => !value));
+  assert.ok(Object.values(home.scoreFlags).every(value => !value));
   assert.ok(home.targets.find(t => t.surface === 'channelCopy').disabled);
 });
 
@@ -191,14 +191,14 @@ test('power off blocks front input and transmission, and restores the prepared g
     const off = paint(state, { ...local, powerOn: false });
     assert.equal(off.ready, false);
     assert.equal(off.activity, 0);
-    assert.ok(Object.values(off.lamps).every(lit => !lit));
+    assert.deepEqual(off.scoreFlags, on.scoreFlags, 'bistable score flags retain the tally without power');
     assert.deepEqual(off.targets.map(t => t.id), ['power-toggle']);
     assert.equal(off.targets[0].surface, 'powerControl');
     assert.equal(off.targets[0].label, '开启终端电源');
     assert.match(off.status, /对局继续进行/);
     const restored = paint(state, { ...local, powerOn: true });
     assert.equal(restored.ready, on.ready);
-    assert.deepEqual(restored.lamps, on.lamps);
+    assert.deepEqual(restored.scoreFlags, on.scoreFlags);
     assert.deepEqual(restored.targets, on.targets);
     assert.equal(JSON.stringify({ state, local }), before);
   }

@@ -4,6 +4,7 @@ import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
 import { initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme } from './model';
 import type { WordDisplay } from './dotMatrix';
+import { defaultDotFilter, dotFilterOptions, readDotFilter, readWordScale, type DotFilter } from './dotFiltering';
 import { paint, knobLabel } from './paint';
 import { qualityChoices, qualityProfiles, describeQuality, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import ArchiveSheet from './ArchiveSheet';
@@ -26,6 +27,7 @@ const benchWords = [
 ];
 const preview = route.scenario;
 const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
+const scoreBench = import.meta.env.DEV && new URLSearchParams(location.search).get('score') === 'flags';
 // Deterministic stills and benchmarks pin a level without touching the saved choice.
 const pinnedQuality = import.meta.env.DEV ? qualityChoices.find(choice => choice === new URLSearchParams(location.search).get('quality')) : undefined;
 const qualityLabels: Record<QualityChoice, string> = { auto: '自动', high: '高', medium: '中', low: '低' };
@@ -39,17 +41,23 @@ export default function Console() {
     const [previewPeople, setPreviewPeople] = useState<PlayerInfo[]>([{ id: '0', nickname: '你', is_ai: false }]);
     const previewSerial = useRef(1);
     const [benchWordSet, setBenchWordSet] = useState(0);
+    const [reviewScores, setReviewScores] = useState({
+        A: { interceptions: 1, decrypt_failures: 0 }, B: { interceptions: 0, decrypt_failures: 1 },
+    });
     const s = useMemo(() => {
         if (preview !== 'roster-motion') {
             const state = preview ? previewState(live, preview, u.locale) : live;
+            if (scoreBench) return { ...state, scoreA: reviewScores.A, scoreB: reviewScores.B };
             return wordBench && benchWordSet && state.myWords.length ? { ...state, myWords: benchWords[benchWordSet - 1] } : state;
         }
         const state = previewState(live, 'room-partial', u.locale);
         return { ...state, teamA: previewPeople, players: [...previewPeople, ...state.teamB],
             canStart: previewPeople.length >= 2 };
-    }, [live, previewPeople, u.locale, benchWordSet]);
+    }, [live, previewPeople, u.locale, benchWordSet, reviewScores]);
     const [instrumentCloseup, setInstrumentCloseup] = useState(detail === 'meter');
-    const [wordCloseup, setWordCloseup] = useState(detail === 'words');
+    const [wordZoom, setWordZoom] = useState(() => readWordScale(new URLSearchParams(location.search).get('zoom'), detail === 'words'));
+    const wordCloseup = wordZoom > 1;
+    const [dotFilter, setDotFilter] = useState<DotFilter>(() => wordBench ? readDotFilter(new URLSearchParams(location.search).get('filter')) : defaultDotFilter);
     const [loaded, setLoaded] = useState(false);
     const [failure, setFailure] = useState('');
     const [archiveVisible, setArchiveVisible] = useState(false);
@@ -148,11 +156,21 @@ export default function Console() {
         setAnnouncement(t("已试装{0}", [t(wordDisplayOptions.find(option => option.id === display)?.label || '')]));
     }
     function inspectWords(closeup: boolean) {
-        setWordCloseup(closeup);
-        engine.current?.inspectDetail(closeup ? 'words' : null);
+        zoomWords(closeup ? 2 : 1);
+    }
+    function zoomWords(scale: number) {
+        setWordZoom(scale);
         const url = new URL(location.href);
-        if (closeup) url.searchParams.set('detail', 'words'); else url.searchParams.delete('detail');
+        url.searchParams.set('zoom', String(scale));
+        if (scale > 1) url.searchParams.set('detail', 'words'); else url.searchParams.delete('detail');
         history.replaceState(null, '', url);
+    }
+    function selectDotFilter(filter: DotFilter) {
+        setDotFilter(filter);
+        const url = new URL(location.href);
+        url.searchParams.set('filter', filter);
+        history.replaceState(null, '', url);
+        setAnnouncement(t('LED 缩放：{0}', [t(dotFilterOptions.find(option => option.id === filter)!.label)]));
     }
     function inspectInstrument(closeup: boolean) {
         setInstrumentCloseup(closeup);
@@ -240,6 +258,8 @@ export default function Console() {
     }, []);
     useLayoutEffect(() => { engine.current?.update(content, u); project(); }, [content, loaded]);
     useLayoutEffect(() => { engine.current?.setQuality(qualityProfiles[level]); }, [level]);
+    useLayoutEffect(() => { if (wordBench) engine.current?.setDotFilter(dotFilter); }, [loaded, dotFilter]);
+    useLayoutEffect(() => { if (wordBench && loaded) engine.current?.inspectWordScale(wordZoom); }, [loaded, wordZoom]);
     useEffect(() => {
         if (!loaded || quality !== 'auto') return;
         let cancelled = false;
@@ -538,9 +558,10 @@ export default function Console() {
         ? `${t('按本机实测的单帧耗时选择档位；再次点击重新检测')} · ${t('当前')} ${t(qualityLabels[level])}`
         : `${t(qualityLabels[choice])} · ${describeQuality(qualityProfiles[choice], t)}`;
     const colors = themeColors(u.theme);
-    return <main style={{ '--team-own': colors.own.ink, '--team-opponent': colors.opponent.ink } as CSSProperties} data-theme={u.theme} className={`station ${failure ? 'station-fallback' : ''}`} data-view={route.view} data-power={u.powerOn ? 'on' : 'off'}
+    return <main style={{ '--team-own': colors.own.ink, '--team-opponent': colors.opponent.ink, '--device-ink': colors.device.ink } as CSSProperties} data-theme={u.theme} className={`station ${failure ? 'station-fallback' : ''}`} data-view={route.view} data-power={u.powerOn ? 'on' : 'off'}
         data-backdrop-blur={qualityProfiles[level].backdropBlur ? undefined : 'off'}
         data-instruments={instrumentPreview || wordBench || undefined} data-instrument={instrumentPreview ? u.instrumentVariant : undefined}
+        data-word-bench={wordBench || undefined}
         data-detail={(instrumentPreview ? instrumentCloseup ? 'meter' : null : wordBench ? wordCloseup ? 'words' : null : detail) || undefined}>
     <div className="station-settings" inert={u.archiveOpen}>
       <nav className="station-navigation" aria-label={t('页面导航')}>
@@ -566,7 +587,7 @@ export default function Console() {
               const settings = event.currentTarget.closest('details');
               if (settings) { settings.open = false; settings.querySelector('summary')?.focus({ preventScroll: true }); }
             }}>
-            <span className="station-theme-swatches" aria-hidden="true"><i style={{ background: theme.own.light }}/><i style={{ background: theme.opponent.light }}/></span>
+            <span className="station-theme-swatches" aria-hidden="true"><i style={{ background: theme.own.light }}/><i style={{ background: theme.opponent.light }}/><i style={{ background: theme.device.light }}/><i style={{ background: theme.warning.light }}/></span>
             {t(theme.label)}
           </button>)}
         </div>
@@ -714,8 +735,21 @@ export default function Console() {
       </div>
     </div>
     {loaded && !failure && <div className="station-workbench" inert={u.archiveOpen}>
-      <span className="station-orbit-hint">{t(inspection ? '拖动机身旋转 · 滚轮缩放 · 拖动把手翻面' : u.backView ? '点击把手连接处，回到正面' : '向内拖动把手，即可翻面')}</span>
+      {!scoreBench && <span className="station-orbit-hint">{t(inspection ? '拖动机身旋转 · 滚轮缩放 · 拖动把手翻面' : u.backView ? '点击把手连接处，回到正面' : '向内拖动把手，即可翻面')}</span>}
       {inspection && <button className="station-reset-view" onClick={() => engine.current?.resetInspection()}>{t('重置视角')}</button>}
+      {scoreBench && !u.backView && <div className="station-roster-preview station-score-preview" aria-label={t('翻旗积分板试装')}>
+        <span>{t('翻旗试装')}</span>
+        {(['A', 'B'] as const).flatMap(team => (['interceptions', 'decrypt_failures'] as const).map(field =>
+          <button key={`${team}-${field}`} disabled={!u.powerOn}
+            aria-label={t('循环切换 {0} 队{1}计分', [team, t(field === 'interceptions' ? '截获' : '失误')])}
+            onClick={() => setReviewScores(scores => ({ ...scores,
+              [team]: { ...scores[team], [field]: (scores[team][field] + 1) % 3 } }))}>
+            {team} · {t(field === 'interceptions' ? '截获' : '失误')} {reviewScores[team][field]}/2
+          </button>))}
+        <button disabled={!u.powerOn} onClick={() => setReviewScores({
+          A: { interceptions: 0, decrypt_failures: 0 }, B: { interceptions: 0, decrypt_failures: 0 },
+        })}>{t('清零')}</button>
+      </div>}
       {preview === 'roster-motion' && !u.backView && <div className="station-roster-preview" aria-label={t("名牌动画预览")}>
         <span>{t("名牌演示")}</span>
         <button disabled={previewPeople.length >= 4} onClick={() => previewRoster('human')}>{t("真人入席")}</button>
@@ -763,12 +797,25 @@ export default function Console() {
         <div className="instrument-view" role="group" aria-label={t("观察距离")}>
           <button aria-pressed={!wordCloseup} onClick={() => inspectWords(false)}>{t("整机")}</button>
           <button aria-pressed={wordCloseup} onClick={() => inspectWords(true)}>{t("看细节")}</button>
+          <label className="word-zoom">
+            <span>{t('缩放')}</span>
+            <input type="range" min="1" max="4" step="0.05" value={wordZoom} aria-label={t('密码板缩放')}
+                onChange={event => zoomWords(Number(event.target.value))}/>
+            <output>{wordZoom.toFixed(2)}×</output>
+          </label>
         </div>
         <button className="instrument-demo" disabled={!u.powerOn} onClick={() => setBenchWordSet(set => (set + 1) % (benchWords.length + 1))}>{t("换一组词")}</button>
       </div>
+      <div className="instrument-comparison-row word-filter-row">
+        <span className="instrument-comparison-title">{t('LED 缩放')}</span>
+        <div className="instrument-options word-filter-options" role="group" aria-label={t('选择 LED 缩放算法')}>
+          {dotFilterOptions.map(option => <button key={option.id} aria-pressed={dotFilter === option.id}
+              disabled={u.wordDisplay !== 'led'} onClick={() => selectDotFilter(option.id)}>{t(option.label)}</button>)}
+        </div>
+      </div>
       <div className="instrument-comparison-row instrument-description">
-        <p>{t(wordDisplayOptions.find(option => option.id === u.wordDisplay)?.description || '')}</p>
-        <span>{t("点击词窗遮住或显示 · 拨动顶部电源开关看上电与断电")}</span>
+        <p>{t((u.wordDisplay === 'led' ? dotFilterOptions.find(option => option.id === dotFilter) : wordDisplayOptions.find(option => option.id === u.wordDisplay))?.description || '')}</p>
+        <span>{t('切换算法保持词组、配色与距离')}</span>
       </div>
     </section>}
     {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{hint.startsWith('quality:')

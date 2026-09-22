@@ -57,6 +57,8 @@ button,input { font: inherit; }
 .station-roster-preview button { min-height: 30px; padding: 3px 9px; border: 1px solid #a4a497; background: #f5efdf; color: #2a3b35; cursor: pointer; }
 .station-roster-preview button:disabled { opacity: .45; cursor: default; }
 .station-roster-preview button:focus-visible { outline: 2px solid #a65232; outline-offset: 2px; }
+.station-score-preview { order: -1; box-shadow: 0 2px 12px #28332918; }
+.station-score-preview button { min-height: 36px; font-variant-numeric: tabular-nums; }
 .station-rear-status { margin: 0 auto 0 0; background: #eee8dbed; border-left: 2px solid #6b7866; padding: 8px 12px; color: #38473b; font-size: 12px; line-height: 1.7; }
 .station-rear-status span { display: block; color: #737768; font-size: 10px; letter-spacing: .06em; }
 @media (max-width: 600px) {
@@ -87,6 +89,12 @@ button,input { font: inherit; }
 .instrument-description { margin-top: 12px; justify-content: space-between; gap: 18px; font-size: 12px; line-height: 1.5; }
 .instrument-description p { margin: 0; }
 .instrument-description span { font-size: 11px; color: #6c7266; }
+.station[data-word-bench] { --instrument-bench-height: 170px; }
+.word-filter-row { margin-top: 10px; }
+.word-zoom { display: flex; align-items: center; gap: 7px; padding-left: 7px; font-size: 12px; white-space: nowrap; }
+.word-zoom input { width: 110px; min-width: 55px; accent-color: #384c41; cursor: pointer; }
+.word-zoom input:focus-visible { outline: 2px solid #a65232; outline-offset: 3px; }
+.word-zoom output { min-width: 38px; font-variant-numeric: tabular-nums; }
 @media (max-width: 1000px) {
   .instrument-comparison { padding: 12px 14px; }
   .instrument-comparison-row { gap: 7px; }
@@ -95,6 +103,9 @@ button,input { font: inherit; }
 }
 @media (max-width: 650px) {
   .station[data-instruments] { --instrument-bench-height: 166px; }
+  .station[data-word-bench] { --instrument-bench-height: 264px; }
+  .word-filter-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .word-zoom input { width: 75px; }
   .instrument-comparison-row { flex-wrap: wrap; }
   .instrument-options { width: 100%; }
   .instrument-options button { flex: 1; padding-inline: 5px; font-size: 11px; }
@@ -284,10 +295,12 @@ button,input { font: inherit; }
 .station-themes legend { padding: 0; color: #666b5a; font-size: 11px; }
 .station-theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
 .station-settings .station-theme-options button { display: flex; align-items: center; gap: 9px; min-width: 108px; min-height: 44px; text-align: left; font-size: 12px; font-weight: 500; }
-.station-settings .station-theme-options button[aria-pressed="true"] { background: var(--team-own); }
+.station-settings .station-theme-options button[aria-pressed="true"] { background: var(--device-ink); }
 .station-theme-swatches { display: flex; flex-shrink: 0; }
-.station-theme-swatches i { width: 11px; height: 16px; border: 1px solid #26342a33; border-radius: 8px 0 0 8px; }
-.station-theme-swatches i + i { border-radius: 0 8px 8px 0; margin-left: -1px; }
+.station-theme-swatches i { width: 9px; height: 16px; border: 1px solid #26342a33; }
+.station-theme-swatches i + i { margin-left: -1px; }
+.station-theme-swatches i:first-child { border-radius: 8px 0 0 8px; }
+.station-theme-swatches i:last-child { border-radius: 0 8px 8px 0; }
 .station-language, .station-quality { display: flex; align-items: center; padding: 3px; gap: 2px; border: 1px solid #afa994; background: #e5decb; border-radius: 4px; }
 .station-settings button { min-width: 46px; min-height: 36px; padding: 5px 10px; border: 0; border-radius: 2px; background: transparent; color: #57594a; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
 .station-settings button[aria-pressed="true"] { color: #eee5cf; background: #394c48; }

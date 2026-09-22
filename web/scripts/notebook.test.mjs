@@ -202,11 +202,10 @@ test('front print surfaces register to eight separate cards and eight physical s
     for (const category of ['intercept', 'failure']) {
       for (let i = 0; i < 2; i++) {
         const name = `${team}_${category}_${i}`;
-        const indicator = node('ScoreLamp_' + name);
-        const material = gltf.materials[gltf.meshes[indicator.mesh].primitives[0].material];
-        assert.ok(material.name.includes(name), 'each lens can respond independently to its score');
-        assert.ok(!surfaces['scoreToken' + name], 'no flat tokens cover the actual lenses');
-        assert.ok(node('Interaction_lamp retaining collar ' + name));
+        const indicator = node('ScoreFlag_' + name);
+        assert.equal(indicator.extras.score_flag, name, 'each flag can turn independently with its score');
+        assert.ok(!surfaces['scoreToken' + name], 'no flat tokens cover the actual flags');
+        assert.ok(node(`ScoreRegister_rim ${team}_${category}`));
       }
     }
   }
@@ -217,8 +216,8 @@ test('front print surfaces register to eight separate cards and eight physical s
   assert.equal(bezel.name, 'Score bezel satin black');
   assert.ok(!bezel.pbrMetallicRoughness.baseColorTexture && !bezel.normalTexture, 'the dark outer bezel stays quiet');
   const plate = gltf.materials[gltf.meshes[node('Front_score enamel bed').mesh].primitives[0].material];
-  assert.equal(plate.name, 'Score fine brushed nickel');
-  assert.ok(plate.normalTexture && plate.pbrMetallicRoughness.metallicRoughnessTexture, 'brushing lives on the inset lamp plate');
+  assert.equal(plate.name, 'Score register faceplate');
+  assert.ok(plate.pbrMetallicRoughness.roughnessFactor >= .8, 'the inset score plate keeps a quiet satin finish');
   for (const name of ['Archive column', 'Control deck', 'Power rail', 'Receiver column', 'Scope panel']) {
     const body = gltf.materials[gltf.meshes[node(name).mesh].primitives[0].material];
     assert.equal(body.name, 'Front uniform satin alloy');
@@ -575,4 +574,3 @@ test('room digits are forty individually addressable wire cathodes inside four g
     }
   }
 });
-

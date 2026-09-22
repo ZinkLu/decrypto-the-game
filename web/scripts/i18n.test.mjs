@@ -33,7 +33,7 @@ test('both locales cover every public game phase, roster, manual and printed dis
     const s = fixture(phase), zh = paint(s, { ...initialLocal, ...extra }), en = paint(s, { ...initialLocal, ...extra, locale: 'en' });
     assert.ok(ink(zh).some(value => /[\u3400-\u9fff]/.test(value)), `${phase}: Chinese is rendered`);
     assert.deepEqual([...ink(en), ...en.targets.map(t => t.label)].filter(value => /[\u3400-\u9fff]/.test(value)), [], `${phase}: no untranslated UI`);
-    assert.deepEqual(en.lamps, zh.lamps); assert.deepEqual(en.seats, zh.seats); assert.equal(en.ready, zh.ready);
+    assert.deepEqual(en.scoreFlags, zh.scoreFlags); assert.deepEqual(en.seats, zh.seats); assert.equal(en.ready, zh.ready);
   }
 });
 test('language switching preserves user text and fixed legends while localizing active displays', () => {
@@ -42,8 +42,8 @@ test('language switching preserves user text and fixed legends while localizing 
   const zh = paint(s, u), en = paint(s, { ...u, locale: 'en' });
   assert.ok(en.frames.rosterA0.canvas.ink.includes('手册'));
   assert.ok(en.frames.screen.canvas.ink.includes('等待线索…'));
-  // LED keyword modules set Latin words in their sign font, dot by dot; only ideographs are type.
-  assert.deepEqual(en.frames.word0.canvas.ink, []);
+  // Both scripts now use measured glyph coverage on the fine LED grid.
+  assert.ok(en.frames.word0.canvas.ink.includes('lighthouse'));
   assert.ok(zh.frames.word0.canvas.ink.includes('灯塔'));
   assert.ok(paint(s, { ...u, locale: 'en', wordDisplay: 'crt' }).frames.word0.canvas.ink.includes('lighthouse'));
   for (const phase of phases) {
@@ -93,16 +93,39 @@ test('real preview fixtures print the selected language on the receipt', () => {
   s.history[0].clues = ['自定义中文线索', 'second', 'third'];
   assert.ok(paint(s, { ...initialLocal, locale: 'en' }).frames.paper.canvas.ink.some(value => value.includes('自定义中文线索')), 'actual player clues are not rewritten');
 });
-test('LED keywords keep the sign size, and only a word wider than the module becomes a strip', () => {
+test('fine LED windows fit one-to-five-character words consistently and retain overflow in a strip', () => {
   const s = previewState({}, 'encrypting');
   const zh = paint(s, initialLocal), en = paint(s, { ...initialLocal, locale: 'en' });
-  assert.equal(zh.frames.word1.canvas.draws.find(draw => draw.value === '海岸').size, 16);
-  assert.deepEqual([zh.frames.word1.canvas.width, zh.frames.word1.canvas.height], [64, 36]);
-  assert.equal(en.frames.word3.canvas.width, 64, 'migratory bird takes two lines');
+  assert.equal(zh.frames.word1.canvas.draws.find(draw => draw.value === '海岸').size, 20);
+  assert.equal(en.frames.word1.canvas.draws.find(draw => draw.value === 'coast').size, 20);
+  assert.deepEqual([zh.frames.word1.canvas.width, zh.frames.word1.canvas.height], [120, 70]);
+  assert.equal(en.frames.word3.canvas.width, 120);
   s.myWords = ['莎士比亚[shakespeare]', '海岸[coast]', '玫瑰[rose]', '亚特兰蒂斯[atlantis]'];
-  assert.equal(paint(s, { ...initialLocal, locale: 'en' }).frames.word0.canvas.width, 65, 'eleven letters crawl');
-  assert.equal(paint(s, initialLocal).frames.word3.canvas.draws.find(draw => draw.value === '亚特兰蒂斯').size, 12);
-  assert.deepEqual(zh.targets.find(target => target.surface === 'word1'), { ...zh.targets.find(target => target.surface === 'word1'), x: 0, y: 0, w: 64, h: 36 });
+  assert.equal(paint(s, { ...initialLocal, locale: 'en' }).frames.word0.canvas.width, 120);
+  assert.equal(paint(s, initialLocal).frames.word3.canvas.draws.find(draw => draw.value === '亚特兰蒂斯').size, 20);
+  s.myWords[0] = 'supercalifragilisticexpialidocious';
+  const long = paint(s, initialLocal).frames.word0;
+  assert.ok(long.canvas.width > 120);
+  assert.ok(long.canvas.ink.includes(s.myWords[0]));
+  assert.deepEqual(zh.targets.find(target => target.surface === 'word1'), { ...zh.targets.find(target => target.surface === 'word1'), x: 0, y: 0, w: 120, h: 70 });
+});
+
+test('LED privacy and team identity travel with the frame while legends never use the opposing colour', async () => {
+  const { themeChoices } = await import(modelUrl);
+  const s = previewState({}, 'encrypting');
+  for (const theme of themeChoices) for (const myTeam of ['A', 'B']) {
+    const out = paint({ ...s, myTeam }, { ...initialLocal, theme: theme.id });
+    assert.equal(out.wordInks.word, theme.own.light);
+    assert.equal(out.wordInks.legend, theme.device.light);
+    assert.notEqual(out.wordInks.legend, theme.opponent.light);
+    assert.equal(out.wordInks.warning, theme.warning.light);
+    const hidden = paint({ ...s, myTeam }, { ...initialLocal, theme: theme.id, hiddenWords: true });
+    assert.notEqual(hidden.wordPrivacyKey, out.wordPrivacyKey);
+    assert.ok(!hidden.frames.word0.canvas.ink.includes('灯塔'));
+    assert.ok(hidden.frames.word0.canvas.ink.includes('已遮住'));
+    const otherTeam = paint({ ...s, myTeam: myTeam === 'A' ? 'B' : 'A' }, { ...initialLocal, theme: theme.id });
+    assert.notEqual(otherTeam.wordPrivacyKey, out.wordPrivacyKey);
+  }
 });
 test('the earlier tube windows share one type scale, with full long phrases on two lines', () => {
   const s = previewState({}, 'encrypting');

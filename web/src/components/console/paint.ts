@@ -1,5 +1,5 @@
 import { translate, localizeError } from './i18n';
-import { dotGrid, dotText, dotTextWidth, dotWordLayout } from './dotMatrix';
+import { dotGrid, dotText, dotType, dotWordLayout } from './dotMatrix';
 import { roleState, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
 import type { LocalState, StationState } from './model';
 import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
@@ -30,7 +30,7 @@ export interface Content {
     tint: string;
     waiting: boolean;
     ready: boolean;
-    lamps: Record<string, boolean>;
+    scoreFlags: Record<string, boolean>;
     seats: Record<string, string | null>;
     activity: number;
     roomCode: string;
@@ -39,7 +39,8 @@ export interface Content {
     teamInks: Record<'A' | 'B', string>;
     displayKey: string;
     /** LED die colours of the keyword windows: the keyword itself, and its legends. */
-    wordInks: { word: string; legend: string };
+    wordInks: { word: string; legend: string; warning: string };
+    wordPrivacyKey: string;
 }
 const INK = '#243344', CREAM = '#ece0c4', MUTED = '#a59e8c', DARK = '#111e24';
 const FONT = '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif';
@@ -391,7 +392,7 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
         c.fillStyle = '#432c28';
         round(c, 42, 548, w - 84, 35, 6);
         c.fill();
-        text(c, status, 54, 565, 18, '#ffd0b4', 400, w - 109);
+        text(c, status, 54, 565, 18, themeColors(u.theme).warning.light, 400, w - 109);
     } else {
         line(c, 55, 558, 890, '#34423f');
         text(c, hasGame ? t("密钥仅我方可见") : t("每条线索，都是一次试探。"), 55, 577, 14, MUTED);
@@ -414,31 +415,42 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
         target('screen', id, id === 'name' ? t("特工代号") : t("四位频道编号"), x, y, width, height, { kind: 'input', value, maxLength, disabled: !s.connected,
             input: { fontSize: 27, padding: 18, placeholder } });
     }
-    // A dot-matrix module is painted dot for dot: one texel drives one diode or neon cell.
+    // One source texel per LED; a stroke's antialiased coverage becomes that lamp's duty cycle.
     const dotWords = u.wordDisplay !== 'crt';
+    const measureCanvas = document.createElement('canvas').getContext('2d')!;
+    const measureDotWord = (value: string, size: number) => {
+        measureCanvas.font = `500 ${size}px ${FONT}`;
+        return measureCanvas.measureText(value).width;
+    };
     for (let i = 0; dotWords && i < 4; i++) {
         const shown = hasGame && !u.hiddenWords ? word(s.myWords[i], u.locale) || '' : '';
-        const layout = shown ? dotWordLayout(shown) : undefined;
-        const strip = Math.max(dotGrid.cols, layout?.width ?? 0);
+        const value = !hasGame ? s.phase === 'room' ? t('待开局') : t('待接入') :
+            u.hiddenWords ? '••••' : shown || t('待载入');
+        const layout = dotWordLayout(value, measureDotWord);
+        const strip = Math.max(dotGrid.cols, layout.width + 2 * dotGrid.inset);
         const g = frame('word' + i, strip, dotGrid.rows, '#000');
         const plot = (x: number, y: number, w: number, h: number) => g.fillRect(x, y, w, h);
-        const centred = (width: number) => width > dotGrid.cols ? 0 : Math.floor((dotGrid.cols - width) / 2);
-        // A framed index, then what the line holds: legends on the green channel's dies.
+        const left = dotGrid.inset, right = dotGrid.cols - left, legend = dotType.legend;
+        // A channel's brightness is its die's duty cycle: full for type, half for rules.
         g.fillStyle = '#0f0';
-        g.fillRect(0, 0, 9, 1); g.fillRect(0, 8, 9, 1); g.fillRect(0, 0, 1, 9); g.fillRect(8, 0, 1, 9);
-        dotText(String(i + 1), 2, 1, plot);
-        const state = !hasGame ? s.phase === 'room' ? 'STANDBY' : 'NO LINK' : u.hiddenWords ? 'HIDDEN' : 'KEY';
-        dotText(state, dotGrid.cols - dotTextWidth(state), 1, plot);
+        g.fillRect(left, 4, 17, 13);
+        g.fillStyle = '#000';
+        dotText(String(i + 1).padStart(2, '0'), left + 3, 7, plot);
+        g.fillStyle = '#007a00';
+        for (let x = left + 21; x < 58; x += 3) g.fillRect(x, 10, 1, 1);
+        g.textAlign = 'right';
+        fitLabel(g, s.myTeam ? t('我方 / {0}', [s.myTeam]) : t('设备待命'), right, 10.5, legend, '#0f0', 400, 52);
+        g.textAlign = 'left';
         const middle = (dotGrid.bandTop + dotGrid.bandBottom + 1) / 2;
-        g.fillStyle = '#f00';
-        if (!layout) dotText(hasGame ? '####' : '----', centred(dotTextWidth('####', 2)), Math.round(middle - 7), plot, 2, 2);
-        else if (layout.kind === 'cjk') {
-            // Outline type has no bitmap strikes: a lighter weight keeps 16-dot strokes apart.
-            g.font = `400 ${layout.size}px ${FONT}`; g.textBaseline = 'middle'; g.textAlign = 'left';
-            g.fillText(layout.lines[0], centred(layout.width), middle + .5);
-        } else layout.lines.forEach((line, index) => dotText(line, centred(dotTextWidth(line, layout.scaleX)),
-            layout.lines.length > 1 ? dotGrid.bandTop + 3 + index * 12 : Math.round(middle - 3.5 * layout.scaleY), plot, layout.scaleX, layout.scaleY));
-        target('word' + i, 'words', u.hiddenWords ? t("显示秘密词") : t("遮住秘密词"), 0, 0, strip, dotGrid.rows, { disabled: !hasGame });
+        layout.lines.forEach((line, n) => text(g, line, left,
+            middle + (n - (layout.lines.length - 1) / 2) * dotType.leading, layout.size, '#f00', 500));
+        g.fillStyle = '#007a00'; g.fillRect(left, 53, right - left, 1);
+        const footer = !s.connected ? t('离线 · 等待重连') : !hasGame ? t('密钥待分配') :
+            u.hiddenWords ? t('已遮住') : t('仅我方可见');
+        const statusInk = s.connected ? '#0f0' : '#00f';
+        g.fillStyle = statusInk; g.fillRect(left, 59, 3, 5);
+        fitLabel(g, footer, left + 7, 61.5, legend, statusInk, 400, right - left - 7);
+        target('word' + i, 'words', u.hiddenWords ? t('显示秘密词') : t('遮住秘密词'), 0, 0, strip, dotGrid.rows, { disabled: !hasGame });
     }
     for (let i = 0; !dotWords && i < 4; i++) {
         const g = frame('word' + i, 480, 284, '#360a06');
@@ -528,11 +540,11 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     copy.textAlign = 'center';
     text(copy, 'COPY', 120, 80, 62, INK, 600);
     target('channelCopy', 'copy-code', t("复制房间码"), 0, 0, 240, 160, { disabled: !s.roomCode });
-    const lamps: Record<string, boolean> = {};
+    const scoreFlags: Record<string, boolean> = {};
     const sc = frame('score', 600, 357);
     text(sc, "SCORE", 28, 30, 19, '#414940', 500);
-    text(sc, "INTERCEPT", 155, 65, 24, '#2e6949', 600);
-    text(sc, "ERROR", 397, 65, 24, '#a44235', 600);
+    text(sc, "INTERCEPT", 155, 65, 24, '#505c50', 600);
+    text(sc, "ERROR", 397, 65, 24, '#505c50', 600);
     line(sc, 26, 99, 548, '#7b847b');
     ['A', 'B'].forEach((team, i) => {
         const score = team === 'A' ? s.scoreA : s.scoreB;
@@ -540,8 +552,7 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
         text(sc, team, 43, yy, 38, '#414940', 600);
         [score.interceptions, score.decrypt_failures].forEach((n, j) => {
             for (let k = 0; k < 2; k++) {
-                lamps[`${team}_${j ? 'failure' : 'intercept'}_${k}`] = k < n;
-                text(sc, String(k + 1), 183 + j * 227 + k * 76, yy + 34, 15, '#434c43');
+                scoreFlags[`${team}_${j ? 'failure' : 'intercept'}_${k}`] = k < n;
             }
         });
         if (i === 0) line(sc, 28, 204, 546, '#90978c');
@@ -689,11 +700,10 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
             display.fillStyle = name.startsWith('word') ? dotWords ? '#000' : '#160805' : '#0b1313';
             display.fillRect(0, 0, canvas.width, canvas.height);
         }
-        for (const name of Object.keys(lamps)) lamps[name] = false;
     }
-    return { frames, teamInks: { A: teamInk('A'), B: teamInk('B') }, displayKey: u.theme, wordInks: { word: themeColors(u.theme).own.light, legend: themeColors(u.theme).opponent.light }, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: s.connected, targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
+    return { frames, teamInks: { A: teamInk('A'), B: teamInk('B') }, displayKey: u.theme, wordInks: { word: themeColors(u.theme).own.light, legend: themeColors(u.theme).device.light, warning: themeColors(u.theme).warning.light }, wordPrivacyKey: `${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: s.connected, targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
             (u.powerOn || rearControls.has(t.id) || t.id === 'power-toggle')),
         status: !u.powerOn ? t("终端已关闭；对局继续进行，按电源恢复。") : status || `${t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase])} · ${s.connected ? t("已连接") : t("连接中")}`,
-        tint, waiting, ready: ready && u.powerOn, lamps, seats, roomCode: u.powerOn ? s.roomCode || '' : '',
+        tint, waiting, ready: ready && u.powerOn, scoreFlags, seats, roomCode: u.powerOn ? s.roomCode || '' : '',
         paperRecords: records.length, activity: u.powerOn ? activity : 0 };
 }

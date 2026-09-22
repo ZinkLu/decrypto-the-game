@@ -3,7 +3,7 @@ import type { WordDisplay } from './dotMatrix';
 export type StationState = ReturnType<typeof useGameStore.getState>;
 /** Hardware of the four keyword windows; the DEV bench (`?words=led`) keeps the earlier tubes for comparison. */
 export const wordDisplayOptions: { id: WordDisplay; label: string; description: string }[] = [
-    { id: 'led', label: 'A · 双色 LED 点阵', description: '双色发光二极管点阵，颜色随主题：关键词用我方色，编号与状态用对方色。上电先全亮自检，再逐列载入；断电随电源跌落熄灭。换词逐列刷新，过长的词横向走字。' },
+    { id: 'led', label: 'A · LED 点阵', description: '120×70 点阵，关键词 20 点、图例 12 点：关键词用我方色，编号和说明用中性色。切换主题先熄灭，再低亮自检、依次载入；过长的词保留全文走字。' },
     { id: 'crt', label: 'B · 红色滤光小 CRT', description: '此前的方案：四支加红色滤光的小显像管，带扫描线、冷启动预热、关机塌缩成亮线与光点，换信号时场同步滑移。' },
 ];
 export type InstrumentVariant = 'original' | 'signal' | 'tuning' | 'status';
@@ -163,10 +163,10 @@ export function roleState(s: StationState, u: LocalState) {
         action: encrypt ? 'encrypt' : s.phase === 'intercept' ? 'intercept' : 'decrypt' };
 }
 export const themeChoices = [
-    { id: 'classic', label: '经典', own: { light: '#8bc995', ink: '#365e43' }, opponent: { light: '#83b9ed', ink: '#315d7b' } },
-    { id: 'amber', label: '琥珀', own: { light: '#edc27e', ink: '#795126' }, opponent: { light: '#87c4d2', ink: '#315c6a' } },
-    { id: 'violet', label: '紫罗兰', own: { light: '#c5afe8', ink: '#654981' }, opponent: { light: '#9bcbb6', ink: '#3b6251' } },
-    { id: 'rose', label: '玫瑰', own: { light: '#e6aba1', ink: '#844e4b' }, opponent: { light: '#a9bedf', ink: '#475f80' } },
+    { id: 'classic', label: '经典', own: { light: '#8bc995', ink: '#365e43' }, opponent: { light: '#83b9ed', ink: '#315d7b' }, device: { light: '#d9cda9', ink: '#64624e' }, warning: { light: '#e6a07e', ink: '#804832' } },
+    { id: 'amber', label: '琥珀', own: { light: '#edc27e', ink: '#795126' }, opponent: { light: '#87c4d2', ink: '#315c6a' }, device: { light: '#dbcfb1', ink: '#6b5d47' }, warning: { light: '#e6a07e', ink: '#804832' } },
+    { id: 'violet', label: '紫罗兰', own: { light: '#c5afe8', ink: '#654981' }, opponent: { light: '#9bcbb6', ink: '#3b6251' }, device: { light: '#d4cbdc', ink: '#62586b' }, warning: { light: '#e6a07e', ink: '#804832' } },
+    { id: 'rose', label: '玫瑰', own: { light: '#e6aba1', ink: '#844e4b' }, opponent: { light: '#a9bedf', ink: '#475f80' }, device: { light: '#d9ccbc', ink: '#705d54' }, warning: { light: '#e6a07e', ink: '#804832' } },
 ] as const;
 export type ThemeId = typeof themeChoices[number]['id'];
 export function themeColors(theme: ThemeId = 'classic') {

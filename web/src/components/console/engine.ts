@@ -11,8 +11,11 @@ import { crtFinish, type Content, type Frame, type Target } from './paint';
 import { RosterMotion, rosterPose } from './rosterMotion';
 import { CrtMotion, crtRestSpot, type CrtKind } from './crtMotion';
 import { shadeCrt, crtUniforms, dotUniforms, dotInks, type CrtUniforms, type DotUniforms } from './crtShader';
-import { DotDriver, dotGrid, type WordDisplay } from './dotMatrix';
+import { DotBank, DotDriver, dotGrid, type WordDisplay } from './dotMatrix';
+import { defaultDotFilter, type DotFilter } from './dotFiltering';
 import { plateFinish } from './finishes';
+import { ScoreFlagMotion } from './scoreFlagMotion';
+import scoreRegisterSpec from './scoreRegister.json';
 import { crtProfile, crtGeometry, crtHeight, crtDisplayUv } from './crt';
 import { initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState } from './model';
 import { VectorMonitor, scopeResonance, scopeTuning } from './scope';
@@ -64,6 +67,7 @@ export class ConsoleEngine {
     private powerAngle = 0;
     private poweredMaterials = new Map<THREE.MeshStandardMaterial, number>();
     private audio?: AudioContext;
+    private scoreClickBuffer?: AudioBuffer;
     private testUntil = 0;
     private testLamp?: THREE.Mesh;
     private surfaces: Record<string, Surface> = {};
@@ -103,7 +107,11 @@ export class ConsoleEngine {
     private crtMotion = new CrtMotion<{ id: string; frame?: Frame }>();
     // The keyword windows can be fitted with dot-matrix modules instead of tubes.
     private wordDisplay: WordDisplay = initialLocal.wordDisplay;
+    private dotFilter: DotFilter = defaultDotFilter;
+    private wordReviewScale?: number;
     private dotModules = new Map<string, { driver: DotDriver; uniforms: DotUniforms; printed?: Frame }>();
+    private dotBank = new DotBank<{ id: string; inks: Content['wordInks']; frames: Content['frames'] }>();
+    private dotPrivacyKey = '';
     private rollerRest = new THREE.Quaternion();
     private receipt = new ReceiptTransport();
     private paperReaderStarted = false;
@@ -123,8 +131,7 @@ export class ConsoleEngine {
     private cableLeads = new Map<string, { mesh: THREE.Mesh; index: number }>();
     private rosterCards = new Map<string, { object: THREE.Object3D; rest: THREE.Vector3; travel: number;
         motion: RosterMotion<{ id: string; frame: Frame }>; printed?: Frame; materials: THREE.Material[] }>();
-    private scoreLamps = new Map<string, { material: THREE.MeshPhysicalMaterial;
-        halo: THREE.MeshBasicMaterial; off: THREE.Color; on: THREE.Color; glow: number; lit: boolean }>();
+    private scoreFlags = new Map<string, { object: THREE.Object3D; motion: ScoreFlagMotion }>();
     private themePanels = new Map<string, { object: THREE.Group; rest: THREE.Vector3;
         motion: RosterMotion<{ id: string; frame: Frame; color: string }>; printed?: Frame;
         enamel: THREE.MeshStandardMaterial[];
@@ -161,6 +168,7 @@ export class ConsoleEngine {
     private keyLight?: THREE.DirectionalLight;
     private crtMaterials: THREE.Material[] = [];
     private screenGlass: THREE.Mesh[] = [];
+    private wordGlass: THREE.MeshPhysicalMaterial[] = [];
     private nixieCovers: THREE.Mesh[] = [];
     private probing?: { warm: number; done: (cost: number) => void };
     private paperShadowSkip = 0;
@@ -321,7 +329,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'console-details-20260921-v32';
+        const revision = 'console-score-register-20260922-v2';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -380,10 +388,15 @@ export class ConsoleEngine {
                 const motion = name === 'screen' ? this.crtMotion : new CrtMotion<{ id: string; frame?: Frame }>(kind, seed);
                 this.crtTubes.set(name, { motion, uniforms });
                 const dots = kind === 'word' ? dotUniforms() : undefined;
-                if (dots) this.dotModules.set(name, { driver: new DotDriver(seed), uniforms: dots });
+                if (dots) {
+                    const driver = new DotDriver(seed - 1);
+                    this.dotModules.set(name, { driver, uniforms: dots });
+                    this.dotBank.drivers.push(driver);
+                }
                 shadeCrt(material, { kind, seed, lite: () => this.quality.crtOptics === 'lite', time: this.crtTime, eye,
                     tube: uniforms, size: new THREE.Vector2(s.w, s.h), curvature, spot: crtRestSpot(kind),
-                    display: () => kind === 'word' ? this.wordDisplay : 'crt', dots });
+                    display: () => kind === 'word' ? this.wordDisplay : 'crt',
+                    filter: () => kind === 'word' ? this.dotFilter : 'baseline', dots });
                 this.crtMaterials.push(material);
                 this.addScreenGlass(name, plane);
             }
@@ -564,7 +577,7 @@ export class ConsoleEngine {
         });
         this.setupPlateFinishes();
         this.setupThemePanels();
-        this.setupScoreLamps();
+        this.setupScoreFlags();
         // The receiver is part of the shipped console model, including its controls.
         const receiver = this.part('Instrument_signal');
         if (!receiver) throw new Error('Missing production receiver');
@@ -648,12 +661,25 @@ export class ConsoleEngine {
     }
     private addScreenGlass(name: string, display: THREE.Mesh) {
         const glass = new THREE.Mesh(display.geometry.clone(), this.glassMaterial());
+        if (this.dotModules.has(name)) {
+            this.wordGlass.push(glass.material);
+            this.syncWordGlass();
+        }
         glass.name = `Runtime CRT glass ${name}`;
         glass.position.z = .006;
         glass.renderOrder = 6;
         glass.castShadow = glass.receiveShadow = false;
         display.add(glass);
         this.screenGlass.push(glass);
+    }
+    private syncWordGlass() {
+        // The LED contrast filter has a quieter finish than the CRT's clear cover.
+        const led = this.wordDisplay !== 'crt';
+        for (const material of this.wordGlass) {
+            material.roughness = led ? .26 : .22;
+            material.specularIntensity = led ? .22 : .35;
+            material.envMapIntensity = led ? .20 : .30;
+        }
     }
     private setupPlateFinishes() {
         const enamel = plateFinish('enamel'), nickel = plateFinish('nickel');
@@ -663,12 +689,14 @@ export class ConsoleEngine {
                 this.textures.set(`${kind}-${name}`, texture);
             }
         const score = this.part('Front_score enamel bed');
-        if (score instanceof THREE.Mesh) {
-            score.material = new THREE.MeshPhysicalMaterial({
-                ...nickel, color: '#bac0b1', metalness: .82, roughness: .86,
-                anisotropy: .65, anisotropyRotation: 0,
+        score?.traverse(part => {
+            if (!(part instanceof THREE.Mesh)) return;
+            part.material = new THREE.MeshPhysicalMaterial({
+                ...nickel, color: scoreRegisterSpec.materials.faceplate, metalness: .35,
+                roughnessMap: null, roughness: .82, normalScale: new THREE.Vector2(.18, .18),
+                envMapIntensity: .3,
             });
-        }
+        });
         for (const team of ['A', 'B']) {
             const plaque = this.part(`Front_roster team plaque ${team}`), plane = this.planes.get('roster' + team);
             if (!(plaque instanceof THREE.Mesh) || !plane) continue;
@@ -742,88 +770,27 @@ export class ConsoleEngine {
                 materials: [...materials].map(material => ({ material, opacity: material.opacity })) });
         }
     }
-    private setupScoreLamps() {
-        // The exported score lamps were flattened shaded spheres over bare
-        // diffuser strips. Rebuild each as a jewel pilot light: a full glass
-        // dome (clearcoat reflections keep it handsome while dark), a smoked
-        // diffuser beneath, and an additive halo that blooms when lit.
-        const haloCanvas = document.createElement('canvas');
-        haloCanvas.width = haloCanvas.height = 128;
-        const c = haloCanvas.getContext('2d')!;
-        const falloff = c.createRadialGradient(64, 64, 0, 64, 64, 64);
-        falloff.addColorStop(0, 'rgba(255,255,255,.85)');
-        falloff.addColorStop(.28, 'rgba(255,255,255,.30)');
-        falloff.addColorStop(.62, 'rgba(255,255,255,.07)');
-        falloff.addColorStop(1, 'rgba(255,255,255,0)');
-        c.fillStyle = falloff;
-        c.fillRect(0, 0, 128, 128);
-        const haloTexture = new THREE.CanvasTexture(haloCanvas);
-        haloTexture.colorSpace = THREE.SRGBColorSpace;
-        // An identity map only turns on the UV varyings the lens shader needs.
-        const white = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
-        white.needsUpdate = true;
+    private setupScoreFlags() {
         for (const team of ['A', 'B']) for (const category of ['intercept', 'failure']) for (let k = 0; k < 2; k++) {
             const name = `${team}_${category}_${k}`;
-            const lens = this.part('ScoreLamp_' + name);
-            if (!(lens instanceof THREE.Mesh)) continue;
-            const failure = category === 'failure';
-            lens.geometry.computeBoundingBox();
-            const seat = lens.geometry.boundingBox!;
-            const cx = (seat.min.x + seat.max.x) / 2, cy = (seat.min.y + seat.max.y) / 2;
-            const radius = Math.max(seat.max.x - seat.min.x, seat.max.y - seat.min.y) / 2;
-            // A slightly pointed dome profile reads as molded glass, not a bead.
-            const profile: THREE.Vector2[] = [];
-            for (let i = 0; i <= 20; i++) {
-                const angle = i / 20 * Math.PI / 2;
-                profile.push(new THREE.Vector2(Math.max(.0015, radius * .985 * Math.pow(Math.sin(angle), .82)),
-                    radius * 1.02 * Math.pow(Math.cos(angle), .72)));
-            }
-            const dome = new THREE.LatheGeometry(profile, 48);
-            dome.rotateX(Math.PI / 2);
-            dome.translate(cx, cy, seat.min.z + .004);
-            lens.geometry.dispose();
-            lens.geometry = dome;
-            const material = new THREE.MeshPhysicalMaterial({
-                roughness: .3, metalness: 0,
-                clearcoat: .9, clearcoatRoughness: .24,
-                emissive: new THREE.Color(failure ? '#f93c28' : '#3cf38b'),
-                emissiveIntensity: .02,
-                map: white,
+            const object = this.part('ScoreFlag_' + name);
+            if (!object) throw new Error(`Missing score flag: ${name}`);
+            object.traverse(part => {
+                if (part instanceof THREE.Mesh) {
+                    part.castShadow = part.receiveShadow = false;
+                    if (part.material instanceof THREE.MeshStandardMaterial) part.material.envMapIntensity = .35;
+                }
             });
-            // A frosted lens is brightest over the filament and falls off
-            // toward the molded rim; the lathe's v coordinate is that profile.
-            material.onBeforeCompile = shader => {
-                shader.vertexShader = 'varying float lampProfile;\n' + shader.vertexShader
-                    .replace('#include <uv_vertex>', '#include <uv_vertex>\n\tlampProfile = uv.y;');
-                shader.fragmentShader = 'varying float lampProfile;\n' + shader.fragmentShader
-                    .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-                    \ttotalEmissiveRadiance *= 0.40 + 1.35 * pow(1.0 - lampProfile, 1.6);`);
-            };
-            material.customProgramCacheKey = () => 'score-lamp-lens-v1';
-            lens.material = material;
-            lens.castShadow = false;
-            const halo = new THREE.MeshBasicMaterial({
-                map: haloTexture, color: failure ? '#ff5438' : '#45f29b',
-                transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
-                depthWrite: false, toneMapped: false,
-            });
-            const glow = new THREE.Mesh(new THREE.PlaneGeometry(radius * 5.2, radius * 5.2), halo);
-            glow.position.set(cx, cy, seat.max.z + radius * .55);
-            glow.renderOrder = 5;
-            lens.add(glow);
-            for (let n = -2; n <= 2; n++) {
-                // The fluted diffuser strips crossed in front of the dome rim;
-                // the dome alone fills the seat now.
-                const strip = this.part(`Interaction_lens diffuser ${name}${n}`);
-                if (strip instanceof THREE.Mesh) strip.removeFromParent();
-            }
-            this.scoreLamps.set(name, { material, halo,
-                // Even dark, the glass keeps its identity: a green lens reads
-                // green and a red lens red before any current flows.
-                off: new THREE.Color(failure ? '#7c271b' : '#27794f'),
-                on: new THREE.Color(failure ? '#d84a3a' : '#43c98a'),
-                glow: 0, lit: false });
+            this.scoreFlags.set(name, { object, motion: new ScoreFlagMotion() });
         }
+        this.model?.traverse(object => {
+            if (!(object instanceof THREE.Mesh) || !object.name.startsWith('ScoreRegister_glass ')) return;
+            object.castShadow = object.receiveShadow = false;
+            if (object.material instanceof THREE.MeshStandardMaterial) {
+                object.material.depthWrite = false;
+                object.material.envMapIntensity = .2;
+            }
+        });
     }
     private setupNixies() {
         this.model?.traverse(object => {
@@ -943,15 +910,15 @@ export class ConsoleEngine {
         this.crtMotion.sync(this.powerOn, { id: content.displayKey, frame: content.frames.screen });
         for (const [name, tube] of this.crtTubes)
             if (tube.motion !== this.crtMotion) tube.motion.sync(this.powerOn, { id: name, frame: content.frames[name] });
-        for (const { driver } of this.dotModules.values()) {
-            driver.power(this.powerOn);
-            if (this.reduced.matches) driver.settle(this.powerOn);
-        }
-        // Dies emit a pure hue: the palette's pastel inks name it, the diode saturates it.
-        for (const [ink, color] of [[dotInks.word, content.wordInks.word], [dotInks.legend, content.wordInks.legend]] as const) {
-            const hsl = ink.value.set(color).getHSL({ h: 0, s: 0, l: 0 });
-            ink.value.setHSL(hsl.h, 1, .54);
-        }
+        this.dotBank.sync(this.powerOn && this.wordDisplay !== 'crt', {
+            id: content.displayKey, inks: content.wordInks, frames: content.frames,
+        });
+        // Concealment and team/room changes revoke the outgoing picture immediately,
+        // even during a palette shutdown. Keep its old colour until the bus is dark.
+        if (this.dotPrivacyKey !== content.wordPrivacyKey && this.dotBank.current)
+            this.dotBank.current = { ...this.dotBank.current, frames: content.frames };
+        this.dotPrivacyKey = content.wordPrivacyKey;
+        if (this.reduced.matches) this.dotBank.advance(0, true);
         if (this.reduced.matches) for (const tube of this.crtTubes.values()) tube.motion.advance(0, true);
         this.syncCrt();
         for (const [material, intensity] of this.poweredMaterials) material.emissiveIntensity = this.powerOn ? intensity : 0;
@@ -1001,12 +968,24 @@ export class ConsoleEngine {
             lamp.material.emissive.set(content.connected ? '#328248' : '#a66318');
             lamp.material.emissiveIntensity = this.powerOn ? .5 : 0;
         }
-        for (const [name, lamp] of this.scoreLamps) lamp.lit = !!content.lamps[name];
+        let scorePulses = 0;
+        for (const [name, flag] of this.scoreFlags) {
+            if (flag.motion.sync(!!content.scoreFlags[name], this.powerOn, scorePulses * .022)) scorePulses++;
+            flag.object.rotation.x = flag.motion.angle;
+        }
         this.project();
+    }
+    /** Review only: keep the same frame and supply while exchanging its filter. */
+    setDotFilter(filter: DotFilter) {
+        if (filter === this.dotFilter) return;
+        this.dotFilter = filter;
+        for (const name of this.dotModules.keys()) this.planes.get(name)!.material.needsUpdate = true;
+        this.dirty = true;
     }
     /** Swaps the keyword windows' hardware; the newly fitted modules start from cold. */
     private fitWordDisplay(display: WordDisplay) {
         this.wordDisplay = display;
+        this.syncWordGlass();
         for (const [name, tube] of this.crtTubes) {
             if (!this.dotModules.has(name)) continue;
             this.planes.get(name)!.material.needsUpdate = true;
@@ -1022,16 +1001,23 @@ export class ConsoleEngine {
         this.dirty = true;
     }
     private syncCrt() {
+        const snapshot = this.dotBank.current;
+        if (snapshot) {
+            dotInks.word.value.set(snapshot.inks.word);
+            dotInks.legend.value.set(snapshot.inks.legend);
+            dotInks.warning.value.set(snapshot.inks.warning);
+        }
         for (const [name, module] of this.dotModules) {
             if (this.wordDisplay === 'crt') break;
-            const { driver } = module, frame = this.content?.frames[name];
+            const { driver } = module, frame = snapshot?.frames[name];
+            // The bank keeps the outgoing frame through shutdown, except explicit concealment.
+            if (frame && frame !== module.printed) {
+                const lit = module.printed !== undefined && driver.on;
+                module.printed = frame;
+                driver.strip = Math.max(dotGrid.cols, frame.canvas.width);
+                if (this.updateFrame(name, frame) && lit && !this.reduced.matches) driver.load();
+            }
             driver.pack(module.uniforms.drive.value, module.uniforms.panel.value);
-            // A dying panel keeps its last message: paint's blank frame waits for dark dots.
-            if (!frame || frame === module.printed || !this.powerOn && driver.lit) continue;
-            const lit = module.printed !== undefined && driver.on;
-            module.printed = frame;
-            driver.strip = Math.max(dotGrid.cols, frame.canvas.width);
-            if (this.updateFrame(name, frame) && lit) driver.load();
         }
         for (const [name, tube] of this.crtTubes) {
             const { motion, uniforms } = tube;
@@ -1107,7 +1093,7 @@ export class ConsoleEngine {
     private batchStaticGeometry(root: THREE.Object3D = this.model!, preserveAssemblies = true) {
         // Keep the .blend and GLB fully editable. Only the runtime coalesces
         // static, opaque parts by material; animated assemblies retain names.
-        const moving = /^(ThemePanel_.*|ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|FloppyEject|ScopeTuning|ScopeWave|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreLamp_.*)$/;
+        const moving = /^(ThemePanel_.*|ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|FloppyEject|ScopeTuning|ScopeWave|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreFlag_.*)$/;
         const batches = new Map<THREE.Material, THREE.Mesh[]>();
         root.updateWorldMatrix(true, true);
         const inverse = root.matrixWorld.clone().invert();
@@ -1125,9 +1111,9 @@ export class ConsoleEngine {
             if (meshes.length < 2) continue;
             const geometries = meshes.map(mesh => {
                 const geometry = mesh.geometry.clone().applyMatrix4(inverse.clone().multiply(mesh.matrixWorld));
-                // Preserve the exported manufacturing UVs for PBR texture maps.
+                // Preserve manufacturing UVs and baked mounting-contact colors.
                 for (const name of Object.keys(geometry.attributes)) {
-                    if (!['position', 'normal', 'uv'].includes(name)) geometry.deleteAttribute(name);
+                    if (!['position', 'normal', 'uv', 'color'].includes(name)) geometry.deleteAttribute(name);
                 }
                 if (!geometry.getAttribute('uv')) geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geometry.getAttribute('position').count * 2), 2));
                 return geometry;
@@ -1173,6 +1159,28 @@ export class ConsoleEngine {
             oscillator.start(now); oscillator.stop(now + .3);
             oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
         } catch { /* Audio is optional; no browser permission is required to play. */ }
+    }
+    private scoreFlagClick() {
+        // The rear sound switch unlocks audio. A remote score update must never
+        // create/resume an AudioContext or replay an old click after unlocking.
+        const audio = this.audio;
+        if (!this.soundOn || this.disposed || !audio || audio.state !== 'running') return;
+        this.scoreClickBuffer ??= (() => {
+            const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * .045), audio.sampleRate);
+            const samples = buffer.getChannelData(0);
+            for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+            return buffer;
+        })();
+        const now = audio.currentTime;
+        const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
+        source.buffer = this.scoreClickBuffer;
+        filter.type = 'bandpass'; filter.frequency.value = 1350; filter.Q.value = .8;
+        gain.gain.setValueAtTime(.0001, now);
+        gain.gain.exponentialRampToValueAtTime(.024, now + .0015);
+        gain.gain.exponentialRampToValueAtTime(.0001, now + .038);
+        source.connect(filter); filter.connect(gain); gain.connect(audio.destination);
+        source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect(); };
+        source.start(now);
     }
     setSound(on: boolean) { this.soundOn = on; void this.soundFeedback(true); }
     testLamps() { this.testUntil = performance.now() + 1800; void this.soundFeedback(true); }
@@ -1271,6 +1279,10 @@ export class ConsoleEngine {
         return settled[settled.length >> 1];
     }
     inspectInstrument(closeup: boolean) { this.inspectDetail(closeup ? 'meter' : null); }
+    inspectWordScale(scale: number) {
+        this.wordReviewScale = Math.max(1, Math.min(4, scale));
+        this.inspectDetail('words');
+    }
     inspectDetail(detail: string | null) {
         this.detailOverride = detail;
         this.resize();
@@ -1336,7 +1348,10 @@ export class ConsoleEngine {
             const detailHeight = display
                 ? Math.max(display.h * (detail === 'scope' ? 2.7 : detail === 'disk' ? 3.5 : 1.35), (detail === 'words' ? 9.8 : display.w * (detail === 'scope' ? 1.9 : 1.3)) / aspect)
                 : Math.max(detail === 'nixie' ? 3.6 : 3.3, 4.1 / aspect);
-            const scale = normalHeight / detailHeight;
+            const scale = detail === 'words' && this.wordReviewScale !== undefined ? this.wordReviewScale : normalHeight / detailHeight;
+            // The review slider starts at the normal full-console framing and
+            // eases its focus up to the word windows as the view approaches 2x.
+            if (detail === 'words' && this.wordReviewScale !== undefined) focus.multiplyScalar(Math.min(1, scale - 1));
             const w = this.width / scale, h = this.height / scale;
             this.camera.setViewOffset(this.width, this.height,
                 (focus.x + 1) * this.width / 2 - w / 2, (1 - focus.y) * this.height / 2 - h / 2, w, h);
@@ -1395,9 +1410,9 @@ export class ConsoleEngine {
             changed ||= tube.motion.moving;
             tube.motion.advance(dt * this.rosterMotionRate, this.reduced.matches);
         }
-        if (this.wordDisplay !== 'crt') for (const { driver } of this.dotModules.values()) {
-            changed ||= driver.moving;
-            if (this.reduced.matches) driver.settle(this.powerOn); else driver.step(dt * this.rosterMotionRate);
+        if (this.wordDisplay !== 'crt') {
+            changed ||= !this.reduced.matches && this.dotBank.moving;
+            this.dotBank.advance(dt * this.rosterMotionRate, this.reduced.matches);
         }
         this.syncCrt();
         if (crtInteractive !== this.crtMotion.interactive) {
@@ -1554,19 +1569,12 @@ export class ConsoleEngine {
             this.renderer.shadowMap.needsUpdate = true;
             changed = true;
         }
-        for (const lamp of this.scoreLamps.values()) {
-            // Ease the lamp like a warming filament: a smoothstep ramp on
-            // diffuse and emissive, and the halo only once the lamp is bright.
-            const target = this.powerOn && lamp.lit ? 1 : 0;
-            const glow = this.reduced.matches ? target : THREE.MathUtils.damp(lamp.glow, target, 5.5, dt);
-            if (Math.abs(glow - lamp.glow) > .0002) { lamp.glow = glow; changed = true; }
-            const soft = lamp.glow * lamp.glow * (3 - 2 * lamp.glow);
-            lamp.material.color.lerpColors(lamp.off, lamp.on, soft);
-            // A faint permanent tint keeps the glass color readable while
-            // dark; the smoothstep carries it to full glow when energized.
-            lamp.material.emissiveIntensity = .09 + .75 * soft;
-            lamp.material.roughness = .30 - .10 * soft;
-            lamp.halo.opacity = .5 * soft * soft;
+        for (const flag of this.scoreFlags.values()) {
+            if (flag.motion.advance(dt * this.rosterMotionRate, this.reduced.matches)) {
+                flag.object.rotation.x = flag.motion.angle;
+                changed = true;
+            }
+            if (flag.motion.consumeImpact()) this.scoreFlagClick();
         }
         if (this.testLamp?.material instanceof THREE.MeshStandardMaterial) {
             const strength = !this.powerOn ? 0 : now < this.testUntil ? .8 + .7 * Math.sin(now * .018) : .03;

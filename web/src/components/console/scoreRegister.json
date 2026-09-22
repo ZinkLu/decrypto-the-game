@@ -1,0 +1,22 @@
+{
+  "canvas": [600, 357],
+  "columns": [225, 452],
+  "rows": [153, 256],
+  "pitch": 76,
+  "aperture": [184, 74],
+  "frame": [196, 86],
+  "flag": [62, 54],
+  "pivotInset": 0.122,
+  "backInset": 0.258,
+  "glassOffset": 0.012,
+  "materials": {
+    "faceplate": "#a6ac9d",
+    "frame": "#777b6f",
+    "well": "#252c28",
+    "blade": "#38413b",
+    "ivory": "#dfd3b5",
+    "intercept": "#37483d",
+    "failure": "#775c48",
+    "axle": "#898775"
+  }
+}
