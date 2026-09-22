@@ -1,0 +1,68 @@
+- main:
+  - navigation "页面导航":
+    - link "游戏":
+      - /url: /
+    - link "Preview":
+      - /url: /preview
+  - generic "设置"
+  - heading "Decrypto 谍报风云 · 密码通信终端" [level=1]
+  - generic "密码通信终端控件":
+    - button "玩法"
+    - button "遮住秘密词"
+    - button "遮住秘密词"
+    - button "遮住秘密词"
+    - button "遮住秘密词"
+    - button "原版桌游与购买"
+    - button "复制房间码"
+    - button "下拉纸带查看密报记录，关闭后撕下"
+    - button "按住向外拖出软盘，或点击弹出" [disabled]
+    - button "弹出软盘" [disabled]
+    - slider "信号频率 96.3 Hz · Y:X 2.000"
+    - slider "波形 · 正弦"
+    - slider "扫描时基 2.08 ms/格"
+    - slider "水平偏转 · 时基扫描"
+    - button "输入数字 1" [disabled]
+    - button "输入数字 2" [disabled]
+    - button "输入数字 3" [disabled]
+    - button "输入数字 4" [disabled]
+    - button "删除上一位" [disabled]
+    - button "返回通信局"
+    - switch "关闭终端电源" [checked]
+    - slider "转动调谐旋钮，切回手动调谐"
+    - slider "调整接收增益 · 2.00"
+    - switch "关闭自动摆动，恢复手动调谐" [checked]
+    - button "向右拖动左把手，翻到背面"
+    - button "向左拖动右把手，翻到背面"
+  - region "当前通信文字记录":
+    - heading "当前通信" [level=2]
+    - paragraph: AI 未能完成回答，已使用备用线索或合法猜测继续。
+    - paragraph: 轨道 · 锈 · 东京 · 坑
+    - paragraph: 线索暂缺 / 线索暂缺 / 线索暂缺
+    - paragraph: 第 7 回合，加密者：Hudson
+    - paragraph: A 队 截获 1 / 2 失误 2 / 2
+    - paragraph: B 队 截获 0 / 2 失误 1 / 2
+    - region "A 队名册":
+      - heading "A 队 · 2 人 · 我方 · 行动回执" [level=3]
+      - list:
+        - listitem: A1 · 夜鹭E2E · 你 · 真人 · 房主 · 待命
+        - listitem: A2 · Hudson · AI · 待命
+        - listitem: A3 · 空席 · 空席
+        - listitem: A4 · 空席 · 空席
+    - region "B 队名册":
+      - heading "B 队 · 2 人 · 行动回执" [level=3]
+      - list:
+        - listitem: B1 · Volkov · AI · 待命
+        - listitem: B2 · Kozlov · AI · 待命
+        - listitem: B3 · 空席 · 空席
+        - listitem: B4 · 空席 · 空席
+    - paragraph: B 队获胜
+    - paragraph: "第 7 回合 · A 队: 线索暂缺 / 线索暂缺 / 线索暂缺 · 公开密码 2 · 4 · 3"
+    - paragraph: "第 6 回合 · B 队: 线索暂缺 / 线索暂缺 / 线索暂缺 · 公开密码 3 · 1 · 2"
+    - paragraph: "第 5 回合 · A 队: 秋叶原 / 陷阱 / 公转 · 公开密码 3 · 4 · 1"
+    - paragraph: "第 4 回合 · B 队: 线索暂缺 / 线索暂缺 / 算盘 · 公开密码 3 · 4 · 1"
+    - paragraph: "第 3 回合 · A 队: 线索暂缺 / 弹坑 / 线索暂缺 · 公开密码 3 · 4 · 1"
+    - paragraph: "第 2 回合 · B 队: 潘多拉 / 拖拉机 / 升旗 · 公开密码 3 · 4 · 2"
+    - paragraph: "第 1 回合 · A 队: 涩谷 / 铁路线 / 氧化 · 公开密码 3 · 1 · 2"
+  - generic: 向内拖动把手，即可翻面
+  - generic: 返回通信局
+  - status: 第 7 回合，阶段更新

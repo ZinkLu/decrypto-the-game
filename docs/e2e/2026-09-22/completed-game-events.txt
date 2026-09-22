@@ -1,0 +1,165 @@
+2026/09/22 23:42:03 [PHASE] Round 1 → ENCRYPTING | encryptor=夜鹭E2E (AI=false) | team=A
+2026/09/22 23:42:18 [PHASE] Round 1 → DECRYPT | team=A allAI=false decryptorsAllAI=true encryptor=夜鹭E2E
+2026/09/22 23:42:19 [AI] completion finish=stop prompt_tokens=217 completion_tokens=77
+2026/09/22 23:42:19 [AI-decrypt] Round 1 step 1/3 → 3
+2026/09/22 23:42:20 [AI] completion finish=stop prompt_tokens=237 completion_tokens=97
+2026/09/22 23:42:20 [AI-decrypt] Round 1 step 2/3 → 1
+2026/09/22 23:42:21 [AI] completion finish=stop prompt_tokens=239 completion_tokens=100
+2026/09/22 23:42:21 [AI-decrypt] Round 1 step 3/3 → 2
+2026/09/22 23:42:21 [RESULT] Round 1 | DECRYPT SUCCESS by team A
+2026/09/22 23:42:26 [PHASE] Round 2 → ENCRYPTING | encryptor=Volkov (AI=true) | team=B
+2026/09/22 23:42:36 [AI] completion finish=length prompt_tokens=265 completion_tokens=2048
+2026/09/22 23:42:36 [AI] encrypt step=1 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:42:43 [AI] completion finish=stop prompt_tokens=265 completion_tokens=1126
+2026/09/22 23:42:43 [AI-ENCRYPT] Round 2 step 1/3 → "潘多拉"
+2026/09/22 23:42:55 [AI] completion finish=length prompt_tokens=281 completion_tokens=2048
+2026/09/22 23:42:55 [AI] encrypt step=2 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:43:02 [AI] completion finish=stop prompt_tokens=281 completion_tokens=1193
+2026/09/22 23:43:02 [AI-ENCRYPT] Round 2 step 2/3 → "拖拉机"
+2026/09/22 23:43:13 [AI] completion finish=stop prompt_tokens=285 completion_tokens=1857
+2026/09/22 23:43:13 [AI-ENCRYPT] Round 2 step 3/3 → "升旗"
+2026/09/22 23:43:13 [PHASE] Round 2 → DECRYPT | team=B allAI=true decryptorsAllAI=true encryptor=Volkov
+2026/09/22 23:43:15 [AI] completion finish=stop prompt_tokens=254 completion_tokens=162
+2026/09/22 23:43:15 [AI-decrypt] Round 2 step 1/3 → 3
+2026/09/22 23:43:17 [AI] completion finish=stop prompt_tokens=273 completion_tokens=332
+2026/09/22 23:43:17 [AI-decrypt] Round 2 step 2/3 → 4
+2026/09/22 23:43:18 [AI] completion finish=stop prompt_tokens=276 completion_tokens=170
+2026/09/22 23:43:18 [AI-decrypt] Round 2 step 3/3 → 2
+2026/09/22 23:43:18 [RESULT] Round 2 | DECRYPT SUCCESS by team B
+2026/09/22 23:43:23 [PHASE] Round 3 → ENCRYPTING | encryptor=Hudson (AI=true) | team=A
+2026/09/22 23:43:34 [AI] completion finish=length prompt_tokens=306 completion_tokens=2048
+2026/09/22 23:43:34 [AI] encrypt step=1 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:43:46 [AI] completion finish=length prompt_tokens=306 completion_tokens=2048
+2026/09/22 23:43:46 [AI] encrypt step=1 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:43:46 [AI-ENCRYPT] Round 3 step 1/3 → "线索暂缺"
+2026/09/22 23:43:58 [AI] completion finish=stop prompt_tokens=322 completion_tokens=2026
+2026/09/22 23:43:58 [AI-ENCRYPT] Round 3 step 2/3 → "弹坑"
+2026/09/22 23:44:10 [AI] completion finish=length prompt_tokens=326 completion_tokens=2048
+2026/09/22 23:44:10 [AI] encrypt step=3 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:44:21 [AI] completion finish=length prompt_tokens=326 completion_tokens=2048
+2026/09/22 23:44:21 [AI] encrypt step=3 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:44:21 [AI-ENCRYPT] Round 3 step 3/3 → "线索暂缺"
+2026/09/22 23:44:21 [PHASE] Round 3 → INTERCEPT | opponent team=B allAI=true
+2026/09/22 23:44:33 [AI] completion finish=length prompt_tokens=267 completion_tokens=2048
+2026/09/22 23:44:33 [AI] intercept step=1 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:44:45 [AI] completion finish=length prompt_tokens=267 completion_tokens=2048
+2026/09/22 23:44:45 [AI] intercept step=1 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:44:45 [AI-intercept] Round 3 step 1/3 → 1
+2026/09/22 23:44:56 [AI] completion finish=length prompt_tokens=286 completion_tokens=2048
+2026/09/22 23:44:56 [AI] intercept step=2 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:45:07 [AI] completion finish=length prompt_tokens=286 completion_tokens=2048
+2026/09/22 23:45:07 [AI] intercept step=2 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:45:07 [AI-intercept] Round 3 step 2/3 → 2
+2026/09/22 23:45:10 [AI] completion finish=stop prompt_tokens=290 completion_tokens=545
+2026/09/22 23:45:10 [AI-intercept] Round 3 step 3/3 → 3
+2026/09/22 23:45:10 [RESULT] Round 3 | INTERCEPT FAILED by team B
+2026/09/22 23:45:13 [PHASE] Round 3 → DECRYPT | team=A allAI=false decryptorsAllAI=false encryptor=Hudson
+2026/09/22 23:46:01 [RESULT] Round 3 | DECRYPT FAILED by team A
+2026/09/22 23:46:06 [PHASE] Round 4 → ENCRYPTING | encryptor=Kozlov (AI=true) | team=B
+2026/09/22 23:46:17 [AI] completion finish=length prompt_tokens=349 completion_tokens=2048
+2026/09/22 23:46:17 [AI] encrypt step=1 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:46:29 [AI] completion finish=length prompt_tokens=349 completion_tokens=2048
+2026/09/22 23:46:29 [AI] encrypt step=1 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:46:29 [AI-ENCRYPT] Round 4 step 1/3 → "线索暂缺"
+2026/09/22 23:46:40 [AI] completion finish=length prompt_tokens=366 completion_tokens=2048
+2026/09/22 23:46:40 [AI] encrypt step=2 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:46:52 [AI] completion finish=length prompt_tokens=366 completion_tokens=2048
+2026/09/22 23:46:52 [AI] encrypt step=2 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:46:52 [AI-ENCRYPT] Round 4 step 2/3 → "线索暂缺"
+2026/09/22 23:47:03 [AI] completion finish=stop prompt_tokens=371 completion_tokens=1891
+2026/09/22 23:47:03 [AI-ENCRYPT] Round 4 step 3/3 → "算盘"
+2026/09/22 23:47:03 [PHASE] Round 4 → INTERCEPT | opponent team=A allAI=false
+2026/09/22 23:47:46 [RESULT] Round 4 | INTERCEPT SUCCESS by team A
+2026/09/22 23:47:51 [PHASE] Round 5 → ENCRYPTING | encryptor=夜鹭E2E (AI=false) | team=A
+2026/09/22 23:48:15 [PHASE] Round 5 → INTERCEPT | opponent team=B allAI=true
+2026/09/22 23:48:27 [AI] completion finish=length prompt_tokens=353 completion_tokens=2048
+2026/09/22 23:48:27 [AI] intercept step=1 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:48:37 [AI] completion finish=length prompt_tokens=353 completion_tokens=2048
+2026/09/22 23:48:37 [AI] intercept step=1 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:48:37 [AI-intercept] Round 5 step 1/3 → 1
+2026/09/22 23:48:44 [AI] completion finish=stop prompt_tokens=372 completion_tokens=1471
+2026/09/22 23:48:44 [AI-intercept] Round 5 step 2/3 → 4
+2026/09/22 23:48:55 [AI] completion finish=length prompt_tokens=376 completion_tokens=2048
+2026/09/22 23:48:55 [AI] intercept step=3 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:49:05 [AI] completion finish=length prompt_tokens=376 completion_tokens=2048
+2026/09/22 23:49:05 [AI] intercept step=3 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:49:05 [AI-intercept] Round 5 step 3/3 → 2
+2026/09/22 23:49:05 [RESULT] Round 5 | INTERCEPT FAILED by team B
+2026/09/22 23:49:08 [PHASE] Round 5 → DECRYPT | team=A allAI=false decryptorsAllAI=true encryptor=夜鹭E2E
+2026/09/22 23:49:11 [AI] completion finish=stop prompt_tokens=381 completion_tokens=526
+2026/09/22 23:49:11 [AI-decrypt] Round 5 step 1/3 → 3
+2026/09/22 23:49:19 [AI] completion finish=stop prompt_tokens=400 completion_tokens=1375
+2026/09/22 23:49:19 [AI-decrypt] Round 5 step 2/3 → 4
+2026/09/22 23:49:21 [AI] completion finish=stop prompt_tokens=404 completion_tokens=414
+2026/09/22 23:49:21 [AI-decrypt] Round 5 step 3/3 → 1
+2026/09/22 23:49:21 [RESULT] Round 5 | DECRYPT SUCCESS by team A
+2026/09/22 23:49:26 [PHASE] Round 6 → ENCRYPTING | encryptor=Volkov (AI=true) | team=B
+2026/09/22 23:49:37 [AI] completion finish=length prompt_tokens=433 completion_tokens=2048
+2026/09/22 23:49:37 [AI] encrypt step=1 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:49:48 [AI] completion finish=length prompt_tokens=433 completion_tokens=2048
+2026/09/22 23:49:48 [AI] encrypt step=1 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:49:48 [AI-ENCRYPT] Round 6 step 1/3 → "线索暂缺"
+2026/09/22 23:49:59 [AI] completion finish=length prompt_tokens=450 completion_tokens=2048
+2026/09/22 23:49:59 [AI] encrypt step=2 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:50:10 [AI] completion finish=length prompt_tokens=450 completion_tokens=2048
+2026/09/22 23:50:10 [AI] encrypt step=2 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:50:10 [AI-ENCRYPT] Round 6 step 2/3 → "线索暂缺"
+2026/09/22 23:50:21 [AI] completion finish=length prompt_tokens=456 completion_tokens=2048
+2026/09/22 23:50:21 [AI] encrypt step=3 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:50:33 [AI] completion finish=length prompt_tokens=456 completion_tokens=2048
+2026/09/22 23:50:33 [AI] encrypt step=3 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:50:33 [AI-ENCRYPT] Round 6 step 3/3 → "线索暂缺"
+2026/09/22 23:50:33 [PHASE] Round 6 → INTERCEPT | opponent team=A allAI=false
+2026/09/22 23:51:10 [RESULT] Round 6 | INTERCEPT FAILED by team A
+2026/09/22 23:51:13 [PHASE] Round 6 → DECRYPT | team=B allAI=true decryptorsAllAI=true encryptor=Volkov
+2026/09/22 23:51:22 [AI] completion finish=length prompt_tokens=423 completion_tokens=2048
+2026/09/22 23:51:22 [AI] decrypt step=1 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:51:33 [AI] completion finish=length prompt_tokens=423 completion_tokens=2048
+2026/09/22 23:51:33 [AI] decrypt step=1 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:51:33 [AI-decrypt] Round 6 step 1/3 → 1
+2026/09/22 23:51:42 [AI] completion finish=length prompt_tokens=443 completion_tokens=2048
+2026/09/22 23:51:42 [AI] decrypt step=2 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:51:52 [AI] completion finish=length prompt_tokens=443 completion_tokens=2048
+2026/09/22 23:51:52 [AI] decrypt step=2 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:51:52 [AI-decrypt] Round 6 step 2/3 → 2
+2026/09/22 23:52:02 [AI] completion finish=length prompt_tokens=446 completion_tokens=2048
+2026/09/22 23:52:02 [AI] decrypt step=3 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:52:13 [AI] completion finish=length prompt_tokens=446 completion_tokens=2048
+2026/09/22 23:52:13 [AI] decrypt step=3 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:52:13 [AI-decrypt] Round 6 step 3/3 → 3
+2026/09/22 23:52:13 [RESULT] Round 6 | DECRYPT FAILED by team B
+2026/09/22 23:52:18 [PHASE] Round 7 → ENCRYPTING | encryptor=Hudson (AI=true) | team=A
+2026/09/22 23:52:29 [AI] completion finish=length prompt_tokens=478 completion_tokens=2048
+2026/09/22 23:52:29 [AI] encrypt step=1 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:52:40 [AI] completion finish=length prompt_tokens=478 completion_tokens=2048
+2026/09/22 23:52:40 [AI] encrypt step=1 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:52:40 [AI-ENCRYPT] Round 7 step 1/3 → "线索暂缺"
+2026/09/22 23:52:50 [AI] completion finish=length prompt_tokens=495 completion_tokens=2048
+2026/09/22 23:52:50 [AI] encrypt step=2 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:53:02 [AI] completion finish=length prompt_tokens=495 completion_tokens=2048
+2026/09/22 23:53:02 [AI] encrypt step=2 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:53:02 [AI-ENCRYPT] Round 7 step 2/3 → "线索暂缺"
+2026/09/22 23:53:12 [AI] completion finish=length prompt_tokens=501 completion_tokens=2048
+2026/09/22 23:53:12 [AI] encrypt step=3 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:53:23 [AI] completion finish=length prompt_tokens=501 completion_tokens=2048
+2026/09/22 23:53:23 [AI] encrypt step=3 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:53:23 [AI-ENCRYPT] Round 7 step 3/3 → "线索暂缺"
+2026/09/22 23:53:23 [PHASE] Round 7 → INTERCEPT | opponent team=B allAI=true
+2026/09/22 23:53:34 [AI] completion finish=length prompt_tokens=440 completion_tokens=2048
+2026/09/22 23:53:34 [AI] intercept step=1 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:53:44 [AI] completion finish=length prompt_tokens=440 completion_tokens=2048
+2026/09/22 23:53:44 [AI] intercept step=1 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:53:44 [AI-intercept] Round 7 step 1/3 → 1
+2026/09/22 23:53:55 [AI] completion finish=length prompt_tokens=460 completion_tokens=2048
+2026/09/22 23:53:55 [AI] intercept step=2 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:54:06 [AI] completion finish=length prompt_tokens=460 completion_tokens=2048
+2026/09/22 23:54:06 [AI] intercept step=2 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:54:06 [AI-intercept] Round 7 step 2/3 → 2
+2026/09/22 23:54:16 [AI] completion finish=length prompt_tokens=463 completion_tokens=2048
+2026/09/22 23:54:16 [AI] intercept step=3 attempt=1 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:54:27 [AI] completion finish=length prompt_tokens=463 completion_tokens=2048
+2026/09/22 23:54:27 [AI] intercept step=3 attempt=2 failed: openai: empty or incomplete answer (finish_reason=length)
+2026/09/22 23:54:27 [AI-intercept] Round 7 step 3/3 → 3
+2026/09/22 23:54:27 [RESULT] Round 7 | INTERCEPT FAILED by team B
+2026/09/22 23:54:30 [PHASE] Round 7 → DECRYPT | team=A allAI=false decryptorsAllAI=false encryptor=Hudson
+2026/09/22 23:55:00 [RESULT] Round 7 | DECRYPT FAILED by team A
