@@ -109,7 +109,7 @@ test('phase lights identify the acting team for both sides of alternating rounds
       const expected = phase === 'intercept' ? sendingTeam === 'A' ? 'B' : 'A' : sendingTeam;
       const signal = phaseSignal(state);
       assert.equal(signal.actingTeam, expected);
-      assert.equal(signal.color, expected === myTeam ? '#8bc995' : '#83b9ed');
+      assert.equal(signal.color, expected === myTeam ? '#e9dfc7' : '#afc2cc');
       // Waiting, submitting early or timing out never changes whose team is acting.
       assert.deepEqual(phaseSignal({ ...state, waiting: true, submitted: true, deadline: 1 }), signal);
       assert.equal(rosterTeams(state, initialLocal).find(t => t.team === expected).summary,
@@ -137,7 +137,7 @@ test('every theme keeps relative team colors consistent as sides and actions swi
     assert.equal(phaseSignal({ ...state, phase: 'decrypt' }, theme.id).color, theme.own.light);
     assert.equal(teamPalette('A', '', theme.id), theme.own, 'A stays colored before joining');
     assert.equal(teamPalette('B', '', theme.id), theme.opponent, 'B stays colored before joining');
-    assert.deepEqual(teamPalette('', '', theme.id), { light: '#a2a492', ink: '#596457' }, 'idle stage has no acting team');
+    assert.deepEqual(teamPalette('', '', theme.id), { light: '#a2a492', ink: '#596457', plate: '#596457', onPlate: '#f2e8d3' }, 'idle stage has no acting team');
   }
 });
 
@@ -148,9 +148,36 @@ test('theme choice persists, with a safe default for obsolete preferences or blo
     globalThis.localStorage = { getItem: () => saved, setItem: (_, value) => { saved = value; } };
     assert.equal(readTheme(), 'classic');
     for (const theme of themeChoices) { saveTheme(theme.id); assert.equal(readTheme(), theme.id); }
+    saved = 'rose'; assert.equal(readTheme(), 'radio', 'previous rose preference migrates to radio');
     saved = 'old-theme'; assert.equal(readTheme(), 'classic');
     globalThis.localStorage = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
     assert.doesNotThrow(() => saveTheme('amber'));
     assert.equal(readTheme(), 'classic');
   } finally { globalThis.localStorage = original; }
+});
+
+
+test('theme text stays readable on paper, enamel, CRT glass and unlit LED panels', () => {
+  const luminance = hex => {
+    const rgb = hex.slice(1).match(/../g).map(n => parseInt(n, 16) / 255)
+      .map(n => n <= .04045 ? n / 12.92 : ((n + .055) / 1.055) ** 2.4);
+    return rgb.reduce((sum, n, i) => sum + n * [.2126, .7152, .0722][i], 0);
+  };
+  const readable = (ink, surface, label) => {
+    const [low, high] = [luminance(ink), luminance(surface)].sort((a, b) => a - b);
+    assert.ok((high + .05) / (low + .05) >= 4.5, label);
+  };
+  for (const theme of themeChoices) {
+    for (const team of [theme.own, theme.opponent]) {
+      readable(team.ink, '#e6dec9', `${theme.id}: ink on ivory`);
+      readable(team.onPlate, team.plate, `${theme.id}: enamel lettering`);
+      readable(team.light, '#111e24', `${theme.id}: screen text`);
+    }
+    readable(theme.crt.light, theme.crt.background, `${theme.id}: CRT keyword`);
+    for (const color of Object.values(theme.led)) readable(color, '#080a09', `${theme.id}: LED die`);
+    assert.notEqual(theme.led.word, theme.led.legend, `${theme.id}: two distinct LED colours`);
+    assert.equal(theme.led.word, theme.crt.light, `${theme.id}: both hardware options share the device colour`);
+    for (const team of [theme.own, theme.opponent])
+      assert.notEqual(theme.led.word, team.light, `${theme.id}: device colour is independent of either team`);
+  }
 });

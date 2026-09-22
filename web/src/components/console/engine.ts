@@ -26,6 +26,8 @@ import { ConsoleInstruments } from './instruments';
 import type { ConsoleSound } from './sound';
 import { qualityProfiles, type QualityProfile } from './quality';
 import { gameFraming, handleSurfaces, inspectionZoom, type HandleSide } from './view';
+
+type TubeFrame = { id: string; frame?: Frame; palette?: Content['wordTube'] };
 interface Surface {
     x: number;
     y: number;
@@ -113,8 +115,8 @@ export class ConsoleEngine {
     private nixieCoronas: { canvas: HTMLCanvasElement; texture: THREE.CanvasTexture; material: THREE.MeshBasicMaterial; spill: THREE.MeshBasicMaterial; paths: string[]; code: string }[] = [];
     private crtTime = { value: 0 };
     // Every tube has its own supply tolerances, so no two come up or die alike.
-    private crtTubes = new Map<string, { motion: CrtMotion<{ id: string; frame?: Frame }>; uniforms: CrtUniforms; printed?: Frame }>();
-    private crtMotion = new CrtMotion<{ id: string; frame?: Frame }>();
+    private crtTubes = new Map<string, { motion: CrtMotion<TubeFrame>; uniforms: CrtUniforms; printed?: Frame }>();
+    private crtMotion = new CrtMotion<TubeFrame>();
     private crtSound = new CrtSoundMotion();
     // The keyword windows can be fitted with dot-matrix modules instead of tubes.
     private wordDisplay: WordDisplay = initialLocal.wordDisplay;
@@ -368,7 +370,7 @@ export class ConsoleEngine {
             if (/^Ruby[ _]lens[ _][0-3]$/.test(o.name) && o.material instanceof THREE.MeshStandardMaterial) {
                 // The exported flat lens becomes the dark seat beneath the new
                 // curved glass; a second glossy face left straight white strips.
-                o.material.color.set('#160806');
+                o.material.color.set('#0b1012');
                 o.material.roughness = .94;
                 o.material.metalness = 0;
             }
@@ -397,8 +399,8 @@ export class ConsoleEngine {
                     camera.getWorldPosition(eye.value);
                     plane.worldToLocal(eye.value);
                 };
-                const uniforms = crtUniforms();
-                const motion = name === 'screen' ? this.crtMotion : new CrtMotion<{ id: string; frame?: Frame }>(kind, seed);
+                const uniforms = crtUniforms(kind);
+                const motion = name === 'screen' ? this.crtMotion : new CrtMotion<TubeFrame>(kind, seed);
                 this.crtTubes.set(name, { motion, uniforms });
                 const dots = kind === 'word' ? dotUniforms() : undefined;
                 if (dots) {
@@ -739,7 +741,7 @@ export class ConsoleEngine {
                 uv[i * 2 + 1] = point.y / surface.h + .5;
             }
             plaque.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-            plaque.material = new THREE.MeshPhysicalMaterial({ ...enamel, color: '#365e43',
+            plaque.material = new THREE.MeshPhysicalMaterial({ ...enamel, color: '#efe5cf',
                 roughness: .72, metalness: .16, clearcoat: .28, clearcoatRoughness: .34 });
         }
         for (const name of ['score', 'rosterA', 'rosterB']) {
@@ -936,8 +938,8 @@ export class ConsoleEngine {
         this.powerOn = hardware.powered;
         if (!this.powerOn) this.testUntil = 0;
         if (this.wordDisplay !== local.wordDisplay) this.fitWordDisplay(local.wordDisplay);
-        // Only the main display changes palette. Every tube keeps its outgoing
-        // picture until it is dark, so paint's blank power-off frames wait too.
+        // Every tube keeps its outgoing picture and phosphor colour until dark;
+        // paint's blank power-off frames wait for that same exchange.
         this.crtMotion.sync(this.powerOn, { id: content.displayKey, frame: content.frames.screen });
         // Revoking a key also replaces the outgoing image during palette changes
         // and power-off afterglow; no secret is kept in the phosphor snapshot.
@@ -948,7 +950,11 @@ export class ConsoleEngine {
         this.syncCrtSound();
         for (const [name, tube] of this.crtTubes) {
             if (tube.motion === this.crtMotion) continue;
-            tube.motion.sync(this.powerOn, { id: name, frame: content.frames[name] });
+            const word = name.startsWith('word');
+            tube.motion.sync(this.powerOn && (!word || this.wordDisplay === 'crt'), {
+                id: word ? content.displayKey : name, frame: content.frames[name],
+                palette: word ? content.wordTube : undefined,
+            });
             if (name.startsWith('word') && this.dotPrivacyKey !== content.wordPrivacyKey && tube.motion.current)
                 tube.motion.current = { ...tube.motion.current, frame: content.frames[name] };
         }
@@ -982,7 +988,7 @@ export class ConsoleEngine {
             seat.motion.sync(player === null || player === undefined ? null : { id: player, frame: content.frames['roster' + id] });
         }
         for (const [name, panel] of this.themePanels)
-            panel.motion.sync({ id: content.paletteKey, frame: content.frames[name], color: content.teamInks[name.slice(-1) as 'A' | 'B'] });
+            panel.motion.sync({ id: content.paletteKey, frame: content.frames[name], color: content.teamPlates[name.slice(-1) as 'A' | 'B'] });
         this.archiveOpen = local.archiveOpen;
         if (!local.archiveOpen || !this.powerOn) this.paperReaderStarted = false;
         this.receipt.sync(local.archiveOpen, content.paperRecords);
@@ -1070,6 +1076,12 @@ export class ConsoleEngine {
             // New words on a lit window arrive as a new signal, which the hold has to find again.
             const lit = tube.printed !== undefined && motion.tube.on;
             tube.printed = frame;
+            const palette = motion.current?.palette;
+            if (palette) {
+                uniforms.hot.value.set(palette.light);
+                uniforms.after.value.set(palette.light).lerp(new THREE.Color(1, 1, 1), .45);
+                uniforms.tint.value.set(palette.background).multiplyScalar(.04);
+            }
             if (this.updateFrame(name, frame) && lit && name !== 'screen') motion.tube.disturb(.55);
         }
         if (import.meta.env.DEV) {

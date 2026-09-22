@@ -12,7 +12,8 @@ const { paint } = await import(url((await load('paint')).replace("'./model'", JS
 globalThis.document = { createElement: () => {
   const ink = [], draws = [];
   const canvas = { ink, draws, getContext: () => context };
-  const context = new Proxy({ canvas, fillText: value => { ink.push(value); draws.push({ value, size: parseFloat(context.font.match(/([\d.]+)px/)[1]) }); },
+  const context = new Proxy({ canvas, fillText: value => { ink.push(value); draws.push({ value, color: context.fillStyle, size: parseFloat(context.font.match(/([\d.]+)px/)[1]) }); },
+    fillRect: (x, y, w, h) => { if (canvas.background === undefined && x === 0 && y === 0 && w === canvas.width && h === canvas.height) canvas.background = context.fillStyle; },
     measureText: value => ({ width: [...value].reduce((sum, ch) => sum + (/[^\u0000-\u00ff]/.test(ch) ? 1 : .52), 0) * parseFloat(context.font.match(/([\d.]+)px/)?.[1] || '20') }),
     createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }),
   }, { get: (target, key) => key in target ? target[key] : () => {} });
@@ -110,21 +111,24 @@ test('fine LED windows fit one-to-five-character words consistently and retain o
   assert.deepEqual(zh.targets.find(target => target.surface === 'word1'), { ...zh.targets.find(target => target.surface === 'word1'), x: 0, y: 0, w: 120, h: 70 });
 });
 
-test('LED privacy and team identity travel with the frame while legends never use the opposing colour', async () => {
+test('LED privacy travels with the frame while two die colours stay independent of player side', async () => {
   const { themeChoices } = await import(modelUrl);
   const s = previewState({}, 'encrypting');
   for (const theme of themeChoices) for (const myTeam of ['A', 'B']) {
     const out = paint({ ...s, myTeam }, { ...initialLocal, theme: theme.id });
-    assert.equal(out.wordInks.word, theme.own.light);
-    assert.equal(out.wordInks.legend, theme.device.light);
+    assert.equal(out.wordInks.word, theme.led.word);
+    assert.equal(out.wordInks.legend, theme.led.legend);
     assert.notEqual(out.wordInks.legend, theme.opponent.light);
-    assert.equal(out.wordInks.warning, theme.warning.light);
+    assert.equal(out.wordInks.warning, theme.led.legend);
+    assert.equal(new Set(Object.values(out.wordInks)).size, 2, 'offline warnings reuse an existing die');
+    assert.equal(out.frames.word0.canvas.background, '#000', 'LEDs never receive the CRT background');
     const hidden = paint({ ...s, myTeam }, { ...initialLocal, theme: theme.id, hiddenWords: true });
     assert.notEqual(hidden.wordPrivacyKey, out.wordPrivacyKey);
     assert.ok(!hidden.frames.word0.canvas.ink.includes('灯塔'));
     assert.ok(hidden.frames.word0.canvas.ink.includes('已遮住'));
     const otherTeam = paint({ ...s, myTeam: myTeam === 'A' ? 'B' : 'A' }, { ...initialLocal, theme: theme.id });
     assert.notEqual(otherTeam.wordPrivacyKey, out.wordPrivacyKey);
+    assert.deepEqual(otherTeam.wordInks, out.wordInks, 'changing teams keeps the same device colours');
   }
 });
 test('the earlier tube windows share one type scale, with full long phrases on two lines', () => {
@@ -178,4 +182,26 @@ test('private code targets never reach the display until read, or after eject an
   assert.ok(ejected.frames.screen.canvas.ink.includes('保留草稿'));
   assert.ok(!ejected.frames.screen.canvas.ink.includes('玫瑰'));
   assert.notEqual(ejected.screenPrivacyKey, paint(s, local).screenPrivacyKey, 'CRT outgoing image is revoked');
+});
+
+
+test('CRT palettes reach word textures and white enamel uses dark lettering on either player side', async () => {
+  const { themeChoices, teamPalette, wordDisplayOptions } = await import(modelUrl);
+  for (const option of wordDisplayOptions) {
+    assert.ok(!/[\u3400-\u9fff]/.test(translate('en', option.label)));
+    assert.ok(!/[\u3400-\u9fff]/.test(translate('en', option.description)));
+  }
+  for (const theme of themeChoices) for (const myTeam of ['A', 'B']) {
+    assert.ok(!/[\u3400-\u9fff]/.test(translate('en', theme.label)));
+    const s = { ...previewState({}, 'encrypting'), myTeam };
+    const out = paint(s, { ...initialLocal, theme: theme.id, wordDisplay: 'crt' });
+    assert.equal(out.frames.word0.canvas.background, theme.crt.background);
+    assert.equal(out.frames.word0.canvas.draws.find(d => d.value === '灯塔').color, theme.crt.light);
+    assert.deepEqual(out.wordTube, theme.crt);
+    for (const team of ['A', 'B']) {
+      const palette = teamPalette(team, myTeam, theme.id);
+      assert.equal(out.teamPlates[team], palette.plate);
+      assert.ok(out.frames['roster' + team].canvas.draws.every(d => d.color === palette.onPlate));
+    }
+  }
 });

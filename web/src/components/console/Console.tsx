@@ -786,7 +786,7 @@ export default function Console() {
               const settings = event.currentTarget.closest('details');
               if (settings) { settings.open = false; settings.querySelector('summary')?.focus({ preventScroll: true }); }
             }}>
-            <span className="station-theme-swatches" aria-hidden="true"><i style={{ background: theme.own.light }}/><i style={{ background: theme.opponent.light }}/><i style={{ background: theme.device.light }}/><i style={{ background: theme.warning.light }}/></span>
+            <span className="station-theme-swatches" aria-hidden="true"><i style={{ background: theme.own.plate }}/><i style={{ background: theme.opponent.plate }}/><i style={{ background: theme.led.word }}/><i style={{ background: theme.led.legend }}/></span>
             {t(theme.label)}
           </button>)}
         </div>

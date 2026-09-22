@@ -8,21 +8,28 @@ export interface CrtUniforms {
     scan: { value: THREE.Vector4 };
     light: { value: THREE.Vector4 };
     trail: { value: THREE.Vector4 };
+    hot: { value: THREE.Color };
+    after: { value: THREE.Color };
+    tint: { value: THREE.Color };
 }
 export interface DotUniforms {
     drive: { value: THREE.Vector4 };
     panel: { value: THREE.Vector4 };
 }
 /** One shared semantic palette bus serves all four LED modules. */
-export const dotInks = { word: { value: new THREE.Color('#8bc995') }, legend: { value: new THREE.Color('#d9cda9') }, warning: { value: new THREE.Color('#e6a07e') } };
+// The warning channel reuses the legend die: the modules have only two colours.
+export const dotInks = { word: { value: new THREE.Color('#f1b09d') }, legend: { value: new THREE.Color('#d7cfb8') }, warning: { value: new THREE.Color('#d7cfb8') } };
 export const dotUniforms = (): DotUniforms => ({
     drive: { value: new THREE.Vector4(1, 1, 0, 0) },
     panel: { value: new THREE.Vector4(0, dotGrid.cols, 0, 0) },
 });
-export const crtUniforms = (): CrtUniforms => ({
+export const crtUniforms = (kind: CrtKind = 'screen'): CrtUniforms => ({
     scan: { value: new THREE.Vector4(1, 1, 0, .004) },
     light: { value: new THREE.Vector4(1, 0, 1, 0) },
     trail: { value: new THREE.Vector4(0, 0, 0, 0) },
+    hot: { value: new THREE.Color().setRGB(...looks[kind].hot) },
+    after: { value: new THREE.Color().setRGB(...looks[kind].after) },
+    tint: { value: new THREE.Color().setRGB(.002, .004, .004) },
 });
 
 // hot: a saturated phosphor seen through its filter. after: what still glows once
@@ -56,15 +63,16 @@ export function shadeCrt(material: THREE.Material, options: Options) {
         const { curvature, size } = options;
         Object.assign(shader.uniforms, {
             crtTime: options.time, crtScan: options.tube.scan, crtLight: options.tube.light, crtTrail: options.tube.trail,
-            crtHot: { value: new THREE.Vector3(...look.hot) }, crtAfter: { value: new THREE.Vector3(...look.after) },
+            crtHot: options.tube.hot, crtAfter: options.tube.after, crtTint: options.tube.tint,
             crtFlood: { value: look.flood }, crtSpot: { value: options.spot },
             crtProfile: { value: look.profile }, crtSeed: { value: options.seed },
             crtCurve: { value: curvature.warp }, crtAspect: { value: size.x / size.y },
             crtEye: options.eye, crtSize: { value: size },
             crtRise: { value: curvature.rise }, crtInnerRise: { value: curvature.innerRise }, crtDepth: { value: curvature.depth },
         });
-        const display = options.display?.() ?? 'crt';
-        if (display !== 'crt' && options.dots) {
+        // Three reuses the latest material uniforms when returning to a cached
+        // program. Keep both hardware bindings alive, including while CRT is fitted.
+        if (options.dots) {
             // Square cells on a module that leaves the window a dark margin.
             const across = .94, cell = size.x * across / dotGrid.cols;
             Object.assign(shader.uniforms, {
@@ -73,6 +81,9 @@ export function shadeCrt(material: THREE.Material, options: Options) {
                 dotFit: { value: new THREE.Vector2(1 / across, size.y / (dotGrid.rows * cell)) },
                 dotBandRows: { value: new THREE.Vector2(dotGrid.bandTop, dotGrid.bandBottom) }, dotGap: { value: dotGrid.gap }, dotInset: { value: dotGrid.inset },
             });
+        }
+        const display = options.display?.() ?? 'crt';
+        if (display !== 'crt' && options.dots) {
             shader.fragmentShader = `#define DOT_FILTER ${dotFilterDefine[options.filter?.() ?? defaultDotFilter]}\n` + (options.lite() ? '#define CRT_LITE\n' : '')
                 + crtOpticsShader + crtTubeShader + dotDeclarations + dotFilteringShader + shader.fragmentShader.replace('#include <map_fragment>', dotMatrixShader);
             return;
@@ -91,6 +102,7 @@ const crtTubeShader = `
     uniform vec4 crtTrail;
     uniform vec3 crtHot;
     uniform vec3 crtAfter;
+    uniform vec3 crtTint;
     uniform float crtFlood;
     uniform float crtSpot;
     uniform float crtProfile;
@@ -214,7 +226,7 @@ const crtPictureShader = `
     // A dark inner border separates the emitting coating
     // from the front glass. Out-of-frame samples fade rather
     // than stretching their last row onto the rounded rim.
-    vec3 crtTube = crtProfile > .5 && crtProfile < 1.5 ? vec3(.004, .0007, .0004) : vec3(.002, .004, .004);
+    vec3 crtTube = crtTint;
     float crtPicture = crtFrame(crtFrameUv, min(vec2(.02) / crtExtent, vec2(.5)));
     float crtGlowing = crtLight.x;
     if (!crtMoving) {
@@ -278,7 +290,7 @@ const crtRasterShader = `
     gl_FragColor.rgb *= 1.0 + (crtGrain - .5) * .035 * crtGlowing;
     if (crtProfile > .5 && crtProfile < 1.5) {
         float crtNoise = crtHash(floor(vMapUv * vec2(420.0, 180.0)) + floor(crtTime * 28.0));
-        gl_FragColor.rgb += vec3(.16, .035, .018) * crtTear * crtGlowing * crtPicture;
+        gl_FragColor.rgb += crtHot * .16 * crtTear * crtGlowing * crtPicture;
         gl_FragColor.rgb += (crtNoise - .5) * (.055 + .16 * crtUnstable) * crtBurst * crtGlowing * crtPicture;
     }
     #endif
@@ -286,7 +298,8 @@ const crtRasterShader = `
 
 // LED dots behind a smoked contrast filter. Nothing scans and nothing persists;
 // what the driver clocks in is what glows. The source's RGB channels address the
-// keyword dies, the legend dies and the warning dies, one texel per lamp.
+// keyword, legend and warning channels, one texel per lamp. Legends and warnings
+// share the same die colour.
 const dotDeclarations = `
     uniform vec4 dotDrive;
     uniform vec4 dotPanel;

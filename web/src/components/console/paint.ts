@@ -37,7 +37,8 @@ export interface Content {
     roomCode: string;
     paperRecords: number;
     paletteKey: string;
-    teamInks: Record<'A' | 'B', string>;
+    teamPlates: Record<'A' | 'B', string>;
+    wordTube: { background: string; light: string; rim: string };
     displayKey: string;
     /** LED die colours of the keyword windows: the keyword itself, and its legends. */
     wordInks: { word: string; legend: string; warning: string };
@@ -68,13 +69,13 @@ function fitLabel(c: CanvasRenderingContext2D, value: string, x: number, y: numb
     const fitted = Math.min(size, size * max / Math.max(1, c.measureText(value).width));
     text(c, value, x, y, fitted, color, weight);
 }
-function keyword(c: CanvasRenderingContext2D, value: string, x: number, y: number, width: number) {
+function keyword(c: CanvasRenderingContext2D, value: string, x: number, y: number, width: number, color: string) {
     // Both languages start at 60 px. Long phrases wrap at word boundaries;
     // only content that does not fit shrinks, and secret words are never elided.
     const base = 60;
     c.font = `600 ${base}px ${FONT}`;
     if (c.measureText(value).width <= width) {
-        text(c, value, x, y, base, '#f4b07f', 600);
+        text(c, value, x, y, base, color, 600);
         return;
     }
     const tokens = value.trim().split(/\s+/);
@@ -86,8 +87,8 @@ function keyword(c: CanvasRenderingContext2D, value: string, x: number, y: numbe
             if (measured < widest) { widest = measured; lines = candidate; }
         }
         const size = Math.min(48, base * width / widest);
-        lines.forEach((line, i) => text(c, line, x, y + (i - .5) * size * 1.08, size, '#f4b07f', 600));
-    } else fitLabel(c, value, x, y, base, '#f4b07f', 600, width);
+        lines.forEach((line, i) => text(c, line, x, y + (i - .5) * size * 1.08, size, color, 600));
+    } else fitLabel(c, value, x, y, base, color, 600, width);
 }
 function wrap(c: CanvasRenderingContext2D, value: string, x: number, y: number, width: number, size = 22, color = CREAM, maxLines = 3) {
     c.font = `400 ${size}px ${FONT}`;
@@ -225,6 +226,7 @@ function printWear(c: CanvasRenderingContext2D, width: number, height: number) {
 export function paint(s: StationState, u: LocalState, inspection = false): Content {
     const h = consoleHardware(u, s);
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
+    const colors = themeColors(u.theme);
     const teamInk = (team: string) => teamPalette(team, s.myTeam, u.theme).ink;
     const frames: Record<string, Frame> = {};
     const targets: Target[] = [];
@@ -459,14 +461,14 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
         target('word' + i, 'words', !h.online ? t('离线') : u.hiddenWords ? t('显示秘密词') : t('遮住秘密词'), 0, 0, strip, dotGrid.rows, { disabled: !h.online || !hasGame });
     }
     for (let i = 0; !dotWords && i < 4; i++) {
-        const g = frame('word' + i, 480, 284, '#360a06');
+        const g = frame('word' + i, 480, 284, colors.crt.background);
         const grad = g.createLinearGradient(0, 0, 0, 284);
-        grad.addColorStop(0, 'rgba(196,40,16,.24)');
-        grad.addColorStop(.6, 'rgba(80,9,5,0)');
-        grad.addColorStop(1, 'rgba(201,42,15,.19)');
+        grad.addColorStop(0, colors.crt.rim + '3d');
+        grad.addColorStop(.6, colors.crt.background + '00');
+        grad.addColorStop(1, colors.crt.rim + '30');
         g.fillStyle = grad;
         g.fillRect(0, 0, 480, 284);
-        g.strokeStyle = '#612016';
+        g.strokeStyle = colors.crt.rim + '66';
         g.lineWidth = 1;
         for (let x = 20; x < 480; x += 40) {
             g.beginPath();
@@ -475,14 +477,14 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
             g.stroke();
         }
         for (let y = 15; y < 284; y += 40)
-            line(g, 0, y, 480, '#612016');
-        text(g, t("密钥 / 0{0}", [i + 1]), 26, 31, 17, '#c67d5e', 500);
-        line(g, 26, 55, 426, '#99513a');
-        text(g, String(i + 1), 27, 127, 83, '#ed7653', 600);
-        keyword(g, !h.online ? t('离线') : !hasGame ? s.phase === 'room' ? t("待开局") : t("待接入") : u.hiddenWords ? '••••' : word(s.myWords[i], u.locale) || t("待载入"), 119, 128, 330);
-        text(g, !h.online ? t('等待连接') : hasGame ? t("仅我方可见") : t("开局后分配秘密词"), 123, 201, 20, '#ba6750');
-        line(g, 26, 237, 426, '#99513a');
-        text(g, !h.online ? t('连接后恢复') : !hasGame ? t("编号固定 / 每局重新分配") : u.hiddenWords ? t("● 已遮住 · 点击显示") : t("● 私密词窗 · 点击遮住"), 123, 259, 16, '#c67d5e');
+            line(g, 0, y, 480, colors.crt.rim + '66');
+        text(g, t("密钥 / 0{0}", [i + 1]), 26, 31, 17, colors.crt.light, 500);
+        line(g, 26, 55, 426, colors.crt.rim);
+        text(g, String(i + 1), 27, 127, 83, colors.crt.light, 600);
+        keyword(g, !h.online ? t('离线') : !hasGame ? s.phase === 'room' ? t("待开局") : t("待接入") : u.hiddenWords ? '••••' : word(s.myWords[i], u.locale) || t("待载入"), 119, 128, 330, colors.crt.light);
+        text(g, !h.online ? t('等待连接') : hasGame ? t("仅我方可见") : t("开局后分配秘密词"), 123, 201, 20, colors.crt.light);
+        line(g, 26, 237, 426, colors.crt.rim);
+        text(g, !h.online ? t('连接后恢复') : !hasGame ? t("编号固定 / 每局重新分配") : u.hiddenWords ? t("● 已遮住 · 点击显示") : t("● 私密词窗 · 点击遮住"), 123, 259, 16, colors.crt.light);
         target('word' + i, 'words', !h.online ? t('离线') : u.hiddenWords ? t("显示秘密词") : t("遮住秘密词"), 0, 0, 480, 284, { disabled: !h.online || !hasGame });
     }
     const b = frame('badge', 660, 150);
@@ -502,13 +504,18 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     text(ro, 'DUTY ROSTER', 24, 32, 22, CREAM, 600);
     line(ro, 22, 55, 356, '#657165');
     teams.forEach(team => {
-        const accent = teamInk(team.team);
+        const palette = teamPalette(team.team, s.myTeam, u.theme);
+        const accent = palette.ink;
         const plaque = frame('roster' + team.team, 728, 96);
         // Transparent silkscreen leaves the modeled enamel and bevel visible.
         plateWear(plaque, 728, 96);
         plaque.scale(2, 2);
-        text(plaque, t("{0} 队{1}", [team.team, team.own ? t(" / 我方") : '']), 14, 25, 27, CREAM, 600);
-        text(plaque, `${team.count} / 4`, 279, 25, 23, CREAM, 500);
+        if (palette.plate !== palette.ink) {
+            plaque.strokeStyle = palette.ink; plaque.lineWidth = 1.5;
+            plaque.strokeRect(2, 2, 360, 44);
+        }
+        text(plaque, t("{0} 队{1}", [team.team, team.own ? t(" / 我方") : '']), 14, 25, 27, palette.onPlate, 600);
+        text(plaque, `${team.count} / 4`, 279, 25, 23, palette.onPlate, 500);
         printWear(plaque, 364, 48);
         team.seats.forEach((seat, i) => {
             const p = seat.player;
@@ -778,11 +785,11 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
             const display = canvas.getContext('2d')!;
             display.setTransform(1, 0, 0, 1, 0, 0);
             display.clearRect(0, 0, canvas.width, canvas.height);
-            display.fillStyle = name.startsWith('word') ? dotWords ? '#000' : '#160805' : '#0b1313';
+            display.fillStyle = name.startsWith('word') ? dotWords ? '#000' : '#0b1012' : '#0b1313';
             display.fillRect(0, 0, canvas.width, canvas.height);
         }
     }
-    return { frames, screenPrivacyKey: `${h.online}:${keyDiskIdentity(s)}:${diskReadable}`, teamInks: { A: teamInk('A'), B: teamInk('B') }, displayKey: u.theme, wordInks: { word: themeColors(u.theme).own.light, legend: themeColors(u.theme).device.light, warning: themeColors(u.theme).warning.light }, wordPrivacyKey: `${h.online}:${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}:${s.myWords.join("|")}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: h.online, trafficKey: JSON.stringify([s.phase, s.round, s.submitted, s.aiStatus, s.playerProgress, s.history.length, s.players]), targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
+    return { frames, screenPrivacyKey: `${h.online}:${keyDiskIdentity(s)}:${diskReadable}`, teamPlates: { A: teamPalette('A', s.myTeam, u.theme).plate, B: teamPalette('B', s.myTeam, u.theme).plate }, wordTube: colors.crt, displayKey: u.theme, wordInks: { ...colors.led, warning: colors.led.legend }, wordPrivacyKey: `${h.online}:${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}:${s.myWords.join("|")}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: h.online, trafficKey: JSON.stringify([s.phase, s.round, s.submitted, s.aiStatus, s.playerProgress, s.history.length, s.players]), targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
             (h.powered || rearControls.has(t.id) || ['power-toggle', 'disk-toggle', 'disk-eject'].includes(t.id)) &&
             (h.online || t.surface !== 'screen' || t.id === 'restore-link')),
         status: !h.online ? t(hardwareMessage(u, s)) : status || `${t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase])} · ${s.connected ? t("已连接") : t("连接中")}`,

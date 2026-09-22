@@ -93,8 +93,8 @@ export function keyDiskMessage(disk: KeyDiskState) {
 }
 /** Hardware of the four keyword windows; the DEV bench (`?words=led`) keeps the earlier tubes for comparison. */
 export const wordDisplayOptions: { id: WordDisplay; label: string; description: string }[] = [
-    { id: 'led', label: 'A · LED 点阵', description: '120×70 点阵，关键词 20 点、图例 12 点：关键词用我方色，编号和说明用中性色。切换主题先熄灭，再低亮自检、依次载入；过长的词保留全文走字。' },
-    { id: 'crt', label: 'B · 红色滤光小 CRT', description: '此前的方案：四支加红色滤光的小显像管，带扫描线、冷启动预热、关机塌缩成亮线与光点，换信号时场同步滑移。' },
+    { id: 'led', label: 'A · LED 点阵', description: '120×70 双色点阵：关键词使用主题光色，编号和说明使用暖白，底板保持近黑。切换主题先熄灭，再低亮自检、依次载入；过长的词保留全文走字。' },
+    { id: 'crt', label: 'B · 滤光小 CRT', description: '四支显像管的暗底、字色与余辉随主题变化，保留扫描线、冷启动预热和关机塌缩。切换主题先熄灭，再显示新配色。' },
 ];
 export type InstrumentVariant = 'original' | 'signal' | 'tuning' | 'status';
 export const instrumentOptions: { id: InstrumentVariant; label: string; description: string }[] = [
@@ -293,11 +293,33 @@ export function roleState(s: StationState, u: LocalState) {
     return { encrypt, guess, active, ready: active && complete && s.connected,
         action: encrypt ? 'encrypt' : s.phase === 'intercept' ? 'intercept' : 'decrypt' };
 }
+const themeBase = {
+    device: { light: '#d7cfb8', ink: '#595a4e' },
+    warning: { light: '#edbc80', ink: '#8a4c23' },
+} as const;
+/** Enamel, ink on paper, and luminous type are distinct materials, especially for the white team.
+ * Keyword windows use a third device colour shared by both teams, never either team's light. */
 export const themeChoices = [
-    { id: 'classic', label: '经典', own: { light: '#8bc995', ink: '#365e43' }, opponent: { light: '#83b9ed', ink: '#315d7b' }, device: { light: '#d9cda9', ink: '#64624e' }, warning: { light: '#e6a07e', ink: '#804832' } },
-    { id: 'amber', label: '琥珀', own: { light: '#edc27e', ink: '#795126' }, opponent: { light: '#87c4d2', ink: '#315c6a' }, device: { light: '#dbcfb1', ink: '#6b5d47' }, warning: { light: '#e6a07e', ink: '#804832' } },
-    { id: 'violet', label: '紫罗兰', own: { light: '#c5afe8', ink: '#654981' }, opponent: { light: '#9bcbb6', ink: '#3b6251' }, device: { light: '#d4cbdc', ink: '#62586b' }, warning: { light: '#e6a07e', ink: '#804832' } },
-    { id: 'rose', label: '玫瑰', own: { light: '#e6aba1', ink: '#844e4b' }, opponent: { light: '#a9bedf', ink: '#475f80' }, device: { light: '#d9ccbc', ink: '#705d54' }, warning: { light: '#e6a07e', ink: '#804832' } },
+    { ...themeBase, id: 'classic', label: '原版黑白红',
+        own: { light: '#e9dfc7', ink: '#383b36', plate: '#efe5cf', onPlate: '#383b36' },
+        opponent: { light: '#afc2cc', ink: '#2c3539', plate: '#2c3539', onPlate: '#f2e8d3' },
+        crt: { background: '#4a1612', light: '#f1b09d', rim: '#8e493a' },
+        led: { word: '#f1b09d', legend: '#d7cfb8' } },
+    { ...themeBase, id: 'radio', label: '蓝调电台',
+        own: { light: '#a4c7d8', ink: '#365d70', plate: '#365d70', onPlate: '#f2e8d3' },
+        opponent: { light: '#e4ae99', ink: '#8a4436', plate: '#8a4436', onPlate: '#f2e8d3' },
+        crt: { background: '#292411', light: '#e3cf86', rim: '#6c6342' },
+        led: { word: '#e3cf86', legend: '#d7cfb8' } },
+    { ...themeBase, id: 'amber', label: '琥珀档案',
+        own: { light: '#e5c28b', ink: '#7a542b', plate: '#7a542b', onPlate: '#f2e8d3' },
+        opponent: { light: '#a0cac7', ink: '#315f62', plate: '#315f62', onPlate: '#f2e8d3' },
+        crt: { background: '#262031', light: '#cbbaed', rim: '#675d7c' },
+        led: { word: '#cbbaed', legend: '#d7cfb8' } },
+    { ...themeBase, id: 'violet', label: '紫棕密令',
+        own: { light: '#cdb6cd', ink: '#674e64', plate: '#674e64', onPlate: '#f2e8d3' },
+        opponent: { light: '#bcc99c', ink: '#586244', plate: '#586244', onPlate: '#f2e8d3' },
+        crt: { background: '#142731', light: '#9bceec', rim: '#47687c' },
+        led: { word: '#9bceec', legend: '#d7cfb8' } },
 ] as const;
 export type ThemeId = typeof themeChoices[number]['id'];
 export function themeColors(theme: ThemeId = 'classic') {
@@ -305,7 +327,8 @@ export function themeColors(theme: ThemeId = 'classic') {
 }
 export function readTheme(): ThemeId {
     try {
-        const saved = localStorage.getItem('decrypto-theme');
+        const stored = localStorage.getItem('decrypto-theme');
+        const saved = stored === 'rose' ? 'radio' : stored;
         return themeChoices.find(choice => choice.id === saved)?.id ?? 'classic';
     } catch { return 'classic'; }
 }
@@ -314,7 +337,7 @@ export function saveTheme(theme: ThemeId) {
 }
 /** Team labels keep their colors before joining; active displays pass no team when idle. */
 export function teamPalette(team: string, myTeam: string, theme: ThemeId = 'classic') {
-    if (!team) return { light: '#a2a492', ink: '#596457' };
+    if (!team) return { light: '#a2a492', ink: '#596457', plate: '#596457', onPlate: '#f2e8d3' };
     const colors = themeColors(theme);
     return team === (myTeam || 'A') ? colors.own : colors.opponent;
 }
