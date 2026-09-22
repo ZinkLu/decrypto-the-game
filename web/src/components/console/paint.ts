@@ -1,6 +1,6 @@
 import { translate, localizeError } from './i18n';
 import { dotGrid, dotText, dotType, dotWordLayout } from './dotMatrix';
-import { roleState, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
+import { roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
 import type { LocalState, StationState } from './model';
 import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
 export interface Target {
@@ -41,6 +41,7 @@ export interface Content {
     /** LED die colours of the keyword windows: the keyword itself, and its legends. */
     wordInks: { word: string; legend: string; warning: string };
     wordPrivacyKey: string;
+    screenPrivacyKey: string;
 }
 const INK = '#243344', CREAM = '#ece0c4', MUTED = '#a59e8c', DARK = '#111e24';
 const FONT = '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif';
@@ -226,6 +227,9 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     const frames: Record<string, Frame> = {};
     const targets: Target[] = [];
     const r = roleState(s, u);
+    const diskReadable = keyDiskReadable(s, u);
+    const ownsDisk = !!keyDiskIdentity(s);
+    const diskCurrent = ownsDisk && u.keyDisk.id === keyDiskIdentity(s);
     const signal = phaseSignal(s, u.theme);
     const teams = rosterTeams(s, u);
     const hasGame = !['home', 'room'].includes(s.phase);
@@ -348,7 +352,7 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     else {
         const title = u.submitted ? t("密报已发送") : r.encrypt ? t("你的回合 · 加密") : r.guess ? s.phase === 'intercept' ? t("截获对方密报") : t("解读队友线索") : s.phase === 'encrypting' ? t("等待加密者发报") : s.phase === 'intercept' ? t("对方正在拦截") : t("等待队友解码");
         text(c, title, 55, 113, w < 900 ? 33 : 42, tint, 600);
-        const description = r.encrypt ? t("按密码顺序写下三条线索，让队友读懂。") : r.guess ? t("对照线索与档案，选择三个不同的编号。") : s.encryptor ? t("本轮加密者：{0}", [s.encryptor]) : t("留意通信信号，可以随时翻阅档案。");
+        const description = r.encrypt ? t(diskReadable ? "按密码顺序写下三条线索，让队友读懂。" : keyDiskMessage(u.keyDisk)) : r.guess ? t("对照线索与档案，选择三个不同的编号。") : s.encryptor ? t("本轮加密者：{0}", [s.encryptor]) : t("留意通信信号，可以随时翻阅档案。");
         text(c, description, 55, 166, 22, MUTED, 400, w - 110);
         [0, 1, 2].forEach(i => {
             const y = 211 + i * 91;
@@ -357,8 +361,8 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
             round(c, 55, y, w - 110, 75, 9);
             c.stroke();
             if (r.encrypt) {
-                text(c, String(s.secretDigits[i] ?? '—'), 75, y + 38, 38, tint, 600);
-                fitLabel(c, word(s.myWords[(s.secretDigits[i] ?? 1) - 1] || s.secretWords[i], u.locale), 126, y + 38, 25, tint, 500, 130);
+                text(c, diskReadable ? String(s.secretDigits[i] ?? '—') : '—', 75, y + 38, 38, tint, 600);
+                fitLabel(c, diskReadable ? word(s.myWords[(s.secretDigits[i] ?? 1) - 1] || s.secretWords[i], u.locale) : t("已隐藏"), 126, y + 38, 25, tint, 500, 130);
                 line(c, 267, y + 17, 0);
                 c.fillStyle = '#504c37';
                 c.fillRect(267, y + 16, 1, 43);
@@ -597,9 +601,10 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
         (r.encrypt ? u.clues.filter(value => value.trim()).length : u.guess.filter(Boolean).length) / 3 :
         progress ? Math.max(0, Math.min(1, progress.step / Math.max(1, progress.total))) : 0;
     frame('disk', 400, 200);
-    target('disk', 'disk-toggle', u.diskOut ? t("插入软盘") : t("弹出软盘"), 0, 0, 400, 200);
+    target('disk', 'disk-toggle', u.keyDisk.phase === 'ejected' ? t('按住露出的软盘继续拖出，或点击插回') : u.diskOut ? t("插入软盘，或按住向内推回") : t("按住向外拖出软盘，或点击弹出"), 0, 0, 400, 200,
+        { disabled: !diskCurrent || !['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase) });
     frame('diskEjectControl', 100, 100);
-    target('diskEjectControl', 'disk-eject', t('弹出软盘'), 0, 0, 100, 100, { disabled: u.diskOut });
+    target('diskEjectControl', 'disk-eject', t('弹出软盘'), 0, 0, 100, 100, { disabled: !diskCurrent || !['ready', 'reading'].includes(u.keyDisk.phase) });
     frame('scopeKnob', 100, 100);
     target('scopeKnob', 'scope-tune', knobLabel('scope-tune', u), 0, 0, 100, 100);
     frame('scopeWaveKnob', 100, 100);
@@ -648,9 +653,41 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     text(tr, 'PRESS TO CONFIRM', 302, 135, 25, '#e9ddc2', 500);
     frame('transmitControl', 600, 260);
     target('transmitControl', 'transmit', transmitText, 0, 0, 600, 260, { disabled: !ready });
-    const dl = frame('disklabel', 300, 100);
-    text(dl, 'KEY / 01', 16, 51, 37, INK, 600);
-    text(dl, 'DECRYPTO', 17, 85, 19, '#817c70');
+    const dl = frame('disklabel', 900, 300);
+    dl.scale(3, 3);
+    const handwriting = diskInscription(u.keyDisk.id);
+    dl.save();
+    dl.translate(150 + handwriting.x, 43 + handwriting.y);
+    dl.rotate(handwriting.tilt);
+    dl.font = '700 52px "Disk Hand", "Bradley Hand", cursive';
+    const handSize = Math.min(52, 52 * 260 / Math.max(1, dl.measureText(handwriting.text).width));
+    dl.font = `700 ${handSize}px "Disk Hand", "Bradley Hand", cursive`;
+    dl.textBaseline = 'middle';
+    dl.fillStyle = handwriting.ink;
+    const handWidth = dl.measureText(handwriting.text).width;
+    let penSeed = handwriting.seed;
+    [...handwriting.text].forEach((letter, index) => {
+        penSeed = (Math.imul(penSeed, 1664525) + 1013904223) >>> 0;
+        dl.save();
+        dl.translate(-handWidth / 2 + dl.measureText(handwriting.text.slice(0, index)).width, ((penSeed >>> 16) % 7 - 3) * .28);
+        dl.rotate(((penSeed >>> 24) % 7 - 3) * .007);
+        dl.globalAlpha = .86 + (penSeed % 15) / 100;
+        dl.fillText(letter, 0, 0);
+        dl.restore();
+    });
+    if (handwriting.seed & 1) {
+        dl.strokeStyle = handwriting.ink;
+        dl.lineWidth = 1.2;
+        dl.lineCap = 'round';
+        dl.globalAlpha = .7;
+        dl.beginPath();
+        dl.moveTo(-handWidth / 2 - 2, 22);
+        dl.quadraticCurveTo(4, 19 + handwriting.y, handWidth / 2 + 3, 23);
+        dl.stroke();
+    }
+    dl.restore();
+    text(dl, `KEY / ${String(s.round || 0).padStart(2, '0')}`, 16, 87, 13, '#817c70', 500);
+    fitLabel(dl, ownsDisk ? t('{0} 队 · 仅你可见', [s.myTeam]) : 'DECRYPTO', 116, 87, 13, '#817c70', 500, 168);
     frame('powerControl', 320, 180);
     target('powerControl', 'power-toggle', u.powerOn ? t("关闭终端电源") : t("开启终端电源"), 0, 0, 320, 180);
     const ft = frame('footer', 1100, 65);
@@ -701,7 +738,7 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
             display.fillRect(0, 0, canvas.width, canvas.height);
         }
     }
-    return { frames, teamInks: { A: teamInk('A'), B: teamInk('B') }, displayKey: u.theme, wordInks: { word: themeColors(u.theme).own.light, legend: themeColors(u.theme).device.light, warning: themeColors(u.theme).warning.light }, wordPrivacyKey: `${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: s.connected, targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
+    return { frames, screenPrivacyKey: `${keyDiskIdentity(s)}:${diskReadable}`, teamInks: { A: teamInk('A'), B: teamInk('B') }, displayKey: u.theme, wordInks: { word: themeColors(u.theme).own.light, legend: themeColors(u.theme).device.light, warning: themeColors(u.theme).warning.light }, wordPrivacyKey: `${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: s.connected, targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
             (u.powerOn || rearControls.has(t.id) || t.id === 'power-toggle')),
         status: !u.powerOn ? t("终端已关闭；对局继续进行，按电源恢复。") : status || `${t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase])} · ${s.connected ? t("已连接") : t("连接中")}`,
         tint, waiting, ready: ready && u.powerOn, scoreFlags, seats, roomCode: u.powerOn ? s.roomCode || '' : '',

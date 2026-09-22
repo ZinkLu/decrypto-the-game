@@ -1,14 +1,28 @@
-import type { StationState, LocalState } from './model';
-import { roleState, phaseSignal, teamPalette, word } from './model';
+import type { CSSProperties } from 'react';
+import type { StationState, LocalState, KeyDiskState } from './model';
+import { useDiskPull } from './useDiskPull';
+import { roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word } from './model';
 import { translate, localizeError } from './i18n';
 
 type Props = { state: StationState; local: LocalState; ready: boolean; status: string; inert: boolean;
+    onDiskChange: (disk: KeyDiskState) => void; reducedMotion: boolean;
     onAct: (id: string) => void; onChange: (id: string, value: string) => void };
 
 // The compact surface shares the desktop drafts, validation and actions.
-export default function MobileConsole({ state: s, local: u, ready, status, onAct, onChange, inert }: Props) {
+export default function MobileConsole({ state: s, local: u, ready, status, onAct, onChange, onDiskChange, reducedMotion, inert }: Props) {
     const t = (key: string, values?: unknown[]) => translate(u.locale, key, values);
     const r = roleState(s, u);
+    const diskReadable = keyDiskReadable(s, u);
+    const handwriting = diskInscription(u.keyDisk.id);
+    const ownsDisk = !!keyDiskIdentity(s);
+    const diskCurrent = ownsDisk && u.keyDisk.id === keyDiskIdentity(s);
+    const diskPull = useDiskPull({ disk: u.keyDisk, reduced: reducedMotion,
+        enabled: diskCurrent && u.powerOn && !inert && ['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase),
+        axis: () => ({ x: 0, y: -1, pixels: 72 }), onChange: onDiskChange, onClick: () => onAct('disk-toggle') });
+    const diskStyle = u.keyDisk.pull ? {
+        '--disk-pull-y': `${154 - 72 * u.keyDisk.pull.amount}px`,
+        '--disk-settle-y': `${154 - 72 * (u.keyDisk.pull.target ?? 0)}px`,
+    } as CSSProperties : undefined;
     const signal = phaseSignal(s, u.theme);
     const lobby = s.phase === 'room', home = s.phase === 'home';
     const owner = s.ownerID === s.myPlayerID;
@@ -51,9 +65,23 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
             })}</div>
             {!!s.myWords.length && <section className="mobile-words"><div><h3>{t('我方秘密词')}</h3><button onClick={() => onAct('words')}>{t(u.hiddenWords ? '显示' : '遮住')}</button></div><ol>{s.myWords.map((v, i) => <li key={i}><b>{i + 1}</b> {u.hiddenWords ? '••••' : word(v, u.locale)}</li>)}</ol></section>}
             {s.phase === 'game_over' ? <h3 className="mobile-result">{s.gameOver?.winner ? t('{0} 队获胜', [s.gameOver.winner]) : t('双方平局')}</h3> : <p>{t('本轮加密者：{0}', [s.encryptor])}</p>}
+            {ownsDisk && <section className="mobile-key-disk" data-phase={diskCurrent ? u.keyDisk.phase : 'queued'} aria-label={t('本轮密钥软盘')}>
+                <div className="mobile-disk-mechanism" style={diskStyle}>
+                    <button className="mobile-disk-grip" {...diskPull} disabled={!diskCurrent || !u.powerOn || !['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase)}
+                        aria-label={t(u.keyDisk.phase === 'ejected' ? '按住露出的软盘继续拖出，或点击插回' : u.diskOut ? '插入软盘，或按住向内推回' : '按住向外拖出软盘，或点击弹出')}/>
+                    <div className="mobile-floppy" aria-hidden="true"><span><b style={{ color: handwriting.ink, fontSize: handwriting.text.length > 11 ? '11px' : undefined, transform: `rotate(${handwriting.tilt}rad) translate(${handwriting.x / 3}px, ${handwriting.y / 3}px)` }}>{handwriting.text}</b><small>KEY / {String(s.round).padStart(2, '0')}</small></span><i/></div>
+                    <div className="mobile-drive" aria-hidden="true"><span>KEY DRIVE</span><i/></div>
+                </div>
+                <p className="mobile-disk-hint">{t(u.keyDisk.phase === 'removed' ? '点击插回' : '按住软盘向上拖出')}</p>
+                <div className="mobile-disk-status"><p role="status">{t(keyDiskMessage(u.keyDisk))}</p>
+                    <button disabled={!diskCurrent || !['ready', 'reading', 'ejected', 'removed'].includes(u.keyDisk.phase)}
+                        onClick={() => onAct(u.diskOut ? 'disk-toggle' : 'disk-eject')}>{t(u.diskOut ? '插入软盘' : '弹出软盘')}</button></div>
+                {diskReadable ? <p className="mobile-private-code">{t('本轮私密密码：{0}', [s.secretDigits.join(' · ')])}</p> :
+                    <p className="mobile-private-code">— · — · —</p>}
+            </section>}
             {r.encrypt && <>
-                <p>{t('本轮私密密码：{0}', [s.secretDigits.join(' · ')])}</p>
-                {u.clues.map((value, i) => <label key={i}>{t('线索 {0}', [i + 1])}<input value={value} maxLength={80} disabled={!r.active || disabled} onChange={e => onChange(`clue-${i}`, e.target.value)}/></label>)}
+                {u.clues.map((value, i) => <label key={i}>{t('线索 {0}', [i + 1])}
+                    <span className="mobile-clue-target">{diskReadable ? `${s.secretDigits[i]} · ${word(s.myWords[s.secretDigits[i] - 1] || s.secretWords[i], u.locale)}` : t('已隐藏')}</span><input value={value} maxLength={80} disabled={!r.active || disabled} onChange={e => onChange(`clue-${i}`, e.target.value)}/></label>)}
             </>}
             {!r.encrypt && s.clues.length > 0 && <ol className="mobile-clues">{s.clues.map((v, i) => <li key={i}>{v}</li>)}</ol>}
             {r.guess && <>

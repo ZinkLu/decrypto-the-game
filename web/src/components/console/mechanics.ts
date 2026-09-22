@@ -1,3 +1,4 @@
+import type { KeyDiskState } from './model';
 export const paperFeedDuration = 420;
 export const paperCutDuration = 280;
 export const paperDiscardDuration = 520;
@@ -38,6 +39,7 @@ export function smoothstep(from: number, to: number, value: number) {
 // Stop the first push at the face (z=1.02), then seat the edge inside at z=.86.
 export const diskSeatTravel = -.93;
 export const diskEjectedTravel = .38;
+export const diskRemovedTravel = diskSeatTravel + (diskEjectedTravel - diskSeatTravel) * 2;
 export const diskTailTravel = -.77;
 
 export function diskInsertPose(elapsed: number, from: number) {
@@ -79,6 +81,36 @@ export function diskEjectPose(elapsed: number, from: number) {
         return { phase: 'pop' as const, done: false, button: 1 - smoothstep(0, .6, t), travel: from + (diskEjectedTravel - from) * spring };
     }
     return { phase: 'settle' as const, done: true, button: 0, travel: diskEjectedTravel };
+}
+
+/** Lift the label only after the leading edge has cleared the guides. */
+function diskPullPose(amount: number) {
+    const lift = smoothstep(1.35, 2, amount);
+    return { travel: diskSeatTravel + (diskEjectedTravel - diskSeatTravel) * amount, y: .65 * lift, tilt: .8 * lift };
+}
+/** Delivery presents the label, then lays the disk flat before either insertion push. */
+export function keyDiskPose(disk: KeyDiskState, now: number, reduced = false) {
+    const elapsed = Math.max(0, now - disk.startedAt);
+    const pose = { visible: !['absent', 'queued'].includes(disk.phase), x: 0, y: 0, z: 0, tilt: 0,
+        travel: diskSeatTravel, button: 0 };
+    if (disk.pull && (disk.phase === 'pulling' || disk.phase === 'settling')) {
+        const target = disk.pull.target ?? 0;
+        const easing = reduced ? 1 : 1 - (1 - Math.min(1, elapsed / 220)) ** 3;
+        const amount = disk.phase === 'pulling' ? disk.pull.amount : disk.pull.amount + (target - disk.pull.amount) * easing;
+        return { ...pose, ...diskPullPose(amount) };
+    }
+    if (disk.phase === 'removed') return { ...pose, ...diskPullPose(2) };
+    if (disk.phase === 'returning') return { ...pose, ...diskPullPose(2 - (reduced ? 1 : smoothstep(0, 320, elapsed))) };
+    if (disk.phase === 'arriving') {
+        const arrive = reduced ? 1 : smoothstep(0, 430, elapsed);
+        const align = reduced ? 1 : smoothstep(650, 1050, elapsed);
+        return { ...pose, x: 2.1 * (1 - arrive), y: .85 * (1 - align), z: 1.3 * (1 - align),
+            tilt: 1.12 * (1 - align), travel: diskEjectedTravel };
+    }
+    if (disk.phase === 'inserting') return { ...pose, ...diskInsertPose(reduced ? 2000 : elapsed, diskEjectedTravel) };
+    if (disk.phase === 'ejecting') return { ...pose, ...diskEjectPose(reduced ? 1000 : elapsed, diskSeatTravel) };
+    if (disk.phase === 'ejected') return { ...pose, travel: diskEjectedTravel };
+    return pose;
 }
 
 /**

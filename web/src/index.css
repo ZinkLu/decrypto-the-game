@@ -1,3 +1,4 @@
+@font-face { font-family: 'Disk Hand'; src: url('/fonts/Caveat-Bold-Latin.woff2') format('woff2'); font-style: normal; font-weight: 700; font-display: swap; }
 :root { font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #233442; background: #dedad0; color-scheme: light; }
 * { box-sizing: border-box; }
 body { margin: 0; }
@@ -43,6 +44,11 @@ button,input { font: inherit; }
 }
 .station-controls [data-control^="scope-"] { touch-action: none; cursor: grab; }
 .station-controls [data-control^="scope-"]:active { cursor: grabbing; }
+.station-controls [data-control="disk-toggle"] { touch-action: none; cursor: grab; user-select: none; }
+.station-controls [data-control="disk-toggle"][data-pulling] { cursor: grabbing; }
+.station-controls .station-disk-grip { opacity: 1; overflow: visible; }
+.disk-grip-hint { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border: 1px solid #a69c8780; border-radius: 3px; background: #eee6d5ed; color: #625a4a; font-size: 11px; line-height: 1.3; letter-spacing: .04em; pointer-events: none; box-shadow: 0 2px 5px #32281812; }
+.station-disk-grip[data-pulling] .disk-grip-hint { opacity: 0; }
 .station-workbench { position: fixed; z-index: 2; right: 20px; bottom: 12px; left: 20px; display: flex; align-items: end; justify-content: flex-end; gap: 20px; pointer-events: none; }
 .station-orbit-hint { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); padding: 7px 11px; border: 1px solid #8d8d7b99; border-radius: 2px; background: #eee8dbd9; color: #59645b; box-shadow: 0 2px 8px #28332918; font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
 .station-stage[data-inspecting="true"], .station-stage[data-inspecting="true"] * { cursor: grabbing !important; user-select: none; }
@@ -314,6 +320,44 @@ button,input { font: inherit; }
 
 /* A compact task surface shares the same game state as the physical terminal. */
 .mobile-console { display: none; }
+.mobile-key-disk { margin: 22px 0; padding: 16px 0; border-block: 1px solid #9b9e8c; }
+.mobile-disk-mechanism { position: relative; height: 200px; overflow: hidden; isolation: isolate; }
+.mobile-floppy { position: absolute; left: calc(50% - 41px); top: 0; width: 82px; height: 86px; border: 3px solid #292f2b; border-radius: 3px 9px 3px 3px; background: #475148; transform: translateY(154px); }
+.mobile-floppy > span { position: absolute; inset: 34px 6px 6px; padding-top: 1px; background: #e9dfc4; color: #4d5549; text-align: center; font: 11px Georgia, serif; border-top: 5px solid #944c36; }
+.mobile-floppy b { display: block; white-space: nowrap; font: 700 15px/.85 'Disk Hand', 'Bradley Hand', cursive; }
+.mobile-floppy small { display: block; margin-top: 3px; font: 6px Georgia, serif; letter-spacing: .04em; }
+.mobile-floppy > i { position: absolute; top: 0; left: 16px; width: 39px; height: 25px; background: #aaa99c; border-right: 10px solid #626b61; }
+.mobile-drive { position: absolute; left: calc(50% - 78px); bottom: 0; width: 156px; height: 51px; padding: 21px 14px 0; border: 1px solid #868b7d; border-top: 8px solid #303a32; background: #c4c4ae; box-shadow: inset 0 3px #888d7b; }
+.mobile-drive span { font: 10px Georgia, serif; letter-spacing: .08em; }
+.mobile-drive > i { float: right; width: 9px; height: 5px; background: #756847; }
+.mobile-key-disk[data-phase="ready"] .mobile-drive > i { background: #4a7d4b; }
+.mobile-key-disk[data-phase="reading"] .mobile-drive > i { background: #a26934; animation: disk-read .14s steps(2) 3; }
+.mobile-key-disk[data-phase="arriving"] .mobile-floppy { animation: disk-deliver 1.05s both; }
+.mobile-key-disk[data-phase="inserting"] .mobile-floppy { animation: disk-insert 1.195s both; }
+.mobile-key-disk[data-phase="ejecting"] .mobile-floppy { animation: disk-eject .62s both; }
+.mobile-key-disk[data-phase="ejected"] .mobile-floppy { transform: translateY(82px); }
+.mobile-key-disk[data-phase="removed"] .mobile-floppy { transform: translateY(10px); }
+.mobile-key-disk[data-phase="returning"] .mobile-floppy { animation: disk-return .32s both; }
+.mobile-key-disk[data-phase="pulling"] .mobile-floppy { transform: translateY(var(--disk-pull-y)); }
+.mobile-key-disk[data-phase="settling"] .mobile-floppy { animation: disk-settle .22s cubic-bezier(.33, 1, .68, 1) both; }
+.mobile-console .mobile-disk-grip { position: absolute; z-index: 2; inset: 0 calc(50% - 78px); width: 156px; border: 0; padding: 0; background: transparent; touch-action: none; cursor: grab; user-select: none; }
+.mobile-console .mobile-disk-grip[data-pulling] { cursor: grabbing; }
+.mobile-key-disk[data-phase="queued"] .mobile-floppy { visibility: hidden; }
+.mobile-disk-status { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.mobile-disk-status p { flex: 1; margin: 0; }
+.mobile-disk-status button { flex: 0 0 auto; max-width: 45%; }
+.mobile-console .mobile-disk-hint { margin: 8px 0 0; text-align: center; color: #657066; font-size: 12px; }
+.mobile-console .mobile-private-code { margin-bottom: 0; color: #496443; font-size: 20px; }
+.mobile-clue-target { float: right; color: #496443; max-width: 75%; }
+@keyframes disk-deliver { 0% { transform: translate(96px, -20px) rotate(16deg); opacity: 0; } 42%, 62% { transform: translate(0, 10px); opacity: 1; } 100% { transform: translateY(82px); } }
+@keyframes disk-insert { 0% { transform: translateY(82px); } 52%, 65% { transform: translateY(135px); } 81% { transform: translateY(148px); } 92%, 100% { transform: translateY(154px); } }
+@keyframes disk-eject { 0%, 40% { transform: translateY(154px); } 100% { transform: translateY(82px); } }
+@keyframes disk-return { from { transform: translateY(10px); } to { transform: translateY(82px); } }
+@keyframes disk-read { 50% { opacity: .3; } }
+@keyframes disk-settle { from { transform: translateY(var(--disk-pull-y)); } to { transform: translateY(var(--disk-settle-y)); } }
+@media (prefers-reduced-motion: reduce) {
+  .mobile-key-disk .mobile-floppy, .mobile-key-disk .mobile-drive > i { animation: none; }
+}
 @media (max-width: 850px) {
   .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-viewport,
   .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-workbench,

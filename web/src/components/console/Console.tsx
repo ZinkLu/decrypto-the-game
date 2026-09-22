@@ -2,14 +2,15 @@ import { translate, localizeError, readLocale, saveLocale } from './i18n';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
-import { initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme } from './model';
+import { initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, syncKeyDisk, advanceKeyDisk, actKeyDisk, keyDiskDurations } from './model';
 import type { WordDisplay } from './dotMatrix';
 import { defaultDotFilter, dotFilterOptions, readDotFilter, readWordScale, type DotFilter } from './dotFiltering';
 import { paint, knobLabel } from './paint';
 import { qualityChoices, qualityProfiles, describeQuality, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import ArchiveSheet from './ArchiveSheet';
 import MobileConsole from './MobileConsole';
-import type { LocalState, InstrumentVariant } from './model';
+import { useDiskPull } from './useDiskPull';
+import type { LocalState, InstrumentVariant, KeyDiskState } from './model';
 import type { Target } from './paint';
 import type { PlayerInfo } from '../../store/gameStore';
 import type { QualityChoice, QualityLevel } from './quality';
@@ -59,6 +60,8 @@ export default function Console() {
     const wordCloseup = wordZoom > 1;
     const [dotFilter, setDotFilter] = useState<DotFilter>(() => wordBench ? readDotFilter(new URLSearchParams(location.search).get('filter')) : defaultDotFilter);
     const [loaded, setLoaded] = useState(false);
+    const [diskFontReady, setDiskFontReady] = useState(false);
+    const [reducedMotion, setReducedMotion] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
     const [failure, setFailure] = useState('');
     const [archiveVisible, setArchiveVisible] = useState(false);
     const [quality, setQuality] = useState<QualityChoice>(() => pinnedQuality ?? readQuality());
@@ -70,8 +73,8 @@ export default function Console() {
     const controls = useRef(new Map<string, HTMLElement>());
     // Analog input updates targets and hardware, without repainting all the
     // game screens and the long receipt for each fraction of a knob turn.
-    const paintKey = JSON.stringify({ ...u, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
-    const painted = useMemo(() => paint(s, u, inspection), [s, paintKey]);
+    const paintKey = JSON.stringify({ ...u, keyDisk: { ...u.keyDisk, pull: u.keyDisk.pull ? { ...u.keyDisk.pull, amount: 0 } : undefined }, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
+    const painted = useMemo(() => paint(s, u, inspection), [s, paintKey, diskFontReady]);
     const content = useMemo(() => ({ ...painted, targets: [...painted.targets, ...Object.keys(handleSurfaces).filter(surface =>
         inspection || surface.includes('Rear') === u.backView).map<Target>(surface => ({
             id: surface, surface, x: 0, y: 0, w: 1, h: 1,
@@ -94,10 +97,22 @@ export default function Console() {
     const [hint, setHint] = useState('');
     const [announcement, setAnnouncement] = useState('');
     const viewKey = `${s.phase}:${s.round}:${s.myRole}`;
+    const diskId = keyDiskIdentity(s);
+    const diskReadable = keyDiskReadable(s, u);
+    const diskPull = useDiskPull({ disk: u.keyDisk, reduced: reducedMotion,
+        enabled: u.powerOn && !u.backView && !u.archiveOpen && !!diskId && u.keyDisk.id === diskId &&
+            ['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase),
+        axis: () => engine.current?.diskPullAxis() ?? { x: 0, y: 1, pixels: 90 },
+        onChange: changeDisk, onClick: () => act('disk-toggle') });
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
     useEffect(() => { saveLocale(u.locale); document.documentElement.lang = u.locale === 'zh' ? 'zh-CN' : 'en'; document.title = (u.locale === 'zh' ? 'Decrypto - 谍报风云' : 'Decrypto') + (inspection ? ' · Preview' : ''); setAnnouncement(translate(u.locale, '语言已切换'));  }, [u.locale]);
     useEffect(() => { saveTheme(u.theme); }, [u.theme]);
     function patch(values: Partial<LocalState>) { setU(old => ({ ...old, ...values })); }
+    function changeDisk(disk: KeyDiskState) {
+        if (disk.id !== keyDiskIdentity(current.current.s)) return;
+        setU(old => old.keyDisk.id === disk.id ? { ...old, keyDisk: disk,
+            diskOut: ['pulling', 'ejected', 'removed'].includes(disk.phase) || disk.phase === 'settling' && !!disk.pull?.target } : old);
+    }
     function turnConsole(back: boolean, side: HandleSide = 'left') {
         if (document.activeElement?.matches('.station-handle:focus-visible')) {
             handleFocusPending.current = back ? `handleRear${side === 'left' ? 'Left' : 'Right'}TopControl` :
@@ -227,6 +242,14 @@ export default function Console() {
         }
     }
     useEffect(() => {
+        let cancelled = false;
+        // Canvas textures must repaint once the bundled handwriting font arrives.
+        void document.fonts.load('700 52px "Disk Hand"').then(() => {
+            if (!cancelled) setDiskFontReady(true);
+        }).catch(() => { /* The local handwriting/cursive fallback remains usable. */ });
+        return () => { cancelled = true; };
+    }, []);
+    useEffect(() => {
         if (!preview)
             live.connect();
         return () => { if (!preview)
@@ -257,9 +280,36 @@ export default function Console() {
         return () => { cancelled = true; instance?.dispose(); engine.current = null; };
     }, []);
     useLayoutEffect(() => { engine.current?.update(content, u); project(); }, [content, loaded]);
+    useLayoutEffect(() => { engine.current?.setKeyDisk(u.keyDisk); project(); }, [u.keyDisk]);
     useLayoutEffect(() => { engine.current?.setQuality(qualityProfiles[level]); }, [level]);
     useLayoutEffect(() => { if (wordBench) engine.current?.setDotFilter(dotFilter); }, [loaded, dotFilter]);
     useLayoutEffect(() => { if (wordBench && loaded) engine.current?.inspectWordScale(wordZoom); }, [loaded, wordZoom]);
+    useEffect(() => {
+        const media = matchMedia('(prefers-reduced-motion: reduce)');
+        const change = () => setReducedMotion(media.matches);
+        media.addEventListener('change', change);
+        return () => media.removeEventListener('change', change);
+    }, []);
+    useLayoutEffect(() => {
+        setU(old => {
+            const disk = syncKeyDisk(old.keyDisk, diskId, performance.now(),
+                old.powerOn && (loaded || !!failure || matchMedia('(max-width: 850px)').matches), reducedMotion);
+            return disk === old.keyDisk ? old : { ...old, keyDisk: disk, diskOut: false };
+        });
+    }, [diskId, loaded, failure, u.powerOn, reducedMotion]);
+    useEffect(() => {
+        const disk = u.keyDisk, duration = keyDiskDurations[disk.phase];
+        if (duration === undefined) return;
+        const timer = window.setTimeout(() => setU(old => {
+            if (old.keyDisk !== disk) return old;
+            const next = advanceKeyDisk(disk, performance.now(), reducedMotion);
+            return next === disk ? old : { ...old, keyDisk: next, diskOut: ['ejected', 'removed'].includes(next.phase) };
+        }), reducedMotion ? 0 : Math.max(0, duration - (performance.now() - disk.startedAt)) + 1);
+        return () => clearTimeout(timer);
+    }, [u.keyDisk, reducedMotion]);
+    useEffect(() => {
+        if (u.keyDisk.id) setAnnouncement(t(keyDiskMessage(u.keyDisk)));
+    }, [u.keyDisk.phase, u.keyDisk.startedAt, u.keyDisk.id]);
     useEffect(() => {
         if (!loaded || quality !== 'auto') return;
         let cancelled = false;
@@ -449,8 +499,12 @@ export default function Console() {
             return;
         }
         if (id === 'disk-toggle' || id === 'disk-eject') {
-            patch({ diskOut: id === 'disk-eject' || !local.diskOut });
-            setAnnouncement(local.diskOut ? t("软盘已插入") : t("软盘已弹出，再次点击插入"));
+            if (local.keyDisk.id !== keyDiskIdentity(state)) return;
+            const out = id === 'disk-eject' || !['ejected', 'removed'].includes(local.keyDisk.phase);
+            const disk = actKeyDisk(local.keyDisk, out, performance.now(), reducedMotion);
+            if (disk === local.keyDisk) return;
+            patch({ keyDisk: disk, diskOut: out });
+            setHint('');
             return;
         }
         if (id.startsWith('scope-')) {
@@ -599,7 +653,7 @@ export default function Console() {
       </div></details>
     </div>
     <h1 className="sr-only">{t("Decrypto 谍报风云 · 密码通信终端")}</h1>
-    <MobileConsole state={s} local={u} ready={content.ready} status={content.status} onAct={act} onChange={(id, value) => change({ id }, value)} inert={u.archiveOpen}/>
+    <MobileConsole state={s} local={u} ready={content.ready} status={content.status} onAct={act} onChange={(id, value) => change({ id }, value)} onDiskChange={changeDisk} reducedMotion={reducedMotion} inert={u.archiveOpen}/>
     <div className="station-viewport" inert={u.archiveOpen}>
       <div className="station-stage" ref={stage}>
         {!loaded && !failure && <div className="station-loading"><strong>DECRYPTO</strong><span>{t("正在启动密码终端…")}</span></div>}
@@ -632,6 +686,9 @@ export default function Console() {
                 onBlur: () => { setHint(''); if (current.current.u.focus === target.id)
                     patch({ focus: '' }); },
             };
+            if (target.id === 'disk-toggle') return <button key={key} {...common} {...diskPull} className="station-disk-grip" data-phase={u.keyDisk.phase}>
+                {!target.disabled && <span className="disk-grip-hint" aria-hidden="true">{t(u.keyDisk.phase === 'removed' ? '点击插回' : '按住软盘向外拖')}</span>}
+            </button>;
             if (target.id in handleSurfaces) return <button key={key} {...common} className="station-handle"
                 onClick={e => { if (target.id.includes('Rear') || e.detail === 0 || failure) act(target.id); }}
                 onPointerDown={e => {
@@ -723,7 +780,7 @@ export default function Console() {
         })}
         </div>
         <section hidden={!u.powerOn} className={failure ? 'fallback-readout' : 'sr-only'} aria-label={t("当前通信文字记录")}><h2>{t("当前通信")}</h2><p>{content.status}</p><p>{u.hiddenWords ? t("秘密词已遮住") : s.myWords.map(value => word(value, u.locale)).join(' · ')}</p><p>{s.clues.join(' / ')}</p>
-          <p>{t('第 {0} 回合，加密者：{1}', [s.round, s.encryptor])} {roleState(s, u).encrypt ? t("本轮私密密码：{0}", [s.secretDigits.join('、')]) : ''}</p>
+          <p>{t('第 {0} 回合，加密者：{1}', [s.round, s.encryptor])} {diskReadable ? t("本轮私密密码：{0}", [s.secretDigits.join('、')]) : ''}</p>
           {(['A', 'B'] as const).map(team => <p key={team}>{t('{0} 队     截获 {1} / 2     失误 {2} / 2', [team, (team === 'A' ? s.scoreA : s.scoreB).interceptions, (team === 'A' ? s.scoreA : s.scoreB).decrypt_failures])}</p>)}
           {rosterTeams(s, u).map(team => <section key={team.team} aria-label={t("{0} 队名册", [team.team])}>
             <h3>{t('{0} 队 · {1} 人', [team.team, team.count])}{team.own ? t(" · 我方") : ''} · {t(team.summary)}</h3>

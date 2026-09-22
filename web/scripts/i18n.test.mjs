@@ -6,7 +6,7 @@ const compile = source => ts.transpileModule(source, { compilerOptions: { target
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 const load = async name => compile(await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8'));
 const modelUrl = url(await load('model')), mechanicsUrl = url(await load('mechanics')), i18nUrl = url(await load('i18n')), dotMatrixUrl = url(await load('dotMatrix'));
-const { initialLocal, previewState, scopeTimebase, scopeRatio, stepInstrumentValue, receiverSignal, word } = await import(modelUrl);
+const { initialLocal, previewState, keyDiskIdentity, scopeTimebase, scopeRatio, stepInstrumentValue, receiverSignal, word } = await import(modelUrl);
 const { messages, translate, readLocale, saveLocale } = await import(i18nUrl);
 const { paint } = await import(url((await load('paint')).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl))));
 globalThis.document = { createElement: () => {
@@ -153,4 +153,29 @@ test('only the native editor owns focused input text, including long multilingua
   const home = fixture('home');
   assert.ok(!paint(home, { ...initialLocal, name: 'Agent name', focus: 'name' }).frames.screen.canvas.ink.includes('Agent name'));
   assert.ok(paint(home, { ...initialLocal, name: 'Agent name' }).frames.screen.canvas.ink.includes('Agent name'));
+});
+
+
+test('private code targets never reach the display until read, or after eject and seat changes', () => {
+  const s = fixture('encrypting');
+  const id = keyDiskIdentity(s);
+  for (const phase of ['absent', 'queued', 'arriving', 'inserting', 'reading', 'ejecting', 'ejected', 'removed', 'returning', 'pulling', 'settling']) {
+    for (const locale of ['zh', 'en']) {
+      const content = paint(s, { ...initialLocal, locale, keyDisk: { id, phase, startedAt: 0 } });
+      const screen = content.frames.screen.canvas.ink;
+      for (const digit of s.secretDigits) {
+        assert.ok(!screen.includes(String(digit)), `${phase}: private digit is not painted`);
+        assert.ok(!screen.includes(word(s.myWords[digit - 1], locale)), `${phase}: private target is not painted`);
+      }
+      if (locale === 'en') assert.deepEqual(ink(content).filter(value => /[\u3400-\u9fff]/.test(value)), []);
+    }
+  }
+  const local = { ...initialLocal, keyDisk: { id, phase: 'ready', startedAt: 0 } };
+  assert.ok(paint(s, local).frames.screen.canvas.ink.includes('玫瑰'));
+  assert.ok(!paint({ ...s, round: s.round + 1 }, local).frames.screen.canvas.ink.includes('玫瑰'));
+  assert.ok(!paint({ ...s, myRole: 'teammate' }, local).frames.screen.canvas.ink.includes('玫瑰'));
+  const ejected = paint(s, { ...local, keyDisk: { ...local.keyDisk, phase: 'ejected' }, diskOut: true, clues: ['保留草稿', '', ''] });
+  assert.ok(ejected.frames.screen.canvas.ink.includes('保留草稿'));
+  assert.ok(!ejected.frames.screen.canvas.ink.includes('玫瑰'));
+  assert.notEqual(ejected.screenPrivacyKey, paint(s, local).screenPrivacyKey, 'CRT outgoing image is revoked');
 });

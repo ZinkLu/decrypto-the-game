@@ -1,6 +1,81 @@
 import type { useGameStore } from '../../store/gameStore';
 import type { WordDisplay } from './dotMatrix';
 export type StationState = ReturnType<typeof useGameStore.getState>;
+export type KeyDiskPhase = 'absent' | 'queued' | 'arriving' | 'inserting' | 'reading' | 'ready' | 'ejecting' | 'ejected' | 'removed' | 'returning' | 'pulling' | 'settling';
+export interface KeyDiskState {
+    id: string; phase: KeyDiskPhase; startedAt: number;
+    // 0 = seated, 1 = spring-ejected, 2 = clear of the drive.
+    pull?: { amount: number; origin: 'ready' | 'reading' | 'ejected' | 'removed'; target?: 0 | 1 | 2 };
+}
+export const emptyKeyDisk: KeyDiskState = { id: '', phase: 'absent', startedAt: 0 };
+export const keyDiskDurations: Partial<Record<KeyDiskPhase, number>> = { arriving: 1050, returning: 320, inserting: 1195, reading: 420, ejecting: 620, settling: 220 };
+export const diskInscriptions = ['top secret', 'credential', 'classified', 'eyes only', 'confidential',
+    'restricted', 'black file', 'cipher key', 'no copies', 'burn after use'] as const;
+/** Seeded variation keeps the same handwriting through repaints, locale changes and reinsertion. */
+export function diskInscription(id: string) {
+    let seed = 2166136261;
+    for (const character of id) seed = Math.imul(seed ^ character.charCodeAt(0), 16777619) >>> 0;
+    return { text: diskInscriptions[seed % diskInscriptions.length], seed,
+        tilt: ((seed >>> 8) % 9 - 4) * .012,
+        x: (seed >>> 16) % 7 - 3, y: (seed >>> 24) % 5 - 2,
+        ink: ['#26374b', '#353933', '#733c31'][seed % 3] };
+}
+/** A disk belongs to one seat and round. Translated names and phase updates cannot redeliver it. */
+export function keyDiskIdentity(s: StationState) {
+    return s.myRole === 'encryptor' && ['encrypting', 'intercept', 'decrypt'].includes(s.phase) &&
+        s.secretDigits.length === 3 && new Set(s.secretDigits).size === 3 && s.secretDigits.every(n => n >= 1 && n <= 4)
+        ? JSON.stringify([s.roomCode, s.myPlayerID, s.myTeam, s.round, s.secretDigits]) : '';
+}
+export function syncKeyDisk(disk: KeyDiskState, id: string, now: number, available: boolean, reduced: boolean): KeyDiskState {
+    if (!id) return disk.phase === 'absent' ? disk : emptyKeyDisk;
+    if (disk.id !== id) disk = { id, phase: 'queued', startedAt: now };
+    if (disk.phase === 'queued' && available) return { id, phase: reduced ? 'ready' : 'arriving', startedAt: now };
+    return disk;
+}
+export function advanceKeyDisk(disk: KeyDiskState, now: number, reduced = false): KeyDiskState {
+    const duration = keyDiskDurations[disk.phase];
+    if (duration === undefined || !reduced && now - disk.startedAt < duration) return disk;
+    if (disk.phase === 'settling') return { id: disk.id, phase: disk.pull?.target === 2 ? 'removed' : disk.pull?.target === 1 ? 'ejected' : 'reading', startedAt: now };
+    const phase = disk.phase === 'ejecting' ? 'ejected' : reduced || disk.phase === 'reading' ? 'ready' :
+        disk.phase === 'arriving' || disk.phase === 'returning' ? 'inserting' : 'reading';
+    // Start each physical movement when displayed, even after a background-tab pause.
+    return { ...disk, phase, startedAt: now };
+}
+/** Physical pulling immediately revokes the read head, including a pull that is later cancelled. */
+export function pullKeyDisk(disk: KeyDiskState, amount: number, now: number): KeyDiskState {
+    if (!Number.isFinite(amount)) return disk;
+    const pull = disk.phase === 'pulling' ? disk.pull :
+        disk.phase === 'ready' || disk.phase === 'reading' || disk.phase === 'ejected' || disk.phase === 'removed' ? { origin: disk.phase, amount: 0 } : undefined;
+    if (!pull) return disk;
+    return { ...disk, phase: 'pulling', startedAt: disk.phase === 'pulling' ? disk.startedAt : now,
+        pull: { ...pull, amount: Math.max(0, Math.min(2, amount)) } };
+}
+export function releaseKeyDisk(disk: KeyDiskState, cancelled: boolean, now: number, reduced = false): KeyDiskState {
+    if (disk.phase !== 'pulling' || !disk.pull) return disk;
+    const target = cancelled ? disk.pull.origin === 'removed' ? 2 : disk.pull.origin === 'ejected' ? 1 : 0 :
+        disk.pull.amount >= 1.5 ? 2 : disk.pull.amount >= .5 ? 1 : 0;
+    return reduced ? { id: disk.id, phase: target === 2 ? 'removed' : target === 1 ? 'ejected' : 'reading', startedAt: now } :
+        { ...disk, phase: 'settling', startedAt: now, pull: { ...disk.pull, target } };
+}
+export function actKeyDisk(disk: KeyDiskState, eject: boolean, now: number, reduced = false): KeyDiskState {
+    if (eject && (disk.phase === 'ready' || disk.phase === 'reading'))
+        return { ...disk, phase: reduced ? 'ejected' : 'ejecting', startedAt: now };
+    if (!eject && disk.phase === 'ejected')
+        return { ...disk, phase: reduced ? 'ready' : 'inserting', startedAt: now };
+    if (!eject && disk.phase === 'removed')
+        return { ...disk, phase: reduced ? 'ready' : 'returning', startedAt: now };
+    return disk;
+}
+export function keyDiskReadable(s: StationState, u: LocalState) {
+    return u.powerOn && !u.diskOut && u.keyDisk.phase === 'ready' && !!u.keyDisk.id && u.keyDisk.id === keyDiskIdentity(s);
+}
+export function keyDiskMessage(disk: KeyDiskState) {
+    return ({ absent: '密钥待分配', queued: '等待接收本轮密钥', arriving: '你的密钥软盘已送达',
+        inserting: '正在插入密钥软盘…', reading: '正在读取本轮密钥…', ready: '密钥已读取 · 仅你可见',
+        ejecting: '密码已隐藏 · 正在弹出', ejected: '密码已隐藏 · 按住软盘继续向外拖',
+        removed: '软盘已取出 · 插回后恢复密码', returning: '正在对齐盘槽…',
+        pulling: '密码已隐藏 · 拖动软盘后松手', settling: '软盘正在归位…' })[disk.phase];
+}
 /** Hardware of the four keyword windows; the DEV bench (`?words=led`) keeps the earlier tubes for comparison. */
 export const wordDisplayOptions: { id: WordDisplay; label: string; description: string }[] = [
     { id: 'led', label: 'A · LED 点阵', description: '120×70 点阵，关键词 20 点、图例 12 点：关键词用我方色，编号和说明用中性色。切换主题先熄灭，再低亮自检、依次载入；过长的词保留全文走字。' },
@@ -81,6 +156,7 @@ export interface LocalState {
     hiddenWords: boolean;
     seconds: number;
     diskOut: boolean;
+    keyDisk: KeyDiskState;
     scopeWave: number;
     scopeRate: number;
     scopeAxis: number;
@@ -101,13 +177,13 @@ export const initialLocal: LocalState = {
     locale: 'zh', theme: 'classic', scopeFreq: 3 / 7,
     mode: 'create', name: '', code: '', clues: ['', '', ''], guess: [0, 0, 0],
     slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
-    archiveOpen: false, manual: false, hiddenWords: false, seconds: 0, diskOut: false,
+    archiveOpen: false, manual: false, hiddenWords: false, seconds: 0, diskOut: false, keyDisk: emptyKeyDisk,
     scopeWave: .5, scopeRate: .9, scopeAxis: 0,
     backView: false, batteryOpen: false, soundOn: false, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
     instrumentVariant: 'signal', instrumentDemo: true, wordDisplay: 'led',
 };
-export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo' | 'wordDisplay'>;
+export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'keyDisk' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo' | 'wordDisplay'>;
 export function nextScopeValue(value: number, length: number, direction = 1) {
     return (value + direction % length + length) % length;
 }

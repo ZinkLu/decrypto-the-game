@@ -17,9 +17,9 @@ import { plateFinish } from './finishes';
 import { ScoreFlagMotion } from './scoreFlagMotion';
 import scoreRegisterSpec from './scoreRegister.json';
 import { crtProfile, crtGeometry, crtHeight, crtDisplayUv } from './crt';
-import { initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState } from './model';
+import { initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState, type KeyDiskState } from './model';
 import { VectorMonitor, scopeResonance, scopeTuning } from './scope';
-import { paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, diskInsertPose, diskEjectPose } from './mechanics';
+import { paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, keyDiskPose } from './mechanics';
 import { ReceiptTransport } from './tearing';
 import { ConsoleInstruments } from './instruments';
 import { qualityProfiles, type QualityProfile } from './quality';
@@ -86,6 +86,8 @@ export class ConsoleEngine {
     private ejectButton?: THREE.Object3D;
     private ejectButtonRest = new THREE.Vector3();
     private diskRest = new THREE.Vector3();
+    private diskPivot = new THREE.Vector3();
+    private diskPivotRotated = new THREE.Vector3();
     private diskAxis = new THREE.Vector3(0, 0, 1);
     private tuningKnob: THREE.Object3D = new THREE.Group();
     private waveKnob: THREE.Object3D = new THREE.Group();
@@ -93,7 +95,9 @@ export class ConsoleEngine {
     private persistenceKnob: THREE.Object3D = new THREE.Group();
     private diskOut = false;
     private diskTravel = diskSeatTravel;
-    private diskMotion?: { from: number; out: boolean; elapsed: number; clunk: boolean };
+    private keyDisk = initialLocal.keyDisk;
+    private diskClunk = '';
+    private screenPrivacyKey = '';
     private paper?: THREE.Mesh;
     private paperHead?: THREE.Mesh;
     private paperHeadArc: number[] = [];
@@ -412,9 +416,9 @@ export class ConsoleEngine {
         this.ejectButton = this.part('FloppyEject');
         if (this.ejectButton) this.ejectButtonRest.copy(this.ejectButton.position);
         this.diskRest.copy(disk.position);
+        this.diskPivot.copy(this.part('Floppy disk')?.position ?? new THREE.Vector3());
         this.diskAxis.fromArray(disk.userData.travel_axis ?? [0, 0, 1]).normalize();
-        this.diskMotion = undefined;
-        this.diskTravel = this.diskOut ? diskEjectedTravel : diskSeatTravel;
+        this.diskTravel = diskSeatTravel;
         this.tuningKnob = knob;
         this.waveKnob = wave;
         this.rateKnob = rate;
@@ -620,7 +624,7 @@ export class ConsoleEngine {
         this.textures.set('scope', scope);
         this.planes.get('scope')!.material.map = scope;
         if (this.content)
-            this.update(this.content, { locale: this.locale, scopeFreq: this.scopeFreq, diskOut: this.diskOut, scopeWave: this.scopeWave,
+            this.update(this.content, { locale: this.locale, scopeFreq: this.scopeFreq, diskOut: this.diskOut, keyDisk: this.keyDisk, scopeWave: this.scopeWave,
                 scopeRate: this.scopeRate, scopeAxis: this.scopeAxis,
                 backView: this.backView, batteryOpen: this.batteryOpen, soundOn: this.soundOn,
                 powerOn: this.powerOn, wordDisplay: this.wordDisplay,
@@ -908,6 +912,11 @@ export class ConsoleEngine {
         // Only the main display changes palette. Every tube keeps its outgoing
         // picture until it is dark, so paint's blank power-off frames wait too.
         this.crtMotion.sync(this.powerOn, { id: content.displayKey, frame: content.frames.screen });
+        // Revoking a key also replaces the outgoing image during palette changes
+        // and power-off afterglow; no secret is kept in the phosphor snapshot.
+        if (this.screenPrivacyKey !== content.screenPrivacyKey && this.crtMotion.current)
+            this.crtMotion.current = { ...this.crtMotion.current, frame: content.frames.screen };
+        this.screenPrivacyKey = content.screenPrivacyKey;
         for (const [name, tube] of this.crtTubes)
             if (tube.motion !== this.crtMotion) tube.motion.sync(this.powerOn, { id: name, frame: content.frames[name] });
         this.dotBank.sync(this.powerOn && this.wordDisplay !== 'crt', {
@@ -944,10 +953,8 @@ export class ConsoleEngine {
         if (!local.archiveOpen) this.paperReaderStarted = false;
         this.receipt.sync(local.archiveOpen, content.paperRecords);
         this.beginPaperReader();
-        if (this.diskOut !== local.diskOut) {
-            this.diskMotion = { from: this.diskTravel, out: local.diskOut, elapsed: 0, clunk: false };
-            this.diskOut = local.diskOut;
-        }
+        this.diskOut = local.diskOut;
+        this.setKeyDisk(local.keyDisk);
         this.locale = local.locale;
         this.scopeWave = local.scopeWave;
         this.scopeFreq = local.scopeFreq;
@@ -1388,12 +1395,70 @@ export class ConsoleEngine {
             if (sy < top) top = sy;
             if (sy > bottom) bottom = sy;
         }
+        if (target.id === 'disk-toggle' && ['pulling', 'settling', 'ejected', 'removed', 'returning'].includes(this.keyDisk.phase)) {
+            this.disk.updateWorldMatrix(true, false);
+            // Extend the grip to the physical disk as it emerges from the fascia.
+            for (const x of [-.7, .7]) for (const z of [-.66, .66]) {
+                point.set(this.diskPivot.x + x, this.diskPivot.y + .04, this.diskPivot.z + z).applyMatrix4(this.disk.matrixWorld).project(this.camera);
+                const sx = (point.x + 1) * this.width / 2, sy = (1 - point.y) * this.height / 2;
+                left = Math.min(left, sx); right = Math.max(right, sx);
+                top = Math.min(top, sy); bottom = Math.max(bottom, sy);
+            }
+        }
         return { left, top, width: right - left, height: bottom - top };
+    }
+    diskPullAxis() {
+        const from = this.diskRest.clone().add(this.diskPivot).addScaledVector(this.diskAxis, diskSeatTravel);
+        const to = this.diskRest.clone().add(this.diskPivot).addScaledVector(this.diskAxis, diskEjectedTravel);
+        this.disk.parent?.localToWorld(from);
+        this.disk.parent?.localToWorld(to);
+        from.project(this.camera); to.project(this.camera);
+        const x = (to.x - from.x) * this.width / 2, y = -(to.y - from.y) * this.height / 2;
+        const length = Math.hypot(x, y);
+        return length > 2 ? { x: x / length, y: y / length, pixels: Math.max(48, Math.min(90, length)) } :
+            { x: 0, y: 1, pixels: 90 };
+    }
+    setKeyDisk(disk: KeyDiskState) {
+        this.keyDisk = disk;
+        if (this.applyKeyDisk(performance.now())) this.dirty = true;
     }
     private applyDiskTravel() {
         // The exported guide axis is perpendicular to the fascia. Keep lateral
         // position and height constant throughout both manual pushes and eject.
         this.disk.position.copy(this.diskRest).addScaledVector(this.diskAxis, this.diskTravel);
+    }
+    private applyKeyDisk(now: number) {
+        const pose = keyDiskPose(this.keyDisk, now, this.reduced.matches);
+        const previousVisible = this.disk.visible, previousTilt = this.disk.rotation.x;
+        const previousX = this.disk.position.x, previousY = this.disk.position.y, previousZ = this.disk.position.z;
+        this.disk.visible = pose.visible;
+        this.diskTravel = pose.travel;
+        this.applyDiskTravel();
+        this.disk.position.x += pose.x;
+        this.disk.position.y += pose.y;
+        this.disk.position.z += pose.z;
+        this.disk.rotation.x = pose.tilt;
+        // The exported assembly origin is outside the shell: rotate delivery
+        // about the disk itself, then align its entire surface with the guides.
+        this.diskPivotRotated.copy(this.diskPivot).applyQuaternion(this.disk.quaternion);
+        this.disk.position.add(this.diskPivot).sub(this.diskPivotRotated);
+        if (this.ejectButton) {
+            this.ejectButton.position.copy(this.ejectButtonRest);
+            this.ejectButton.position.z -= pose.button * .058;
+        }
+        const elapsed = now - this.keyDisk.startedAt;
+        const clunk = `${this.keyDisk.id}:${this.keyDisk.phase}:${this.keyDisk.startedAt}`;
+        if (this.diskClunk !== clunk && (this.keyDisk.phase === 'inserting' && elapsed >= 1100 ||
+            this.keyDisk.phase === 'ejecting' && elapsed >= 250)) {
+            this.diskClunk = clunk;
+            void this.soundFeedback();
+        }
+        if (import.meta.env.DEV) this.host.dataset.keyDiskPhase = this.keyDisk.phase;
+        const changed = previousVisible !== this.disk.visible || previousTilt !== this.disk.rotation.x ||
+            previousX !== this.disk.position.x || previousY !== this.disk.position.y || previousZ !== this.disk.position.z ||
+            this.keyDisk.phase === 'ejecting';
+        if (changed) this.renderer.shadowMap.needsUpdate = true;
+        return changed;
     }
     private tick = (now: number) => {
         if (this.disposed)
@@ -1582,42 +1647,16 @@ export class ConsoleEngine {
             this.testLamp.material.emissiveIntensity = strength;
         }
         if (previousFlip !== this.flipProgress || oldBatteryAngle !== this.batteryAngle) { this.project(); changed = true; }
+        const diskChanged = this.applyKeyDisk(now);
+        if (diskChanged) this.project();
         if (previousFlip !== this.flipProgress || oldBatteryAngle !== this.batteryAngle ||
-            this.diskMotion !== undefined ||
-            Math.abs(this.diskTravel - (this.diskOut ? diskEjectedTravel : diskSeatTravel)) > .0001 ||
+            diskChanged ||
             Math.abs(this.scopeAngle - this.scopeDesiredAngle) > .0001 ||
             Math.abs(this.scopeWaveAngle - this.scopeWaveDesiredAngle) > .0001 ||
             Math.abs(this.scopeRateAngle - this.scopeRateDesiredAngle) > .0001 ||
             Math.abs(this.scopeAxisAngle - this.scopeAxisDesiredAngle) > .0001 || this.pulses.size > 0) {
             this.renderer.shadowMap.needsUpdate = true;
             changed = true;
-        }
-        const diskDesired = this.diskOut ? diskEjectedTravel : diskSeatTravel;
-        const diskMotion = this.diskMotion;
-        if (diskMotion || Math.abs(this.diskTravel - diskDesired) > .0001) {
-            if (!diskMotion || this.reduced.matches) {
-                this.diskTravel = diskDesired;
-                this.diskMotion = undefined;
-                if (this.ejectButton) this.ejectButton.position.copy(this.ejectButtonRest);
-            } else {
-                diskMotion.elapsed += dt * 1000 * this.rosterMotionRate;
-                const pose = diskMotion.out ? diskEjectPose(diskMotion.elapsed, diskMotion.from) : diskInsertPose(diskMotion.elapsed, diskMotion.from);
-                this.diskTravel = pose.travel;
-                if (this.ejectButton) {
-                    this.ejectButton.position.copy(this.ejectButtonRest);
-                    this.ejectButton.position.z -= pose.button * .058;
-                }
-                // The firm final push lands with the mechanism's clunk.
-                if ((diskMotion.out ? pose.phase === 'pop' : pose.phase === 'seat') && !diskMotion.clunk) {
-                    diskMotion.clunk = true;
-                    void this.soundFeedback();
-                }
-                if (pose.done) {
-                    this.diskTravel = diskDesired;
-                    this.diskMotion = undefined;
-                }
-            }
-            this.applyDiskTravel();
         }
         this.scopeAngle = this.reduced.matches ? this.scopeDesiredAngle : THREE.MathUtils.damp(this.scopeAngle, this.scopeDesiredAngle, 16, dt);
         this.tuningKnob.rotation.z = this.scopeAngle;
