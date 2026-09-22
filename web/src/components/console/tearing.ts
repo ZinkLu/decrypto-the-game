@@ -517,7 +517,8 @@ export class ReceiptTransport {
         this.sheet = phase === 'tearing' ? new TornSheet(this.length, this.width, this.fromExtension) : undefined;
     }
 
-    advance(milliseconds: number, reduced = false): boolean {
+    advance(milliseconds: number, reduced = false, powered = true): boolean {
+        if (!powered && this.phase !== 'tearing') return false;
         if (!this.active || this.frozen) return false;
         const previousLength = this.length;
         this.elapsed += Math.max(0, milliseconds);
@@ -563,7 +564,7 @@ export class ReceiptTransport {
             }
         }
         // Reduced motion also completes disposal/refill in this frame.
-        return reduced && this.active ? this.advance(0, true) : false;
+        return reduced && this.active ? this.advance(0, true, powered) : false;
     }
 
     /**

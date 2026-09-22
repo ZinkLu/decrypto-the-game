@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react';
 import type { StationState, LocalState, KeyDiskState } from './model';
 import { useDiskPull } from './useDiskPull';
-import { roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word } from './model';
+import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word } from './model';
 import { translate, localizeError } from './i18n';
 
 type Props = { state: StationState; local: LocalState; ready: boolean; status: string; inert: boolean;
@@ -11,13 +11,14 @@ type Props = { state: StationState; local: LocalState; ready: boolean; status: s
 // The compact surface shares the desktop drafts, validation and actions.
 export default function MobileConsole({ state: s, local: u, ready, status, onAct, onChange, onDiskChange, reducedMotion, inert }: Props) {
     const t = (key: string, values?: unknown[]) => translate(u.locale, key, values);
+    const h = consoleHardware(u, s);
     const r = roleState(s, u);
     const diskReadable = keyDiskReadable(s, u);
     const handwriting = diskInscription(u.keyDisk.id);
     const ownsDisk = !!keyDiskIdentity(s);
     const diskCurrent = ownsDisk && u.keyDisk.id === keyDiskIdentity(s);
     const diskPull = useDiskPull({ disk: u.keyDisk, reduced: reducedMotion,
-        enabled: diskCurrent && u.powerOn && !inert && ['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase),
+        enabled: diskCurrent && !inert && ['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase),
         axis: () => ({ x: 0, y: -1, pixels: 72 }), onChange: onDiskChange, onClick: () => onAct('disk-toggle') });
     const diskStyle = u.keyDisk.pull ? {
         '--disk-pull-y': `${154 - 72 * u.keyDisk.pull.amount}px`,
@@ -26,11 +27,28 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
     const signal = phaseSignal(s, u.theme);
     const lobby = s.phase === 'room', home = s.phase === 'home';
     const owner = s.ownerID === s.myPlayerID;
-    const disabled = !s.connected || s.recovering;
+    const disabled = !h.online;
     const title = t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase]);
     const action = home ? u.mode === 'create' ? '建立频道' : '接入频道' : lobby ? '开始行动' : s.phase === 'game_over' ? '返回通信局' : u.submitted || s.submitted ? '已发送' : '发报 · 确认';
+    const battery = h.batteryPercent !== null && <span className="mobile-battery" role="img" aria-label={t('电池电量 {0}%', [h.batteryPercent])}>
+        <span className="mobile-battery-cells" aria-hidden="true">{Array.from({ length: 4 }, (_, i) => <i key={i} data-filled={i < h.batteryPercent! / 25}/>)}</span>
+        <span aria-hidden="true">{h.batteryPercent}%</span>
+    </span>;
+    if (!h.online) return <section className="mobile-console" aria-label={t('便携通信终端')} inert={inert}>
+        <header>{battery}<p className="mobile-brand">DECRYPTO <span>FIELD TERMINAL / 01</span></p>
+            <div className="mobile-title"><h2>{t(!h.powered ? '终端电源已关闭' : '已断开连接')}</h2></div>
+            {h.powered && <p className="mobile-channel">CH 0000 · {t('离线')}</p>}</header>
+        <p>{t(hardwareMessage(u, s))}</p>
+        {h.powered && <>
+            <section className="mobile-words"><h3>{t('我方秘密词')}</h3>
+                <ol>{Array.from({ length: 4 }, (_, i) => <li key={i}><b>{i + 1}</b> {t('离线')}</li>)}</ol></section>
+            <p>{t('连接恢复后，词窗与房间码将重新显示。')}</p>
+            <p>{t('输入已保留，不会自动提交。')}</p>
+            {!home && <button data-mobile-archive onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button>}
+        </>}
+    </section>;
     return <section className="mobile-console" aria-label={t('便携通信终端')} inert={inert}>
-        <header><p className="mobile-brand">DECRYPTO <span>FIELD TERMINAL / 01</span></p>
+        <header>{battery}<p className="mobile-brand">DECRYPTO <span>FIELD TERMINAL / 01</span></p>
             <div className="mobile-title"><h2 style={signal.actingTeam ? { color: teamPalette(signal.actingTeam, s.myTeam, u.theme).ink } : undefined}>{title}</h2>{s.deadline > 0 && <span className="mobile-clock">{u.seconds}s</span>}</div>
             <p className="mobile-channel">{s.roomCode ? `CH ${s.roomCode}` : t('双队通信  /  4–8 人')} · {s.recovering ? t('正在恢复原座位…') : s.connected ? t('已连接') : t('连接中')}
                 {s.myTeam && ` · ${t('{0} 队', [s.myTeam])}`}</p>
@@ -92,6 +110,10 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
             {s.roundResult && <p>{s.roundResult.intercept_success !== undefined && t(s.roundResult.intercept_success ? '拦截成功' : '拦截失败')} · {s.roundResult.decrypt_success !== undefined && t(s.roundResult.decrypt_success ? '解码成功' : '解码失败')}</p>}
         </>}
         <p className="mobile-status" role={s.error ? 'alert' : 'status'}>{s.error ? localizeError(u.locale, s.error) : status}</p>
+        <div className="mobile-audio" role="group" aria-label={t('声音')}>
+            <button role="switch" aria-checked={u.soundOn} onClick={() => onAct('sound-toggle')}>{t(u.soundOn ? '关闭音效' : '开启音效')}</button>
+            <button role="switch" aria-checked={u.musicOn} onClick={() => onAct('music-toggle')}>{t(u.musicOn ? '关闭背景音乐' : '开启背景音乐')}</button>
+        </div>
         <details><summary>{t('手册')}</summary>{['四个秘密词对应编号 1–4，词窗仅我方可见。', '加密者按三位密码顺序，各写一条关联线索。', '对手先拦截，再由队友解码；前两回合跳过拦截。', '截获两次，或让对方失误两次，即可获胜。'].map(text => <p key={text}>{t(text)}</p>)}</details>
         <footer><button className="mobile-action" disabled={!ready || disabled} onClick={() => onAct('transmit')}><span>ACTION</span>{t(action)}</button></footer>
     </section>;

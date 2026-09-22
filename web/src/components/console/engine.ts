@@ -10,6 +10,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { crtFinish, type Content, type Frame, type Target } from './paint';
 import { RosterMotion, rosterPose } from './rosterMotion';
 import { CrtMotion, crtRestSpot, type CrtKind } from './crtMotion';
+import { CrtSoundMotion, type CrtSoundEvent } from './crtSound';
 import { shadeCrt, crtUniforms, dotUniforms, dotInks, type CrtUniforms, type DotUniforms } from './crtShader';
 import { DotBank, DotDriver, dotGrid, type WordDisplay } from './dotMatrix';
 import { defaultDotFilter, type DotFilter } from './dotFiltering';
@@ -17,11 +18,12 @@ import { plateFinish } from './finishes';
 import { ScoreFlagMotion } from './scoreFlagMotion';
 import scoreRegisterSpec from './scoreRegister.json';
 import { crtProfile, crtGeometry, crtHeight, crtDisplayUv } from './crt';
-import { initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState, type KeyDiskState } from './model';
+import { consoleHardware, initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState, type KeyDiskState } from './model';
 import { VectorMonitor, scopeResonance, scopeTuning } from './scope';
 import { paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEjectedTravel, keyDiskPose } from './mechanics';
 import { ReceiptTransport, paperStillFrame } from './tearing';
 import { ConsoleInstruments } from './instruments';
+import type { ConsoleSound } from './sound';
 import { qualityProfiles, type QualityProfile } from './quality';
 import { gameFraming, handleSurfaces, inspectionZoom, type HandleSide } from './view';
 interface Surface {
@@ -59,15 +61,19 @@ export class ConsoleEngine {
     private batteryOpen = false;
     private batteryAngle = 0;
     private batteryDoor = new THREE.Group() as THREE.Object3D;
-    private soundOn = false;
+    private soundOn = true;
+    private musicOn = true;
     private powerOn = true;
+    private switchOn = true;
+    private networkLamps: THREE.MeshStandardMaterial[] = [];
+    private connectionLamp?: THREE.MeshStandardMaterial;
+    private indicatorColors = new Map<THREE.MeshStandardMaterial, THREE.Color>();
+    private trafficUntil = 0;
     private powerSwitch?: THREE.Object3D;
     private copyKey?: THREE.Object3D;
     private copyKeyRestZ = 0;
     private powerAngle = 0;
     private poweredMaterials = new Map<THREE.MeshStandardMaterial, number>();
-    private audio?: AudioContext;
-    private scoreClickBuffer?: AudioBuffer;
     private testUntil = 0;
     private testLamp?: THREE.Mesh;
     private surfaces: Record<string, Surface> = {};
@@ -109,6 +115,7 @@ export class ConsoleEngine {
     // Every tube has its own supply tolerances, so no two come up or die alike.
     private crtTubes = new Map<string, { motion: CrtMotion<{ id: string; frame?: Frame }>; uniforms: CrtUniforms; printed?: Frame }>();
     private crtMotion = new CrtMotion<{ id: string; frame?: Frame }>();
+    private crtSound = new CrtSoundMotion();
     // The keyword windows can be fitted with dot-matrix modules instead of tubes.
     private wordDisplay: WordDisplay = initialLocal.wordDisplay;
     private dotFilter: DotFilter = defaultDotFilter;
@@ -162,6 +169,7 @@ export class ConsoleEngine {
     private receiverNeedle?: THREE.Object3D;
     private meterKnobs: THREE.Object3D[] = [];
     private soundSwitch?: THREE.Object3D;
+    private musicSwitch?: THREE.Object3D;
     private dirty = true;
     private rendered = 0;
     private ambientOwed = false;
@@ -228,7 +236,9 @@ export class ConsoleEngine {
     };
     constructor(private host: HTMLElement, private project: () => void, private fail: (message: string) => void,
         private onPaperPull: () => void = () => {}, private inspectionEnabled = false,
-        private instrumentPreview = false) {
+        private instrumentPreview = false, private playSound: (cue: ConsoleSound) => void = () => {},
+        private setPaperFeed: (moving: boolean) => void = () => {},
+        private playCrt: (event: CrtSoundEvent) => void = () => {}) {
         this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
         this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -333,7 +343,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'console-score-register-20260922-v2';
+        const revision = 'console-rear-audio-20260922-v1';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -349,7 +359,6 @@ export class ConsoleEngine {
             ...surfaces,
             ...handleSurfaces,
             batteryControl: { x: -3.4, y: .62, z: -3.66, w: 5.6, h: 4.2, rotationY: Math.PI },
-            soundControl: { x: 4.92, y: -1.4, z: -3.25, w: 1.35, h: .60, rotationY: Math.PI },
             testControl: { x: -.05, y: -2.76, z: -3.27, w: .70, h: .70, rotationY: Math.PI },
         };
         this.model = gltf.scene;
@@ -467,7 +476,17 @@ export class ConsoleEngine {
         }
         this.testLamp = this.part('RearTestLamp') as THREE.Mesh;
         // Keep the lamp independent from other lenses for the local self-test.
-        this.testLamp.material = (this.testLamp.material as THREE.MeshStandardMaterial).clone();
+        const testMaterial = (this.testLamp.material as THREE.MeshStandardMaterial).clone();
+        this.testLamp.material = testMaterial;
+        this.indicatorColors.set(testMaterial, testMaterial.color.clone());
+        for (const name of ['Connection lens', 'Instrument_RJ45 lamp 0', 'Instrument_RJ45 lamp 1']) {
+            const lamp = this.part(name);
+            if (!(lamp instanceof THREE.Mesh) || !(lamp.material instanceof THREE.MeshStandardMaterial)) continue;
+            lamp.material = lamp.material.clone();
+            this.indicatorColors.set(lamp.material, lamp.material.color.clone());
+            if (name === 'Connection lens') this.connectionLamp = lamp.material;
+            else this.networkLamps.push(lamp.material);
+        }
         this.root.updateMatrixWorld(true);
         this.disk.attach(this.planes.get('disklabel')!);
         // The label must ride with the transport: attach at the modeled rest
@@ -577,6 +596,8 @@ export class ConsoleEngine {
                 this.poweredMaterials.set(object.material, object.material.emissiveIntensity);
                 if (object.material.name === 'Scope indicator glass')
                     this.scopeLamp = { material: object.material, intensity: object.material.emissiveIntensity };
+                if (object.material.name === 'Scope indicator glass')
+                    this.indicatorColors.set(object.material, object.material.color.clone());
             }
         });
         this.setupPlateFinishes();
@@ -610,6 +631,7 @@ export class ConsoleEngine {
         this.manualKey = this.part('ManualKey');
         this.receiverNeedle = this.part('ReceiverNeedle');
         this.soundSwitch = this.part('RearSoundSwitch');
+        this.musicSwitch = this.part('RearMusicSwitch');
         this.meterKnobs = ['MeterAmplitude', 'MeterRate'].flatMap(name => {
             const knob = this.part(name);
             return knob ? [knob] : [];
@@ -626,8 +648,8 @@ export class ConsoleEngine {
         if (this.content)
             this.update(this.content, { locale: this.locale, scopeFreq: this.scopeFreq, diskOut: this.diskOut, keyDisk: this.keyDisk, scopeWave: this.scopeWave,
                 scopeRate: this.scopeRate, scopeAxis: this.scopeAxis,
-                backView: this.backView, batteryOpen: this.batteryOpen, soundOn: this.soundOn,
-                powerOn: this.powerOn, wordDisplay: this.wordDisplay,
+                backView: this.backView, batteryOpen: this.batteryOpen, soundOn: this.soundOn, musicOn: this.musicOn,
+                powerOn: this.switchOn, wordDisplay: this.wordDisplay,
                 archiveOpen: this.archiveOpen, manual: this.manual,
                 removedBatteries: this.removedBatteries, unpluggedCables: this.unpluggedCables,
                 meterAmplitude: this.meterAmplitude, meterRate: this.meterRate,
@@ -904,10 +926,15 @@ export class ConsoleEngine {
     }
     update(content: Content, local: HardwareState) {
         this.dirty = true;
-        if (this.powerOn !== local.powerOn || this.content?.waiting !== content.waiting) this.clearScopePersistence();
+        const hardware = consoleHardware(local);
+        const resuming = content.connected && !this.content?.connected;
+        if (content.connected && content.trafficKey !== this.content?.trafficKey) this.trafficUntil = performance.now() + 140;
+        if (this.powerOn !== hardware.powered || this.content?.waiting !== content.waiting) this.clearScopePersistence();
         this.content = content;
         this.updateNixies(content.roomCode);
-        this.powerOn = local.powerOn;
+        this.switchOn = local.powerOn;
+        this.powerOn = hardware.powered;
+        if (!this.powerOn) this.testUntil = 0;
         if (this.wordDisplay !== local.wordDisplay) this.fitWordDisplay(local.wordDisplay);
         // Only the main display changes palette. Every tube keeps its outgoing
         // picture until it is dark, so paint's blank power-off frames wait too.
@@ -917,8 +944,14 @@ export class ConsoleEngine {
         if (this.screenPrivacyKey !== content.screenPrivacyKey && this.crtMotion.current)
             this.crtMotion.current = { ...this.crtMotion.current, frame: content.frames.screen };
         this.screenPrivacyKey = content.screenPrivacyKey;
-        for (const [name, tube] of this.crtTubes)
-            if (tube.motion !== this.crtMotion) tube.motion.sync(this.powerOn, { id: name, frame: content.frames[name] });
+        // Observe the power edge before reduced motion settles the tube instantly.
+        this.syncCrtSound();
+        for (const [name, tube] of this.crtTubes) {
+            if (tube.motion === this.crtMotion) continue;
+            tube.motion.sync(this.powerOn, { id: name, frame: content.frames[name] });
+            if (name.startsWith('word') && this.dotPrivacyKey !== content.wordPrivacyKey && tube.motion.current)
+                tube.motion.current = { ...tube.motion.current, frame: content.frames[name] };
+        }
         this.dotBank.sync(this.powerOn && this.wordDisplay !== 'crt', {
             id: content.displayKey, inks: content.wordInks, frames: content.frames,
         });
@@ -934,6 +967,7 @@ export class ConsoleEngine {
         this.backView = local.backView;
         this.batteryOpen = local.batteryOpen;
         this.soundOn = local.soundOn;
+        this.musicOn = local.musicOn;
         this.manual = local.manual;
         this.removedBatteries = local.removedBatteries;
         this.unpluggedCables = local.unpluggedCables;
@@ -950,7 +984,7 @@ export class ConsoleEngine {
         for (const [name, panel] of this.themePanels)
             panel.motion.sync({ id: content.paletteKey, frame: content.frames[name], color: content.teamInks[name.slice(-1) as 'A' | 'B'] });
         this.archiveOpen = local.archiveOpen;
-        if (!local.archiveOpen) this.paperReaderStarted = false;
+        if (!local.archiveOpen || !this.powerOn) this.paperReaderStarted = false;
         this.receipt.sync(local.archiveOpen, content.paperRecords);
         this.beginPaperReader();
         this.diskOut = local.diskOut;
@@ -970,14 +1004,11 @@ export class ConsoleEngine {
             if (this.crtTubes.has(name) || name === 'screen' || /^roster[AB][0-3]$/.test(name) || this.themePanels.has(name)) continue;
             this.updateFrame(name, frame);
         }
-        const lamp = this.model?.getObjectByName('Connection_lens') || this.model?.getObjectByName('Connection lens');
-        if (lamp instanceof THREE.Mesh && lamp.material instanceof THREE.MeshStandardMaterial) {
-            lamp.material.emissive.set(content.connected ? '#328248' : '#a66318');
-            lamp.material.emissiveIntensity = this.powerOn ? .5 : 0;
-        }
+        this.syncIndicators(performance.now());
         let scorePulses = 0;
         for (const [name, flag] of this.scoreFlags) {
             if (flag.motion.sync(!!content.scoreFlags[name], this.powerOn, scorePulses * .022)) scorePulses++;
+            if (resuming) flag.motion.advance(0, true);
             flag.object.rotation.x = flag.motion.angle;
         }
         this.project();
@@ -1007,7 +1038,11 @@ export class ConsoleEngine {
         }
         this.dirty = true;
     }
+    private syncCrtSound() {
+        for (const event of this.crtSound.update(this.crtMotion.tube, this.powerOn, this.reduced.matches)) this.playCrt(event);
+    }
     private syncCrt() {
+        this.syncCrtSound();
         const snapshot = this.dotBank.current;
         if (snapshot) {
             dotInks.word.value.set(snapshot.inks.word);
@@ -1100,7 +1135,7 @@ export class ConsoleEngine {
     private batchStaticGeometry(root: THREE.Object3D = this.model!, preserveAssemblies = true) {
         // Keep the .blend and GLB fully editable. Only the runtime coalesces
         // static, opaque parts by material; animated assemblies retain names.
-        const moving = /^(ThemePanel_.*|ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|FloppyEject|ScopeTuning|ScopeWave|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearTestLamp|Connection[ _]lens|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreFlag_.*)$/;
+        const moving = /^(ThemePanel_.*|ConsoleInstruments|InstrumentOriginal|Nixie_Digit_.*|FloppyTransport|FloppyEject|ScopeTuning|ScopeWave|ScopeRate|ScopePersistence|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|MeterAmplitude|MeterRate|RearSoundSwitch|RearMusicSwitch|RearTestLamp|Connection[ _]lens|Instrument_RJ45[ _]lamp[ _][01]|Archive[ _]scroll[ _]wheel|PaperFeed|Paper[ _]roller|ReceiverNeedle|ManualKey|ChannelCopy|ScoreFlag_.*)$/;
         const batches = new Map<THREE.Material, THREE.Mesh[]>();
         root.updateWorldMatrix(true, true);
         const inverse = root.matrixWorld.clone().invert();
@@ -1147,50 +1182,27 @@ export class ConsoleEngine {
             }
         }
     }
-    async soundFeedback(test = false) {
-        if (!this.soundOn) return;
-        try {
-            this.audio ??= new AudioContext();
-            if (this.audio.state === 'suspended') await this.audio.resume();
-            if (this.disposed || !this.soundOn) return;
-            const now = this.audio.currentTime;
-            const oscillator = this.audio.createOscillator();
-            const gain = this.audio.createGain();
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(test ? 660 : 180, now);
-            oscillator.frequency.exponentialRampToValueAtTime(test ? 440 : 70, now + .045);
-            gain.gain.setValueAtTime(.0001, now);
-            gain.gain.exponentialRampToValueAtTime(test ? .045 : .025, now + .004);
-            gain.gain.exponentialRampToValueAtTime(.0001, now + (test ? .25 : .055));
-            oscillator.connect(gain); gain.connect(this.audio.destination);
-            oscillator.start(now); oscillator.stop(now + .3);
-            oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
-        } catch { /* Audio is optional; no browser permission is required to play. */ }
+    testLamps() { if (this.powerOn) { this.testUntil = performance.now() + 1800; this.dirty = true; } }
+    private syncIndicators(now: number) {
+        const testing = this.powerOn && now < this.testUntil;
+        const linked = this.powerOn && !(this.unpluggedCables & 1);
+        if (this.connectionLamp) {
+            this.connectionLamp.emissive.set(this.content?.connected || testing ? '#328248' : '#a66318');
+            this.connectionLamp.emissiveIntensity = testing ? .7 : !linked ? 0 : this.content?.connected ? .5 : .16;
+        }
+        this.networkLamps.forEach((material, index) => {
+            material.emissive.set(index ? '#c89336' : '#328248');
+            material.emissiveIntensity = testing ? .8 : !linked ? 0 : index === 0 ? .5 :
+                this.content?.connected && now < this.trafficUntil ? .8 : 0;
+        });
+        if (this.testLamp?.material instanceof THREE.MeshStandardMaterial) {
+            this.testLamp.material.emissive.set('#80dc65');
+            this.testLamp.material.emissiveIntensity = !this.powerOn ? 0 : testing ? .8 : .25;
+        }
+        if (testing && this.scopeLamp) this.scopeLamp.material.emissiveIntensity = this.scopeLamp.intensity;
+        for (const [material, color] of this.indicatorColors)
+            material.color.copy(color).multiplyScalar(material.emissiveIntensity > 0 ? 1 : .14);
     }
-    private scoreFlagClick() {
-        // The rear sound switch unlocks audio. A remote score update must never
-        // create/resume an AudioContext or replay an old click after unlocking.
-        const audio = this.audio;
-        if (!this.soundOn || this.disposed || !audio || audio.state !== 'running') return;
-        this.scoreClickBuffer ??= (() => {
-            const buffer = audio.createBuffer(1, Math.ceil(audio.sampleRate * .045), audio.sampleRate);
-            const samples = buffer.getChannelData(0);
-            for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
-            return buffer;
-        })();
-        const now = audio.currentTime;
-        const source = audio.createBufferSource(), filter = audio.createBiquadFilter(), gain = audio.createGain();
-        source.buffer = this.scoreClickBuffer;
-        filter.type = 'bandpass'; filter.frequency.value = 1350; filter.Q.value = .8;
-        gain.gain.setValueAtTime(.0001, now);
-        gain.gain.exponentialRampToValueAtTime(.024, now + .0015);
-        gain.gain.exponentialRampToValueAtTime(.0001, now + .038);
-        source.connect(filter); filter.connect(gain); gain.connect(audio.destination);
-        source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect(); };
-        source.start(now);
-    }
-    setSound(on: boolean) { this.soundOn = on; void this.soundFeedback(true); }
-    testLamps() { this.testUntil = performance.now() + 1800; void this.soundFeedback(true); }
     private clearScopePersistence() {
         this.monitor.clear();
     }
@@ -1235,7 +1247,7 @@ export class ConsoleEngine {
         this.project();
     }
     private beginPaperReader() {
-        if (!this.archiveOpen || this.paperReaderStarted || !['feeding', 'reading'].includes(this.receipt.phase)) return;
+        if (!this.powerOn || !this.archiveOpen || this.paperReaderStarted || !['feeding', 'reading'].includes(this.receipt.phase)) return;
         this.paperReaderStarted = true;
         this.onPaperPull();
     }
@@ -1451,7 +1463,7 @@ export class ConsoleEngine {
         if (this.diskClunk !== clunk && (this.keyDisk.phase === 'inserting' && elapsed >= 1100 ||
             this.keyDisk.phase === 'ejecting' && elapsed >= 250)) {
             this.diskClunk = clunk;
-            void this.soundFeedback();
+            this.playSound(this.keyDisk.phase === 'ejecting' ? 'disk-out' : 'disk-seat');
         }
         if (import.meta.env.DEV) this.host.dataset.keyDiskPhase = this.keyDisk.phase;
         const changed = previousVisible !== this.disk.visible || previousTilt !== this.disk.rotation.x ||
@@ -1517,13 +1529,22 @@ export class ConsoleEngine {
             changed = true;
         }
         const previousPowerAngle = this.powerAngle;
-        const powerTarget = this.powerOn ? 0 : -THREE.MathUtils.degToRad(this.powerSwitch?.userData.throw_degrees ?? 32);
+        const powerTarget = this.switchOn ? 0 : -THREE.MathUtils.degToRad(this.powerSwitch?.userData.throw_degrees ?? 32);
         this.powerAngle = this.reduced.matches ? powerTarget : THREE.MathUtils.damp(this.powerAngle, powerTarget, 22, dt);
         if (Math.abs(this.powerAngle - powerTarget) < .001) this.powerAngle = powerTarget;
         if (this.powerSwitch) this.powerSwitch.rotation.z = this.powerAngle;
         if (previousPowerAngle !== this.powerAngle) { this.renderer.shadowMap.needsUpdate = true; changed = true; }
-        if (this.receipt.active) {
-            this.receipt.advance(dt * 1000 * this.rosterMotionRate, this.reduced.matches);
+        let feeding = false;
+        if (this.receipt.active && (this.powerOn || this.receipt.phase === 'tearing')) {
+            const phase = this.receipt.phase, travel = this.receipt.feedTravel, tear = this.receipt.pose.tear;
+            this.receipt.advance(dt * 1000 * this.rosterMotionRate, this.reduced.matches, this.powerOn);
+            // Rollers sound only while moving; the rip starts when fibers break.
+            if (this.receipt.feedTravel > travel) {
+                if (this.reduced.matches) this.playSound('paper-feed');
+                else feeding = true;
+            }
+            if (phase === 'tearing' && (this.reduced.matches || (tear === 0 && this.receipt.pose.tear > 0)))
+                this.playSound('paper-tear');
             this.syncPaperGeometry();
             changed = true;
             if (!this.receipt.active) this.renderer.shadowMap.needsUpdate = true;
@@ -1541,6 +1562,7 @@ export class ConsoleEngine {
             // Also start the reader for a queued reopening after refill.
             this.beginPaperReader();
         }
+        this.setPaperFeed(feeding);
         const manualDepth = this.manualDepth;
         this.manualDepth = this.reduced.matches ? (this.manual ? .035 : 0) : THREE.MathUtils.damp(this.manualDepth, this.manual ? .035 : 0, 20, dt);
         if (this.manualKey) this.manualKey.position.z = .85 - this.manualDepth;
@@ -1628,9 +1650,12 @@ export class ConsoleEngine {
         if (Math.abs(this.batteryAngle - (this.batteryOpen ? 1.85 : 0)) < .0005)
             this.batteryAngle = this.batteryOpen ? 1.85 : 0;
         this.batteryDoor.rotation.y = this.batteryAngle;
-        const soundSwitch = this.soundSwitch;
-        if (soundSwitch && soundSwitch.position.x !== (this.soundOn ? 4.79 : 5.05)) {
-            soundSwitch.position.x = this.soundOn ? 4.79 : 5.05;
+        for (const [slider, enabled] of [[this.soundSwitch, this.soundOn], [this.musicSwitch, this.musicOn]] as const) {
+            if (!slider) continue;
+            const target = slider.userData.centerX + (enabled ? -.22 : .22);
+            if (slider.position.x === target) continue;
+            slider.position.x = this.reduced.matches ? target : THREE.MathUtils.damp(slider.position.x, target, 24, dt);
+            if (Math.abs(slider.position.x - target) < .0005) slider.position.x = target;
             this.renderer.shadowMap.needsUpdate = true;
             changed = true;
         }
@@ -1639,13 +1664,9 @@ export class ConsoleEngine {
                 flag.object.rotation.x = flag.motion.angle;
                 changed = true;
             }
-            if (flag.motion.consumeImpact()) this.scoreFlagClick();
+            if (flag.motion.consumeImpact()) this.playSound('score');
         }
-        if (this.testLamp?.material instanceof THREE.MeshStandardMaterial) {
-            const strength = !this.powerOn ? 0 : now < this.testUntil ? .8 + .7 * Math.sin(now * .018) : .03;
-            this.testLamp.material.emissive.set('#80dc65');
-            this.testLamp.material.emissiveIntensity = strength;
-        }
+        this.syncIndicators(now);
         if (previousFlip !== this.flipProgress || oldBatteryAngle !== this.batteryAngle) { this.project(); changed = true; }
         const diskChanged = this.applyKeyDisk(now);
         if (diskChanged) this.project();
@@ -1774,7 +1795,7 @@ export class ConsoleEngine {
             const drive = (1 + this.monitor.signal.coherence) / 2;
             this.scopeLampGlow = this.reduced.matches ? drive : THREE.MathUtils.damp(this.scopeLampGlow, drive, 5.5, dt);
             // A filament's light rises much faster than its drive, so beats read clearly.
-            this.scopeLamp.material.emissiveIntensity = this.scopeLamp.intensity * (.03 + .97 * this.scopeLampGlow ** 3);
+            this.scopeLamp.material.emissiveIntensity = this.scopeLamp.intensity * (performance.now() < this.testUntil ? 1 : .03 + .97 * this.scopeLampGlow ** 3);
         }
         const trace = this.scopeTraceCanvas.getContext('2d')!;
         const glow = this.scopeGlow ??= trace.createImageData(scopeTuning.width, scopeTuning.height);
@@ -1845,7 +1866,6 @@ export class ConsoleEngine {
             texture.dispose();
         this.environment.dispose();
         this.draco.dispose();
-        void this.audio?.close();
         this.renderer.dispose();
         this.renderer.domElement.remove();
     }

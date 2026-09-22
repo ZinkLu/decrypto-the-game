@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { receiverSignal, ReceiverActivity, type HardwareState, type InstrumentVariant } from './model';
+import { consoleHardware, receiverSignal, ReceiverActivity, type HardwareState, type InstrumentVariant } from './model';
 
 /** The production receiver, with optional assemblies for the development bench. */
 export class ConsoleInstruments {
@@ -11,6 +11,7 @@ export class ConsoleInstruments {
     private rate = 2;
     private powered = true;
     private demo = true;
+    private aux = true;
     private demoStart = 0;
     private drum = 0;
     private receiverActivity: ReceiverActivity;
@@ -86,7 +87,8 @@ export class ConsoleInstruments {
         this.variant = local.instrumentVariant;
         this.amplitude = local.meterAmplitude;
         this.rate = local.meterRate;
-        this.powered = local.powerOn;
+        this.powered = consoleHardware(local).powered;
+        this.aux = consoleHardware(local).auxAvailable;
         this.demo = local.instrumentDemo;
         for (const [id, root] of this.variants) root.visible = id === this.variant;
     }
@@ -110,11 +112,11 @@ export class ConsoleInstruments {
             part.rotation[axis] = next;
         };
         if (this.variant === 'signal') {
-            const activity = this.receiverActivity.advance(dt, this.demo && animate);
+            const activity = this.receiverActivity.advance(dt, this.demo && animate && this.aux);
             const gain = .35 + this.rate * .2525;
-            const level = !this.powered ? 0 : this.demo ? Math.min(1, activity * gain) :
+            const level = !this.powered ? 0 : !this.aux ? .006 : this.demo ? Math.min(1, activity * gain) :
                 receiverSignal(this.amplitude, this.rate, now / 1000, !reduced);
-            rotate('SignalNeedle', 'z', 1.08 - level * 2.16, 9);
+            rotate('SignalNeedle', 'z', 1.08 - level * 2.16, this.aux ? 15 : 9);
             rotate('SignalTuning', 'z', 2.2 - this.amplitude / 40 * 4.4);
             rotate('SignalGain', 'z', .85 - this.rate * .425);
             rotate('SignalSweep', 'x', this.demo ? -.5 : .5, 26);

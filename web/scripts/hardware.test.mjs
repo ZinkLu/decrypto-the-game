@@ -10,7 +10,7 @@ const url = source => `data:text/javascript;base64,${Buffer.from(source).toStrin
 const modelUrl = url(compile(await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8')));
 const mechanicsUrl = url(compile(await readFile(new URL('../src/components/console/mechanics.ts', import.meta.url), 'utf8')));
 const dotMatrixUrl = url(compile(await readFile(new URL('../src/components/console/dotMatrix.ts', import.meta.url), 'utf8')));
-const { initialLocal, previewState, instrumentSteps, stepInstrumentValue, receiverSignal, ReceiverActivity } = await import(modelUrl);
+const { initialLocal, previewState, keyDiskIdentity, word, instrumentSteps, stepInstrumentValue, receiverSignal, ReceiverActivity } = await import(modelUrl);
 const i18nUrl = url(compile(await readFile(new URL('../src/components/console/i18n.ts', import.meta.url), 'utf8')));
 const paintSource = await readFile(new URL('../src/components/console/paint.ts', import.meta.url), 'utf8');
 const { paint } = await import(url(compile(paintSource).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl))));
@@ -118,7 +118,7 @@ test('front and rear control targets are disjoint in every game phase', () => {
     const rear = paint(state, { ...initialLocal, backView: true });
     assert.ok(front.targets.some(t => t.id === 'scope-tune'));
     assert.ok(!front.targets.some(t => t.id === 'battery-toggle'));
-    assert.deepEqual(rear.targets.map(t => t.id), ['battery-toggle', 'sound-toggle', 'lamp-test', 'cable-plug-0', 'cable-plug-1', 'cable-plug-2']);
+    assert.deepEqual(rear.targets.map(t => t.id), ['battery-toggle', 'sound-toggle', 'music-toggle', 'lamp-test', 'cable-plug-0', 'cable-plug-1', 'cable-plug-2']);
     assert.ok(!rear.targets.some(t => t.id === 'transmit' || t.kind === 'input'));
   }
 });
@@ -131,7 +131,7 @@ test('hardware exploration preserves clues and guesses and reports toggle state'
   const rear = paint(state, local);
   assert.equal(JSON.stringify(local), before);
   assert.equal(rear.targets.find(t => t.id === 'battery-toggle').label, '合上电池仓盖');
-  assert.equal(rear.targets.find(t => t.id === 'sound-toggle').label, '关闭机械音效');
+  assert.equal(rear.targets.find(t => t.id === 'sound-toggle').label, '关闭音效');
   assert.equal(rear.targets.filter(t => t.id.startsWith('battery-cell-')).length, 4);
   const removed = paint(state, { ...local, removedBatteries: 5, unpluggedCables: 2 });
   assert.equal(removed.targets.find(t => t.id === 'battery-cell-0').label, '装回第 1 节电池');
@@ -192,16 +192,95 @@ test('power off blocks front input and transmission, and restores the prepared g
     assert.equal(off.ready, false);
     assert.equal(off.activity, 0);
     assert.deepEqual(off.scoreFlags, on.scoreFlags, 'bistable score flags retain the tally without power');
-    assert.deepEqual(off.targets.map(t => t.id), ['power-toggle']);
-    assert.equal(off.targets[0].surface, 'powerControl');
-    assert.equal(off.targets[0].label, '开启终端电源');
-    assert.match(off.status, /对局继续进行/);
+    assert.deepEqual(off.targets.map(t => t.id), ['disk-toggle', 'disk-eject', 'power-toggle']);
+    assert.equal(off.targets.find(t => t.id === 'power-toggle').surface, 'powerControl');
+    assert.equal(off.targets.find(t => t.id === 'power-toggle').label, '开启终端电源');
+    assert.match(off.status, /输入已保留/);
     const restored = paint(state, { ...local, powerOn: true });
     assert.equal(restored.ready, on.ready);
     assert.deepEqual(restored.scoreFlags, on.scoreFlags);
     assert.deepEqual(restored.targets, on.targets);
     assert.equal(JSON.stringify({ state, local }), before);
   }
+});
+
+test('unplugging RJ45 gates every game surface while preserving local instruments and a recovery target', () => {
+  for (const phase of ['home', 'room', 'encrypting', 'decrypt', 'intercept', 'game_over']) {
+    const state = previewState({}, phase);
+    const local = { ...initialLocal, name: '测试员', clues: ['花园', '航行', '羽毛'], guess: [3, 1, 4], unpluggedCables: 1 };
+    const offline = paint(state, local);
+    assert.equal(offline.ready, false);
+    assert.equal(offline.connected, false);
+    assert.deepEqual(offline.targets.filter(t => t.surface === 'screen').map(t => t.id), ['restore-link']);
+    assert.equal(offline.targets.find(t => t.id === 'transmit').disabled, true);
+    assert.ok(offline.targets.filter(t => t.id.startsWith('key-')).every(t => t.disabled));
+    assert.ok(offline.targets.some(t => t.id === 'scope-tune' && !t.disabled));
+    assert.ok(offline.targets.some(t => t.id === 'receiver-sweep' && !t.disabled));
+    assert.equal(paint({ ...state, connected: false }, { ...local, unpluggedCables: 0 }).connected, false);
+    assert.equal(paint({ ...state, recovering: true }, { ...local, unpluggedCables: 0 }).ready, false);
+  }
+});
+
+test('supply loss hides powered controls, leaves a mechanical ON switch, and disables the rear lamp test', () => {
+  const state = previewState({}, 'encrypting');
+  const local = { ...initialLocal, unpluggedCables: 4, removedBatteries: 8 };
+  const front = paint(state, local);
+  assert.equal(front.targets.find(t => t.id === 'power-toggle').label, '关闭终端电源');
+  assert.equal(front.ready, false);
+  assert.equal(front.roomCode, '');
+  assert.ok(!front.targets.some(t => t.id === 'scope-tune'));
+  assert.equal(paint(state, { ...local, backView: true }).targets.find(t => t.id === 'lamp-test').disabled, true);
+  assert.ok(paint(state, { ...local, removedBatteries: 0 }).targets.some(t => t.id === 'scope-tune'));
+});
+
+test('all disconnected causes replace the front displays and restore the retained room and keywords on reconnect', () => {
+  const originalDocument = globalThis.document;
+  globalThis.document = { createElement: () => {
+    const printed = [];
+    const localContext = new Proxy({
+      measureText: text => ({ width: text.length * 12 }),
+      createLinearGradient: () => ({ addColorStop() {} }),
+      createRadialGradient: () => ({ addColorStop() {} }),
+      fillText: text => printed.push(text),
+    }, { get: (target, key) => key in target ? target[key] : () => {} });
+    return { printed, getContext: () => localContext };
+  } };
+  try {
+    const state = previewState({}, 'encrypting');
+    for (const wordDisplay of ['led', 'crt']) for (const locale of ['zh', 'en']) {
+      const local = { ...initialLocal, wordDisplay, locale, clues: ['花园', '航行', '羽毛'],
+        keyDisk: { id: keyDiskIdentity(state), phase: 'ready', startedAt: 0 } };
+      const before = JSON.stringify({ state, local });
+      const online = paint(state, local);
+      for (const [live, hardware] of [
+        [state, { ...local, unpluggedCables: 1 }],
+        [{ ...state, connected: false }, local],
+        [{ ...state, recovering: true }, local],
+      ]) {
+        const offline = paint(live, hardware);
+        assert.equal(offline.roomCode, '0000');
+        assert.equal(offline.targets.find(t => t.id === 'copy-code').disabled, true);
+        assert.ok(offline.targets.filter(t => t.id === 'words').every(t => t.disabled));
+        assert.notEqual(offline.wordPrivacyKey, online.wordPrivacyKey, 'discard outgoing keyword afterglow');
+        assert.notEqual(offline.screenPrivacyKey, online.screenPrivacyKey, 'discard outgoing private-code afterglow');
+        for (let i = 0; i < 4; i++) {
+          const text = offline.frames[`word${i}`].canvas.printed;
+          assert.ok(text.includes(locale === 'zh' ? '离线' : 'OFFLINE'));
+          assert.ok(!text.includes(word(state.myWords[i], locale)));
+        }
+        const screen = offline.frames.screen.canvas.printed;
+        const title = locale === 'zh' ? '已断开连接' : 'Disconnected';
+        assert.ok(screen.includes(title));
+        assert.ok(!screen.slice(screen.lastIndexOf(title)).join('\n').includes('3 · 1 · 4'));
+        assert.equal(offline.targets.some(t => t.id === 'restore-link'), !!hardware.unpluggedCables);
+      }
+      const restored = paint(state, local);
+      assert.equal(restored.roomCode, state.roomCode);
+      assert.equal(restored.targets.find(t => t.id === 'copy-code').disabled, false);
+      assert.deepEqual(restored.frames.word0.canvas.printed, online.frames.word0.canvas.printed);
+      assert.equal(JSON.stringify({ state, local }), before);
+    }
+  } finally { globalThis.document = originalDocument; }
 });
 
 test('the printed receipt uses the same public archive in preview and live state', () => {
@@ -230,4 +309,17 @@ test('the printed receipt uses the same public archive in preview and live state
     assert.ok(!printed.includes('当前回合不可打印'));
     assert.ok(!printed.includes('2 · 3 · 4'));
   } finally { globalThis.document = originalDocument; }
+});
+
+
+test('music and effects default on and expose independent rear switch states', () => {
+  assert.equal(initialLocal.soundOn, true);
+  assert.equal(initialLocal.musicOn, true);
+  const state = previewState({}, 'home');
+  for (const soundOn of [true, false]) for (const musicOn of [true, false]) {
+    const targets = paint(state, { ...initialLocal, backView: true, soundOn, musicOn }).targets;
+    assert.equal(targets.find(t => t.id === 'sound-toggle').label, soundOn ? '关闭音效' : '开启音效');
+    assert.equal(targets.find(t => t.id === 'music-toggle').label, musicOn ? '关闭背景音乐' : '开启背景音乐');
+    assert.equal(targets.find(t => t.id === 'music-toggle').surface, 'musicControl');
+  }
 });

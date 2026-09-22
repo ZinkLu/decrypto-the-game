@@ -67,6 +67,19 @@ button,input { font: inherit; }
 .station-score-preview button { min-height: 36px; font-variant-numeric: tabular-nums; }
 .station-rear-status { margin: 0 auto 0 0; background: #eee8dbed; border-left: 2px solid #6b7866; padding: 8px 12px; color: #38473b; font-size: 12px; line-height: 1.7; }
 .station-rear-status span { display: block; color: #737768; font-size: 10px; letter-spacing: .06em; }
+.station-hardware-status { position: fixed; z-index: 4; left: 20px; bottom: 16px; max-width: min(410px, calc(100vw - 40px)); padding: 10px 14px; background: #eee8dbf5; color: #38473b; border-left: 2px solid #6b7866; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.station-hardware-status p { margin: 0; }
+.station-hardware-status .hardware-match, .station-hardware-status small { color: #626857; font-size: 12px; }
+.station-hardware-status button { margin-top: 8px; padding: 7px 14px; background: #334c3c; color: #f4edda; border: 1px solid #334c3c; border-radius: 2px; font: inherit; cursor: pointer; }
+.station-hardware-status :focus-visible { outline: 3px solid #a1442f; outline-offset: 3px; }
+.station-hardware-status details { margin-top: 6px; }
+.station-hardware-status summary { cursor: pointer; }
+.station-hardware-status details p { max-height: 8em; overflow: auto; white-space: pre-wrap; }
+.station-fallback .station-hardware-status { position: relative; margin: 12px 20px; left: auto; bottom: auto; }
+@media (max-width: 850px) {
+  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-hardware-status { position: relative; left: auto; bottom: auto; max-width: 520px; margin: 12px 20px 24px; }
+  .station-hardware-status button, .station-hardware-status summary { min-height: 44px; }
+}
 @media (max-width: 600px) {
   .station-workbench { right: 10px; left: 10px; bottom: 10px; gap: 8px; }
   .station-orbit-hint { display: none; }
@@ -297,6 +310,16 @@ button,input { font: inherit; }
 .station-preferences { position: relative; font-size: 12px; color: #59604f; }
 .station-preferences summary { min-height: 36px; padding: 10px 0 10px 12px; cursor: pointer; }
 .station-preferences-panel { position: absolute; top: 44px; right: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; width: 332px; max-width: calc(100vw - 44px); padding: 12px; border: 1px solid #afa994; background: #e5decb; }
+.station-preferences-panel { max-height: calc(100dvh - 76px); overflow-y: auto; overscroll-behavior: contain; }
+.station-music { align-self: stretch; min-width: 0; margin: 0; padding: 6px 0 10px; border: 0; border-bottom: 1px solid #afa994; }
+.station-music legend { padding: 0; font-size: 11px; }
+.station-music-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.station-music-volume { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.station-music-volume input { flex: 1; width: 0; min-width: 50px; min-height: 36px; accent-color: #394c48; }
+.station-music-volume output { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+.station-music p { margin: 8px 0; line-height: 1.6; }
+.station-music a { display: inline-flex; align-items: center; min-height: 36px; color: #394c48; text-underline-offset: 3px; }
+.station-music input:focus-visible, .station-music a:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
 .station-themes { align-self: stretch; min-width: 0; margin: 0; padding: 8px 0 10px; border: 0; border-bottom: 1px solid #afa994; }
 .station-themes legend { padding: 0; color: #666b5a; font-size: 11px; }
 .station-theme-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
@@ -309,8 +332,31 @@ button,input { font: inherit; }
 .station-theme-swatches i:last-child { border-radius: 0 8px 8px 0; }
 .station-language, .station-quality { display: flex; align-items: center; padding: 3px; gap: 2px; border: 1px solid #afa994; background: #e5decb; border-radius: 4px; }
 .station-settings button { min-width: 46px; min-height: 36px; padding: 5px 10px; border: 0; border-radius: 2px; background: transparent; color: #57594a; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
-.station-settings button[aria-pressed="true"] { color: #eee5cf; background: #394c48; }
+.station-settings button[aria-pressed="true"], .station-settings button[role="switch"][aria-checked="true"] { color: #eee5cf; background: #394c48; }
 .station-settings button:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
+.station-settings .station-music-row { padding: 5px 0; }
+.mobile-audio { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 16px 24px; }
+.mobile-audio button { flex: 1; justify-content: center; }
+.mobile-audio button:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
+.station-settings .station-music-row button, .mobile-console .mobile-audio button {
+  display: inline-flex; align-items: center; gap: 9px; min-height: 44px; min-width: 104px;
+  padding: 8px 12px; border: 1px solid #888773; border-radius: 4px;
+  background: linear-gradient(#ece5d4, #d2cbb8); color: #494e40;
+  box-shadow: inset 0 1px #fff8e3, inset 0 -2px #b8b29e, 0 2px 0 #898975, 0 3px 5px #29332b22;
+  transition: transform 140ms ease-out;
+}
+.station-music-row button::before, .mobile-audio button::before {
+  content: ''; width: 7px; height: 7px; flex-shrink: 0; border-radius: 50%;
+  background: #747365; box-shadow: 0 0 0 2px #38403666, inset 0 1px 2px #26342a66;
+}
+.station-settings .station-music-row button[aria-checked="true"], .mobile-console .mobile-audio button[aria-checked="true"] {
+  color: #f0e9d4; border-color: #344138; background: linear-gradient(#52604b, #394638);
+  box-shadow: inset 0 1px #7e8a6c, inset 0 -2px #2c372e, 0 2px 0 #222f27, 0 3px 5px #29332b33;
+}
+.station-music-row button[aria-checked="true"]::before, .mobile-audio button[aria-checked="true"]::before { background: #bbd389; box-shadow: 0 0 0 2px #263a28, inset 0 1px #e6edc0; }
+@media (hover: hover) { .station-settings .station-music-row button:hover { filter: brightness(1.07); } }
+.station-settings .station-music-row button:active, .mobile-console .mobile-audio button:active { transform: translateY(2px); box-shadow: inset 0 2px 3px #25382b44, 0 1px 0 #5c6653; }
+@media (prefers-reduced-motion: reduce) { .station-settings .station-music-row button, .mobile-console .mobile-audio button { transition: none; } }
 .station-quality > span { padding: 0 8px 0 9px; color: #7a7764; font-size: 11px; font-weight: 600; letter-spacing: .12em; }
 .station-quality button { min-width: 40px; }
 /* Auto names the level it settled on. */
@@ -320,6 +366,13 @@ button,input { font: inherit; }
 
 /* A compact task surface shares the same game state as the physical terminal. */
 .mobile-console { display: none; }
+.mobile-console > header { position: relative; }
+.mobile-battery { position: absolute; top: 0; right: 0; display: inline-flex; align-items: center; gap: 10px; color: #496443; font-size: 12px; font-variant-numeric: tabular-nums; }
+.mobile-battery + .mobile-brand { padding-right: 88px; }
+.mobile-battery-cells { position: relative; display: flex; gap: 3px; padding: 3px 4px; border: 1px solid currentColor; border-radius: 2px; }
+.mobile-battery-cells::after { content: ''; position: absolute; right: -4px; top: 5px; width: 2px; height: 6px; background: currentColor; }
+.mobile-battery-cells i { width: 5px; height: 10px; transform: skewX(-18deg); background: currentColor; opacity: .18; }
+.mobile-battery-cells i[data-filled="true"] { opacity: 1; }
 .mobile-key-disk { margin: 22px 0; padding: 16px 0; border-block: 1px solid #9b9e8c; }
 .mobile-disk-mechanism { position: relative; height: 200px; overflow: hidden; isolation: isolate; }
 .mobile-floppy { position: absolute; left: calc(50% - 41px); top: 0; width: 82px; height: 86px; border: 3px solid #292f2b; border-radius: 3px 9px 3px 3px; background: #475148; transform: translateY(154px); }

@@ -642,17 +642,29 @@ face controls are removed from keyboard/pointer routing, including submit
 shortcuts. Game state continues to update while inspecting the back, with a
 persistent round/turn reminder. Reduced motion switches faces/door immediately.
 
-Rear interactions are local only:
+Rear interactions change the local terminal, while the room socket stays alive:
 
 - Click the battery compartment to open/close its hinged lid. With the lid open,
   click any cell to remove it, then click it below the compartment to reinstall it.
 - Click each rear plug to unplug/reinsert it. The anchored cable lead bends with
-  the travel instead of translating rigidly. These actions
-  never power off the front display, disconnect the socket or change a game message.
-- The red audio switch enables optional, quiet Web Audio detents and a speaker
-  test tone. Sound is off by default and starts only after a user gesture.
-- LAMP TEST briefly pulses the rear green indicator. Neither this test nor the
-  modeled ports disconnects WebSocket or changes multiplayer state.
+  the travel instead of translating rigidly. DC takes priority over four complete
+  cells; without either supply, the terminal goes dark while its physical switch
+  stays in place. Restoring supply respects that switch. Read-head progress and
+  powered paper feed pause; spring ejection and hand tearing remain mechanical.
+- RJ45 isolates terminal presentation and all game submissions, including progress
+  messages and keyboard shortcuts. The actual socket still receives room state.
+  Reconnection presents the current round without submitting expired drafts or
+  replaying missed sound cues. Old private codes are revoked even while offline.
+- AUX supplies the SIGNAL receiver's telemetry in both AUTO and MAN. Disconnecting
+  it releases the needle while retaining the dials. The oscilloscope keeps its
+  independent INPUT–CAL OUT calibration circuit and only needs power.
+- MUSIC and SFX have independent switches; both default on and wait for a user
+  gesture before audio starts. Their preferences survive loss of terminal power.
+- LAMP TEST temporarily proves rear, NETWORK and LOCK lamps without changing
+  connection state or score flags. It requires power.
+- A persistent service status and conditional recovery controls work on desktop,
+  mobile and the text fallback. Supply and plug positions reset for a new room
+  and are not saved across reloads. See `docs/console-rear-linkage-design.md`.
 
 At runtime, static opaque meshes are batched by material; each moving assembly
 is also batched internally without changing its pivot. Meshes with morph targets
@@ -783,3 +795,16 @@ The global lighting balances a warm upper-left key, cool fill and two broad
 studio sources against restrained environment light. Filtered (PCF) shadow maps
 soften the machine's cast shadow and the contacts between its hardware. Copy-key
 travel is relative to its exported mounting depth, including after model changes.
+
+## Rear audio slides — 2026-09-22
+
+`refine_rear_audio.py` replaces the old master slide with independent MUSIC and SFX
+controls below the speaker. `RearMusicSwitch` and `RearSoundSwitch` retain animated
+assemblies, `centerX` extras and .44 units of travel. Their brushed nickel rims,
+rubber seats, mottled phenolic caps and five grip ribs use the existing packed PBR
+textures. Both rest at ON; runtime moves each cap to its own state. Surfaces live
+in `console-surfaces.json`. Run the pass against the current editable model:
+
+```bash
+blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_rear_audio.py
+```

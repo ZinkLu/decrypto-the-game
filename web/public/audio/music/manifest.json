@@ -1,0 +1,56 @@
+{
+  "source": "https://opengameart.org/content/basically-not-fusion-jazz",
+  "author": "Spring Spring / Julie Damsgaard",
+  "license": "CC0-1.0",
+  "source_sha256": "645f7cd6ef7a56b22fe394ff006dae17348cf70c72aa9e2a9b4d7f70b2804af4",
+  "tracks": {
+    "lobby": {
+      "file": "lobby-v1.mp3",
+      "source_start": 8,
+      "duration": 82.12925,
+      "loop": true,
+      "processing": "anull",
+      "gain_db": -7.57,
+      "lufs": -23.44,
+      "peak_dbtp": -7.97,
+      "boundary_step": 0.010899,
+      "bytes": 1315734
+    },
+    "game": {
+      "file": "game-v1.mp3",
+      "source_start": 90.12925,
+      "duration": 82.12925,
+      "loop": true,
+      "processing": "treble=f=3800:g=-2,acompressor=threshold=0.16:ratio=1.4:attack=35:release=300:makeup=1",
+      "gain_db": -10.88,
+      "lufs": -27.44,
+      "peak_dbtp": -12.9,
+      "boundary_step": 0.003754,
+      "bytes": 1315733
+    },
+    "win": {
+      "file": "win-v1.mp3",
+      "source_start": 76.2,
+      "duration": 6.0,
+      "loop": false,
+      "processing": "anull",
+      "gain_db": -4.56,
+      "lufs": -22.45,
+      "peak_dbtp": -8.89,
+      "boundary_step": 0.000103,
+      "bytes": 97492
+    },
+    "loss": {
+      "file": "loss-v1.mp3",
+      "source_start": 72.5,
+      "duration": 4.5,
+      "loop": false,
+      "processing": "treble=f=3800:g=-2",
+      "gain_db": -7.84,
+      "lufs": -25.44,
+      "peak_dbtp": -12.81,
+      "boundary_step": 3.3e-05,
+      "bytes": 73301
+    }
+  }
+}

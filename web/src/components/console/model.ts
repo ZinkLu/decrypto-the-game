@@ -4,6 +4,7 @@ export type StationState = ReturnType<typeof useGameStore.getState>;
 export type KeyDiskPhase = 'absent' | 'queued' | 'arriving' | 'inserting' | 'reading' | 'ready' | 'ejecting' | 'ejected' | 'removed' | 'returning' | 'pulling' | 'settling';
 export interface KeyDiskState {
     id: string; phase: KeyDiskPhase; startedAt: number;
+    pausedAt?: number;
     // 0 = seated, 1 = spring-ejected, 2 = clear of the drive.
     pull?: { amount: number; origin: 'ready' | 'reading' | 'ejected' | 'removed'; target?: 0 | 1 | 2 };
 }
@@ -33,6 +34,7 @@ export function syncKeyDisk(disk: KeyDiskState, id: string, now: number, availab
     return disk;
 }
 export function advanceKeyDisk(disk: KeyDiskState, now: number, reduced = false): KeyDiskState {
+    if (disk.pausedAt !== undefined) return disk;
     const duration = keyDiskDurations[disk.phase];
     if (duration === undefined || !reduced && now - disk.startedAt < duration) return disk;
     if (disk.phase === 'settling') return { id: disk.id, phase: disk.pull?.target === 2 ? 'removed' : disk.pull?.target === 1 ? 'ejected' : 'reading', startedAt: now };
@@ -67,7 +69,20 @@ export function actKeyDisk(disk: KeyDiskState, eject: boolean, now: number, redu
     return disk;
 }
 export function keyDiskReadable(s: StationState, u: LocalState) {
-    return u.powerOn && !u.diskOut && u.keyDisk.phase === 'ready' && !!u.keyDisk.id && u.keyDisk.id === keyDiskIdentity(s);
+    return consoleHardware(u).powered && !u.diskOut && u.keyDisk.phase === 'ready' && !!u.keyDisk.id && u.keyDisk.id === keyDiskIdentity(s);
+}
+/** Only the read head needs electricity; handling and spring ejection remain mechanical. */
+export function syncDiskPower(disk: KeyDiskState, powered: boolean, now: number): KeyDiskState {
+    if (!powered && disk.phase === 'ready') return { ...disk, phase: 'reading', startedAt: now, pausedAt: now };
+    if (disk.phase !== 'reading') {
+        if (disk.pausedAt === undefined) return disk;
+        const { pausedAt: _, ...moving } = disk;
+        return moving;
+    }
+    if (!powered) return disk.pausedAt === undefined ? { ...disk, pausedAt: now } : disk;
+    if (disk.pausedAt === undefined) return disk;
+    const { pausedAt, ...reading } = disk;
+    return { ...reading, startedAt: disk.startedAt + now - pausedAt };
 }
 export function keyDiskMessage(disk: KeyDiskState) {
     return ({ absent: '密钥待分配', queued: '等待接收本轮密钥', arriving: '你的密钥软盘已送达',
@@ -163,6 +178,8 @@ export interface LocalState {
     backView: boolean;
     batteryOpen: boolean;
     soundOn: boolean;
+    musicOn: boolean;
+    musicVolume: number;
     powerOn: boolean;
     removedBatteries: number;
     unpluggedCables: number;
@@ -179,11 +196,49 @@ export const initialLocal: LocalState = {
     slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
     archiveOpen: false, manual: false, hiddenWords: false, seconds: 0, diskOut: false, keyDisk: emptyKeyDisk,
     scopeWave: .5, scopeRate: .9, scopeAxis: 0,
-    backView: false, batteryOpen: false, soundOn: false, powerOn: true,
+    backView: false, batteryOpen: false, soundOn: true, musicOn: true, musicVolume: .6, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
     instrumentVariant: 'signal', instrumentDemo: true, wordDisplay: 'led',
 };
-export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'keyDisk' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo' | 'wordDisplay'>;
+export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'keyDisk' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'musicOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo' | 'wordDisplay'>;
+/** powerOn is the physical switch, never the derived availability of electricity. */
+export function consoleHardware(u: Pick<LocalState, 'powerOn' | 'removedBatteries' | 'unpluggedCables'>,
+    connection: { connected: boolean; recovering?: boolean } = { connected: true }) {
+    const dc = !(u.unpluggedCables & 4), battery = !(u.removedBatteries & 15);
+    const supply = dc ? 'external' : battery ? 'battery' : 'none';
+    const powered = u.powerOn && supply !== 'none';
+    const linked = !(u.unpluggedCables & 1), aux = !(u.unpluggedCables & 2);
+    return { supply, powered, linked, aux, auxAvailable: powered && aux,
+        // Illustrative charge for the battery-powered display; no drain simulation yet.
+        batteryPercent: powered && supply === 'battery' ? 75 : null,
+        online: powered && linked && connection.connected && !connection.recovering };
+}
+export function hardwareMessage(u: LocalState, s: Pick<StationState, 'connected' | 'recovering'>) {
+    const h = consoleHardware(u, s);
+    return h.supply === 'none' ? '终端无供电 · 接回 DC 或装齐四节电池' :
+        !u.powerOn ? '终端电源已关闭 · 输入已保留' : !h.linked ? '网线已拔出 · 终端脱机 · 对局仍在进行' :
+        !h.online ? '接线已连接 · 正在恢复通信' : !h.aux ? 'AUX 已断开 · SIGNAL 无外部输入' :
+        h.supply === 'battery' ? '电池供电 · 终端运行正常' : '外部供电 · 终端运行正常';
+}
+export function hardwareRecovery(u: LocalState) {
+    const h = consoleHardware(u);
+    return h.supply === 'none' ? { id: 'restore-power', label: '接回电源' } :
+        !u.powerOn ? { id: 'restore-switch', label: '开启终端电源' } :
+        !h.linked ? { id: 'restore-link', label: '接回网线' } : null;
+}
+export function draftIdentity(s: StationState) {
+    return JSON.stringify([s.roomCode, s.myPlayerID, s.myTeam, s.round, s.phase, s.myRole]);
+}
+/** A local cable never closes the actual socket. Hold presentation, revoke stale secrets immediately. */
+export function terminalView(live: StationState, held: StationState, u: LocalState): StationState {
+    if (consoleHardware(u, live).online) return live;
+    const sameSeat = live.roomCode === held.roomCode && live.myPlayerID === held.myPlayerID && live.myTeam === held.myTeam;
+    const sameKey = sameSeat && !!keyDiskIdentity(live) && keyDiskIdentity(live) === keyDiskIdentity(held);
+    return { ...held, connected: live.connected, recovering: live.recovering, error: null, aiNotice: '',
+        aiStatus: null, playerProgress: null,
+        myWords: sameSeat && live.myWords.join("\0") === held.myWords.join("\0") ? held.myWords : [],
+        secretDigits: sameKey ? held.secretDigits : [], secretWords: sameKey ? held.secretWords : [] };
+}
 export function nextScopeValue(value: number, length: number, direction = 1) {
     return (value + direction % length + length) % length;
 }

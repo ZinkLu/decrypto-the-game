@@ -1,6 +1,6 @@
 import { translate, localizeError } from './i18n';
 import { dotGrid, dotText, dotType, dotWordLayout } from './dotMatrix';
-import { roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
+import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
 import type { LocalState, StationState } from './model';
 import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
 export interface Target {
@@ -27,6 +27,7 @@ export interface Content {
     targets: Target[];
     status: string;
     connected: boolean;
+    trafficKey: string;
     tint: string;
     waiting: boolean;
     ready: boolean;
@@ -222,6 +223,7 @@ function printWear(c: CanvasRenderingContext2D, width: number, height: number) {
 }
 
 export function paint(s: StationState, u: LocalState, inspection = false): Content {
+    const h = consoleHardware(u, s);
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
     const teamInk = (team: string) => teamPalette(team, s.myTeam, u.theme).ink;
     const frames: Record<string, Frame> = {};
@@ -278,8 +280,8 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     const right = w - 55;
     const status = (s.error ? localizeError(u.locale, s.error) : s.aiNotice ? t(s.aiNotice) : '') || (u.note ? t(u.note) : '') || (u.submitted ? t("密报已发送，等待服务器确认。") : '');
     text(c, hasGame ? t("第 {0} 回合", [String(s.round).padStart(2, '0')]) : t("DECRYPTO  /  通信局"), 55, 49, 19, tint, 500);
-    text(c, s.roomCode ? `CH ${s.roomCode}  /  ${s.myTeam ? s.myTeam + t(" 队") : t("待编组")}  /  ${s.connected ? t("已接通") : t("连接中")}` : t("双队通信  /  4–8 人"), 500, 49, 16, MUTED, 400, 338);
-    button(c, 'manual', u.manual ? t("返回") : t("手册"), right - 100, 28, 100, 39);
+    text(c, s.roomCode ? `CH ${s.roomCode}  /  ${s.myTeam ? s.myTeam + t(" 队") : t("待编组")}  /  ${s.connected ? t("已接通") : t("连接中")}` : t("双队通信  /  4–8 人"), h.batteryPercent === null ? 500 : 350, 49, 16, MUTED, 400, h.batteryPercent === null ? 338 : 280);
+    button(c, 'manual', u.manual ? t("返回") : t("手册"), right - (h.batteryPercent === null ? 100 : 290), 28, 100, 39);
     if (u.manual) {
         text(c, t("让队友听懂，让对手迷失。"), 55, 113, 34, tint, 600);
         const rules = [t("每队至少两人，可以由 AI 补位。"), t("四个秘密词对应编号 1–4，词窗仅我方可见。"), t("加密者按三位密码顺序，各写一条关联线索。"), t("对手先拦截，再由队友解码；前两回合跳过拦截。"), t("截获两次，或对方解码失误两次，即获胜。"), t("数字键选择密码，退格删除；按下红色发报键确认。"), t("点击纸带抽出档案，按队伍对照并写私人笔记。")];
@@ -428,7 +430,7 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     };
     for (let i = 0; dotWords && i < 4; i++) {
         const shown = hasGame && !u.hiddenWords ? word(s.myWords[i], u.locale) || '' : '';
-        const value = !hasGame ? s.phase === 'room' ? t('待开局') : t('待接入') :
+        const value = !h.online ? t('离线') : !hasGame ? s.phase === 'room' ? t('待开局') : t('待接入') :
             u.hiddenWords ? '••••' : shown || t('待载入');
         const layout = dotWordLayout(value, measureDotWord);
         const strip = Math.max(dotGrid.cols, layout.width + 2 * dotGrid.inset);
@@ -443,18 +445,18 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
         g.fillStyle = '#007a00';
         for (let x = left + 21; x < 58; x += 3) g.fillRect(x, 10, 1, 1);
         g.textAlign = 'right';
-        fitLabel(g, s.myTeam ? t('我方 / {0}', [s.myTeam]) : t('设备待命'), right, 10.5, legend, '#0f0', 400, 52);
+        fitLabel(g, !h.online ? t('等待连接') : s.myTeam ? t('我方 / {0}', [s.myTeam]) : t('设备待命'), right, 10.5, legend, '#0f0', 400, 52);
         g.textAlign = 'left';
         const middle = (dotGrid.bandTop + dotGrid.bandBottom + 1) / 2;
         layout.lines.forEach((line, n) => text(g, line, left,
-            middle + (n - (layout.lines.length - 1) / 2) * dotType.leading, layout.size, '#f00', 500));
+            middle + (n - (layout.lines.length - 1) / 2) * dotType.leading, layout.size, h.online ? '#f00' : '#00f', 500));
         g.fillStyle = '#007a00'; g.fillRect(left, 53, right - left, 1);
-        const footer = !s.connected ? t('离线 · 等待重连') : !hasGame ? t('密钥待分配') :
+        const footer = !h.online ? t('连接后恢复') : !hasGame ? t('密钥待分配') :
             u.hiddenWords ? t('已遮住') : t('仅我方可见');
-        const statusInk = s.connected ? '#0f0' : '#00f';
+        const statusInk = h.online ? '#0f0' : '#00f';
         g.fillStyle = statusInk; g.fillRect(left, 59, 3, 5);
         fitLabel(g, footer, left + 7, 61.5, legend, statusInk, 400, right - left - 7);
-        target('word' + i, 'words', u.hiddenWords ? t('显示秘密词') : t('遮住秘密词'), 0, 0, strip, dotGrid.rows, { disabled: !hasGame });
+        target('word' + i, 'words', !h.online ? t('离线') : u.hiddenWords ? t('显示秘密词') : t('遮住秘密词'), 0, 0, strip, dotGrid.rows, { disabled: !h.online || !hasGame });
     }
     for (let i = 0; !dotWords && i < 4; i++) {
         const g = frame('word' + i, 480, 284, '#360a06');
@@ -477,11 +479,11 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
         text(g, t("密钥 / 0{0}", [i + 1]), 26, 31, 17, '#c67d5e', 500);
         line(g, 26, 55, 426, '#99513a');
         text(g, String(i + 1), 27, 127, 83, '#ed7653', 600);
-        keyword(g, !hasGame ? s.phase === 'room' ? t("待开局") : t("待接入") : u.hiddenWords ? '••••' : word(s.myWords[i], u.locale) || t("待载入"), 119, 128, 330);
-        text(g, hasGame ? t("仅我方可见") : t("开局后分配秘密词"), 123, 201, 20, '#ba6750');
+        keyword(g, !h.online ? t('离线') : !hasGame ? s.phase === 'room' ? t("待开局") : t("待接入") : u.hiddenWords ? '••••' : word(s.myWords[i], u.locale) || t("待载入"), 119, 128, 330);
+        text(g, !h.online ? t('等待连接') : hasGame ? t("仅我方可见") : t("开局后分配秘密词"), 123, 201, 20, '#ba6750');
         line(g, 26, 237, 426, '#99513a');
-        text(g, !hasGame ? t("编号固定 / 每局重新分配") : u.hiddenWords ? t("● 已遮住 · 点击显示") : t("● 私密词窗 · 点击遮住"), 123, 259, 16, '#c67d5e');
-        target('word' + i, 'words', u.hiddenWords ? t("显示秘密词") : t("遮住秘密词"), 0, 0, 480, 284, { disabled: !hasGame });
+        text(g, !h.online ? t('连接后恢复') : !hasGame ? t("编号固定 / 每局重新分配") : u.hiddenWords ? t("● 已遮住 · 点击显示") : t("● 私密词窗 · 点击遮住"), 123, 259, 16, '#c67d5e');
+        target('word' + i, 'words', !h.online ? t('离线') : u.hiddenWords ? t("显示秘密词") : t("遮住秘密词"), 0, 0, 480, 284, { disabled: !h.online || !hasGame });
     }
     const b = frame('badge', 660, 150);
     b.textAlign = 'center';
@@ -543,7 +545,7 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     const copy = frame('channelCopy', 240, 160);
     copy.textAlign = 'center';
     text(copy, 'COPY', 120, 80, 62, INK, 600);
-    target('channelCopy', 'copy-code', t("复制房间码"), 0, 0, 240, 160, { disabled: !s.roomCode });
+    target('channelCopy', 'copy-code', t("复制房间码"), 0, 0, 240, 160, { disabled: !h.online || !s.roomCode });
     const scoreFlags: Record<string, boolean> = {};
     const sc = frame('score', 600, 357);
     text(sc, "SCORE", 28, 30, 19, '#414940', 500);
@@ -614,36 +616,36 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     frame('scopePersistenceKnob', 100, 100);
     target('scopePersistenceKnob', 'scope-xy', knobLabel('scope-xy', u), 0, 0, 100, 100);
     const cl = frame('clock', 520, 218, '#111a17');
-    const running = u.powerOn && hasGame && !['round_result', 'game_over'].includes(s.phase);
+    const running = h.online && hasGame && !['round_result', 'game_over'].includes(s.phase);
     const seconds = Math.max(0, Math.floor(u.seconds));
     const timer = running ? `${String(Math.floor(seconds / 60)).padStart(2, '0')}${String(seconds % 60).padStart(2, '0')}` : '----';
-    const glow = u.powerOn ? running ? seconds <= 15 ? '#ed8960' : '#efb663' : '#65563a' : '#252b21';
+    const glow = h.powered ? running ? seconds <= 15 ? '#ed8960' : '#efb663' : '#65563a' : '#252b21';
     [34, 141, 288, 395].forEach((x, i) => segmentDigit(cl, timer[i], x, 25, glow));
     cl.fillStyle = glow;
     cl.fillRect(257, 61, 10, 10); cl.fillRect(257, 111, 10, 10);
     line(cl, 34, 174, 446, '#3b4030');
-    text(cl, running ? t("阶段余时 · 约") : t("等待行动"), 34, 199, 22, u.powerOn ? '#a39b79' : '#4b483a');
+    text(cl, running ? t("阶段余时 · 约") : t("等待行动"), 34, 199, 22, h.powered ? '#a39b79' : '#4b483a');
     for (let i = 0; i < 5; i++) {
         const k = frame('key' + i, 180, 200);
-        const enabled = r.guess && r.active && s.connected && s.connected && !s.recovering && !u.manual;
+        const enabled = r.guess && r.active && h.online && !s.recovering && !u.manual;
         text(k, i === 4 ? '←' : String(i + 1), i === 4 ? 27 : 53, 101, 96, enabled ? CREAM : '#84908c', 500);
         target('key' + i, 'key-' + i, i === 4 ? t("删除上一位") : t("输入数字 {0}", [i + 1]), 0, 0, 180, 200, { disabled: !enabled });
     }
     const ph = frame('phase', 550, 214);
     [t("加密"), t("拦截"), t("解码")].forEach((label, i) => {
-        const active = u.powerOn && s.phase === ['encrypting', 'intercept', 'decrypt'][i];
-        text(ph, `0${i + 1}`, 23 + i * 177, 28, 18, u.powerOn ? '#a2a492' : '#4b4e42', 500);
-        fitLabel(ph, label, 23 + i * 177, 79, 23, active ? signal.color : u.powerOn ? '#a2a492' : '#4b4e42', 400, 116);
+        const active = h.online && s.phase === ['encrypting', 'intercept', 'decrypt'][i];
+        text(ph, `0${i + 1}`, 23 + i * 177, 28, 18, h.powered ? '#a2a492' : '#4b4e42', 500);
+        fitLabel(ph, label, 23 + i * 177, 79, 23, active ? signal.color : h.powered ? '#a2a492' : '#4b4e42', 400, 116);
         ph.fillStyle = active ? signal.color : '#1b2a32';
         round(ph, 25 + i * 177, 129, 104, 17, 8);
         ph.fill();
-        if (i < 2) text(ph, '›', 152 + i * 177, 78, 28, u.powerOn ? '#7b857c' : '#3e453d');
+        if (i < 2) text(ph, '›', 152 + i * 177, 78, 28, h.powered ? '#7b857c' : '#3e453d');
     });
-    text(ph, s.phase === 'home' || s.phase === 'room' ? t("等待行动开始") : t("第 {0} / 16 回合", [s.round]), 24, 190, 21, u.powerOn ? '#bbc0aa' : '#4b4e42');
+    text(ph, s.phase === 'home' || s.phase === 'room' ? t("等待行动开始") : t("第 {0} / 16 回合", [s.round]), 24, 190, 21, h.powered ? '#bbc0aa' : '#4b4e42');
     const tr = frame('transmitLabel', 600, 164);
     const homeReady = s.phase === 'home' && !!u.name.trim() && (u.mode === 'create' || u.code.length === 4) && s.connected;
     const lobbyReady = s.phase === 'room' && s.canStart && s.ownerID === s.myPlayerID && s.connected;
-    const ready = !!(r.ready || homeReady || lobbyReady || s.phase === 'game_over') && s.connected && !s.recovering && !u.manual;
+    const ready = !!(r.ready || homeReady || lobbyReady || s.phase === 'game_over') && h.online && !u.manual;
     const transmitText = s.phase === 'home' ? u.mode === 'create' ? t("建立频道") : t("接入频道") : s.phase === 'room' ? t("开始行动") : s.phase === 'game_over' ? t("返回通信局") : u.submitted ? t("已发送") : t("发报 · 确认");
     const command = 'ACTION';
     tr.textAlign = 'center';
@@ -696,10 +698,12 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     frame('batteryControl', 100, 100);
     target('batteryControl', 'battery-toggle', u.batteryOpen ? t("合上电池仓盖") : t("掀开电池仓盖，查看四节电池"), 0, 0, 100, 100);
     frame('soundControl', 100, 100);
-    target('soundControl', 'sound-toggle', u.soundOn ? t("关闭机械音效") : t("开启机械音效并试听喇叭"), 0, 0, 100, 100);
+    target('soundControl', 'sound-toggle', u.soundOn ? t("关闭音效") : t("开启音效"), 0, 0, 100, 100);
+    frame('musicControl', 100, 100);
+    target('musicControl', 'music-toggle', u.musicOn ? t('关闭背景音乐') : t('开启背景音乐'), 0, 0, 100, 100);
     frame('testControl', 100, 100);
-    target('testControl', 'lamp-test', t("本机灯光自检，不改变对局连接"), 0, 0, 100, 100);
-    const rearControls = new Set(['battery-toggle', 'sound-toggle', 'lamp-test']);
+    target('testControl', 'lamp-test', t("本机灯光自检，不改变对局连接"), 0, 0, 100, 100, { disabled: !h.powered });
+    const rearControls = new Set(['battery-toggle', 'sound-toggle', 'music-toggle', 'lamp-test']);
     for (let i = 0; i < 4; i++) {
         const name = `batteryCell${i}Control`, id = `battery-cell-${i}`;
         frame(name, 100, 300);
@@ -709,7 +713,7 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     ['RJ45', 'Serial', 'DC'].forEach((name, i) => {
         const surface = `${name}PlugControl`, id = `cable-plug-${i}`;
         frame(surface, 180, 100);
-        target(surface, id, `${u.unpluggedCables & (1 << i) ? t("插回") : t("拔出")}${[t("网线"), t("串口线"), t("电源线")][i]}`, 0, 0, 180, 100);
+        target(surface, id, u.unpluggedCables & (1 << i) ? `${t("插回")}${[t("网线"), t("串口线"), t("电源线")][i]}` : t(['拔出网线 · 终端将脱机', '拔出串口线 · SIGNAL 将失去输入', '拔出电源线 · 尝试由电池接管'][i]), 0, 0, 180, 100);
         rearControls.add(id);
     });
     for (const [name, id] of [['MeterAmplitude', 'meter-amplitude'], ['MeterRate', 'meter-rate']]) {
@@ -723,12 +727,52 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
     }
     const seats: Record<string, string | null> = {};
     teams.forEach(team => team.seats.forEach((seat, i) => { seats[team.team + i] = seat.player?.id ?? null; }));
+    if (!h.online && h.powered) {
+        c.fillStyle = DARK; c.fillRect(0, 0, w, frames.screen.height);
+        const warning = themeColors(u.theme).warning.light;
+        text(c, 'NETWORK / OFFLINE', 55, 55, 18, warning, 500);
+        text(c, t('已断开连接'), 55, 146, 48, CREAM, 500);
+        text(c, t(h.linked ? '正在尝试重新连接…' : '网线已拔出，请接回网线。'), 55, 225, 25, warning, 400, 870);
+        line(c, 55, 278, 890, '#34423f');
+        text(c, t('连接恢复后，词窗与房间码将重新显示。'), 55, 325, 23, CREAM, 400, 870);
+        text(c, t('输入已保留，不会自动提交。'), 55, 373, 22, MUTED, 400, 870);
+        if (!h.linked) button(c, 'restore-link', t('接回网线'), 55, 443, 350, 60);
+        else text(c, t('等待连接'), 55, 470, 22, MUTED);
+        if (s.roomCode) text(c, t('对局仍在进行'), 55, 557, 18, MUTED);
+    }
+    // Flat, slanted charge segments share the CRT phosphor. Paint after the
+    // offline page so power and network status stay independent.
+    if (h.batteryPercent !== null) {
+        c.save();
+        c.fillStyle = themeColors(u.theme).device.light;
+        const x = right - 116, y = 38;
+        c.strokeStyle = c.fillStyle;
+        c.lineWidth = 1.5;
+        round(c, x, y, 64, 22, 2);
+        c.stroke();
+        c.fillRect(x + 66, y + 7, 3, 8);
+        for (let i = 0; i < 4; i++) {
+            const left = x + 6 + i * 13, top = y + 4;
+            c.globalAlpha = i < h.batteryPercent / 25 ? 1 : .18;
+            c.beginPath();
+            c.moveTo(left + 4, top);
+            c.lineTo(left + 13, top);
+            c.lineTo(left + 9, top + 14);
+            c.lineTo(left, top + 14);
+            c.closePath();
+            c.fill();
+        }
+        c.globalAlpha = 1;
+        c.textAlign = 'right';
+        text(c, `${h.batteryPercent}%`, right, 49, 17, themeColors(u.theme).device.light, 500);
+        c.restore();
+    }
     for (const name of ['screen', 'word0', 'word1', 'word2', 'word3']) {
         if (dotWords && name !== 'screen') continue;
         const { canvas } = frames[name];
         crtFinish(canvas.getContext('2d')!, canvas.width, canvas.height, name.startsWith('word'));
     }
-    if (!u.powerOn) {
+    if (!h.powered) {
         for (const name of ['screen', 'word0', 'word1', 'word2', 'word3', 'channel']) {
             const { canvas } = frames[name];
             const display = canvas.getContext('2d')!;
@@ -738,9 +782,10 @@ export function paint(s: StationState, u: LocalState, inspection = false): Conte
             display.fillRect(0, 0, canvas.width, canvas.height);
         }
     }
-    return { frames, screenPrivacyKey: `${keyDiskIdentity(s)}:${diskReadable}`, teamInks: { A: teamInk('A'), B: teamInk('B') }, displayKey: u.theme, wordInks: { word: themeColors(u.theme).own.light, legend: themeColors(u.theme).device.light, warning: themeColors(u.theme).warning.light }, wordPrivacyKey: `${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: s.connected, targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
-            (u.powerOn || rearControls.has(t.id) || t.id === 'power-toggle')),
-        status: !u.powerOn ? t("终端已关闭；对局继续进行，按电源恢复。") : status || `${t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase])} · ${s.connected ? t("已连接") : t("连接中")}`,
-        tint, waiting, ready: ready && u.powerOn, scoreFlags, seats, roomCode: u.powerOn ? s.roomCode || '' : '',
-        paperRecords: records.length, activity: u.powerOn ? activity : 0 };
+    return { frames, screenPrivacyKey: `${h.online}:${keyDiskIdentity(s)}:${diskReadable}`, teamInks: { A: teamInk('A'), B: teamInk('B') }, displayKey: u.theme, wordInks: { word: themeColors(u.theme).own.light, legend: themeColors(u.theme).device.light, warning: themeColors(u.theme).warning.light }, wordPrivacyKey: `${h.online}:${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}:${s.myWords.join("|")}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: h.online, trafficKey: JSON.stringify([s.phase, s.round, s.submitted, s.aiStatus, s.playerProgress, s.history.length, s.players]), targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
+            (h.powered || rearControls.has(t.id) || ['power-toggle', 'disk-toggle', 'disk-eject'].includes(t.id)) &&
+            (h.online || t.surface !== 'screen' || t.id === 'restore-link')),
+        status: !h.online ? t(hardwareMessage(u, s)) : status || `${t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase])} · ${s.connected ? t("已连接") : t("连接中")}`,
+        tint, waiting, ready: ready && h.online, scoreFlags, seats, roomCode: h.powered ? h.online ? s.roomCode || '' : '0000' : '',
+        paperRecords: records.length, activity: h.powered ? activity : 0 };
 }
