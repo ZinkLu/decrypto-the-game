@@ -8,7 +8,8 @@ const load = async name => compile(await readFile(new URL(`../src/components/con
 const modelUrl = url(await load('model')), mechanicsUrl = url(await load('mechanics')), i18nUrl = url(await load('i18n')), dotMatrixUrl = url(await load('dotMatrix'));
 const { initialLocal, previewState, keyDiskIdentity, scopeTimebase, scopeRatio, stepInstrumentValue, receiverSignal, word } = await import(modelUrl);
 const { messages, translate, readLocale, saveLocale } = await import(i18nUrl);
-const { paint } = await import(url((await load('paint')).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl))));
+const guideUrl = url(compile(await readFile(new URL('../src/components/console/guide.ts', import.meta.url), 'utf8')));
+const { paint } = await import(url((await load('paint')).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl)).replace("'./guide'", JSON.stringify(guideUrl))));
 globalThis.document = { createElement: () => {
   const ink = [], draws = [];
   const canvas = { ink, draws, getContext: () => context };
@@ -30,7 +31,7 @@ function fixture(phase) {
   return s;
 }
 test('both locales cover every public game phase, roster, manual and printed display', () => {
-  for (const phase of phases) for (const extra of [{}, { manual: true }, { submitted: true }]) {
+  for (const phase of phases) for (const extra of [{}, { manual: true }, { about: true }, { submitted: true }]) {
     const s = fixture(phase), zh = paint(s, { ...initialLocal, ...extra }), en = paint(s, { ...initialLocal, ...extra, locale: 'en' });
     assert.ok(ink(zh).some(value => /[\u3400-\u9fff]/.test(value)), `${phase}: Chinese is rendered`);
     assert.deepEqual([...ink(en), ...en.targets.map(t => t.label)].filter(value => /[\u3400-\u9fff]/.test(value)), [], `${phase}: no untranslated UI`);
@@ -203,5 +204,54 @@ test('CRT palettes reach word textures and white enamel uses dark lettering on e
       assert.equal(out.teamPlates[team], palette.plate);
       assert.ok(out.frames['roster' + team].canvas.draws.every(d => d.color === palette.onPlate));
     }
+  }
+});
+
+test('guide and original-game pages suspend submission without changing the draft', () => {
+  const s = fixture('encrypting');
+  const u = { ...initialLocal, clues: ['Garden', 'Sailing', 'Feather'] };
+  assert.equal(paint(s, u).ready, true);
+  for (const page of ['manual', 'about']) {
+    const output = paint(s, { ...u, [page]: true });
+    assert.equal(output.ready, false);
+    assert.ok(output.targets.find(t => t.id === 'transmit').disabled);
+    assert.ok(!output.targets.some(t => t.kind === 'input'));
+    assert.ok(output.targets.find(t => t.id === 'screen-close'));
+    assert.deepEqual(u.clues, ['Garden', 'Sailing', 'Feather']);
+  }
+  assert.equal(paint(s, u).ready, true);
+});
+
+test('original-game links are native external links and the physical badge opens that page', () => {
+  const s = fixture('home');
+  const normal = paint(s, initialLocal);
+  assert.equal(normal.targets.find(t => t.surface === 'badge').id, 'about');
+  const output = paint(s, { ...initialLocal, about: true });
+  assert.deepEqual(output.targets.filter(t => t.href).map(t => t.href), [
+    'https://www.scorpionmasque.com/en/decrypto',
+    'https://boardgamegeek.com/boardgame/225694/decrypto',
+    'https://shop.scorpionmasque.com/products/decrypto',
+  ]);
+});
+
+test('results reveal only the current public history code, never private encryptor state', () => {
+  const s = fixture('round_result');
+  s.secretDigits = [4, 3, 2];
+  s.history = [{ round: s.round - 1, team: 'A', clues: ['Past'], secret: [2, 4, 3] }];
+  assert.ok(!paint(s, initialLocal).frames.screen.canvas.ink.includes('本轮密码'));
+  s.history.push({ round: s.round, team: 'A', clues: ['One', 'Two', 'Three'], secret: [3, 1, 4] });
+  const output = paint(s, initialLocal).frames.screen.canvas.ink;
+  assert.ok(output.includes('本轮密码'));
+  assert.deepEqual(output.filter(text => /^[1-4]$/.test(text)), ['3', '1', '4']);
+});
+
+test('illustrated guide identifies the private draw and shows complete past turns in all themes', () => {
+  for (const theme of ['classic', 'radio', 'amber', 'violet']) {
+    const output = paint(fixture('home'), { ...initialLocal, theme, manual: true });
+    const text = output.frames.screen.canvas.ink;
+    for (const label of ['加密者抽到的密码', '公开线索 · 只说词，不说编号', '前几轮的线索与答案',
+      '微光 · 沙滩 · 花束', '港口 · 潮汐 · 迁徙', '刺 · 光束 · 远行', '1·2·3', '1·2·4', '3·1·4']) assert.ok(text.includes(label), `${theme}: ${label}`);
+    assert.ok(!text.includes('仅加密者可见'), 'the redundant private-code block is removed');
+    assert.ok(output.targets.some(t => t.href?.includes('boardgamegeek.com')));
   }
 });

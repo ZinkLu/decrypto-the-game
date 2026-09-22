@@ -9,9 +9,9 @@ button,input { font: inherit; }
 .station-stage > canvas { display: block; width: 100%; height: 100%; }
 /* A target projected past the stage must not grow the scroll area: a classic scrollbar would resize the stage, which clears the canvas. */
 .station-controls { position: absolute; inset: 0; overflow: clip; pointer-events: none; }
-.station-controls button,.station-controls input { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; color: transparent; caret-color: transparent; opacity: 0; outline: none; pointer-events: auto; border-radius: 5px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.station-controls a,.station-controls button,.station-controls input { position: absolute; display: block; margin: 0; padding: 0; border: 0; background: transparent; color: transparent; caret-color: transparent; opacity: 0; outline: none; pointer-events: auto; border-radius: 5px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .station-controls input { font-family: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif; font-size: 27px; font-weight: 400; line-height: normal; padding: 0 18px; transform-origin: top left; }
-.station-controls button { cursor: pointer; touch-action: manipulation; }
+.station-controls a,.station-controls button { cursor: pointer; touch-action: manipulation; }
 .station-controls button:disabled,.station-controls input:disabled { cursor: default; pointer-events: none; }
 .station-controls input::selection { color: #ece0c4; background: rgba(238,193,114,.23); }
 .station-controls input:focus { opacity: 1; color: #ece0c4; caret-color: #f1be69; }
@@ -39,7 +39,7 @@ button,input { font: inherit; }
 @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
 
 /* Physical controls keep their targets on the projected model. */
-.station[data-view="preview"] .station-controls button:hover:not(:disabled), .station-controls button:focus-visible {
+.station[data-view="preview"] .station-controls button:hover:not(:disabled), .station-controls button:focus-visible, .station-controls a:focus-visible {
   opacity: 1; outline: 2px solid #be783d; outline-offset: 3px; background: #e8c68c12;
 }
 .station-controls [data-control^="scope-"] { touch-action: none; cursor: grab; }
@@ -458,3 +458,31 @@ button,input { font: inherit; }
   .mobile-console .mobile-action { width: 100%; background: #9b3d2b; border-color: #773122; color: #fff1d7; box-shadow: 0 3px 0 #773122; }
   .mobile-action span { font: 11px monospace; letter-spacing: .15em; margin-right: 18px; }
 }
+
+/* A continuous illustrated guide also serves the portable/native terminal. */
+.field-guide { line-height: 1.65; }
+.field-guide h2 { font-size: 1.45rem; line-height: 1.35; margin: 24px 0; }
+.field-guide .field-guide-title { margin: 16px 0 12px; font-size: 1rem; font-weight: 500; }
+.field-guide h3 { margin: 0 0 8px; font-size: 1rem; }
+.field-guide .field-guide-heading { display: flex; align-items: center; gap: 10px; margin: 26px 0 12px; }
+.field-guide-flow > .field-guide-heading:first-child { margin-top: 0; }
+.field-guide-heading b { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--guide-accent, #d7cfb8); color: #111e24; }
+.field-guide nav { display: flex; flex-wrap: wrap; gap: 12px 22px; margin: 24px 0; }
+.field-guide nav a { color: inherit; text-underline-offset: 4px; }
+.field-guide-flow { background: #111e24; color: #ece0c4; border-radius: 12px; padding: 20px 16px; margin-top: 20px; }
+.field-guide-words { display: flex; gap: 8px; margin: 12px 0; }
+.field-guide-words span { flex: 1; min-width: 0; padding: 6px; border-bottom: 1px solid #5d706d; text-align: center; font-size: clamp(.72rem, 3vw, .9rem); overflow-wrap: anywhere; }
+.field-guide-words b, .field-guide-flow h3, .field-code { color: var(--guide-accent, #d7cfb8); }
+.field-guide-words b { display: block; }
+.field-guide-step { display: flex; align-items: center; gap: 14px; margin: 22px 0; }
+.field-guide-step > div { flex: 1; min-width: 0; }
+.field-guide-step p { margin: 10px 0 4px; }
+.field-agent { display: block; flex: 0 0 39%; aspect-ratio: 1; background-size: 300% 100%; background-repeat: no-repeat; }
+.field-code { display: block; font-size: 1.3rem; letter-spacing: 2px; }
+.field-guide-history { margin: 32px 0; }
+.field-guide-history table { width: 100%; margin-top: 16px; border-collapse: collapse; font-size: .875rem; line-height: 1.7; }
+.field-guide-history th, .field-guide-history td { padding: 16px 4px; border-bottom: 1px solid #5d706d; text-align: left; }
+.field-guide-history thead th { font-weight: 400; }
+.field-guide-history tbody th, .field-guide-history td:last-child { white-space: nowrap; color: var(--guide-accent, #d7cfb8); }
+.field-guide-history td:last-child { font-weight: 600; letter-spacing: .12em; }
+.field-guide-footnote { margin: 16px 0; font-size: .8rem; color: #5a6860; }

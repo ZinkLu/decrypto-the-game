@@ -11,6 +11,8 @@ import { paint, knobLabel } from './paint';
 import { qualityChoices, qualityProfiles, describeQuality, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import ArchiveSheet from './ArchiveSheet';
 import MobileConsole from './MobileConsole';
+import GuideContent from './GuideContent';
+import { guideArtUrl } from './guide';
 import { useDiskPull } from './useDiskPull';
 import type { LocalState, InstrumentVariant, KeyDiskState } from './model';
 import type { Target } from './paint';
@@ -72,6 +74,15 @@ export default function Console() {
     const [dotFilter, setDotFilter] = useState<DotFilter>(() => wordBench ? readDotFilter(new URLSearchParams(location.search).get('filter')) : defaultDotFilter);
     const [loaded, setLoaded] = useState(false);
     const [diskFontReady, setDiskFontReady] = useState(false);
+    const [guideArt, setGuideArt] = useState<HTMLImageElement>();
+    useEffect(() => {
+        const image = new Image();
+        image.decoding = 'async';
+        let mounted = true;
+        image.onload = () => { if (mounted) setGuideArt(image); };
+        image.src = guideArtUrl;
+        return () => { mounted = false; image.onload = null; };
+    }, []);
     const [reducedMotion, setReducedMotion] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
     const [failure, setFailure] = useState('');
     const [archiveVisible, setArchiveVisible] = useState(false);
@@ -92,7 +103,7 @@ export default function Console() {
     // Analog input updates targets and hardware, without repainting all the
     // game screens and the long receipt for each fraction of a knob turn.
     const paintKey = JSON.stringify({ ...u, keyDisk: { ...u.keyDisk, pull: u.keyDisk.pull ? { ...u.keyDisk.pull, amount: 0 } : undefined }, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
-    const painted = useMemo(() => paint(displayState, u, inspection), [displayState, paintKey, diskFontReady]);
+    const painted = useMemo(() => paint(displayState, u, inspection, guideArt), [displayState, paintKey, diskFontReady, guideArt]);
     const content = useMemo(() => ({ ...painted, targets: [...painted.targets, ...Object.keys(handleSurfaces).filter(surface =>
         inspection || surface.includes('Rear') === u.backView).map<Target>(surface => ({
             id: surface, surface, x: 0, y: 0, w: 1, h: 1,
@@ -410,7 +421,7 @@ export default function Console() {
             if (text) setStaleDraft({ round: previous.round, text });
         }
         pending.current = false;
-        setU(old => ({ ...old, clues: ['', '', ''], guess: [0, 0, 0], slot: 0, submitted: false, focus: '', note: '', manual: false,
+        setU(old => ({ ...old, clues: ['', '', ''], guess: [0, 0, 0], slot: 0, submitted: false, focus: '', note: '', manual: false, about: false,
             seconds: preview ? 45 : s.phase === 'encrypting' ? 90 : 60 }));
         setAnnouncement(s.phase === 'home' ? t("通信终端已就绪") : t("第 {0} 回合，{1}", [s.round, s.phase === 'encrypting' ? t("加密") : s.phase === 'intercept' ? t("拦截") : s.phase === 'decrypt' ? t("解码") : s.phase === 'room' ? t("队伍准备") : t("阶段更新")]));
     }, [viewKey]);
@@ -470,10 +481,14 @@ export default function Console() {
                     stage.current?.removeAttribute('data-handling');
                     project();
                 }
-                else patch({ archiveOpen: false, manual: false });
+                else {
+                    if (current.current.u.manual || current.current.u.about)
+                        handleFocusPending.current = current.current.u.about ? 'about' : 'manual';
+                    patch({ archiveOpen: false, manual: false, about: false });
+                }
                 return;
             }
-            if (!consoleHardware(current.current.u).powered || facingRear() || current.current.u.manual) return;
+            if (!consoleHardware(current.current.u).powered || facingRear() || (current.current.u.manual || current.current.u.about)) return;
             const input = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable);
             if (!input && /^[1-4]$/.test(event.key)) {
                 event.preventDefault();
@@ -552,7 +567,7 @@ export default function Console() {
         }
         if (id === 'power-toggle' || id === 'restore-switch') {
             if (rear && id === 'power-toggle') return;
-            changeHardware({ powerOn: id === 'restore-switch' || !local.powerOn, manual: false, focus: 'power-toggle' });
+            changeHardware({ powerOn: id === 'restore-switch' || !local.powerOn, manual: false, about: false, focus: 'power-toggle' });
             return;
         }
         if (id === 'sound-toggle') {
@@ -610,8 +625,9 @@ export default function Console() {
             adjustInstrument(id.startsWith('meter-amplitude') ? 'amplitude' : 'rate', id.endsWith('-prev') ? -1 : 1);
             return;
         }
-        if (id === 'manual') {
-            patch({ manual: !local.manual });
+        if (id === 'manual' || id === 'about' || id === 'screen-close') {
+            if (id === 'screen-close') handleFocusPending.current = local.about ? 'about' : 'manual';
+            patch({ manual: id === 'manual' && !local.manual, about: id === 'about' && !local.about, focus: '' });
             playSound('key');
             return;
         }
@@ -664,7 +680,7 @@ export default function Console() {
             return;
         }
         if (id.startsWith('key-')) {
-            if (!r.guess || !r.active || !consoleHardware(local, state).online || local.manual)
+            if (!r.guess || !r.active || !consoleHardware(local, state).online || local.manual || local.about)
                 return;
             const n = Number(id.slice(4));
             const guess = [...local.guess];
@@ -757,7 +773,7 @@ export default function Console() {
         ? `${t('按本机实测的单帧耗时选择档位；再次点击重新检测')} · ${t('当前')} ${t(qualityLabels[level])}`
         : `${t(qualityLabels[choice])} · ${describeQuality(qualityProfiles[choice], t)}`;
     const colors = themeColors(u.theme);
-    return <main style={{ '--team-own': colors.own.ink, '--team-opponent': colors.opponent.ink, '--device-ink': colors.device.ink } as CSSProperties} data-theme={u.theme} className={`station ${failure ? 'station-fallback' : ''}`} data-view={route.view} data-power={hardware.powered ? 'on' : 'off'} data-supply={hardware.supply} data-link={hardware.online ? 'online' : 'offline'} data-aux={hardware.auxAvailable ? 'on' : 'off'}
+    return <main style={{ '--guide-accent': colors.own.light, '--team-own': colors.own.ink, '--team-opponent': colors.opponent.ink, '--device-ink': colors.device.ink } as CSSProperties} data-theme={u.theme} className={`station ${failure ? 'station-fallback' : ''}`} data-view={route.view} data-power={hardware.powered ? 'on' : 'off'} data-supply={hardware.supply} data-link={hardware.online ? 'online' : 'offline'} data-aux={hardware.auxAvailable ? 'on' : 'off'}
         data-backdrop-blur={qualityProfiles[level].backdropBlur ? undefined : 'off'}
         data-instruments={instrumentPreview || wordBench || undefined} data-instrument={instrumentPreview ? u.instrumentVariant : undefined}
         data-word-bench={wordBench || undefined}
@@ -826,6 +842,7 @@ export default function Console() {
       <div className="station-stage" ref={stage}>
         {!loaded && !failure && <div className="station-loading"><strong>DECRYPTO</strong><span>{t("正在启动密码终端…")}</span></div>}
         {failure && <div className="station-error" role="alert">{t(failure)}<button onClick={() => location.reload()}>{t("重新载入")}</button></div>}
+        <div className="sr-only">{(u.manual || u.about) && <GuideContent locale={u.locale} about={u.about} transcript/>}</div>
         <div className="station-controls" aria-label={t("密码通信终端控件")} style={{ visibility: loaded || failure ? 'visible' : 'hidden' }}>
           {content.targets.map(target => {
             const key = target.surface + ':' + target.id;
@@ -846,7 +863,7 @@ export default function Console() {
                 title: target.label,
                 'aria-expanded': target.id === 'archive-toggle' ? u.archiveOpen : target.id === 'battery-toggle' ? u.batteryOpen : undefined,
                 'aria-haspopup': target.id === 'archive-toggle' ? 'dialog' as const : undefined,
-                'aria-pressed': target.id === 'disk-toggle' ? u.diskOut : target.id === 'manual' ? u.manual : undefined,
+                'aria-pressed': target.id === 'disk-toggle' ? u.diskOut : target.id === 'manual' ? u.manual : target.id === 'about' ? u.about : undefined,
                 onMouseEnter: () => setHint(target.id),
                 onMouseLeave: () => setHint(''),
                 onFocus: () => { setHint(target.id); patch({ focus: target.id }); if (target.id.startsWith('clue-'))
@@ -854,6 +871,7 @@ export default function Console() {
                 onBlur: () => { setHint(''); if (current.current.u.focus === target.id)
                     patch({ focus: '' }); },
             };
+            if (target.href) return <a key={key} {...common} href={target.href} target="_blank" rel="noopener noreferrer">{target.label}</a>;
             if (target.id === 'disk-toggle') return <button key={key} {...common} {...diskPull} className="station-disk-grip" data-phase={u.keyDisk.phase}>
                 {!target.disabled && <span className="disk-grip-hint" aria-hidden="true">{t(u.keyDisk.phase === 'removed' ? '点击插回' : '按住软盘向外拖')}</span>}
             </button>;

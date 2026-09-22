@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import GuideContent from './GuideContent';
 import type { StationState, LocalState, KeyDiskState } from './model';
 import { useDiskPull } from './useDiskPull';
 import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word } from './model';
@@ -46,6 +47,11 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
             <p>{t('输入已保留，不会自动提交。')}</p>
             {!home && <button data-mobile-archive onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button>}
         </>}
+    </section>;
+    if (u.manual || u.about) return <section className="mobile-console" aria-label={t(u.about ? '原版桌游' : '玩法')} inert={inert}>
+        <button onClick={() => onAct('screen-close')}>{t('返回操作')}</button>
+        <GuideContent locale={u.locale} about={u.about}/>
+        {u.about && <button onClick={() => onAct('manual')}>{t('一图读懂玩法')}</button>}
     </section>;
     return <section className="mobile-console" aria-label={t('便携通信终端')} inert={inert}>
         <header>{battery}<p className="mobile-brand">DECRYPTO <span>FIELD TERMINAL / 01</span></p>
@@ -114,7 +120,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
             <button role="switch" aria-checked={u.soundOn} onClick={() => onAct('sound-toggle')}>{t(u.soundOn ? '关闭音效' : '开启音效')}</button>
             <button role="switch" aria-checked={u.musicOn} onClick={() => onAct('music-toggle')}>{t(u.musicOn ? '关闭背景音乐' : '开启背景音乐')}</button>
         </div>
-        <details><summary>{t('手册')}</summary>{['四个秘密词对应编号 1–4，词窗仅我方可见。', '加密者按三位密码顺序，各写一条关联线索。', '对手先拦截，再由队友解码；前两回合跳过拦截。', '截获两次，或让对方失误两次，即可获胜。'].map(text => <p key={text}>{t(text)}</p>)}</details>
+        <nav className="mobile-tabs"><button onClick={() => onAct('manual')}>{t('一图读懂玩法')}</button><button onClick={() => onAct('about')}>{t('原版桌游与购买')}</button></nav>
         <footer><button className="mobile-action" disabled={!ready || disabled} onClick={() => onAct('transmit')}><span>ACTION</span>{t(action)}</button></footer>
     </section>;
 }

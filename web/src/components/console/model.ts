@@ -168,6 +168,7 @@ export interface LocalState {
     archiveAnchor: number | null;
     archiveOpen: boolean;
     manual: boolean;
+    about: boolean;
     hiddenWords: boolean;
     seconds: number;
     diskOut: boolean;
@@ -194,7 +195,7 @@ export const initialLocal: LocalState = {
     locale: 'zh', theme: 'classic', scopeFreq: 3 / 7,
     mode: 'create', name: '', code: '', clues: ['', '', ''], guess: [0, 0, 0],
     slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
-    archiveOpen: false, manual: false, hiddenWords: false, seconds: 0, diskOut: false, keyDisk: emptyKeyDisk,
+    archiveOpen: false, manual: false, about: false, hiddenWords: false, seconds: 0, diskOut: false, keyDisk: emptyKeyDisk,
     scopeWave: .5, scopeRate: .9, scopeAxis: 0,
     backView: false, batteryOpen: false, soundOn: true, musicOn: true, musicVolume: .6, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,

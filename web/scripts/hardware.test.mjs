@@ -13,7 +13,8 @@ const dotMatrixUrl = url(compile(await readFile(new URL('../src/components/conso
 const { initialLocal, previewState, keyDiskIdentity, word, instrumentSteps, stepInstrumentValue, receiverSignal, ReceiverActivity } = await import(modelUrl);
 const i18nUrl = url(compile(await readFile(new URL('../src/components/console/i18n.ts', import.meta.url), 'utf8')));
 const paintSource = await readFile(new URL('../src/components/console/paint.ts', import.meta.url), 'utf8');
-const { paint } = await import(url(compile(paintSource).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl))));
+const guideUrl = url(compile(await readFile(new URL('../src/components/console/guide.ts', import.meta.url), 'utf8')));
+const { paint } = await import(url(compile(paintSource).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl)).replace("'./guide'", JSON.stringify(guideUrl))));
 
 // These tests validate control routing, not pixel output. Browser checks cover
 // the actual WebGL model, controls, text input, and the hinge animation.
