@@ -345,7 +345,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'console-rear-audio-20260922-v1';
+        const revision = 'console-visual-polish-20260923-v1';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -741,17 +741,21 @@ export class ConsoleEngine {
                 uv[i * 2 + 1] = point.y / surface.h + .5;
             }
             plaque.geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+            // Orange peel shows as a soft ripple in the clearcoat, not as grit.
             plaque.material = new THREE.MeshPhysicalMaterial({ ...enamel, color: '#efe5cf',
+                normalScale: new THREE.Vector2(.5, .5),
                 roughness: .72, metalness: .16, clearcoat: .28, clearcoatRoughness: .34 });
         }
+        // Silk-screen ink fills the fine relief it is printed on: a trace of the
+        // surface normal keeps it seated without striping the letters.
         for (const name of ['score', 'rosterA', 'rosterB']) {
             const material = this.planes.get(name)?.material;
             if (!(material instanceof THREE.MeshStandardMaterial)) continue;
             const finish = name === 'score' ? nickel : enamel;
             material.normalMap = finish.normalMap;
-            material.normalScale.set(.45, .45);
-            material.roughnessMap = finish.roughnessMap;
-            material.roughness = .95;
+            material.normalScale.set(.08, .08);
+            material.roughnessMap = null;
+            material.roughness = .9;
             material.metalness = .04;
         }
     }

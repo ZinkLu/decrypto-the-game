@@ -10,13 +10,13 @@
   "backInset": 0.258,
   "glassOffset": 0.012,
   "materials": {
-    "faceplate": "#a6ac9d",
-    "frame": "#777b6f",
-    "well": "#252c28",
-    "blade": "#38413b",
+    "faceplate": "#ada9a1",
+    "frame": "#7d7871",
+    "well": "#2c2a27",
+    "blade": "#403e3b",
     "ivory": "#dfd3b5",
-    "intercept": "#37483d",
-    "failure": "#775c48",
-    "axle": "#898775"
+    "intercept": "#282624",
+    "failure": "#953c29",
+    "axle": "#8a867e"
   }
 }

@@ -21,12 +21,14 @@ export function plateFinish(kind: 'enamel' | 'nickel') {
     };
     for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
         const i = y * width + x, fine = noise(x, y);
+        // Enamel orange peel undulates over ~10 texels (a few mm on a plaque);
+        // texel-scale noise read as sandpaper and speckled the silk-screen.
         const grain = kind === 'nickel'
             ? noise(0, y) * .65 + noise(Math.floor(x / 48), y) * .25 + fine * .10
-            : fine * .18 + softNoise(x / 3, y / 3) * .57 + softNoise(x / 7, y / 7) * .25;
+            : fine * .03 + softNoise(x / 10, y / 10) * .62 + softNoise(x / 4.5, y / 4.5) * .25;
         relief[i] = grain;
-        const pigment = kind === 'nickel' ? 235 + grain * 12 : 246 + grain * 13;
-        const gloss = kind === 'nickel' ? 128 + grain * 30 : 150 + grain * 54;
+        const pigment = kind === 'nickel' ? 235 + grain * 12 : 246 + grain * 5;
+        const gloss = kind === 'nickel' ? 128 + grain * 30 : 150 + grain * 30;
         for (let channel = 0; channel < 3; channel++) {
             color[i * 4 + channel] = pigment;
             roughness[i * 4 + channel] = gloss;

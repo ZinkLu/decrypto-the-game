@@ -4,12 +4,19 @@ Each handle was previously a floating assembly of two mount blocks, a rail and a
 rubber grip glued onto the front face edge. Now every side is ONE mesh object:
 a continuous nickel strap whose two feet wrap around the rear side edge and are
 bolted to the back panel (screws visible from behind), running forward along the
-side cheeks and bending out at the front corner into the rubber-sleeved grip.
+side cheeks and bending into the rubber-sleeved grip.
+
+The strap is formed like bent tube stock: straight runs joined by constant
+radius bends, each bend lying in one plane. (Auto Bezier handles through a
+bow-out point made the tube wander in an S, and a half-FREE handle pair left a
+kink where the bend met the grip.) Bend radii stay well above the tube radius,
+so the bevel never pinches.
 
 Run after refine_panel_layout.py:
 blender -b assets/console/decrypto-console.blend --python assets/console/refine_handles.py
 Repeatable: existing Guard* and Handle* objects are removed first.
 """
+import math
 import sys
 from pathlib import Path
 
@@ -35,35 +42,40 @@ BACK_Z = -2.69      # rear casing face
 COVER_Z = -2.88     # rear service cover, the visible back panel
 PLATE_Z = -2.925    # anchor plates sit proud of the service cover
 SIDE_X = 8.02       # side cheek plane
-LEG_X = 8.45        # strap legs stand off the cheeks, clearing the louvres
-APEX_X = 8.78       # the legs bow out this far at the front corner
-GRIP_X = 8.58       # then tuck back in: the grip stands closer to the cheek
+GRIP_X = 8.58       # legs and grip share one plane, clear of the louvres
 LEG_Y = 2.2         # anchor rows
-GRIP_Y = 1.70       # grip half length
 FRONT_Z = 0.55      # grip plane, pushed out towards the front panel edge
 ANCHOR_X = 7.15     # anchor plates sit well inside the rear cover outline
+TUBE = .13          # strap radius
+REAR_BEND = .33     # around the rear side edge
+FRONT_BEND = .50    # from the leg into the grip; the grip runs to LEG_Y - FRONT_BEND
 
 
-def strap(name, points, radius, mat, vertical_grip=False):
+def tube_path(s):
+    """Straights and planar arcs, sampled densely enough to read as round."""
+    points = [(s * ANCHOR_X, LEG_Y, PLATE_Z)]            # buried in the anchor plate
+    # Rear bend in the x-z plane: outward along the back, then forward.
+    cx, cz = s * (GRIP_X - REAR_BEND), PLATE_Z + REAR_BEND
+    for i in range(13):
+        a = math.radians(-90 + 90 * i / 12)
+        points.append((cx + s * REAR_BEND * math.cos(a), LEG_Y, cz + REAR_BEND * math.sin(a)))
+    # Forward along the cheek, then one bend in the y-z plane into the grip.
+    cy, cz = LEG_Y - FRONT_BEND, FRONT_Z - FRONT_BEND
+    for i in range(17):
+        a = math.radians(90 * i / 16)
+        points.append((s * GRIP_X, cy + FRONT_BEND * math.cos(a), cz + FRONT_BEND * math.sin(a)))
+    lower = [(x, -y, z) for x, y, z in reversed(points)]
+    return points + lower
+
+
+def strap(name, points, radius, mat):
     curve = bpy.data.curves.new(name, 'CURVE')
-    curve.dimensions, curve.resolution_u = '3D', 16
-    curve.bevel_depth, curve.bevel_resolution = radius, 4
-    curve.resolution_u = 16
-    spline = curve.splines.new('BEZIER')
-    spline.bezier_points.add(len(points) - 1)
-    for point, (x, y, z) in zip(spline.bezier_points, points):
-        point.co = (x, -z, y)
-        point.handle_left_type = point.handle_right_type = 'AUTO'
-    if vertical_grip:
-        # Force the handles facing the grip section to point exactly along the
-        # grip axis: a bezier segment with both end handles collinear is a
-        # straight line, so the tube stays coaxial with the rubber sleeve
-        # while the rest of the strap keeps its smooth auto bends.
-        top, mid, bot = (spline.bezier_points[i] for i in vertical_grip)
-        top.handle_right_type = 'FREE'
-        top.handle_right = (top.co.x, top.co.y, top.co.z - .5)
-        bot.handle_left_type = 'FREE'
-        bot.handle_left = (bot.co.x, bot.co.y, bot.co.z + .5)
+    curve.dimensions = '3D'
+    curve.bevel_depth, curve.bevel_resolution = radius, 5
+    spline = curve.splines.new('POLY')
+    spline.points.add(len(points) - 1)
+    for point, (x, y, z) in zip(spline.points, points):
+        point.co = (x, -z, y, 1)
     obj = bpy.data.objects.new(name, curve)
     bpy.context.collection.objects.link(obj)
     curve.materials.append(mat)
@@ -97,25 +109,8 @@ def rod(name, x, y0, y1, z, radius, mat):
 
 for side, label in [(-1, 'L'), (1, 'R')]:
     s = side
-    # One continuous bent strap. It bows out to APEX_X at the front corner and
-    # tucks back in to GRIP_X; the middle section is forced dead straight by
-    # the vertical handles above, so the sleeve sits coaxially on the tube.
-    path = [
-        (s * ANCHOR_X, LEG_Y, PLATE_Z),                 # buried in anchor plate
-        (s * 8.25, LEG_Y, PLATE_Z),                     # to the rear side edge
-        (s * LEG_X, LEG_Y, BACK_Z + .27),               # folded around the corner
-        (s * LEG_X, LEG_Y, FRONT_Z - .7),               # forward along the cheek
-        (s * APEX_X, GRIP_Y + .25, FRONT_Z - .07),      # bowing out
-        (s * GRIP_X, GRIP_Y, FRONT_Z),                  # tucking in: grip start
-        (s * GRIP_X, 0, FRONT_Z),                       # straight grip middle
-        (s * GRIP_X, -GRIP_Y, FRONT_Z),                 # grip end
-        (s * APEX_X, -GRIP_Y - .25, FRONT_Z - .07),
-        (s * LEG_X, -LEG_Y, FRONT_Z - .7),
-        (s * LEG_X, -LEG_Y, BACK_Z + .27),
-        (s * 8.25, -LEG_Y, PLATE_Z),
-        (s * ANCHOR_X, -LEG_Y, PLATE_Z),
-    ]
-    tube = strap('Handle tube', path, .13, NICKEL, vertical_grip=(5, 6, 7))
+    # One continuous bent strap: anchor, rear bend, leg, front bend, grip, and back.
+    tube = strap('Handle tube', tube_path(s), TUBE, NICKEL)
     parts = [tube, rod('Handle grip', s * GRIP_X, -1.15, 1.15, FRONT_Z, .18, RUBBER)]
     for y0 in [LEG_Y, -LEG_Y]:
         parts.append(box('Handle anchor', s * ANCHOR_X, y0, PLATE_Z,
@@ -129,10 +124,34 @@ for side, label in [(-1, 'L'), (1, 'R')]:
     bpy.ops.object.join()
     parts[0].name = f'Handle {label}'
 
+    # Brushed grain uses the tactile pass's box projection (world axes / 6).
+    handle = parts[0]
+    uv = handle.data.uv_layers.active or handle.data.uv_layers.new(name='ManufacturingUV')
+    world = handle.matrix_world
+    for poly in handle.data.polygons:
+        normal = world.to_3x3() @ poly.normal
+        axis = max(range(3), key=lambda i: abs(normal[i]))
+        axes = (0, 2) if axis == 1 else (0, 1) if axis == 2 else (1, 2)
+        for loop in poly.loop_indices:
+            p = world @ handle.data.vertices[handle.data.loops[loop].vertex_index].co
+            uv.data[loop].uv = (p[axes[0]] / 6, p[axes[1]] / 6)
+
+# All forty room-code digits must survive export; restore their editable visibility.
+digits = [(o, o.hide_render, o.hide_get()) for o in bpy.data.objects if o.name.startswith('Nixie_Digit_')]
+assert len(digits) == 40
+for o, _, _ in digits:
+    o.hide_render = False
+    o.hide_set(False)
+try:
+    bpy.ops.export_scene.gltf(filepath=str(OUT / 'decrypto-console.glb'), export_format='GLB',
+        export_apply=True, use_renderable=True, export_draco_mesh_compression_enable=True,
+        export_draco_mesh_compression_level=6, export_draco_position_quantization=16,
+        export_draco_normal_quantization=12, export_cameras=False, export_lights=False,
+        export_extras=True)
+finally:
+    for o, hidden_render, hidden_view in digits:
+        o.hide_render = hidden_render
+        o.hide_set(hidden_view)
+bpy.context.preferences.filepaths.save_version = 0
 bpy.ops.wm.save_as_mainfile(filepath=str(ROOT / 'assets/console/decrypto-console.blend'))
-bpy.ops.export_scene.gltf(filepath=str(OUT / 'decrypto-console.glb'), export_format='GLB',
-    export_apply=True, use_renderable=True, export_draco_mesh_compression_enable=True,
-    export_draco_mesh_compression_level=6, export_draco_position_quantization=16,
-    export_draco_normal_quantization=12, export_cameras=False, export_lights=False,
-    export_extras=True)
-print('Handles rebuilt: one bent strap per side, bolted to the back panel.')
+print('Handles rebuilt: one formed strap per side, bolted to the back panel.')

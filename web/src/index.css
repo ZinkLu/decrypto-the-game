@@ -47,16 +47,22 @@ button,input { font: inherit; }
 .station-controls [data-control="disk-toggle"] { touch-action: none; cursor: grab; user-select: none; }
 .station-controls [data-control="disk-toggle"][data-pulling] { cursor: grabbing; }
 .station-controls .station-disk-grip { opacity: 1; overflow: visible; }
-.disk-grip-hint { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border: 1px solid #a69c8780; border-radius: 3px; background: #eee6d5ed; color: #625a4a; font-size: 11px; line-height: 1.3; letter-spacing: .04em; pointer-events: none; box-shadow: 0 2px 5px #32281812; }
-.station-disk-grip[data-pulling] .disk-grip-hint { opacity: 0; }
+/* The drag hint teaches once, then steps aside so it never sits on the chassis
+   edge; hovering or focusing the disk brings it back. */
+.disk-grip-hint { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border: 1px solid #a69c8780; border-radius: 3px; background: #eee6d5ed; color: #625a4a; font-size: 11px; line-height: 1.3; letter-spacing: .04em; pointer-events: none; box-shadow: 0 2px 5px #32281812; white-space: nowrap; opacity: 0; animation: disk-hint-once 5.5s ease-out .6s both; transition: opacity .18s; }
+@keyframes disk-hint-once { 0% { opacity: 0; } 8% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
+.station-disk-grip[data-hint="above"] .disk-grip-hint { top: auto; bottom: calc(100% + 6px); }
+.station-disk-grip:hover .disk-grip-hint, .station-disk-grip:focus-visible .disk-grip-hint { animation: none; opacity: 1; }
+.station-disk-grip[data-pulling] .disk-grip-hint { animation: none; opacity: 0; }
 .station-workbench { position: fixed; z-index: 2; right: 20px; bottom: 12px; left: 20px; display: flex; align-items: end; justify-content: flex-end; gap: 20px; pointer-events: none; }
-.station-orbit-hint { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); padding: 7px 11px; border: 1px solid #8d8d7b99; border-radius: 2px; background: #eee8dbd9; color: #59645b; box-shadow: 0 2px 8px #28332918; font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
+.station-orbit-hint { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); padding: 7px 11px; border: 1px solid #9a927f99; border-radius: 2px; background: #eee8dbd9; color: #5e584d; box-shadow: 0 2px 8px #2e281f18; font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
+.station[data-detail] .station-orbit-hint { display: none; }
 .station-stage[data-inspecting="true"], .station-stage[data-inspecting="true"] * { cursor: grabbing !important; user-select: none; }
 .station-controls .station-handle { touch-action: none; cursor: grab; }
 .station-controls .station-handle[data-control*="Rear"] { cursor: pointer; }
 .station-stage[data-handling], .station-stage[data-handling] * { cursor: grabbing !important; user-select: none; }
 .station[data-view="preview"] .station-stage { touch-action: none; cursor: grab; }
-.station-reset-view { min-height: 36px; padding: 7px 12px; border: 1px solid #8d8d7b99; background: #eee8db; color: #38473b; cursor: pointer; pointer-events: auto; font-size: 12px; }
+.station-reset-view { min-height: 36px; padding: 7px 12px; border: 1px solid #9a927f99; background: #eee8db; color: #3b372f; cursor: pointer; pointer-events: auto; font-size: 12px; }
 .station-reset-view:focus-visible { outline: 2px solid #a65232; outline-offset: 3px; }
 .station-roster-preview { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-right: auto; padding: 7px 10px; background: #eee8db; border: 1px solid #a4a497; pointer-events: auto; font-size: 12px; }
 .station-roster-preview > span { padding-right: 6px; color: #737768; }
@@ -65,19 +71,24 @@ button,input { font: inherit; }
 .station-roster-preview button:focus-visible { outline: 2px solid #a65232; outline-offset: 2px; }
 .station-score-preview { order: -1; box-shadow: 0 2px 12px #28332918; }
 .station-score-preview button { min-height: 36px; font-variant-numeric: tabular-nums; }
-.station-rear-status { margin: 0 auto 0 0; background: #eee8dbed; border-left: 2px solid #6b7866; padding: 8px 12px; color: #38473b; font-size: 12px; line-height: 1.7; }
-.station-rear-status span { display: block; color: #737768; font-size: 10px; letter-spacing: .06em; }
-.station-hardware-status { position: fixed; z-index: 4; left: 20px; bottom: 16px; max-width: min(410px, calc(100vw - 40px)); padding: 10px 14px; background: #eee8dbf5; color: #38473b; border-left: 2px solid #6b7866; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.station-rear-status { margin: 0 auto 0 0; background: #eee8dbed; border-left: 2px solid #8a7f6a; padding: 8px 12px; color: #3b372f; font-size: 12px; line-height: 1.7; }
+.station-rear-status span { display: block; color: #77715f; font-size: 10px; letter-spacing: .06em; }
+/* Terminal status sits in the quiet band above the machine, between the page
+   navigation and Settings, instead of over the chassis corner. */
+.station-hardware-status { position: fixed; z-index: 4; top: 12px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 14px; width: max-content; max-width: min(680px, calc(100vw - 400px)); padding: 6px 14px; background: #eee8dbf5; color: #3b372f; border-left: 2px solid #8a7f6a; font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; box-shadow: 0 2px 8px #2e281f14; }
 .station-hardware-status p { margin: 0; }
-.station-hardware-status .hardware-match, .station-hardware-status small { color: #626857; font-size: 12px; }
-.station-hardware-status button { margin-top: 8px; padding: 7px 14px; background: #334c3c; color: #f4edda; border: 1px solid #334c3c; border-radius: 2px; font: inherit; cursor: pointer; }
+.station-hardware-status .hardware-match, .station-hardware-status small { color: #6a6457; font-size: 12px; }
+.station-hardware-status button { padding: 4px 12px; background: #3b372f; color: #f4edda; border: 1px solid #3b372f; border-radius: 2px; font: inherit; cursor: pointer; }
+.station-hardware-status details { flex-basis: 100%; }
 .station-hardware-status :focus-visible { outline: 3px solid #a1442f; outline-offset: 3px; }
-.station-hardware-status details { margin-top: 6px; }
+.station-hardware-status details { margin-top: 4px; }
 .station-hardware-status summary { cursor: pointer; }
 .station-hardware-status details p { max-height: 8em; overflow: auto; white-space: pre-wrap; }
-.station-fallback .station-hardware-status { position: relative; margin: 12px 20px; left: auto; bottom: auto; }
+.station-fallback .station-hardware-status { position: relative; margin: 12px 20px; left: auto; top: auto; bottom: auto; transform: none; display: block; width: auto; max-width: min(410px, calc(100vw - 40px)); }
+.station-fallback .station-hardware-status button { margin-top: 8px; }
 @media (max-width: 850px) {
-  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-hardware-status { position: relative; left: auto; bottom: auto; max-width: 520px; margin: 12px 20px 24px; }
+  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-hardware-status { position: relative; left: auto; top: auto; bottom: auto; transform: none; display: block; width: auto; max-width: 520px; margin: 12px 20px 24px; }
+  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-hardware-status button { margin-top: 8px; }
   .station-hardware-status button, .station-hardware-status summary { min-height: 44px; }
 }
 @media (max-width: 600px) {
@@ -86,7 +97,7 @@ button,input { font: inherit; }
   .station[data-view="preview"] .station-orbit-hint { display: block; bottom: 48px; max-width: calc(100vw - 32px); white-space: normal; width: max-content; text-align: center; }
   .station-rear-status { font-size: 11px; }
 }
-.station-hint { position: fixed; z-index: 3; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 9px 16px; background: #26332e; color: #f0e4c9; font-size: 12px; letter-spacing: .04em; pointer-events: none; box-shadow: 0 3px 12px #17211c20; }
+.station-hint { position: fixed; z-index: 3; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 9px 16px; background: #2f2b26; color: #f0e4c9; font-size: 12px; letter-spacing: .04em; pointer-events: none; box-shadow: 0 3px 12px #1c181320; }
 
 /* A review bench below the machine, keeping every study in the same light. */
 .station[data-instruments] { --instrument-bench-height: 112px; }

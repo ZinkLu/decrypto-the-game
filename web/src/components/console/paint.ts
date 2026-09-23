@@ -47,7 +47,7 @@ export interface Content {
     wordPrivacyKey: string;
     screenPrivacyKey: string;
 }
-const INK = '#243344', CREAM = '#ece0c4', MUTED = '#a59e8c', DARK = '#111e24';
+const INK = '#2f2b25', CREAM = '#ece0c4', MUTED = '#a59e8c', DARK = '#111e24';
 const FONT = '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif';
 function round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r = 10) {
     c.beginPath();
@@ -267,15 +267,9 @@ function plateWear(c: CanvasRenderingContext2D, width: number, height: number) {
     c.save();
     c.strokeStyle = '#e3dcc085'; c.lineWidth = .8;
     c.beginPath(); c.moveTo(5, 1.2); c.lineTo(width - 8, 1.2); c.stroke();
-    c.strokeStyle = '#242e2866';
+    c.strokeStyle = '#2a262066';
     c.beginPath(); c.moveTo(6, height - 1.2); c.lineTo(width - 5, height - 1.2); c.stroke();
-    // Small broken witness marks where hands and retaining clips touch the lip.
-    for (let i = 0; i < 38; i++) {
-        const x = 4 + (i * 137.73 % (width - 12));
-        const y = i % 2 ? .7 : height - 2.1;
-        c.fillStyle = i % 3 ? '#c9c4ae80' : '#32392f70';
-        c.fillRect(x, y, 1.5 + (i * 7 % 9), .6 + i % 3 * .3);
-    }
+    // Regular witness dashes along the lip read as a texture seam, not wear.
     c.restore();
 }
 function printWear(c: CanvasRenderingContext2D, width: number, height: number) {
@@ -552,7 +546,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     ro.scale(2, 2);
     frames.roster.width = 400; frames.roster.height = 815;
     text(ro, 'DUTY ROSTER', 24, 32, 22, CREAM, 600);
-    line(ro, 22, 55, 356, '#657165');
+    line(ro, 22, 55, 356, '#6e685c');
     teams.forEach(team => {
         const palette = teamPalette(team.team, s.myTeam, u.theme);
         const accent = palette.ink;
@@ -579,8 +573,9 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
                     card.fillStyle = accent; card.fillRect(294, 7, 50, 25);
                     fitLabel(card, seat.self ? t("你") : t("发报"), 299, 20, 17, CREAM, 600, 40);
                 }
-                text(card, `${seat.code} · ${p.is_ai ? 'AI' : t("真人")}${seat.owner ? t(" · 房主") : ''}`, 20, 45, 16, '#655c46', 500, 228);
-                text(card, t(seat.status), 263, 45, 17, accent, seat.acting ? 600 : 400, 81);
+                text(card, `${seat.code} · ${p.is_ai ? 'AI' : t("真人")}${seat.owner ? t(" · 房主") : ''}`, 20, 45, 17, '#4f4637', 500, 228);
+                // Status shrinks to fit rather than being elided (ENCODING, LISTENING).
+                fitLabel(card, t(seat.status), 263, 45, 17, accent, seat.acting ? 600 : 400, 81);
                 if (seat.progress) {
                     for (let step = 0; step < 3; step++) {
                         card.fillStyle = step < seat.progress.step / seat.progress.total * 3 ? accent : '#b3a78d';
@@ -604,24 +599,26 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     text(copy, 'COPY', 120, 80, 62, INK, 600);
     target('channelCopy', 'copy-code', t("复制房间码"), 0, 0, 240, 160, { disabled: !h.online || !s.roomCode });
     const scoreFlags: Record<string, boolean> = {};
-    const sc = frame('score', 600, 357);
-    text(sc, "SCORE", 28, 30, 19, '#414940', 500);
-    text(sc, "INTERCEPT", 155, 65, 24, '#505c50', 600);
-    text(sc, "ERROR", 397, 65, 24, '#505c50', 600);
-    line(sc, 26, 99, 548, '#7b847b');
+    // Printed at twice the plate's layout resolution so close views stay sharp.
+    const sc = frame('score', 1200, 714);
+    sc.scale(2, 2);
+    frames.score.width = 600; frames.score.height = 357;
+    text(sc, "INTERCEPT", 155, 65, 24, '#57534b', 600);
+    text(sc, "ERROR", 397, 65, 24, '#57534b', 600);
+    line(sc, 26, 99, 548, '#857f74');
     ['A', 'B'].forEach((team, i) => {
         const score = team === 'A' ? s.scoreA : s.scoreB;
         const yy = 153 + i * 103;
-        text(sc, team, 43, yy, 38, '#414940', 600);
+        text(sc, team, 43, yy, 38, '#45413a', 600);
         [score.interceptions, score.decrypt_failures].forEach((n, j) => {
             for (let k = 0; k < 2; k++) {
                 scoreFlags[`${team}_${j ? 'failure' : 'intercept'}_${k}`] = k < n;
             }
         });
-        if (i === 0) line(sc, 28, 204, 546, '#90978c');
+        if (i === 0) line(sc, 28, 204, 546, '#999387');
     });
-    line(sc, 26, 304, 548, '#7b847b');
-    text(sc, "2 INTERCEPTS TO WIN / 2 ERRORS TO LOSE", 68, 334, 19, '#374137');
+    line(sc, 26, 304, 548, '#857f74');
+    text(sc, "2 INTERCEPTS TO WIN / 2 ERRORS TO LOSE", 68, 334, 19, '#3b3731');
     printWear(sc, 600, 357);
     plateWear(sc, 600, 357);
     const leader = frame('paper', 840, paperTextureHeight, '#eadfc5');
@@ -635,18 +632,20 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     text(leader, t("频道 {0}   ·   {1} 条记录", [s.roomCode || '----', String(records.length).padStart(2, '0')]), 420, printedTop + 79, 21, '#786b52');
     line(leader, 52, printedTop + 103, 736, '#887b6266');
     leader.textAlign = 'left';
+    // At rest the tear bar crosses the stock paperRestLength above the free end;
+    // no print may sit under it, or glyph halves peek out below the teeth.
     if (records.length) {
-        const rowPitch = (printedHeight - 307) / Math.max(1, records.length - 1);
+        const rowPitch = (printedHeight - 330) / Math.max(1, records.length - 1);
         records.forEach((row, index) => {
             const y = printedTop + 132 + index * rowPitch;
             text(leader, t("{0}  {1} 队", [String(row.round).padStart(2, '0'), row.team]), 54, y, 29, '#574c38', 600);
             text(leader, row.clues.join(' / '), 218, y, 32, '#403c31', 500, 568);
             text(leader, t("截获 {0}   解码 {1}   密码 {2}", [row.intercept?.join('—') || '———', row.decrypt?.join('—') || '———', row.secret?.join('—') || t("未公开")]), 218, y + 36, 21, '#7c6c52', 400, 568);
-            line(leader, 52, y + 57, 736, '#a4967866');
+            if (index < records.length - 1) line(leader, 52, y + 57, 736, '#a4967866');
         });
     } else {
-        text(leader, t("等待第一份密报"), 228, printedTop + 173, 33, '#62583f', 500);
-        text(leader, t("回合结束后自动打印公开记录"), 180, printedTop + 220, 25, '#87765b');
+        text(leader, t("等待第一份密报"), 228, printedTop + 128, 30, '#62583f', 500);
+        text(leader, t("回合结束后自动打印公开记录"), 180, printedTop + 166, 24, '#87765b');
     }
     leader.textAlign = 'center';
     text(leader, t("下拉阅读"), 420, paperTextureHeight - 45, 22, '#766349', 500);
@@ -685,20 +684,22 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     for (let i = 0; i < 5; i++) {
         const k = frame('key' + i, 180, 200);
         const enabled = r.guess && r.active && h.online && !s.recovering && !u.manual && !u.about;
-        text(k, i === 4 ? '←' : String(i + 1), i === 4 ? 27 : 53, 101, 96, enabled ? CREAM : '#84908c', 500);
+        text(k, i === 4 ? '←' : String(i + 1), i === 4 ? 27 : 53, 101, 96, enabled ? CREAM : '#8e897f', 500);
         target('key' + i, 'key-' + i, i === 4 ? t("删除上一位") : t("输入数字 {0}", [i + 1]), 0, 0, 180, 200, { disabled: !enabled });
     }
-    const ph = frame('phase', 550, 214);
+    // Three steps at a 132 px pitch; the modeled dividers sit at 129 and 261.
+    const ph = frame('phase', 411, 214);
     [t("加密"), t("拦截"), t("解码")].forEach((label, i) => {
         const active = h.online && s.phase === ['encrypting', 'intercept', 'decrypt'][i];
-        text(ph, `0${i + 1}`, 23 + i * 177, 28, 18, h.powered ? '#a2a492' : '#4b4e42', 500);
-        fitLabel(ph, label, 23 + i * 177, 79, 23, active ? signal.color : h.powered ? '#a2a492' : '#4b4e42', 400, 116);
-        ph.fillStyle = active ? signal.color : '#1b2a32';
-        round(ph, 25 + i * 177, 129, 104, 17, 8);
+        const x = 17 + i * 132;
+        text(ph, `0${i + 1}`, x, 28, 18, h.powered ? '#a9a497' : '#4d4a43', 500);
+        fitLabel(ph, label, x, 79, 23, active ? signal.color : h.powered ? '#a9a497' : '#4d4a43', 400, 88);
+        ph.fillStyle = active ? signal.color : '#2b2824';
+        round(ph, x + 2, 129, 78, 17, 8);
         ph.fill();
-        if (i < 2) text(ph, '›', 152 + i * 177, 78, 28, h.powered ? '#7b857c' : '#3e453d');
+        if (i < 2) text(ph, '›', 114 + i * 132, 78, 28, h.powered ? '#857f75' : '#403c36');
     });
-    text(ph, s.phase === 'home' || s.phase === 'room' ? t("等待行动开始") : t("第 {0} / 16 回合", [s.round]), 24, 190, 21, h.powered ? '#bbc0aa' : '#4b4e42');
+    text(ph, s.phase === 'home' || s.phase === 'room' ? t("等待行动开始") : t("第 {0} / 16 回合", [s.round]), 18, 190, 21, h.powered ? '#c1bcad' : '#4d4a43');
     const tr = frame('transmitLabel', 600, 164);
     const homeReady = s.phase === 'home' && !!u.name.trim() && (u.mode === 'create' || u.code.length === 4) && s.connected;
     const lobbyReady = s.phase === 'room' && s.canStart && s.ownerID === s.myPlayerID && s.connected;
@@ -750,7 +751,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     frame('powerControl', 320, 180);
     target('powerControl', 'power-toggle', u.powerOn ? t("关闭终端电源") : t("开启终端电源"), 0, 0, 320, 180);
     const ft = frame('footer', 1100, 65);
-    text(ft, 'NETWORK', 350, 32, 29, '#355b45');
+    text(ft, 'NETWORK', 350, 32, 29, '#3e3a33');
     text(ft, 'UNOFFICIAL EDITION', 770, 32, 18, '#817c70');
     frame('batteryControl', 100, 100);
     target('batteryControl', 'battery-toggle', u.batteryOpen ? t("合上电池仓盖") : t("掀开电池仓盖，查看四节电池"), 0, 0, 100, 100);

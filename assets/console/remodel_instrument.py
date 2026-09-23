@@ -323,25 +323,27 @@ back_label('rear model','465-D   /   FIELD COMMUNICATION TERMINAL',3.48,3.60,-2.
 back_label('rear serial','SERIAL  05821  /  TYPE B     •     SERVICE PANEL',-3.65,4.05,-2.906,.10)
 
 # A real perforated grille: each square cell has a circular open bore with
-# inside walls. Dark speaker material behind the holes supplies depth.
+# inside walls. Dark speaker material behind the holes supplies depth. Sixteen
+# samples include the corners of every square cell; twelve 30-degree samples
+# missed them and left a diamond hole at each junction.
 ring(PREFIX+'speaker frame',4.22,1.35,
      [(4.7,3.73,.20,-2.88),(4.7,3.73,.20,-3.02),
       (4.46,3.49,.15,-3.08),(4.43,3.46,.14,-2.89)],NICKEL)
 box(PREFIX+'speaker cloth',4.22,1.35,-2.922,4.43,3.46,.035,BLACK,.10)
-vertices, faces = [], []
+vertices, faces, SEG = [], [], 16
 for row in range(13):
     for col in range(17):
         x, y = 4.22+(col-8)*.252, 1.35+(row-6)*.252
         base = len(vertices)
         for depth, hole in [(-3.041,False),(-3.041,True),(-2.99,True)]:
-            for i in range(12):
-                a = i*math.tau/12
+            for i in range(SEG):
+                a = i*math.tau/SEG
                 r = .075 if hole else .126 / max(abs(math.cos(a)),abs(math.sin(a)))
                 vertices.append((x+r*math.cos(a), -depth, y+r*math.sin(a)))
-        for i in range(12):
-            n=(i+1)%12
-            faces.append((base+i,base+n,base+12+n,base+12+i))
-            faces.append((base+12+i,base+12+n,base+24+n,base+24+i))
+        for i in range(SEG):
+            n=(i+1)%SEG
+            faces.append((base+i,base+n,base+SEG+n,base+SEG+i))
+            faces.append((base+SEG+i,base+SEG+n,base+2*SEG+n,base+2*SEG+i))
 mesh = bpy.data.meshes.new('Perforated speaker grille')
 mesh.from_pydata(vertices,[],faces)
 mesh.update()

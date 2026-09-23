@@ -36,7 +36,7 @@ test('both inward handle gestures turn the machine; taps and outward pulls do no
 test('head-on framing fits the chassis across aspect ratios', () => {
     for (const [width, height] of [[865, 863], [1440, 900], [1920, 1080], [1200, 500], [2560, 1080]]) {
         const frame = gameFraming(width, height);
-        const top = Math.min(66, height * .14), bottom = Math.min(26, height * .06);
+        const top = Math.min(66, height * .14), bottom = Math.min(44, height * .06);
         assert.ok(frame.height >= 10.65 * height / (height - top - bottom));
         assert.ok(frame.height * width / height >= 18.3 * width / (width - 32) - 1e-10);
         assert.ok(Number.isFinite(frame.centerY));

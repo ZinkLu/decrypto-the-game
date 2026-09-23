@@ -9,12 +9,13 @@ export function consoleRoute(pathname: string, search: string, development: bool
         view === 'preview' ? 'encrypting' : null };
 }
 
-// Leave room for the quiet navigation above the machine, while fitting both
-// handles and the power switch even in a short landscape window. Both faces
-// keep this framing; the rear cables may extend below the viewport.
+// Leave room for the quiet navigation above the machine and the flip hint
+// below it, while fitting both handles and the power switch even in a short
+// landscape window. Both faces keep this framing; the rear cables may extend
+// below the viewport.
 export function gameFraming(width: number, height: number) {
     const w = Math.max(1, width), h = Math.max(1, height);
-    const top = Math.min(66, h * .14), bottom = Math.min(26, h * .06);
+    const top = Math.min(66, h * .14), bottom = Math.min(44, h * .06);
     const fieldHeight = Math.max(10.65 * h / (h - top - bottom), 18.3 * h / Math.max(1, w - 32));
     return { height: fieldHeight, centerY: .12 + fieldHeight * (top - bottom) / (2 * h) };
 }

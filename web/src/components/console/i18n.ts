@@ -108,6 +108,7 @@ export const messages: Record<string, string> = {
     "输入已保留 · 恢复后继续当前回合": "Drafts retained · Resume the current round when connected",
     "对局仍在进行": "The game continues",
     "第 {0} 回合 · 对局仍在进行": "Round {0} · The game continues",
+    "当前第 {0} 回合": "Now in round {0}",
     "终端状态": "Terminal status",
     "终端脱机 · 显示最后接收的记录": "Terminal offline · Showing last received records",
     "旧草稿 · 第 {0} 回合": "Previous draft · Round {0}",

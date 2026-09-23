@@ -264,6 +264,9 @@ export default function Console() {
             if (node && !failure) node.style.visibility = bounds ? 'visible' : 'hidden';
             if (node && bounds) {
                 Object.assign(node.style, { left: bounds.left + 'px', top: bounds.top + 'px', width: bounds.width + 'px', height: bounds.height + 'px' });
+                // The drag hint hangs below the drive; flip it above when the
+                // stage has no room below (the inspection view frames it low).
+                if (target.id === 'disk-toggle') node.dataset.hint = bounds.top + bounds.height + 40 > (stage.current?.clientHeight ?? Infinity) ? 'above' : 'below';
                 if (target.kind === 'input' && target.input) {
                     // Keep logical CRT typography and scale the entire native editor,
                     // including its padding, selection, IME text and caret together.
@@ -773,6 +776,9 @@ export default function Console() {
         ? `${t('按本机实测的单帧耗时选择档位；再次点击重新检测')} · ${t('当前')} ${t(qualityLabels[level])}`
         : `${t(qualityLabels[choice])} · ${describeQuality(qualityProfiles[choice], t)}`;
     const colors = themeColors(u.theme);
+    // The first status line already names the supply when the terminal is healthy.
+    const supplyLabel = hardware.supply === 'external' ? '外部供电' : hardware.supply === 'battery' ? '电池供电' : '无供电';
+    const statusMessage = hardwareMessage(u, s);
     return <main style={{ '--guide-accent': colors.own.light, '--team-own': colors.own.ink, '--team-opponent': colors.opponent.ink, '--device-ink': colors.device.ink } as CSSProperties} data-theme={u.theme} className={`station ${failure ? 'station-fallback' : ''}`} data-view={route.view} data-power={hardware.powered ? 'on' : 'off'} data-supply={hardware.supply} data-link={hardware.online ? 'online' : 'offline'} data-aux={hardware.auxAvailable ? 'on' : 'off'}
         data-backdrop-blur={qualityProfiles[level].backdropBlur ? undefined : 'off'}
         data-instruments={instrumentPreview || wordBench || undefined} data-instrument={instrumentPreview ? u.instrumentVariant : undefined}
@@ -873,7 +879,8 @@ export default function Console() {
             };
             if (target.href) return <a key={key} {...common} href={target.href} target="_blank" rel="noopener noreferrer">{target.label}</a>;
             if (target.id === 'disk-toggle') return <button key={key} {...common} {...diskPull} className="station-disk-grip" data-phase={u.keyDisk.phase}>
-                {!target.disabled && <span className="disk-grip-hint" aria-hidden="true">{t(u.keyDisk.phase === 'removed' ? '点击插回' : '按住软盘向外拖')}</span>}
+                {/* Keyed by message: a new instruction plays its short reveal again. */}
+                {!target.disabled && <span key={u.keyDisk.phase === 'removed' ? 'insert' : 'pull'} className="disk-grip-hint" aria-hidden="true">{t(u.keyDisk.phase === 'removed' ? '点击插回' : '按住软盘向外拖')}</span>}
             </button>;
             if (target.id in handleSurfaces) return <button key={key} {...common} className="station-handle"
                 onClick={e => { if (target.id.includes('Rear') || e.detail === 0 || failure) act(target.id); }}
@@ -1006,9 +1013,9 @@ export default function Console() {
       </div>}
     </div>}
     {(u.backView || !hardware.online || staleDraft) && <aside className="station-hardware-status" aria-label={t('终端状态')}>
-      <p role="status">{t(hardwareMessage(u, s))}</p>
-      <p className="hardware-match">{u.backView && <>{t(hardware.supply === 'external' ? '外部供电' : hardware.supply === 'battery' ? '电池供电' : '无供电')} · </>}{s.phase === 'home' ? t('尚未接入频道') : s.phase === 'room' ? t('队伍准备中') :
-          s.phase === 'game_over' ? t('行动结束') : t('第 {0} 回合 · 对局仍在进行', [s.round])}</p>
+      <p role="status">{t(statusMessage)}</p>
+      <p className="hardware-match">{u.backView && !statusMessage.includes(supplyLabel) && <>{t(supplyLabel)} · </>}{s.phase === 'home' ? t('尚未接入频道') : s.phase === 'room' ? t('队伍准备中') :
+          s.phase === 'game_over' ? t('行动结束') : statusMessage.includes('对局仍在进行') ? t('当前第 {0} 回合', [s.round]) : t('第 {0} 回合 · 对局仍在进行', [s.round])}</p>
       {recovery && <button type="button" data-hardware-recovery={recovery.id} onClick={() => act(recovery.id)}>{t(recovery.label)}</button>}
       {u.backView && hardware.powered && !hardware.aux && hardwareRecovery(u) && <p>{t('AUX 已断开 · SIGNAL 无外部输入')}</p>}
       {staleDraft && <details><summary>{t('旧草稿 · 第 {0} 回合', [staleDraft.round])}</summary><p>{staleDraft.text}</p><small>{t('仅供查看，不会自动提交')}</small></details>}

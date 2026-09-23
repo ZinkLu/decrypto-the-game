@@ -102,7 +102,7 @@ digit visibility and excluding Boolean cutters.
 
 The scoreboard now uses four recessed twin windows and eight bistable flags.
 Each flag is a thick charcoal blade with warm ivory enamel on its reverse:
-intercepts reveal a vertical tally, errors reveal a muted brown cross. The
+intercepts reveal an ink tally, errors reveal a vermilion cross. The
 horizontal axle, end bearings, deep well, rear partition, satin rim and thin
 clear cover are modeled parts. Four Boolean apertures cut through the actual
 score plate. The blade's full turning envelope clears the back and glass.
@@ -512,18 +512,21 @@ connectivity is not inferred, and ambiguous nickname progress is not attributed.
 Settings offers Classic, Amber, Violet and Rose palettes, remembered locally. Each
 palette has one color for the player's team and another for the opponent, shared
 by the active CRT, phase lamps, roster and compact mobile view. The fixed scoreboard
-uses green interception lamps and red decryption-error lamps in every palette;
-its A/B letters use the same neutral ink as SCORE, independent of team and theme,
-and print directly on the metal with no colored background blocks.
+flags show the same ink tally and vermilion cross in every palette; its A/B
+letters use the plate's neutral ink, independent of team and theme, and print
+directly on the metal with no colored background blocks.
 Bulbs and diffuser strips share the same runtime
 material so the exported amber lens cannot obscure the new color.
 
 Team plaques are colored enamel on the modeled plate, with transparent silk-screen
 lettering rather than an opaque color rectangle covering the geometry. Runtime
-PBR pigment, normal and roughness maps provide fine orange-peel relief and satin
-clearcoat; the beveled return receives the same team color. The score plate uses
-directional nickel brushing, with ink following the surface relief. Sparse lip
-scuffs and print pinholes stay deterministic across updates and theme changes.
+PBR pigment, normal and roughness maps provide a soft orange-peel ripple (about
+ten texels, not texel noise, which read as sandpaper) under a satin clearcoat;
+the beveled return receives the same team color. The score plate uses
+directional nickel brushing; its legends are printed at twice the layout
+resolution and keep only a trace of the relief, so the grain never stripes the
+letters. Rolled lip highlights and print pinholes stay deterministic across
+updates and theme changes.
 `finishes.ts` creates these small maps once per console; they do not require extra
 GLB downloads. DEV `?detail=roster` and `?detail=score` expose the two close-ups.
 
@@ -795,6 +798,45 @@ The global lighting balances a warm upper-left key, cool fill and two broad
 studio sources against restrained environment light. Filtered (PCF) shadow maps
 soften the machine's cast shadow and the contacts between its hardware. Copy-key
 travel is relative to its exported mounting depth, including after model changes.
+
+## Visual polish — 2026-09-23
+
+`refine_visual_polish.py` runs after `refine_handles.py` and is repeatable:
+
+```sh
+blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_visual_polish.py
+```
+
+- **Warm neutrals.** Every neutral finish shares the ivory front's warm undertone.
+  Blacks, graphite, charcoal inks, nickel, satin alloy, the shell powder coat and the
+  rear enamel keep their lightness but sit at an OKLCH hue of about 68-82 degrees
+  with grey-level chroma (the packed nickel and aluminium maps were authored green,
+  around 116-135 degrees, which made every "black" and "silver" part read olive).
+  Colour maps are rescaled by the change of base colour, so their grain is kept.
+  Lamps, glass, displays, paper, brass, the red parts and the theme team colours
+  are untouched. The number keys are warm graphite; the score flags show an ink
+  tally and a vermilion cross; the receiver's study materials join the same family.
+- **Quieter phenolic.** Texel-scale noise in the mottled phenolic maps read as
+  granite on the recorder caps; it is reduced, and the slow mottling stays.
+- **Rear grille.** Each square cell is sampled at 16 angles so its corners are
+  included; 12 samples at 30 degrees missed them and left a diamond hole at every
+  junction (also fixed at the source in `remodel_instrument.py`).
+- **Handles** (`refine_handles.py`) are formed from straight runs and constant
+  radius bends in single planes, instead of Auto Bezier handles through a bow-out
+  point (an S wobble and a kink where the bend met the grip).
+- **Margins.** The keyword row sits .06 higher to clear the CRT hood; the filter
+  numbers under each window are removed because the LED module prints its own.
+  The phase panel takes the clock's width, centred between the keypad and the deck
+  edge, with its print relaid to the modeled dividers. The roster frame is drawn
+  in toward its cassettes. The bottom rail and the vector monitor panel grow so the
+  drive and the legend row have margins. FREQ sits under its own dial, the WAVE
+  glyphs hug the WAVE dial, LOCK heads its lamp, INPUT and CAL OUT label their jacks,
+  and the scope knurls are moulded phenolic. COPY sits inside its header band and
+  ROOM CODE aligns with the tube bay. Rear legends move clear of the cable leads.
+- **Page chrome.** The framing keeps 44 px below the machine for the flip hint;
+  the disk hint shows for a few seconds and on hover or focus, flipping above the
+  drive when there is no room below; the terminal status is a one-row strip above
+  the machine instead of a box over the chassis corner.
 
 ## Rear audio slides — 2026-09-22
 
