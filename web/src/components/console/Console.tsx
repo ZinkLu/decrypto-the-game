@@ -7,7 +7,7 @@ import { ConsoleMusic, readMusicPreferences, saveMusicPreferences, type MusicPre
 import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, syncDiskPower, initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, syncKeyDisk, advanceKeyDisk, actKeyDisk, keyDiskDurations } from './model';
 import type { WordDisplay } from './dotMatrix';
 import { defaultDotFilter, dotFilterOptions, readDotFilter, readWordScale, type DotFilter } from './dotFiltering';
-import { paint, knobLabel } from './paint';
+import { paint, paintClock, knobLabel } from './paint';
 import { qualityChoices, qualityProfiles, describeQuality, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import ArchiveSheet from './ArchiveSheet';
 import MobileConsole from './MobileConsole';
@@ -102,16 +102,18 @@ export default function Console() {
     const controls = useRef(new Map<string, HTMLElement>());
     // Analog input updates targets and hardware, without repainting all the
     // game screens and the long receipt for each fraction of a knob turn.
-    const paintKey = JSON.stringify({ ...u, keyDisk: { ...u.keyDisk, pull: u.keyDisk.pull ? { ...u.keyDisk.pull, amount: 0 } : undefined }, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
+    // The countdown only repaints its clock.
+    const paintKey = JSON.stringify({ ...u, seconds: 0, keyDisk: { ...u.keyDisk, pull: u.keyDisk.pull ? { ...u.keyDisk.pull, amount: 0 } : undefined }, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
     const painted = useMemo(() => paint(displayState, u, inspection, guideArt), [displayState, paintKey, diskFontReady, guideArt]);
-    const content = useMemo(() => ({ ...painted, targets: [...painted.targets, ...Object.keys(handleSurfaces).filter(surface =>
+    const clock = useMemo(() => paintClock(displayState, u), [displayState, paintKey, u.seconds]);
+    const content = useMemo(() => ({ ...painted, frames: { ...painted.frames, clock }, targets: [...painted.targets, ...Object.keys(handleSurfaces).filter(surface =>
         inspection || surface.includes('Rear') === u.backView).map<Target>(surface => ({
             id: surface, surface, x: 0, y: 0, w: 1, h: 1,
             label: translate(u.locale, surface.includes('Rear') ? '点击把手连接处，回到正面' :
                 surface.includes('Left') ? '向右拖动左把手，翻到背面' : '向左拖动右把手，翻到背面'),
         }))].map(target =>
         isScopeControl(target.id) ? { ...target, label: knobLabel(target.id, u) } : target) }),
-        [painted, u.scopeFreq, u.scopeWave, u.scopeRate, u.scopeAxis, u.meterAmplitude, u.meterRate]);
+        [painted, clock, u.scopeFreq, u.scopeWave, u.scopeRate, u.scopeAxis, u.meterAmplitude, u.meterRate]);
     const current = useRef({ s, u, content, level });
     current.current = { s, u, content, level };
     const pending = useRef(false);
@@ -430,7 +432,11 @@ export default function Console() {
     }, [viewKey]);
     useEffect(() => {
         if (preview) return;
-        const update = () => setU(old => ({ ...old, seconds: s.deadline ? Math.max(0, Math.ceil((s.deadline - Date.now()) / 1000)) : 0 }));
+        // Polled four times a second, but the console re-renders only when the second changes.
+        const update = () => setU(old => {
+            const seconds = s.deadline ? Math.max(0, Math.ceil((s.deadline - Date.now()) / 1000)) : 0;
+            return seconds === old.seconds ? old : { ...old, seconds };
+        });
         update();
         if (!s.deadline) return;
         const timer = window.setInterval(update, 250);

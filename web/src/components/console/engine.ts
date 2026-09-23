@@ -24,7 +24,7 @@ import { paperTooth, paperTextureLength, receiptHeadPath, diskSeatTravel, diskEj
 import { ReceiptTransport, paperStillFrame } from './tearing';
 import { ConsoleInstruments } from './instruments';
 import type { ConsoleSound } from './sound';
-import { qualityProfiles, type QualityProfile } from './quality';
+import { qualityProfiles, ambientRate, type QualityProfile } from './quality';
 import { gameFraming, handleSurfaces, inspectionZoom, type HandleSide } from './view';
 
 type TubeFrame = { id: string; frame?: Frame; palette?: Content['wordTube'] };
@@ -86,6 +86,7 @@ export class ConsoleEngine {
     private backdrop?: THREE.Mesh;
     private observer: ResizeObserver;
     private raf = 0;
+    private sleep = 0;
     private disposed = false;
     private last = 0;
     private width = 1;
@@ -176,6 +177,10 @@ export class ConsoleEngine {
     private rendered = 0;
     private ambientOwed = false;
     private scopeDrawn = 0;
+    // Ambient frames slow down while nobody is at the console (`ambientRate`).
+    private lastInput = performance.now();
+    private focused = document.hasFocus();
+    private feeding = false;
     private quality: QualityProfile = qualityProfiles.high;
     private studio: { light: THREE.Light; intensity: number }[] = [];
     private areaLights: THREE.RectAreaLight[] = [];
@@ -187,7 +192,6 @@ export class ConsoleEngine {
     private probing?: { warm: number; done: (cost: number) => void };
     private paperShadowSkip = 0;
     private frameHashes = new Map<string, number>();
-    private hashCanvas = document.createElement('canvas');
     private boundsEye = new THREE.Vector3();
     private boundsPoint = new THREE.Vector3();
     private reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -201,6 +205,16 @@ export class ConsoleEngine {
     private scopeBloomCanvas = document.createElement('canvas');
     private scopeGlow?: ImageData;
     private onContextLost = (e: Event) => { e.preventDefault(); this.fail(translate(this.locale, '图形连接已中断，请刷新终端。')); };
+    private onInput = () => { this.lastInput = performance.now(); this.wake(); };
+    private onFocus = () => { this.focused = true; this.lastInput = performance.now(); this.wake(); };
+    private onBlur = () => { this.focused = false; };
+    /** Anything that can change the machine asks for a frame; a still machine sleeps between ambient frames. */
+    private wake = () => {
+        if (this.disposed) return;
+        clearTimeout(this.sleep);
+        this.sleep = 0;
+        if (!this.raf) this.raf = requestAnimationFrame(this.tick);
+    };
     private onInspectionDown = (e: PointerEvent) => {
         if (!this.inspectionEnabled || this.handleDrag !== undefined || this.archiveOpen) return;
         const control = e.target instanceof Element && e.target.closest('button, input, a, textarea');
@@ -252,6 +266,10 @@ export class ConsoleEngine {
         this.renderer.domElement.setAttribute('aria-hidden', 'true');
         this.renderer.domElement.addEventListener('webglcontextlost', this.onContextLost);
         host.prepend(this.renderer.domElement);
+        for (const type of ['pointerdown', 'pointermove', 'keydown', 'wheel'] as const)
+            window.addEventListener(type, this.onInput, { capture: true, passive: true });
+        window.addEventListener('focus', this.onFocus);
+        window.addEventListener('blur', this.onBlur);
         if (this.inspectionEnabled) {
             host.dataset.inspection = 'enabled';
             host.addEventListener('pointerdown', this.onInspectionDown, true);
@@ -340,7 +358,7 @@ export class ConsoleEngine {
         this.observer = new ResizeObserver(() => this.resize());
         this.observer.observe(host);
         this.applyQuality();
-        this.raf = requestAnimationFrame(this.tick);
+        this.wake();
     }
     async load() {
         // Geometry and projected labels must always share a revision, including
@@ -932,6 +950,8 @@ export class ConsoleEngine {
     }
     update(content: Content, local: HardwareState) {
         this.dirty = true;
+        this.wake();
+        this.hashFrames(Object.values(content.frames).map(frame => frame.canvas));
         const hardware = consoleHardware(local);
         const resuming = content.connected && !this.content?.connected;
         if (content.connected && content.trafficKey !== this.content?.trafficKey) this.trafficUntil = performance.now() + 140;
@@ -1029,6 +1049,7 @@ export class ConsoleEngine {
         this.dotFilter = filter;
         for (const name of this.dotModules.keys()) this.planes.get(name)!.material.needsUpdate = true;
         this.dirty = true;
+        this.wake();
     }
     /** Swaps the keyword windows' hardware; the newly fitted modules start from cold. */
     private fitWordDisplay(display: WordDisplay) {
@@ -1098,21 +1119,35 @@ export class ConsoleEngine {
     // upload whenever a surface's pixels are unchanged (the 840x2630 paper
     // texture is by far the most expensive upload).
     private canvasHashes = new WeakMap<HTMLCanvasElement, number>();
+    /**
+     * Every readback waits for the GPU, so a repaint's canvases are reduced into
+     * one atlas and read once (26 ms for 61 surfaces one by one, 6 ms together).
+     * Mipmapped reduction averages each whole cell, so a small glyph still counts.
+     */
+    private hashFrames(canvases: HTMLCanvasElement[]) {
+        const fresh = [...new Set(canvases)].filter(canvas => !this.canvasHashes.has(canvas));
+        if (!fresh.length) return;
+        const size = 32, columns = 8;
+        // A new atlas each time: Chrome moves a canvas read back repeatedly to the CPU.
+        const atlas = document.createElement('canvas');
+        atlas.width = size * columns;
+        atlas.height = size * Math.ceil(fresh.length / columns);
+        const c = atlas.getContext('2d')!;
+        c.imageSmoothingQuality = 'medium';
+        fresh.forEach((canvas, i) => c.drawImage(canvas, i % columns * size, Math.floor(i / columns) * size, size, size));
+        const data = c.getImageData(0, 0, atlas.width, atlas.height).data;
+        fresh.forEach((canvas, i) => {
+            let hash = (2166136261 ^ Math.imul(canvas.width, 73856093) ^ Math.imul(canvas.height, 19349663)) | 0;
+            for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+                const p = ((Math.floor(i / columns) * size + y) * atlas.width + i % columns * size + x) * 4;
+                hash = Math.imul(hash ^ (data[p] | data[p + 1] << 8 | data[p + 2] << 16 | data[p + 3] << 24), 16777619);
+            }
+            this.canvasHashes.set(canvas, hash);
+        });
+    }
     private frameHash(canvas: HTMLCanvasElement) {
-        const cached = this.canvasHashes.get(canvas);
-        if (cached !== undefined) return cached;
-        const size = 32;
-        this.hashCanvas.width = size;
-        this.hashCanvas.height = size;
-        const c = this.hashCanvas.getContext('2d', { willReadFrequently: true })!;
-        c.clearRect(0, 0, size, size);
-        c.drawImage(canvas, 0, 0, size, size);
-        const data = c.getImageData(0, 0, size, size).data;
-        let hash = (2166136261 ^ Math.imul(canvas.width, 73856093) ^ Math.imul(canvas.height, 19349663)) | 0;
-        for (let i = 0; i < data.length; i += 4)
-            hash = Math.imul(hash ^ (data[i] | data[i + 1] << 8 | data[i + 2] << 16 | data[i + 3] << 24), 16777619);
-        this.canvasHashes.set(canvas, hash);
-        return hash;
+        this.hashFrames([canvas]);
+        return this.canvasHashes.get(canvas)!;
     }
     /** Returns whether the surface's pixels changed. */
     private updateFrame(name: string, frame: Frame) {
@@ -1198,18 +1233,23 @@ export class ConsoleEngine {
             }
         }
     }
-    testLamps() { if (this.powerOn) { this.testUntil = performance.now() + 1800; this.dirty = true; } }
+    testLamps() { if (this.powerOn) { this.testUntil = performance.now() + 1800; this.dirty = true; this.wake(); } }
+    private indicatorState = -1;
+    /** Returns whether a lamp went on or off, which the frame has to show even when nothing moves. */
     private syncIndicators(now: number) {
         const testing = this.powerOn && now < this.testUntil;
         const linked = this.powerOn && !(this.unpluggedCables & 1);
+        const traffic = !!this.content?.connected && now < this.trafficUntil;
+        const state = +testing | +linked << 1 | +traffic << 2 | +!!this.content?.connected << 3 | +this.powerOn << 4;
+        const switched = state !== this.indicatorState;
+        this.indicatorState = state;
         if (this.connectionLamp) {
             this.connectionLamp.emissive.set(this.content?.connected || testing ? '#328248' : '#a66318');
             this.connectionLamp.emissiveIntensity = testing ? .7 : !linked ? 0 : this.content?.connected ? .5 : .16;
         }
         this.networkLamps.forEach((material, index) => {
             material.emissive.set(index ? '#c89336' : '#328248');
-            material.emissiveIntensity = testing ? .8 : !linked ? 0 : index === 0 ? .5 :
-                this.content?.connected && now < this.trafficUntil ? .8 : 0;
+            material.emissiveIntensity = testing ? .8 : !linked ? 0 : index === 0 ? .5 : traffic ? .8 : 0;
         });
         if (this.testLamp?.material instanceof THREE.MeshStandardMaterial) {
             this.testLamp.material.emissive.set('#80dc65');
@@ -1218,12 +1258,14 @@ export class ConsoleEngine {
         if (testing && this.scopeLamp) this.scopeLamp.material.emissiveIntensity = this.scopeLamp.intensity;
         for (const [material, color] of this.indicatorColors)
             material.color.copy(color).multiplyScalar(material.emissiveIntensity > 0 ? 1 : .14);
+        return switched;
     }
     private clearScopePersistence() {
         this.monitor.clear();
     }
     pulse(id: string) {
         this.pulses.set(id, performance.now());
+        this.wake();
     }
     private syncPaperGeometry() {
         if (!this.paper) return;
@@ -1291,7 +1333,9 @@ export class ConsoleEngine {
     /** Cost in ms of one frame at the current quality, measured once `warm` frames have settled the pipelines. */
     probe(warm = 8) {
         this.probing?.done(NaN);
-        return new Promise<number>(done => { this.probing = { warm, done }; });
+        const cost = new Promise<number>(done => { this.probing = { warm, done }; });
+        this.wake();
+        return cost;
     }
     /**
      * Reading a pixel back makes the GPU's share of a frame count, whatever
@@ -1331,19 +1375,22 @@ export class ConsoleEngine {
         this.flipDirection = side === 'left' ? 1 : -1;
         this.handleDrag = 0;
         this.inspectionTargetYaw = this.inspectionTargetPitch = 0;
+        this.wake();
         return true;
     }
-    pullHandle(progress: number) { this.handleDrag = progress; }
-    releaseHandle() { this.handleDrag = undefined; }
+    pullHandle(progress: number) { this.handleDrag = progress; this.wake(); }
+    releaseHandle() { this.handleDrag = undefined; this.wake(); }
     turnTo(back: boolean, side: HandleSide = 'left') {
         if (back) this.flipDirection = side === 'left' ? 1 : -1;
         this.inspectionTargetYaw = this.inspectionTargetPitch = 0;
         this.handleDrag = undefined;
         this.backView = back;
+        this.wake();
     }
     resetInspection() {
         this.inspectionTargetYaw = this.inspectionTargetPitch = 0;
         this.zoomTarget = 1;
+        this.wake();
     }
     private resize() {
         this.width = this.host.clientWidth;
@@ -1351,6 +1398,7 @@ export class ConsoleEngine {
         this.renderer.setSize(this.width, this.height, false);
         this.fitCamera();
         this.dirty = true;
+        this.wake();
         this.project();
         // ResizeObserver fires after the frame's draw; repaint the cleared canvas.
         if (this.width > 0 && this.height > 0) this.renderer.render(this.scene, this.camera);
@@ -1449,6 +1497,7 @@ export class ConsoleEngine {
     setKeyDisk(disk: KeyDiskState) {
         this.keyDisk = disk;
         if (this.applyKeyDisk(performance.now())) this.dirty = true;
+        this.wake();
     }
     private applyDiskTravel() {
         // The exported guide axis is perpendicular to the fascia. Keep lateral
@@ -1489,11 +1538,13 @@ export class ConsoleEngine {
         return changed;
     }
     private tick = (now: number) => {
+        this.raf = 0;
         if (this.disposed)
             return;
-        this.raf = requestAnimationFrame(this.tick);
-        if (document.hidden || now - this.last < 16)
+        if (document.hidden || now - this.last < 16) {
+            this.raf = requestAnimationFrame(this.tick);
             return;
+        }
         const dt = Math.min((now - this.last) / 1000, .1);
         this.last = now;
         let changed = false, ambient = false;
@@ -1578,7 +1629,9 @@ export class ConsoleEngine {
             // Also start the reader for a queued reopening after refill.
             this.beginPaperReader();
         }
-        this.setPaperFeed(feeding);
+        // Asked every frame while the rollers turn (a start can still be refused), once when they stop.
+        if (feeding || this.feeding) this.setPaperFeed(feeding);
+        this.feeding = feeding;
         const manualDepth = this.manualDepth;
         this.manualDepth = this.reduced.matches ? (this.manual ? .035 : 0) : THREE.MathUtils.damp(this.manualDepth, this.manual ? .035 : 0, 20, dt);
         if (this.manualKey) this.manualKey.position.z = .85 - this.manualDepth;
@@ -1682,7 +1735,7 @@ export class ConsoleEngine {
             }
             if (flag.motion.consumeImpact()) this.playSound('score');
         }
-        this.syncIndicators(now);
+        if (this.syncIndicators(now)) changed = true;
         if (previousFlip !== this.flipProgress || oldBatteryAngle !== this.batteryAngle) { this.project(); changed = true; }
         const diskChanged = this.applyKeyDisk(now);
         if (diskChanged) this.project();
@@ -1727,14 +1780,16 @@ export class ConsoleEngine {
         }
         const live = this.powerOn && !this.reduced.matches;
         // Power-on keeps the CRT raster, scope and needle alive. Frames that
-        // carry nothing else are ambient and paced by the quality level; any
-        // state the player changed (`dirty`, `changed`) renders at once. A
-        // stage without a size (the phone layout hides it) renders nothing.
+        // carry nothing else are ambient, paced by the quality level and slower
+        // still while nobody is at the console; any state the player changed
+        // (`dirty`, `changed`) renders at once. A stage without a size (the
+        // phone layout hides it) renders nothing.
         const probing = this.probing;
         // A paced-out needle movement stays owed, so its resting pose is drawn.
         this.ambientOwed ||= ambient;
+        const pace = ambientRate(this.quality, this.focused, now - this.lastInput);
         const due = this.width > 0 && this.height > 0 && (changed || this.dirty || !!probing ||
-            (live || this.ambientOwed) && now - this.rendered >= 1000 / this.quality.ambientFps - 2);
+            (live || this.ambientOwed) && now - this.rendered >= 1000 / pace - 2);
         if (due && this.flipProgress < .65 && (live || this.dirty)) {
             // The beam runs for all the time since the phosphor was last shown.
             this.drawScope(Math.min((now - this.scopeDrawn) / 1000, .1));
@@ -1762,9 +1817,24 @@ export class ConsoleEngine {
             this.renderer.domElement.dataset.drawCalls = String(this.renderer.info.render.calls);
             this.renderer.domElement.dataset.triangles = String(this.renderer.info.render.triangles);
             this.renderer.domElement.dataset.face = this.backView ? 'rear' : 'front';
+            this.renderer.domElement.dataset.ambientPace = String(pace);
             this.scopeFrames = 0;
             this.scopeFpsStarted = now;
         }
+        // Motion, a change still to draw or a measurement: every display frame.
+        // Otherwise sleep until just before the next ambient frame or lamp
+        // timeout; input and every public call wake the loop at once.
+        if (this.raf) return;
+        const visible = this.width > 0 && this.height > 0;
+        if (changed || visible && (this.dirty || !!this.probing)) {
+            this.raf = requestAnimationFrame(this.tick);
+            return;
+        }
+        const next = Math.min(visible && (live || this.ambientOwed) ? this.rendered + 1000 / pace - 2 : Infinity,
+            ...[this.testUntil, this.trafficUntil].filter(until => until > now), now + 500);
+        // A frame request must land in the display interval before the one that is due.
+        clearTimeout(this.sleep);
+        this.sleep = window.setTimeout(this.wake, Math.max(0, next - performance.now() - 12));
     };
     private drawScopeGraticule() {
         const c = this.scopeGridCanvas.getContext('2d')!;
@@ -1863,8 +1933,13 @@ export class ConsoleEngine {
         this.probing?.done(NaN);
         this.probing = undefined;
         cancelAnimationFrame(this.raf);
+        clearTimeout(this.sleep);
         this.observer.disconnect();
         this.renderer.domElement.removeEventListener('webglcontextlost', this.onContextLost);
+        for (const type of ['pointerdown', 'pointermove', 'keydown', 'wheel'] as const)
+            window.removeEventListener(type, this.onInput, true);
+        window.removeEventListener('focus', this.onFocus);
+        window.removeEventListener('blur', this.onBlur);
         this.host.removeEventListener('pointerdown', this.onInspectionDown, true);
         this.host.removeEventListener('pointermove', this.onInspectionMove, true);
         this.host.removeEventListener('pointerup', this.finishInspection, true);

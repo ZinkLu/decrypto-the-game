@@ -574,7 +574,7 @@ export const messages: Record<string, string> = {
     "关": "off",
     "CRT 光学完整": "Full CRT optics",
     "CRT 光学简化": "Simplified CRT optics",
-    "待机 {0} 帧": "Idle {0} fps"
+    "氛围动画 {0} 帧": "Ambient motion {0} fps"
 };
 export function translate(locale: Locale, message: string, values: unknown[] = []): string {
     let source = locale === 'en' ? messages[message] ?? message : message;

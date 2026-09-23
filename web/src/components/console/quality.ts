@@ -19,7 +19,7 @@ export interface QualityProfile {
     nixieCover: boolean;
     /** `lite` drops refraction through the faceplate, halation and colour fringing. */
     crtOptics: 'full' | 'lite';
-    /** Rate of frames in which only the raster, the beam and the needle move. */
+    /** Rate of frames in which only the raster, the beam and the needle move, while someone is at the console. */
     ambientFps: number;
     /** CSS blur behind the archive sheet, composited over the live canvas. */
     backdropBlur: boolean;
@@ -40,9 +40,21 @@ export function describeQuality(profile: QualityProfile, t: (message: string, va
         state('屏幕玻璃', profile.screenGlass),
         state('辉光管罩', profile.nixieCover),
         t(profile.crtOptics === 'full' ? 'CRT 光学完整' : 'CRT 光学简化'),
-        t('待机 {0} 帧', [profile.ambientFps]),
+        t('氛围动画 {0} 帧', [profile.ambientFps]),
         state('背景模糊', profile.backdropBlur),
     ].join(' · ');
+}
+
+/**
+ * Nobody watches ambient motion closely when nobody is at the console. After
+ * `idleAfter` ms without a pointer, key or wheel event it runs at no more than
+ * `idleFps`, and in a background window at no more than `backgroundFps`, the
+ * scope's 20 fps step. Frames that carry a change still render at once.
+ */
+export const ambientPace = { idleAfter: 10000, idleFps: 30, backgroundFps: 20 };
+export function ambientRate(profile: QualityProfile, focused: boolean, idleFor: number) {
+    if (!focused) return Math.min(profile.ambientFps, ambientPace.backgroundFps);
+    return idleFor >= ambientPace.idleAfter ? Math.min(profile.ambientFps, ambientPace.idleFps) : profile.ambientFps;
 }
 
 // A level is kept when one fully synchronised frame fits here, which leaves the

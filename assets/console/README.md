@@ -448,7 +448,7 @@ size renders nothing at all.
 | `screenGlass` (physical glass on six CRTs) | on | on | off | 22% / 10% |
 | `nixieCover` (clearcoat acrylic, tube glass) | on | on | off | 15% / 8% |
 | `crtOptics` | full | full | lite | up to 15% / 12% |
-| `ambientFps` | 60 | 30 | 30 | halves the steady load |
+| `ambientFps` while someone is at the console | 60 | 30 | 30 | halves the steady load |
 | `backdropBlur` behind the archive sheet | on | on | off | not measured |
 
 Savings were measured one switch at a time on the late-game console at 2880x1800
@@ -470,6 +470,36 @@ it is fixed when the context is created. The 645k triangles are not the bottlene
   the scope runs its beam for all the time since the phosphor was last shown.
   Quality never shortens or removes an interaction animation, and it is
   independent of `prefers-reduced-motion`.
+- Ambient motion also slows when nobody is at the console, at every level
+  (`ambientRate`): after 10 s without a pointer, key or wheel event it runs at
+  no more than 30 fps, and in a background window at no more than 20 fps, the
+  scope's step (`maxStep`). The next input restores the level's own rate.
+- Between frames the loop sleeps. A tick that drew nothing and has nothing
+  moving sets a timer for just before the next ambient frame or lamp timeout
+  instead of asking for every display refresh; input and every public engine
+  call wake it at once. Powered off, it wakes only for changes.
+
+Idle cost, measured on 2026-09-23 with the late-game console in a 5K-display
+window (5120x2600 canvas, high, M4 Max; GPU time per process from the
+accelerator's `accumulatedGPUTime`, CPU energy from `proc_pid_rusage`):
+
+| State | Before | After |
+| --- | --- | --- |
+| Using the console | 60 fps, GPU busy 39%, CPU 0.86 W | unchanged |
+| Idle 10 s | 60 fps, GPU busy 36%, CPU 0.77 W | 30 fps, 17%, 0.26 W |
+| Background window | 60 fps, GPU busy 35%, CPU 0.79 W | 20 fps, 12%, 0.16 W |
+| Powered off | 175 wakeups/s, main thread 2.1% | 58 wakeups/s, 0.1% |
+
+Every frame at this size costs about 2.3 ms of GPU even when it draws a single
+pixel (clearing, resolving and compositing the multisampled 5K buffer), so a
+frame not drawn saves far more than a partial redraw would: scissoring ambient
+frames to the animated screens saved only about a fifth.
+
+The phase clock is painted on its own (`paintClock`), so a countdown second
+repaints one 520x218 texture instead of all 61 surfaces. Whole repaints hash
+their canvases through one mipmapped atlas and a single readback instead of one
+readback per canvas (6 ms instead of 26 ms). A countdown second fell from 31 ms
+(up to 48 ms) of main thread to 8 ms.
 - Auto measures instead of guessing from hardware names. After the first frames
   it renders back to back for a quarter second, reading one pixel back per frame
   so the GPU's share counts; the burst is needed because an idle GPU clocks down

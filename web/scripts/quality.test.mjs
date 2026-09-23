@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const load = async name => import(`data:text/javascript;base64,${Buffer.from(compile(await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8'))).toString('base64')}`);
-const { qualityChoices, qualityProfiles, describeQuality, settleQuality, frameBudget,
+const { qualityChoices, qualityProfiles, describeQuality, settleQuality, frameBudget, ambientPace, ambientRate,
   readQuality, saveQuality, readAutoQuality, saveAutoQuality } = await load('quality');
 const { translate, messages } = await load('i18n');
 
@@ -31,6 +31,18 @@ test('the settings hint names every switch of a level in both languages', () => 
     if (locale === 'en') assert.ok(!/[㐀-鿿]/.test(hint), hint);
   }
   for (const label of ['画质', '自动', '高', '中', '低']) assert.ok(messages[label]);
+});
+
+test('ambient motion slows once nobody is at the console, never below the scope step', () => {
+  const { high } = qualityProfiles;
+  assert.equal(ambientRate(high, true, 0), 60, 'someone at the console sees the level\'s own rate');
+  assert.equal(ambientRate(high, true, ambientPace.idleAfter - 1), 60);
+  assert.equal(ambientRate(high, true, ambientPace.idleAfter), 30, 'an idle console halves its ambient frames');
+  assert.equal(ambientRate(high, false, 0), 20, 'a background window keeps only the scope\'s step');
+  for (const profile of Object.values(qualityProfiles)) for (const focused of [true, false]) for (const idleFor of [0, 9999, 10000, 600000]) {
+    const rate = ambientRate(profile, focused, idleFor);
+    assert.ok(rate <= profile.ambientFps && rate >= 20, `${rate} fps`);
+  }
 });
 
 test('auto keeps a level that fits the frame budget and only ever steps down', () => {

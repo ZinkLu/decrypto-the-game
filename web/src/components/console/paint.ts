@@ -225,6 +225,31 @@ function segmentDigit(c: CanvasRenderingContext2D, value: string, x: number, y: 
     }
     c.restore();
 }
+/**
+ * The phase clock is the only surface that changes every second, so it is also
+ * painted on its own: a countdown then repaints and uploads one small texture.
+ */
+export function paintClock(s: StationState, u: LocalState): Frame {
+    const h = consoleHardware(u, s);
+    const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
+    const canvas = document.createElement('canvas');
+    canvas.width = 520;
+    canvas.height = 218;
+    const cl = canvas.getContext('2d')!;
+    cl.fillStyle = '#16140f';
+    round(cl, 0, 0, 520, 218, 12);
+    cl.fill();
+    const running = h.online && !['home', 'room', 'round_result', 'game_over'].includes(s.phase);
+    const seconds = Math.max(0, Math.floor(u.seconds));
+    const timer = running ? `${String(Math.floor(seconds / 60)).padStart(2, '0')}${String(seconds % 60).padStart(2, '0')}` : '----';
+    const glow = h.powered ? running ? seconds <= 15 ? '#ed8960' : '#efb663' : '#65563a' : '#2a2620';
+    [34, 141, 288, 395].forEach((x, i) => segmentDigit(cl, timer[i], x, 25, glow));
+    cl.fillStyle = glow;
+    cl.fillRect(257, 61, 10, 10); cl.fillRect(257, 111, 10, 10);
+    line(cl, 34, 174, 446, '#3e3a30');
+    text(cl, running ? t("阶段余时 · 约") : t("等待行动"), 34, 199, 22, h.powered ? '#a39b79' : '#4b483a');
+    return { canvas, width: 520, height: 218 };
+}
 // Static phosphor falloff; the shared GPU shader draws the raster and halation.
 export function crtFinish(c: CanvasRenderingContext2D, width: number, height: number, ruby = false) {
     c.save(); c.setTransform(1, 0, 0, 1, 0, 0);
@@ -671,16 +696,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     target('scopeRateKnob', 'scope-rate', knobLabel('scope-rate', u), 0, 0, 100, 100);
     frame('scopePersistenceKnob', 100, 100);
     target('scopePersistenceKnob', 'scope-xy', knobLabel('scope-xy', u), 0, 0, 100, 100);
-    const cl = frame('clock', 520, 218, '#111a17');
-    const running = h.online && hasGame && !['round_result', 'game_over'].includes(s.phase);
-    const seconds = Math.max(0, Math.floor(u.seconds));
-    const timer = running ? `${String(Math.floor(seconds / 60)).padStart(2, '0')}${String(seconds % 60).padStart(2, '0')}` : '----';
-    const glow = h.powered ? running ? seconds <= 15 ? '#ed8960' : '#efb663' : '#65563a' : '#252b21';
-    [34, 141, 288, 395].forEach((x, i) => segmentDigit(cl, timer[i], x, 25, glow));
-    cl.fillStyle = glow;
-    cl.fillRect(257, 61, 10, 10); cl.fillRect(257, 111, 10, 10);
-    line(cl, 34, 174, 446, '#3b4030');
-    text(cl, running ? t("阶段余时 · 约") : t("等待行动"), 34, 199, 22, h.powered ? '#a39b79' : '#4b483a');
+    frames.clock = paintClock(s, u);
     for (let i = 0; i < 5; i++) {
         const k = frame('key' + i, 180, 200);
         const enabled = r.guess && r.active && h.online && !s.recovering && !u.manual && !u.about;
