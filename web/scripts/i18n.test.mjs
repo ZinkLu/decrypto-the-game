@@ -60,7 +60,7 @@ test('language switching preserves user text and fixed legends while localizing 
   assert.equal(word('未翻译'), '未翻译'); assert.equal(word('未翻译', 'en'), '未翻译');
 });
 test('translation parameters preserve braces and placeholders in player text', () => {
-  assert.equal(translate('en', '本轮加密者：{0}', ['{1}']), 'Encryptor: {1}');
+  assert.equal(translate('en', '加密者 {0}', ['{1}']), 'Encryptor {1}');
   for (const [zh, en] of Object.entries(messages)) {
     const fields = value => [...value.matchAll(/\{\d+\}/g)].map(m => m[0]).sort();
     assert.deepEqual(fields(zh), fields(en), zh);
@@ -245,13 +245,86 @@ test('results reveal only the current public history code, never private encrypt
   assert.deepEqual(output.filter(text => /^[1-4]$/.test(text)), ['3', '1', '4']);
 });
 
-test('illustrated guide identifies the private draw and shows complete past turns in all themes', () => {
+test('illustrated guide turns through four pages and keeps every worked example', () => {
   for (const theme of ['classic', 'radio', 'amber', 'violet']) {
-    const output = paint(fixture('home'), { ...initialLocal, theme, manual: true });
-    const text = output.frames.screen.canvas.ink;
+    const pages = [0, 1, 2, 3].map(guidePage => paint(fixture('home'), { ...initialLocal, theme, manual: true, guidePage }));
+    const text = pages.flatMap(output => output.frames.screen.canvas.ink);
     for (const label of ['加密者抽到的密码', '公开线索 · 只说词，不说编号', '前几轮的线索与答案',
       '微光 · 沙滩 · 花束', '港口 · 潮汐 · 迁徙', '刺 · 光束 · 远行', '1·2·3', '1·2·4', '3·1·4']) assert.ok(text.includes(label), `${theme}: ${label}`);
     assert.ok(!text.includes('仅加密者可见'), 'the redundant private-code block is removed');
-    assert.ok(output.targets.some(t => t.href?.includes('boardgamegeek.com')));
+    assert.ok(pages[3].targets.some(t => t.href?.includes('boardgamegeek.com')), 'the last page links to the original game');
+    pages.forEach((output, page) => {
+      // One dot per page: the lit one is where you are, the others turn straight to theirs.
+      const dots = output.targets.filter(t => t.id.startsWith('guide-page-'));
+      assert.deepEqual(dots.map(t => !!t.disabled), [0, 1, 2, 3].map(i => i === page));
+      assert.equal(!!output.targets.find(t => t.id === 'guide-prev'), page > 0);
+      assert.ok(output.targets.find(t => t.id === (page < 3 ? 'guide-next' : 'guide-done')));
+      assert.ok(output.frames.screen.canvas.ink.some(value => value.includes(`${page + 1} / 4`)), `page ${page + 1} names its place`);
+      assert.deepEqual(output.targets.filter(t => t.id.startsWith('key-')).map(t => !t.disabled), [true, true, true, true, page > 0], 'the keypad turns pages');
+    });
+    const first = pages[0].frames.screen.canvas.ink, last = pages[3].frames.screen.canvas.ink;
+    assert.ok(!first.includes('3·1·4 ✓') && last.includes('3·1·4 ✓'), 'each page carries its own step');
+  }
+});
+
+test('a briefing takes the glass before each beat, then hands over to the working page', async () => {
+  const { briefingKey } = await import(modelUrl);
+  const s = previewState({}, 'encrypting');
+  const brief = briefingKey(s);
+  const briefed = paint(s, { ...initialLocal, brief }), working = paint(s, initialLocal);
+  assert.ok(!briefed.targets.some(t => t.kind === 'input'), 'no clue can be typed under the briefing');
+  assert.equal(briefed.targets.find(t => t.surface === 'screen').id, 'brief-skip', 'the whole glass skips ahead');
+  assert.ok(briefed.targets.find(t => t.id === 'manual'), 'the guide key stays reachable');
+  assert.equal(briefed.screenSignal, brief);
+  assert.equal(working.screenSignal, '');
+  assert.notEqual(briefed.screenPage, working.screenPage, 'the working page is written out anew');
+  assert.ok(working.targets.some(t => t.id === 'clue-0' && t.kind === 'input'));
+  assert.ok(paint({ ...s, phase: 'intercept' }, { ...initialLocal, brief }).targets.every(t => t.id !== 'brief-skip'), 'a stale briefing never covers another beat');
+  const ink = briefed.frames.screen.canvas.ink;
+  for (const text of ['加密', '拦截', '解码', '进行中', '稍后', 'B 队']) assert.ok(ink.includes(text), text);
+  assert.ok(ink.some(value => value.startsWith('你来加密')), 'the encryptor learns their task');
+  assert.deepEqual(briefed.screenBlink.map(cell => cell.kind), ['cursor'], 'the station in progress blinks');
+  const early = paint({ ...previewState({}, 'decrypt'), round: 2 }, { ...initialLocal, brief: briefingKey({ ...s, round: 2, phase: 'decrypt' }) }).frames.screen.canvas.ink;
+  assert.ok(early.includes('本轮跳过') && early.some(value => value.startsWith('前两次发报不拦截')), 'early rounds say why nobody intercepts');
+});
+
+test('watching screens blink the slot being worked on and keep the round in the header', () => {
+  const s = previewState({}, 'waiting');
+  const out = paint(s, initialLocal), ink = out.frames.screen.canvas.ink;
+  assert.ok(ink.includes('正在写这一条…'));
+  assert.equal(ink.filter(value => value === '已写好').length, 2);
+  assert.ok(ink.some(value => value.includes('A 队发报')) && ink.some(value => value.includes('加密者 Alice')), 'the header names the round');
+  assert.deepEqual(out.screenBlink.map(cell => cell.kind).sort(), ['cursor', 'live']);
+  const cursor = out.screenBlink.find(cell => cell.kind === 'cursor');
+  assert.ok(cursor.y > 239 + 2 * 92 - 30 && cursor.y < 239 + 2 * 92 + 60, 'the third line blinks');
+  const quiet = paint({ ...s, playerProgress: null }, initialLocal);
+  assert.deepEqual(quiet.screenBlink.map(cell => cell.kind), ['live'], 'before any progress only the link lamp breathes');
+  assert.ok(quiet.frames.screen.canvas.ink.some(value => value.startsWith('链路已接通')));
+  assert.deepEqual(paint(s, { ...initialLocal, unpluggedCables: 1 }).screenBlink, [], 'nothing blinks offline');
+  const guessing = paint(previewState({}, 'decrypt'), initialLocal);
+  assert.deepEqual(guessing.screenBlink.map(cell => cell.kind), ['cursor'], 'the keypad cursor marks the empty slot');
+  const intercepting = paint(previewState({}, 'watch-intercept'), initialLocal).frames.screen.canvas.ink;
+  assert.ok(intercepting.includes('推敲中') && intercepting.includes('2') && intercepting.includes('1'), 'the encryptor watches the rivals pick');
+});
+
+test('results show both answers beside the revealed code', () => {
+  const s = fixture('round_result');
+  s.history = [...s.history, { round: s.round, team: 'A', clues: ['One', 'Two', 'Three'], secret: [3, 1, 4], intercept: [2, 1, 4], decrypt: [3, 1, 4] }];
+  assert.ok(paint(s, initialLocal).frames.screen.canvas.ink.some(value => value.includes('拦截 2·1·4 ✗') && value.includes('解码 3·1·4 ✓')));
+  assert.ok(paint(s, { ...initialLocal, locale: 'en' }).frames.screen.canvas.ink.some(value => value.includes('Intercept 2·1·4 ✗')));
+});
+
+test('briefings, watching screens and every guide page are fully localized', async () => {
+  const { briefingKey } = await import(modelUrl);
+  for (const name of ['encrypting', 'waiting', 'listening', 'intercept', 'watch-intercept', 'decrypt', 'watch-decrypt', 'late-game']) {
+    const s = previewState({}, name, 'en');
+    for (const extra of [{}, { brief: briefingKey(s) }]) {
+      const en = paint(s, { ...initialLocal, ...extra, locale: 'en' });
+      assert.deepEqual([...en.frames.screen.canvas.ink, ...en.targets.map(t => t.label)].filter(value => /[\u3400-\u9fff]/.test(value)), [], `${name}${extra.brief ? ' briefing' : ''}`);
+    }
+  }
+  for (let guidePage = 0; guidePage < 4; guidePage++) {
+    const en = paint(fixture('home'), { ...initialLocal, manual: true, guidePage, locale: 'en' });
+    assert.deepEqual([...en.frames.screen.canvas.ink, ...en.targets.map(t => t.label)].filter(value => /[\u3400-\u9fff]/.test(value)), [], `guide page ${guidePage + 1}`);
   }
 });

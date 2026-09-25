@@ -74,6 +74,11 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     live.receive('room_created', { room_code: '1234', my_player_id: 'me', resume_token: 'test-token' });
     const deadline = Date.now() + 50000;
     live.receive('phase_change', { phase: 'encrypting', round: 3, your_role: 'encryptor', secret_digits: [2, 4, 1], deadline });
+    store.getState().sendProgress('encrypt', 2, { state: 'editing', focus: 2, filled: [true, false, true] });
+    assert.deepEqual(live.sent.at(-1).data, { round: 3, action: 'encrypt', step: 2, total: 3, state: 'editing', focus: 2, filled: [true, false, true] },
+      'drafting reports which lines hold a clue, never the clue');
+    live.receive('player_progress', { action: 'encrypt', player: 'Ann', state: 'editing', step: 2, focus: 2, filled: [true, 0, 'yes', true], total: 3 });
+    assert.deepEqual(store.getState().playerProgress.filled, [true, false, true], 'received flags are booleans, three at most');
     store.getState().submitClues(['a', 'b', 'c']);
     assert.equal(live.sent.at(-1).data.round, 3, 'outbound actions identify their round');
     live.receive('room_state', { started: true, team_a: [{id:'me'}] });

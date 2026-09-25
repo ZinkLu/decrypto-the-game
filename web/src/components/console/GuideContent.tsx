@@ -1,10 +1,12 @@
 import { translate, type Locale } from './i18n';
-import { gameIntroduction, guideArtUrl, guideClues, guideHistory, guideOpening, guideOutcome, guideRules, guideSteps, guideWords, originalGameLinks } from './guide';
+import { gameIntroduction, guideArtUrl, guideClues, guideHistory, guideLeads, guideOpening, guideOutcome, guideRules, guideSteps, guideWords, originalGameLinks } from './guide';
 
 /** Native companion to the CRT: readable on small screens and by assistive tech. */
 export default function GuideContent({ locale, about = false, transcript = false }: { locale: Locale; about?: boolean; transcript?: boolean }) {
     const t = (key: string, values?: unknown[]) => translate(locale, key, values);
-    const step = (index: number) => <h3 className="field-guide-heading"><b>{index + 1}</b><span>{t(guideSteps[index])}</span></h3>;
+    // Each step carries the same one-sentence idea as its page on the CRT.
+    const step = (index: number) => <><h3 className="field-guide-heading"><b>{index + 1}</b><span>{t(guideSteps[index])}</span></h3>
+        <p className="field-guide-lead">{t(guideLeads[index])}</p></>;
     const history = <section className="field-guide-history">
         <h3>{t('前几轮的线索与答案')}</h3>
         <small>{t('同一队的记录')}</small>
@@ -32,7 +34,7 @@ export default function GuideContent({ locale, about = false, transcript = false
                 <div className="field-guide-step"><i className="field-agent" style={{ backgroundImage: `url(${guideArtUrl})`, backgroundPosition: 'center' }}/><div><h3>{t('队友 · 看密词解码')}</h3><small>{t('后猜')}</small><strong className="field-code">3 · 1 · 4 ✓</strong></div></div>
                 <small>{t('三个编号，顺序全对才成功。')}</small>
             </div>}
-            {transcript && <ol>{guideSteps.map(title => <li key={title}>{t(title)}</li>)}</ol>}
+            {transcript && <ol>{guideSteps.map((title, i) => <li key={title}>{t(title)}{locale === 'zh' ? '：' : ': '}{t(guideLeads[i])}</li>)}</ol>}
             <div className={transcript ? undefined : 'sr-only'}>{guideRules.map(rule => <p key={rule}>{t(rule)}</p>)}</div>
             {!transcript && <p className="field-guide-footnote">{t(guideOutcome)}<br/>{t(guideOpening)}</p>}
             {transcript && history}

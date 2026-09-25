@@ -118,6 +118,14 @@ func TestGameValidationAndAllEndings(t *testing.T) {
 							if err := b.ValidateProgress(ids[2], ws.ProgressData{Round: v.Round, Action: "encrypt", Step: 3}); err == nil {
 								t.Fatal("spoofed progress accepted")
 							}
+							drafting := ws.ProgressData{Round: v.Round, Action: "encrypt", State: "editing", Step: 2, Focus: 3, Filled: []bool{true, false, true}}
+							if err := b.ValidateProgress(id, drafting); err != nil {
+								t.Fatalf("out-of-order drafting progress rejected: %v", err)
+							}
+							drafting.Filled = make([]bool, 4)
+							if b.ValidateProgress(id, drafting) == nil {
+								t.Fatal("oversized progress accepted")
+							}
 							checked = true
 						}
 						var digits [3]int

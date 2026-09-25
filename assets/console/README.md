@@ -868,6 +868,50 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
   drive when there is no room below; the terminal status is a one-row strip above
   the machine instead of a box over the chassis corner.
 
+## Main CRT guidance — 2026-09-23
+
+The main display behaves as a terminal, so its page never changes without saying why:
+
+- **Briefing.** Every beat of a round opens with a briefing page (`briefingKey`,
+  `paintBriefing`): 3.8 s at the round start, 2.6 s at the intercept and decode
+  handovers. Like the phase panel it shows three stations (01 ENCODE › 02 INTERCEPT
+  › 03 DECODE) with who is at each (the encryptor, the intercepting team, the
+  decoders) and which one is live, then one line on what this seat does now. The
+  first two transmissions show interception as skipped. Any key, a click on the
+  glass or ACTION goes to the working page at once; a digit still reaches the keypad.
+  The phone layout has no briefing and its ACTION always transmits. Working pages
+  keep the context in their header ("ROUND 05 · Team A sending · Encryptor Alice").
+- **Live slots.** A seat that is not acting sees the actor's three slots
+  (`transmission`, `paintWatch`) from `player_progress` and the AI status: the one
+  being worked on blinks, filled ones are marked. Clue text never travels before it
+  is sent; encryption progress carries only which lines hold text (`filled` in the
+  protocol, so drafts written out of order read correctly). A rival's picks stay
+  hidden from the team that still has to decode, and only the round's encryptor,
+  with the disk read, sees them graded (HIT/MISS, RIGHT/WRONG). A teammate on the
+  same keypad shows in the footer ("Carol picked 3 · 1 · —"). The phone layout lists
+  the same slots.
+- **Paged guide.** Four pages, one idea each: the keywords, the clues, interception,
+  decoding and how a game ends. Dots show the page; PREV/NEXT, the dots, the arrow
+  keys and the keypad (1–4 and ←) turn it. It opens on the page for the current beat.
+
+The page itself is painted once; the tube animates it (`crtAttribute` in `crtShader.ts`):
+
+- Blink attribute: up to four cells per page blink at a character generator's
+  ~1.6 Hz, lit three fifths of the cycle, or breathe at 0.55 Hz for a quiet link.
+  A blinking cell falls to the page background with the page's own falloff, never
+  to black. Frames come from the ambient pace, so a blinking page costs nothing more.
+- Page write: a new page is cleared and written out from the top in 20 rows over
+  450 ms, each row left to right. Only then does the loop render at the display rate.
+- A briefing is a new signal: the sync is disturbed once (`CrtTube.disturb(.5)`), and
+  the picture tears and jitters for about 150 ms before it locks, as the word windows
+  do for new words.
+- None of this happens on dark or unsteady glass (power-up, palette change) or with
+  reduced motion; the cursor then stays lit and pages appear at once.
+
+DEV: `?brief=hold` pins a briefing and `?brief=off` skips it. The watching screens
+have preview scenarios: `waiting` (a teammate) and `listening` (a rival) during
+encryption, `watch-intercept` and `watch-decrypt` (the encryptor).
+
 ## Rear audio slides — 2026-09-22
 
 `refine_rear_audio.py` replaces the old master slide with independent MUSIC and SFX

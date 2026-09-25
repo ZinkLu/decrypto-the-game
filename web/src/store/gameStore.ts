@@ -88,6 +88,8 @@ interface GameStore {
     step: number;
     focus?: number;
     guesses?: number[];
+    /** Encryption only: which clue lines hold text, so out-of-order drafts read correctly. */
+    filled?: boolean[];
     total: number;
   } | null;
 
@@ -111,6 +113,7 @@ interface GameStore {
       state?: "idle" | "editing" | "submitted";
       focus?: number;
       guesses?: number[];
+      filled?: boolean[];
     },
   ) => void;
   requestSync: () => void;
@@ -166,6 +169,8 @@ const initialState = {
     step: number;
     focus?: number;
     guesses?: number[];
+    /** Encryption only: which clue lines hold text, so out-of-order drafts read correctly. */
+    filled?: boolean[];
     total: number;
   } | null,
 };
@@ -406,6 +411,7 @@ function handleServerMessage(
           step: (d.step as number) ?? 0,
           focus: (d.focus as number) ?? 0,
           guesses: (d.guesses as number[]) ?? undefined,
+          filled: Array.isArray(d.filled) ? (d.filled as unknown[]).slice(0, 3).map(Boolean) : undefined,
           total: (d.total as number) ?? 3,
         },
       });
@@ -510,6 +516,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       state: opts?.state,
       focus: opts?.focus ?? 0,
       guesses: opts?.guesses,
+      filled: opts?.filled,
     });
   },
 

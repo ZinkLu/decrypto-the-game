@@ -1,8 +1,8 @@
 import { translate, localizeError } from './i18n';
-import { originalGameLinks, guideWords, guideClues, guideHistory, guideSteps, guideOutcome, guideOpening, gameIntroduction } from './guide';
+import { originalGameLinks, guideWords, guideClues, guideHistory, guideSteps, guideLeads, guideNotes, gameIntroduction } from './guide';
 import { dotGrid, dotText, dotType, dotWordLayout } from './dotMatrix';
-import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures } from './model';
-import type { LocalState, StationState } from './model';
+import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures, beats, isBeat, roundCast, briefingKey, transmission } from './model';
+import type { Beat, LocalState, StationState } from './model';
 import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
 export interface Target {
     id: string;
@@ -24,6 +24,14 @@ export interface Frame {
     width: number;
     height: number;
 }
+/**
+ * A region of the main CRT carrying the terminal's blink attribute, in the screen's
+ * logical units. `cursor` is the character blink of a slot someone is working on;
+ * `live` is the slow pulse of a link that is up but quiet.
+ */
+export interface Blink { x: number; y: number; w: number; h: number; kind: 'cursor' | 'live' }
+/** The guide's pages, and how many a player can flip through. */
+export const guidePages = guideSteps.length;
 export interface Content {
     frames: Record<string, Frame>;
     targets: Target[];
@@ -46,8 +54,17 @@ export interface Content {
     wordInks: { word: string; legend: string; warning: string };
     wordPrivacyKey: string;
     screenPrivacyKey: string;
+    screenBlink: Blink[];
+    /** Changes when the terminal starts a new page, which it then writes out line by line. */
+    screenPage: string;
+    /** Changes when a new transmission arrives, which the tube has to lock onto again. */
+    screenSignal: string;
 }
 const INK = '#2f2b25', CREAM = '#ece0c4', MUTED = '#a59e8c', DARK = '#111e24';
+/** Page background of the main CRT; the tube shader clears to it between pages. */
+export const screenBackground = DARK;
+/** Text that no longer applies, and the rules between rows. */
+const DIM = '#66716e', RULE = '#3b4b4d';
 const FONT = '"PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif';
 function round(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r = 10) {
     c.beginPath();
@@ -116,88 +133,128 @@ function line(c: CanvasRenderingContext2D, x: number, y: number, w: number, colo
     c.lineTo(x + w, y);
     c.stroke();
 }
-/** The illustration is a text-free sprite; diagrams and all copy stay localized. */
-function paintGuide(c: CanvasRenderingContext2D, u: LocalState, art?: HTMLImageElement) {
+/**
+ * The field guide, one idea per page. The illustration is a text-free sprite of the
+ * three agents; every label and diagram is painted here, localized, in the theme's accent.
+ */
+function paintGuide(c: CanvasRenderingContext2D, u: LocalState, page: number, art?: HTMLImageElement) {
     const t = (key: string) => translate(u.locale, key);
-    const accent = themeColors(u.theme).own.light;
-    const label = (value: string, x: number, y: number, size = 22, max = 890, color = CREAM) => fitLabel(c, t(value), x, y, size, color, 500, max);
-    const step = (index: number, x: number, y: number, width: number) => {
-        c.save();
-        c.fillStyle = accent;
-        c.beginPath(); c.arc(x + 15, y, 15, 0, Math.PI * 2); c.fill();
-        c.textAlign = 'center';
-        text(c, String(index + 1), x + 15, y + 1, 21, DARK, 700);
-        c.restore();
-        label(guideSteps[index], x + 42, y, 23, width - 42, accent);
+    const colors = themeColors(u.theme);
+    const accent = colors.own.light, rival = colors.opponent.light, warning = colors.warning.light;
+    const label = (value: string, x: number, y: number, size = 22, max = 890, color = CREAM, weight = 500) => fitLabel(c, t(value), x, y, size, color, weight, max);
+    const centred = (draw: () => void) => { c.save(); c.textAlign = 'center'; draw(); c.restore(); };
+    const person = (index: number, x: number, y: number, size: number) => {
+        if (art) c.drawImage(art, index * art.naturalWidth / 3, 0, art.naturalWidth / 3, art.naturalHeight, x, y, size, size);
     };
-    const personSize = 140;
-    const person = (index: number, x: number, y: number) => {
-        if (art) c.drawImage(art, index * art.naturalWidth / 3, 0, art.naturalWidth / 3, art.naturalHeight, x, y, personSize, personSize);
-    };
-    const arrow = (x: number, y: number, ex: number, ey: number) => {
-        c.strokeStyle = accent; c.lineWidth = 3;
+    const arrow = (x: number, y: number, ex: number, ey: number, color = accent) => {
+        c.strokeStyle = color; c.lineWidth = 2.5;
         c.beginPath(); c.moveTo(x, y); c.lineTo(ex, ey); c.stroke();
         c.save(); c.translate(ex, ey); c.rotate(Math.atan2(ey - y, ex - x));
-        c.beginPath(); c.moveTo(-10, -6); c.lineTo(0, 0); c.lineTo(-10, 6); c.stroke(); c.restore();
+        c.beginPath(); c.moveTo(-8, -5); c.lineTo(0, 0); c.lineTo(-8, 5); c.stroke(); c.restore();
     };
-    // The working diagram owns the space below the small CRT navigation.
-    const left = 72, cluesLeft = 376, right = 712;
-    step(0, left, 104, 280);
-    guideWords.forEach((value, i) => {
-        const x = left + i * 72;
-        c.strokeStyle = '#65726e'; c.lineWidth = 1;
-        round(c, x, 136, 66, 64, 4); c.stroke();
-        text(c, String(i + 1), x + 8, 152, 18, accent, 600);
-        label(value, x + 8, 180, 22, 50);
-    });
-    person(0, 200, 208);
-    label('加密者', 92, 272, 22, 100, accent);
-    arrow(344, 260, 364, 244);
-
-    step(1, cluesLeft, 104, 284);
-    label('加密者抽到的密码', cluesLeft, 140, 18, 284, MUTED);
-    c.strokeStyle = accent; c.lineWidth = 1.5;
-    round(c, cluesLeft, 208, 280, 72, 16); c.stroke();
-    guideClues.forEach((value, i) => {
-        const x = cluesLeft + 20 + i * 88;
-        text(c, String([3, 1, 4][i]), x + 16, 176, 32, accent, 600);
-        arrow(x + 22, 196, x + 22, 220);
-        label(value, x, 244, 28, 80);
-    });
-    label('公开线索 · 只说词，不说编号', cluesLeft, 304, 18, 284, MUTED);
-    label('三个编号，顺序全对才成功。', cluesLeft, 332, 18, 284, MUTED);
-    arrow(672, 236, 700, 212);
-    c.beginPath(); c.moveTo(672, 264); c.lineTo(688, 264); c.lineTo(688, 428); c.stroke();
-    arrow(688, 428, 704, 428);
-
-    step(2, right, 104, 232);
-    person(2, right, 136);
-    label('看公开线索与旧记录', right, 296, 20, 232, MUTED);
-    text(c, '2·1·4 ×', 856, 212, 21, MUTED, 500);
-    step(3, right, 344, 232);
-    person(1, right, 368);
-    label('对照我方密词解码', right, 528, 20, 232, MUTED);
-    text(c, '3·1·4 ✓', 856, 440, 21, accent, 600);
-
-    // A separate, wider history table makes each full transmission comparable.
-    label('前几轮的线索与答案', left, 360, 24, 416, accent);
-    label('同一队的记录', 520, 360, 18, 148, MUTED);
-    label('公开线索', 128, 388, 16, 392, MUTED);
-    label('揭晓密码', 584, 388, 16, 84, MUTED);
-    guideHistory.forEach((row, i) => {
-        const y = 420 + i * 44;
-        text(c, `0${i + 1}`, left, y, 20, MUTED);
-        fitLabel(c, row.clues.map(t).join(' · '), 128, y, 24, CREAM, 400, 392);
-        text(c, '→', 544, y, 22, MUTED);
-        text(c, row.code.join('·'), 584, y, 26, accent, 600);
-        if (i < guideHistory.length - 1) line(c, left, y + 22, 596, '#34423f');
-    });
-
-    line(c, left, 548, 872, '#3b4b4d');
-    label(guideOutcome, left, 568, 18, 400, MUTED);
-    label(guideOpening, 492, 568, 17, 232, MUTED);
-    label('BGG 游戏介绍', 771, 568, 18, 157, MUTED);
-    text(c, '↗', 929, 568, 18, MUTED);
+    const box = (x: number, y: number, w: number, h: number, color: string, dashed = false) => {
+        c.save(); c.strokeStyle = color; c.lineWidth = 1.5;
+        if (dashed) c.setLineDash([5, 4]);
+        round(c, x, y, w, h, 6); c.stroke(); c.restore();
+    };
+    // The step's number badge and name, then its idea in one sentence.
+    c.fillStyle = accent;
+    c.beginPath(); c.arc(72, 112, 17, 0, Math.PI * 2); c.fill();
+    centred(() => text(c, String(page + 1), 72, 113, 22, DARK, 700));
+    label(guideSteps[page], 100, 112, 32, 845, accent, 600);
+    label(guideLeads[page], 55, 157, 21, 890, CREAM, 400);
+    if (page === 0) {
+        label('我方词窗', 55, 204, 17, 240, MUTED, 400);
+        guideWords.forEach((value, i) => {
+            const x = 55 + i * 124;
+            box(x, 218, 112, 82, accent + '99');
+            text(c, `0${i + 1}`, x + 12, 239, 16, accent, 600);
+            label(value, x + 12, 274, 26, 90);
+        });
+        label('对方词窗', 55, 330, 17, 240, MUTED, 400);
+        for (let i = 0; i < 4; i++) {
+            const x = 55 + i * 124;
+            box(x, 344, 112, 58, RULE);
+            text(c, `0${i + 1}`, x + 12, 362, 16, DIM, 600);
+            text(c, '• • • •', x + 12, 386, 16, DIM, 500);
+        }
+        wrap(c, t(guideNotes[0]), 55, 446, 500, 18, MUTED, 2);
+        // The cast of every round: two of ours, and their interceptor.
+        const cast = [['加密者', '写三条线索', accent], ['队友', '对照密词解码', accent], ['对手', '截获密码', rival]] as const;
+        centred(() => { label('我方', 718, 202, 16, 220, MUTED, 400); label('对方', 891, 202, 16, 100, MUTED, 400); });
+        line(c, 605, 216, 226, RULE); line(c, 841, 216, 100, RULE);
+        cast.forEach(([name, job, color], i) => {
+            const x = 601 + i * 118;
+            person(i, x, 226, 108);
+            centred(() => { label(name, x + 54, 352, 20, 104, color, 600); label(job, x + 54, 378, 14, 108, MUTED, 400); });
+        });
+    } else if (page === 1) {
+        const code = [3, 1, 4];
+        // Private to public, top to bottom: the drawn code, our keywords, the clues everyone hears.
+        ([['密码', '仅加密者', 228], ['密词', '仅我方', 304], ['线索', '双方可见', 386]] as const).forEach(([name, who, y], row) => {
+            label(name, 55, y - 10, 22, 136, row === 2 ? CREAM : accent, 600);
+            label(who, 55, y + 16, 15, 136, MUTED, 400);
+        });
+        label('加密者抽到的密码', 214, 196, 15, 360, MUTED, 400);
+        code.forEach((digit, i) => {
+            const x = 214 + i * 124, middle = x + 52;
+            centred(() => text(c, String(digit), middle, 230, 42, accent, 600));
+            arrow(middle, 254, middle, 278);
+            box(x, 284, 104, 40, accent + '80', true);
+            centred(() => label(guideWords[digit - 1], middle, 304, 22, 90));
+            arrow(middle, 330, middle, 356);
+            box(x, 362, 104, 46, accent);
+            centred(() => label(guideClues[i], middle, 385, 26, 90));
+        });
+        label('公开线索 · 只说词，不说编号', 214, 434, 16, 360, MUTED, 400);
+        wrap(c, t(guideNotes[1]), 55, 470, 540, 18, MUTED, 1);
+        person(0, 646, 190, 232);
+        centred(() => label('加密者', 762, 440, 20, 230, accent, 600));
+    } else if (page === 2) {
+        label('前几轮的线索与答案', 55, 204, 20, 340, accent, 600);
+        c.save(); c.textAlign = 'right'; label('同一队的记录', 600, 204, 15, 200, MUTED, 400); c.restore();
+        label('公开线索', 112, 234, 15, 300, MUTED, 400);
+        label('揭晓密码', 498, 234, 15, 102, MUTED, 400);
+        guideHistory.forEach((row, i) => {
+            const y = 268 + i * 42;
+            text(c, `0${i + 1}`, 55, y, 18, MUTED);
+            fitLabel(c, row.clues.map(t).join(' · '), 112, y, 22, CREAM, 400, 336);
+            text(c, '→', 466, y, 20, MUTED);
+            text(c, row.code.join('·'), 498, y, 24, accent, 600);
+            line(c, 55, y + 21, 545, '#34423f');
+        });
+        // This round: the rivals have the public clues and the record, nothing else.
+        label('这一轮', 55, 406, 16, 52, rival, 600);
+        fitLabel(c, guideClues.map(t).join(' · '), 112, 406, 22, CREAM, 400, 336);
+        text(c, '→', 466, 406, 20, MUTED);
+        text(c, '2·1·4 ✗', 498, 406, 24, warning, 600);
+        wrap(c, t(guideNotes[2]), 55, 456, 545, 18, MUTED, 2);
+        person(2, 652, 190, 224);
+        centred(() => label('对手', 764, 436, 20, 224, rival, 600));
+    } else {
+        // The team holds the keywords the rivals never saw: each clue points back to a number.
+        label('公开线索', 55, 204, 15, 150, MUTED, 400);
+        label('我方密词', 215, 204, 15, 150, MUTED, 400);
+        label('编号', 392, 204, 15, 100, MUTED, 400);
+        guideClues.forEach((clue, i) => {
+            const y = 240 + i * 38, digit = [3, 1, 4][i];
+            label(clue, 55, y, 24, 118);
+            text(c, '→', 180, y, 20, MUTED);
+            label(guideWords[digit - 1], 215, y, 24, 128);
+            text(c, '→', 356, y, 20, MUTED);
+            text(c, String(digit), 392, y, 26, accent, 600);
+        });
+        text(c, '3·1·4 ✓', 446, 278, 30, accent, 600);
+        line(c, 55, 372, 545, RULE);
+        label('截获 2 次 → 获胜', 55, 402, 20, 260, CREAM, 500);
+        label('解码失误 2 次 → 落败', 300, 402, 20, 300, CREAM, 500);
+        label(guideNotes[3], 55, 438, 17, 240, MUTED, 400);
+        label('BGG 游戏介绍', 55, 474, 17, 180, MUTED, 400);
+        c.font = `400 17px ${FONT}`;
+        text(c, '↗', 55 + Math.min(180, c.measureText(t('BGG 游戏介绍')).width) + 8, 474, 17, MUTED);
+        person(1, 652, 190, 224);
+        centred(() => label('队友', 764, 436, 20, 224, accent, 600));
+    }
 }
 
 // Seven separate phosphor bars per cell, including faint unlit segments.
@@ -363,19 +420,47 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     const right = w - 55;
     const status = (s.error ? localizeError(u.locale, s.error) : s.aiNotice ? t(s.aiNotice) : '') || (u.note ? t(u.note) : '') || (u.submitted ? t("密报已发送，等待服务器确认。") : '');
     const helpPage = u.manual || u.about;
-    text(c, u.manual ? t('一图读懂') : u.about ? t('原版桌游') : hasGame ? t('第 {0} 回合', [String(s.round).padStart(2, '0')]) : 'DECRYPTO', 55, 49, 19, tint, 500);
+    const blink: Blink[] = [];
+    const cast = roundCast(s);
+    const guidePage = Math.max(0, Math.min(guidePages - 1, Math.round(u.guidePage) || 0));
+    const briefing = !helpPage && !!u.brief && u.brief === briefingKey(s) && isBeat(s.phase) ? s.phase : null;
+    const sent = u.submitted || s.submitted;
+    const observing = isBeat(s.phase) && !briefing && !sent && !r.encrypt && !r.guess;
+    const me = [...s.teamA, ...s.teamB].find(p => p.id === s.myPlayerID);
+    // Players read their own seat as "you", whichever name the roster carries.
+    const called = (name: string) => name && (name === me?.nickname || s.myRole === 'encryptor' && name === s.encryptor) ? t('你') : name;
+    // AI call signs carry a middle dot of their own, so lists use the language's enumeration comma.
+    const listed = (people: StationState['teamA']) => people.map(p => p.id === s.myPlayerID ? t('你') : p.nickname).join(u.locale === 'zh' ? '、' : ', ');
     const navX = right - (h.batteryPercent === null ? 112 : 265);
+    // The header keeps the round's context on every page: which round, and who acts in it.
+    const context = u.manual ? [t('玩法 · {0} / {1}', [guidePage + 1, guidePages])] : u.about ? [t('原版桌游')] : !hasGame ? ['DECRYPTO'] : [
+        briefing ? t('第 {0} / 16 回合', [s.round]) : t('第 {0} 回合', [String(s.round).padStart(2, '0')]),
+        ...!isBeat(s.phase) ? [] : briefing ? [t('简报')] :
+            s.phase === 'encrypting' ? [cast.sending && t('{0} 队发报', [cast.sending]), s.encryptor && t('加密者 {0}', [called(s.encryptor)])] :
+            s.phase === 'intercept' ? [cast.receiving && t('{0} 队拦截', [cast.receiving])] : [cast.sending && t('{0} 队解码', [cast.sending])],
+    ].filter(Boolean);
+    const headerRoom = navX - 79;
+    c.font = `500 19px ${FONT}`;
+    const leadWidth = Math.min(headerRoom, c.measureText(context[0]).width);
+    fitLabel(c, context[0], 55, 49, 19, tint, 500, headerRoom);
+    if (context.length > 1 && headerRoom - leadWidth > 40)
+        fitLabel(c, ' · ' + context.slice(1).join(' · '), 55 + leadWidth, 49, 19, MUTED, 400, headerRoom - leadWidth);
     button(c, helpPage ? 'screen-close' : 'manual', helpPage ? t('返回') : t('玩法'), navX, 27, 112, 44);
-    let foot = '';
+    let foot = '', live = false;
     const heading = (title: string, sub = '') => {
         fitLabel(c, title, 55, 127, 43, CREAM, 600, 890);
         if (sub) fitLabel(c, sub, 55, 180, 22, MUTED, 400, 890);
     };
-    const underline = (y: number, active = false) => line(c, 55, y, 890, active ? tint : '#3b4b4d');
+    const underline = (y: number, active = false) => line(c, 55, y, 890, active ? tint : RULE);
+    const measure = (value: string, size: number, weight = 400) => {
+        c.font = `${weight} ${size}px ${FONT}`;
+        return c.measureText(value).width;
+    };
+    // A block cursor where someone is working; the tube blinks it, the canvas never repaints for it.
+    const cursor = (x: number, middle: number, color: string) => { c.fillStyle = color; c.fillRect(x, middle - 16, 12, 32); };
     if (u.manual) {
-        paintGuide(c, u, guideArt);
-        // The source stays attached to the explanation without another slide.
-        target('screen', 'guide-bgg', t('BGG 游戏介绍'), 725, 545, 220, 34, { href: originalGameLinks[1].href });
+        paintGuide(c, u, guidePage, guideArt);
+        guideNav(guidePage);
     } else if (u.about) {
         heading(t('每条线索，都是一次试探。'), 'DECRYPTO · Le Scorpion Masqué');
         wrap(c, t(gameIntroduction), 55, 253, 865, 29, CREAM, 3);
@@ -408,7 +493,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             text(c, `${people.length} / 4`, x + 307, 260, 23, MUTED);
             for (let i = 0; i < 4; i++) {
                 const p = people[i], left = x + i * 101;
-                line(c, left, 343, 82, p ? color : '#3b4b4d');
+                line(c, left, 343, 82, p ? color : RULE);
                 text(c, p ? p.is_ai ? 'AI' : p.id === s.myPlayerID ? t('你') : t('真人') : '—', left + 10, 314, 23, p ? CREAM : MUTED);
                 if (owner && p?.is_ai) {
                     text(c, '×', left + 60, 308, 20, MUTED);
@@ -432,27 +517,30 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             revealed.secret!.forEach((digit, i) => {
                 text(c, String(digit), 55 + i * 303, 312, 76, tint, 500);
                 fitLabel(c, revealed.clues[i] || '—', 55 + i * 303, 394, 28, CREAM, 400, 262);
-                line(c, 55 + i * 303, 445, 262, '#3b4b4d');
+                line(c, 55 + i * 303, 445, 262, RULE);
             });
+            // Both answers beside the code: how the round was actually decided.
+            const verdict = (guess: number[] | undefined, label: string) => guess?.length === 3 && guess.every(n => n > 0)
+                ? t(label, [`${guess.join('·')} ${guess.join() === revealed.secret!.join() ? '✓' : '✗'}`]) : '';
+            const outcome = [verdict(revealed.intercept, '拦截 {0}'), verdict(revealed.decrypt, '解码 {0}')].filter(Boolean).join('     ');
+            if (outcome) fitLabel(c, outcome, 55, 484, 22, MUTED, 400, 890);
         } else {
             fitLabel(c, t(final ? '每句看似普通的话，都藏着一场交锋。' : s.roundResult?.intercept_success === false && s.roundResult.decrypt_success === undefined ? '即将进入解码阶段。' : '结果已记录，等待下一轮通信。'), 55, 311, 30, tint, 400, 890);
         }
         foot = t(final ? '按 ACTION 返回通信局；纸带仍可翻阅。' : '结果已记入纸带 · 等待下一步通信。');
-    } else if (u.submitted || s.submitted || (!r.encrypt && !r.guess)) {
-        const sent = u.submitted || s.submitted;
-        heading(t(sent ? '密报已发送。' : s.phase === 'encrypting' ? '等待新的线索。' : s.phase === 'intercept' ? '对手正在拦截。' : '队友正在解码。'));
-        fitLabel(c, sent ? t('留意下一步通信。') : s.encryptor && s.phase === 'encrypting' ? t('{0} 正在想线索。', [s.encryptor]) : t('可以拉开纸带，翻阅过往线索。'), 55, 271, 30, tint, 400, 890);
-        if (s.clues.length && s.phase !== 'encrypting') {
-            s.clues.slice(0, 3).forEach((clue, i) => {
-                text(c, `0${i + 1}`, 55, 352 + i * 45, 19, MUTED);
-                fitLabel(c, clue, 109, 352 + i * 45, 24, CREAM, 400, 810);
-            });
-        } else {
-            line(c, 55, 366, 890, '#3b4b4d');
-            text(c, t('让队友听懂，让对手猜不透。'), 55, 418, 25, MUTED);
-        }
-        const progress = s.aiStatus ? { ...s.aiStatus, step: s.aiStatus.completed ?? Math.max(0, s.aiStatus.step - 1) } : s.playerProgress;
-        foot = progress ? t('{0} · 已完成 {1} / {2}', [progress.player, progress.step, progress.total]) : t('轮到你时，ACTION 会亮起。');
+    } else if (briefing) {
+        paintBriefing(briefing);
+    } else if (sent) {
+        heading(t('密报已发送。'), t('留意下一步通信。'));
+        [0, 1, 2].forEach(i => {
+            const y = 239 + i * 92;
+            underline(y + 67);
+            text(c, `0${i + 1}`, 55, y + 27, 22, MUTED);
+            fitLabel(c, (r.encrypt ? u.clues[i] : s.clues[i]) || '—', 126, y + 27, 32, CREAM, 500, 674);
+            if (r.guess && u.guess[i]) text(c, String(u.guess[i]), 875, y + 27, 42, tint, 500);
+        });
+    } else if (observing) {
+        paintWatch();
     } else {
         heading(t(r.encrypt ? '写下三条线索。' : s.phase === 'intercept' ? '截获对手的密码。' : '译出队友的密码。'), t(r.encrypt ? diskReadable ? '按私密密码顺序，分别提示对应密词。' : keyDiskMessage(u.keyDisk) : '点击一行，再用下方数字键选择编号。'));
         [0, 1, 2].forEach(i => {
@@ -473,17 +561,155 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
                 text(c, `0${i + 1}`, 55, y + 27, 22, MUTED);
                 fitLabel(c, s.clues[i] || t('等待线索…'), 126, y + 27, 32, CREAM, 500, 674);
                 text(c, String(u.guess[i] || '—'), 875, y + 27, 42, active ? tint : MUTED, 500);
+                // The empty slot the next key will fill blinks like a terminal cursor.
+                if (active && !u.guess[i] && r.active) blink.push({ x: 866, y: y + 3, w: 52, h: 48, kind: 'cursor' });
                 target('screen', `slot-${i}`, t('选择第 {0} 位密码', [i + 1]), 55, y - 9, 890, 78, { disabled: !r.active });
             }
         });
-        foot = r.encrypt ? t('已填写 {0} / 3 · 按 ACTION 发报', [u.clues.filter(v => v.trim()).length]) : t('三个不同编号 · 按 ACTION 确认');
+        // With more than one of us on the keypad, a teammate's picks arrive as they make them.
+        const peer = r.guess && s.playerProgress?.action === r.action && s.playerProgress.state === 'editing' &&
+            s.playerProgress.player !== 'AI Agent' && s.playerProgress.player !== me?.nickname ? s.playerProgress : null;
+        foot = r.encrypt ? t('已填写 {0} / 3 · 按 ACTION 发报', [u.clues.filter(v => v.trim()).length]) :
+            peer ? t('{0} 选了 {1} · 按 ACTION 确认', [peer.player, [0, 1, 2].map(i => peer.guesses?.[i] || '—').join(' · ')]) : t('三个不同编号 · 按 ACTION 确认');
     }
     if (!u.manual) {
-        line(c, 55, 527, 890, '#3b4b4d');
-        fitLabel(c, status || foot, 55, 555, 21, status ? colors.warning.light : MUTED, 400, 890);
+        line(c, 55, 527, 890, RULE);
+        if (live && !status) {
+            // The link lamp of the terminal: a slow pulse while the other seat is quiet.
+            text(c, '●', 55, 555, 15, tint);
+            blink.push({ x: 50, y: 543, w: 22, h: 24, kind: 'live' });
+            fitLabel(c, foot, 80, 555, 21, MUTED, 400, 865);
+        } else fitLabel(c, status || foot, 55, 555, 21, status ? colors.warning.light : MUTED, 400, 890);
     } else if (status && s.error) {
         c.fillStyle = DARK; c.fillRect(50, 539, 900, 42);
         fitLabel(c, status, 55, 559, 19, colors.warning.light, 400, 890);
+    }
+    /** Round start and every handover: who acts in this beat, and what this seat does now. */
+    function paintBriefing(beat: Beat) {
+        const step = beats.indexOf(beat);
+        const teamOf = (i: number) => i === 1 ? cast.receiving : cast.sending;
+        const color = (i: number) => teamPalette(teamOf(i), s.myTeam, u.theme).light;
+        const encryptor = called(s.encryptor) || t('加密者');
+        const headline = beat === 'encrypting' ? cast.sending ? t('{0} 队发报', [cast.sending]) : t('新的回合开始') :
+            beat === 'intercept' ? t('{0} 队拦截', [cast.receiving || '—']) : t('{0} 队解码', [cast.sending || '—']);
+        fitLabel(c, headline, 55, 127, 43, color(step), 600, 890);
+        // Teams by letter, never "rivals": the same page reaches both sides of the table.
+        fitLabel(c, beat === 'encrypting' ? t('加密者读取密码，为三个编号各写一条线索。') :
+            beat === 'intercept' ? t('{0} 队的三条线索已公开，{1} 队先猜。', [cast.sending || '—', cast.receiving || '—']) :
+            cast.intercepted ? t('{0} 队没能截获，轮到 {1} 队解码。', [cast.receiving || '—', cast.sending || '—']) : t('前两次发报不拦截，线索直达 {0} 队。', [cast.sending || '—']),
+            55, 180, 22, MUTED, 400, 890);
+        // The round as the phase panel shows it: three stations, the current one lit.
+        const stations = [
+            { name: encryptor, who: cast.sending ? t('{0} 队 · 写三条线索', [cast.sending]) : t('写三条线索') },
+            cast.intercepted ? { name: cast.receiving ? t('{0} 队', [cast.receiving]) : '—', who: listed(cast.interceptors) || t('看公开线索与旧记录') }
+                : { name: '—', who: t('前两次发报不拦截') },
+            { name: listed(cast.decoders) || '—', who: cast.sending ? t('{0} 队 · 对照密词解码', [cast.sending]) : t('对照我方密词解码') },
+        ];
+        stations.forEach((station, i) => {
+            const x = 55 + i * 312, skipped = i === 1 && !cast.intercepted;
+            const state = skipped ? 'skip' : i < step ? 'done' : i === step ? 'now' : 'next';
+            const ink = state === 'now' ? color(i) : state === 'done' ? CREAM : DIM;
+            text(c, `0${i + 1}`, x, 242, 18, ink, 600);
+            fitLabel(c, t(['加密', '拦截', '解码'][i]), x + 34, 242, 20, ink, 600, 200);
+            if (i < 2) text(c, '›', x + 282, 242, 26, DIM);
+            c.fillStyle = state === 'now' ? color(i) : state === 'done' ? '#6f7c78' : '#2b3a3c';
+            c.fillRect(x, state === 'now' ? 259 : 260, 266, state === 'now' ? 4 : 2);
+            fitLabel(c, station.name, x, 304, 28, state === 'now' || state === 'done' ? CREAM : MUTED, 600, 266);
+            text(c, station.who, x, 342, 17, MUTED, 400, 266);
+            const mark = t(state === 'now' ? '进行中' : state === 'done' ? i === 1 ? '未截获' : '已完成' : state === 'skip' ? '本轮跳过' : '稍后');
+            if (state === 'now') {
+                cursor(x, 382, color(i));
+                text(c, mark, x + 22, 382, 19, color(i), 600);
+                blink.push({ x: x - 4, y: 362, w: 34 + measure(mark, 19, 600), h: 40, kind: 'cursor' });
+            } else text(c, state === 'done' && i !== 1 ? `✓ ${mark}` : mark, x, 382, 19, state === 'done' ? CREAM : DIM, 500);
+        });
+        const role = s.myRole;
+        const you = beat === 'encrypting'
+            ? role === 'encryptor' ? t('你来加密：等软盘读出密码，再写三条线索。')
+            : role === 'teammate' ? t('你负责解码：先等 {0} 写好线索。', [encryptor])
+            : role === 'opponent' ? t(cast.intercepted ? '你方稍后拦截：留意他们的线索。' : '本轮你方旁听：前两次发报不拦截。')
+            : t('你正在旁听这一轮。')
+            : beat === 'intercept'
+            ? role === 'opponent' ? t('轮到你拦截：三个编号全对才算截获。')
+            : role === 'encryptor' || role === 'teammate' ? t('对手正在猜你们的密码。') : t('你正在旁听这一轮。')
+            : role === 'teammate' ? t('轮到你解码：对照我方密词，按顺序选编号。')
+            : role === 'encryptor' ? t('队友正在解码，你只能等待。')
+            : role === 'opponent' ? t('{0} 队正在解码。', [cast.sending || '—']) : t('你正在旁听这一轮。');
+        line(c, 55, 424, 890, RULE);
+        text(c, '▶', 55, 464, 20, tint);
+        fitLabel(c, you, 86, 464, 26, CREAM, 500, 859);
+        foot = t('稍后进入 · 按任意键跳过');
+        // The whole glass skips ahead; the header's guide key stays above it.
+        targets.unshift({ surface: 'screen', id: 'brief-skip', label: t('跳过简报'), x: 0, y: 0, w: w, h: frames.screen.height });
+    }
+    /** Another seat is acting: its three slots, the one being worked on blinking. */
+    function paintWatch() {
+        const tx = transmission(s, diskReadable && s.myRole === 'encryptor')!;
+        const team = s.phase === 'intercept' ? cast.receiving : cast.sending;
+        const crew = team ? t('{0} 队', [team]) : t('对手');
+        heading(s.phase === 'encrypting' ? t('{0} 正在加密。', [called(s.encryptor) || t('加密者')]) :
+            s.phase === 'intercept' ? team ? t('{0} 队正在拦截。', [team]) : t('对手正在拦截。') :
+            s.myRole === 'encryptor' || !team ? t('队友正在解码。') : t('{0} 队正在解码。', [team]),
+            s.phase === 'encrypting'
+                ? t(s.myRole === 'teammate' ? cast.intercepted ? '线索写好后，对手先拦截，再轮到你解码。' : '线索写好后，就轮到你解码。'
+                    : s.myRole === 'opponent' ? cast.intercepted ? '线索写好后，轮到你方拦截。' : '前两次发报不拦截，这一轮你方旁听。' : '让队友听懂，让对手猜不透。')
+                : t(s.phase === 'intercept' ? '他们只看得到公开线索和旧记录。' : s.myRole === 'encryptor' ? '你只能看着，不能提示。' : '看看他们能不能译对。'));
+        tx.slots.forEach((slot, i) => {
+            const y = 239 + i * 92, middle = y + 27;
+            underline(y + 67, slot.active);
+            text(c, `0${i + 1}`, 55, middle, 22, slot.active ? tint : MUTED);
+            if (s.phase === 'encrypting') {
+                if (slot.active) {
+                    const label = t(slot.done ? '正在修改这一条…' : '正在写这一条…');
+                    cursor(126, middle, tint);
+                    fitLabel(c, label, 152, middle, 28, tint, 500, 560);
+                    blink.push({ x: 120, y: middle - 24, w: 42 + Math.min(560, measure(label, 28, 500)), h: 48, kind: 'cursor' });
+                } else if (slot.done) {
+                    text(c, t('已写好'), 126, middle, 28, CREAM, 500);
+                    text(c, '✓', 875, middle, 32, tint, 600);
+                } else text(c, t('等待'), 126, middle, 28, DIM);
+                return;
+            }
+            fitLabel(c, s.clues[i] || t('等待线索…'), 126, middle, 32, CREAM, 500, 560);
+            c.save();
+            c.textAlign = 'right';
+            if (slot.active) {
+                text(c, t('推敲中'), 856, middle, 21, tint, 500);
+                cursor(876, middle, tint);
+                blink.push({ x: 846 - measure(t('推敲中'), 21, 500), y: middle - 24, w: 60 + measure(t('推敲中'), 21, 500), h: 48, kind: 'cursor' });
+            } else if (slot.done && slot.digit) {
+                // Only the encryptor can grade a pick; a rival's hit is bad news, a teammate's is good.
+                if (slot.match !== undefined) {
+                    const rivals = s.phase === 'intercept';
+                    text(c, t(rivals ? slot.match ? '猜中' : '未中' : slot.match ? '译对' : '译错'), 856, middle, 21,
+                        rivals === slot.match ? colors.warning.light : slot.match ? tint : MUTED, 600);
+                }
+            } else if (slot.done) text(c, t('已选定'), 856, middle, 21, CREAM, 500);
+            c.restore();
+            if (slot.done && slot.digit) text(c, String(slot.digit), 875, middle, 42, tint, 500);
+            else if (!slot.active) text(c, slot.done ? '●' : '—', 875, middle, slot.done ? 24 : 42, slot.done ? CREAM : MUTED, 500);
+        });
+        live = true;
+        const who = tx.player ? called(tx.player) : crew;
+        const working = tx.slots.findIndex(slot => slot.active);
+        foot = !tx.started ? t('链路已接通 · 等待 {0} 开始', [s.phase === 'encrypting' ? called(s.encryptor) || t('加密者') : crew]) :
+            tx.ai && working >= 0 ? t(tx.retrying ? '{0} 正在重试第 {1} 条' : '{0} 正在推理第 {1} 条', [who, working + 1]) :
+            t(s.phase === 'encrypting' ? '{0} · 已写好 {1} / 3' : '{0} · 已选 {1} / 3', [who, tx.count]);
+    }
+    /** Dots for every page, the current one lit; the keypad's 1–4 and the arrow keys turn them too. */
+    function guideNav(page: number) {
+        line(c, 55, 506, 890, RULE);
+        if (page > 0) button(c, 'guide-prev', '‹  ' + t('上一步'), 55, 526, 150, 44);
+        for (let i = 0; i < guidePages; i++) {
+            const x = 500 + (i - (guidePages - 1) / 2) * 34;
+            c.beginPath(); c.arc(x, 548, i === page ? 7 : 5, 0, Math.PI * 2);
+            if (i === page) { c.fillStyle = colors.own.light; c.fill(); }
+            else { c.strokeStyle = '#7d8a86'; c.lineWidth = 1.5; c.stroke(); }
+            target('screen', `guide-page-${i}`, t('第 {0} 步 · {1}', [i + 1, t(guideSteps[i])]), x - 16, 532, 32, 32, { disabled: i === page });
+        }
+        const last = page === guidePages - 1;
+        button(c, last ? 'guide-done' : 'guide-next', last ? t('完成') : t('下一步') + '  ›', 795, 526, 150, 44);
+        if (last) target('screen', 'guide-bgg', t('BGG 游戏介绍'), 50, 458, 220, 32, { href: originalGameLinks[1].href });
     }
     function field(id: string, value: string, placeholder: string, x: number, y: number, width: number, height: number, maxLength: number) {
         if (!s.connected) placeholder = t('连接中') + '…';
@@ -699,9 +925,12 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     frames.clock = paintClock(s, u);
     for (let i = 0; i < 5; i++) {
         const k = frame('key' + i, 180, 200);
-        const enabled = r.guess && r.active && h.online && !s.recovering && !u.manual && !u.about;
+        // While the guide is up, the keypad turns its pages: 1–4 go to a page, ← goes back.
+        const guide = u.manual && h.powered;
+        const enabled = guide ? i < guidePages || guidePage > 0 : r.guess && r.active && h.online && !s.recovering && !u.about;
         text(k, i === 4 ? '←' : String(i + 1), i === 4 ? 27 : 53, 101, 96, enabled ? CREAM : '#8e897f', 500);
-        target('key' + i, 'key-' + i, i === 4 ? t("删除上一位") : t("输入数字 {0}", [i + 1]), 0, 0, 180, 200, { disabled: !enabled });
+        target('key' + i, 'key-' + i, guide ? i === 4 ? t('上一页') : t('翻到第 {0} 页', [i + 1]) : i === 4 ? t("删除上一位") : t("输入数字 {0}", [i + 1]),
+            0, 0, 180, 200, { disabled: !enabled });
     }
     // Three steps at a 132 px pitch; the modeled dividers sit at 129 and 261.
     const ph = frame('phase', 411, 214);
@@ -802,6 +1031,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     const seats: Record<string, string | null> = {};
     teams.forEach(team => team.seats.forEach((seat, i) => { seats[team.team + i] = seat.player?.id ?? null; }));
     if (!h.online && h.powered) {
+        blink.length = 0;
         c.fillStyle = DARK; c.fillRect(0, 0, w, frames.screen.height);
         const warning = themeColors(u.theme).warning.light;
         text(c, 'NETWORK / OFFLINE', 55, 55, 18, warning, 500);
@@ -856,7 +1086,10 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             display.fillRect(0, 0, canvas.width, canvas.height);
         }
     }
-    return { frames, screenPrivacyKey: `${h.online}:${keyDiskIdentity(s)}:${diskReadable}`, teamPlates: { A: teamPalette('A', s.myTeam, u.theme).plate, B: teamPalette('B', s.myTeam, u.theme).plate }, wordTube: colors.crt, displayKey: u.theme, wordInks: { ...colors.led, warning: colors.led.legend }, wordPrivacyKey: `${h.online}:${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}:${s.myWords.join("|")}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: h.online, trafficKey: JSON.stringify([s.phase, s.round, s.submitted, s.aiStatus, s.playerProgress, s.history.length, s.players]), targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
+    const screenPage = !h.powered ? 'off' : !h.online ? 'offline' : u.manual ? `guide:${guidePage}` : u.about ? 'about' :
+        briefing ? `brief:${u.brief}` : `${s.phase}:${s.round}:${sent ? 'sent' : observing ? 'watch' : 'act'}`;
+    return { frames, screenBlink: h.online ? blink : [], screenPage, screenSignal: briefing && h.online ? u.brief : '',
+        screenPrivacyKey: `${h.online}:${keyDiskIdentity(s)}:${diskReadable}`, teamPlates: { A: teamPalette('A', s.myTeam, u.theme).plate, B: teamPalette('B', s.myTeam, u.theme).plate }, wordTube: colors.crt, displayKey: u.theme, wordInks: { ...colors.led, warning: colors.led.legend }, wordPrivacyKey: `${h.online}:${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}:${s.myWords.join("|")}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: h.online, trafficKey: JSON.stringify([s.phase, s.round, s.submitted, s.aiStatus, s.playerProgress, s.history.length, s.players]), targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
             (h.powered || rearControls.has(t.id) || ['power-toggle', 'disk-toggle', 'disk-eject'].includes(t.id)) &&
             (h.online || t.surface !== 'screen' || t.id === 'restore-link')),
         status: !h.online ? t(hardwareMessage(u, s)) : status || `${t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase])} · ${s.connected ? t("已连接") : t("连接中")}`,

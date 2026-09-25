@@ -16,6 +16,28 @@ export interface DotUniforms {
     drive: { value: THREE.Vector4 };
     panel: { value: THREE.Vector4 };
 }
+/**
+ * The main CRT is a terminal. Like its character generator it can blink a cell and
+ * write a new page out line by line, without the page itself being redrawn.
+ * blink: up to four cells as (u0, v0, u1, v1); blinkKind: 0 off, 1 cursor, 2 link pulse.
+ * write: rows written so far and rows per page. blank: the page colour of a cleared cell.
+ */
+export interface TerminalUniforms {
+    blink: { value: THREE.Vector4[] };
+    blinkKind: { value: THREE.Vector4 };
+    write: { value: THREE.Vector2 };
+    blank: { value: THREE.Color };
+    page: { value: number };
+}
+export const terminalRows = 20;
+export const terminalUniforms = (background: string, aspect: number): TerminalUniforms => ({
+    // Vector4 defaults w to 1, which would switch the fourth cell on.
+    blink: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, 0, 0, 0)) },
+    blinkKind: { value: new THREE.Vector4(0, 0, 0, 0) },
+    write: { value: new THREE.Vector2(terminalRows, terminalRows) },
+    blank: { value: new THREE.Color(background) },
+    page: { value: aspect },
+});
 /** One shared semantic palette bus serves all four LED modules. */
 // The warning channel reuses the legend die: the modules have only two colours.
 export const dotInks = { word: { value: new THREE.Color('#f1b09d') }, legend: { value: new THREE.Color('#d7cfb8') }, warning: { value: new THREE.Color('#d7cfb8') } };
@@ -54,6 +76,8 @@ interface Options {
     display?: () => WordDisplay;
     filter?: () => DotFilter;
     dots?: DotUniforms;
+    /** The main screen's terminal attributes. */
+    terminal?: TerminalUniforms;
 }
 
 /** The picture tube's fragment stage: optics, raster, and the beam the tube state describes. */
@@ -82,17 +106,22 @@ export function shadeCrt(material: THREE.Material, options: Options) {
                 dotBandRows: { value: new THREE.Vector2(dotGrid.bandTop, dotGrid.bandBottom) }, dotGap: { value: dotGrid.gap }, dotInset: { value: dotGrid.inset },
             });
         }
+        if (options.terminal) Object.assign(shader.uniforms, {
+            crtBlink: options.terminal.blink, crtBlinkKind: options.terminal.blinkKind, crtWrite: options.terminal.write,
+            crtBlank: options.terminal.blank, crtPage: options.terminal.page,
+        });
         const display = options.display?.() ?? 'crt';
         if (display !== 'crt' && options.dots) {
             shader.fragmentShader = `#define DOT_FILTER ${dotFilterDefine[options.filter?.() ?? defaultDotFilter]}\n` + (options.lite() ? '#define CRT_LITE\n' : '')
                 + crtOpticsShader + crtTubeShader + dotDeclarations + dotFilteringShader + shader.fragmentShader.replace('#include <map_fragment>', dotMatrixShader);
             return;
         }
-        shader.fragmentShader = (options.lite() ? '#define CRT_LITE\n' : '') + crtOpticsShader + crtTubeShader + shader.fragmentShader
+        shader.fragmentShader = (options.lite() ? '#define CRT_LITE\n' : '') + (options.terminal ? '#define CRT_TERMINAL\n' : '')
+            + crtOpticsShader + crtTubeShader + (options.terminal ? crtTerminalShader : '') + shader.fragmentShader
             .replace('#include <map_fragment>', crtPictureShader)
             .replace('#include <dithering_fragment>', crtRasterShader);
     };
-    material.customProgramCacheKey = () => `console-crt-tube-v2-${options.kind}-${options.display?.() ?? 'crt'}-${options.filter?.() ?? defaultDotFilter}-${options.lite() ? 'lite' : 'full'}`;
+    material.customProgramCacheKey = () => `console-crt-tube-v2-${options.kind}-${options.display?.() ?? 'crt'}-${options.filter?.() ?? defaultDotFilter}-${options.lite() ? 'lite' : 'full'}${options.terminal ? '-terminal' : ''}`;
 }
 
 const crtTubeShader = `
@@ -139,6 +168,40 @@ const crtTubeShader = `
     float crtFrame(vec2 rasterUv, vec2 soft) {
         vec2 aperture = abs(rasterUv - .5) * 2.0;
         return (1.0 - smoothstep(.99 - soft.x, .99 + soft.x, aperture.x)) * (1.0 - smoothstep(.99 - soft.y, .99 + soft.y, aperture.y));
+    }
+`;
+
+// The terminal's character attributes, read where the picture is sampled: a blinking
+// cell and a row not yet written both show the cleared page, shaded as the page is.
+const crtTerminalShader = `
+    uniform vec4 crtBlink[4];
+    uniform vec4 crtBlinkKind;
+    uniform vec2 crtWrite;
+    uniform vec3 crtBlank;
+    uniform float crtPage;
+    // The page's static falloff (crtFinish), so a cleared cell matches its neighbours.
+    vec3 crtPaper(vec2 uv) {
+        float reach = clamp((length((uv - .5) * vec2(1.0, crtPage)) - .10) / .58, 0.0, 1.0);
+        float shade = reach < .65 ? .035 * reach / .65 : .035 + .465 * (reach - .65) / .35;
+        return crtBlank * pow(1.0 - shade, 2.2);
+    }
+    // Character blink runs at about 1.6 Hz, lit three fifths of the cycle: the phosphor lets
+    // go within milliseconds, the eye within tens. A quiet link breathes every two seconds.
+    float crtAttribute(vec2 uv) {
+        float level = 1.0;
+        float blink = fract(crtTime * 1.6);
+        float cursor = mix(.16, 1.0, smoothstep(0.0, .03, blink) * (1.0 - smoothstep(.6, .66, blink)));
+        float pulse = mix(.35, 1.0, .5 + .5 * cos(crtTime * 3.4557519));
+        for (int i = 0; i < 4; i++) {
+            float kind = crtBlinkKind[i];
+            vec4 cell = crtBlink[i];
+            float inside = step(cell.x, uv.x) * step(uv.x, cell.z) * step(cell.y, uv.y) * step(uv.y, cell.w) * step(.5, kind);
+            level = min(level, mix(1.0, kind < 1.5 ? cursor : pulse, inside));
+        }
+        // A new page is written from the top, each row left to right as a terminal prints.
+        if (crtWrite.x >= crtWrite.y) return level;
+        float row = (1.0 - uv.y) * crtWrite.y, rows = floor(crtWrite.x);
+        return level * (row < rows ? 1.0 : row < rows + 1.0 ? step(uv.x, fract(crtWrite.x)) : 0.0);
     }
 `;
 
@@ -222,6 +285,9 @@ const crtPictureShader = `
     } else crtHalo = crtEmission(map, crtUv, crtBlur + 2.6) * .55;
     #endif
     sampledDiffuseColor.rgb += crtHalo * .36;
+    #ifdef CRT_TERMINAL
+    sampledDiffuseColor.rgb = mix(crtPaper(crtUv), sampledDiffuseColor.rgb, crtAttribute(crtUv));
+    #endif
     sampledDiffuseColor.rgb *= 1.12 * crtBar;
     // A dark inner border separates the emitting coating
     // from the front glass. Out-of-frame samples fade rather

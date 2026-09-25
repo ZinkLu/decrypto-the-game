@@ -458,6 +458,16 @@ button,input { font: inherit; }
   .mobile-words ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); list-style: none; gap: 14px; padding: 0; margin-bottom: 6px; }
   .mobile-words b { color: #956239; font: 19px Georgia,serif; margin-right: 5px; }
   .mobile-clues { padding-left: 22px; line-height: 2; }
+  /* The acting seat's three slots; the one being worked on blinks like the CRT's cursor. */
+  .mobile-slots { list-style: none; padding: 0; margin: 12px 0; }
+  .mobile-slots li { display: flex; align-items: center; gap: 12px; min-height: 44px; border-bottom: 1px solid #a1a48f; }
+  .mobile-slots b { font: 13px monospace; color: #657066; }
+  .mobile-slots span { flex: 1; min-width: 0; }
+  .mobile-slots em { font-style: normal; font-weight: 600; }
+  .mobile-slots [data-state="idle"] span { color: #7a8078; }
+  .mobile-slots [data-state="active"] { border-bottom-color: #273d36; }
+  .mobile-slots [data-state="active"] em, .mobile-slots [data-state="active"] span { animation: mobile-slot-blink .625s steps(1) infinite; }
+  @media (prefers-reduced-motion: reduce) { .mobile-slots [data-state="active"] em, .mobile-slots [data-state="active"] span { animation: none; } }
   .mobile-digits,.mobile-keypad { display: flex; gap: 8px; margin: 12px 0; }
   .mobile-digits button { flex: 1; font: 28px monospace; }
   .mobile-keypad button { flex: 1; padding-inline: 4px; }
@@ -470,6 +480,8 @@ button,input { font: inherit; }
   .mobile-action span { font: 11px monospace; letter-spacing: .15em; margin-right: 18px; }
 }
 
+@keyframes mobile-slot-blink { 0% { opacity: 1; } 60% { opacity: .3; } }
+
 /* A continuous illustrated guide also serves the portable/native terminal. */
 .field-guide { line-height: 1.65; }
 .field-guide h2 { font-size: 1.45rem; line-height: 1.35; margin: 24px 0; }
@@ -477,6 +489,7 @@ button,input { font: inherit; }
 .field-guide h3 { margin: 0 0 8px; font-size: 1rem; }
 .field-guide .field-guide-heading { display: flex; align-items: center; gap: 10px; margin: 26px 0 12px; }
 .field-guide-flow > .field-guide-heading:first-child { margin-top: 0; }
+.field-guide-lead { margin: -4px 0 12px; font-size: .875rem; opacity: .82; }
 .field-guide-heading b { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border-radius: 50%; background: var(--guide-accent, #d7cfb8); color: #111e24; }
 .field-guide nav { display: flex; flex-wrap: wrap; gap: 12px 22px; margin: 24px 0; }
 .field-guide nav a { color: inherit; text-underline-offset: 4px; }

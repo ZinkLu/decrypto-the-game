@@ -4,15 +4,15 @@ import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
 import { ConsoleAudio, gameSound, type ConsoleSound } from './sound';
 import { ConsoleMusic, readMusicPreferences, saveMusicPreferences, type MusicPreferences, type MusicStatus } from './music';
-import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, syncDiskPower, initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, syncKeyDisk, advanceKeyDisk, actKeyDisk, keyDiskDurations } from './model';
+import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, syncDiskPower, initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, syncKeyDisk, advanceKeyDisk, actKeyDisk, keyDiskDurations, briefingKey, briefingDuration, roundCast } from './model';
 import type { WordDisplay } from './dotMatrix';
 import { defaultDotFilter, dotFilterOptions, readDotFilter, readWordScale, type DotFilter } from './dotFiltering';
-import { paint, paintClock, knobLabel } from './paint';
+import { paint, paintClock, knobLabel, guidePages } from './paint';
 import { qualityChoices, qualityProfiles, describeQuality, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import ArchiveSheet from './ArchiveSheet';
 import MobileConsole from './MobileConsole';
 import GuideContent from './GuideContent';
-import { guideArtUrl } from './guide';
+import { guideArtUrl, guidePageFor } from './guide';
 import { useDiskPull } from './useDiskPull';
 import type { LocalState, InstrumentVariant, KeyDiskState } from './model';
 import type { Target } from './paint';
@@ -37,6 +37,8 @@ const scoreBench = import.meta.env.DEV && new URLSearchParams(location.search).g
 const pinnedQuality = import.meta.env.DEV ? qualityChoices.find(choice => choice === new URLSearchParams(location.search).get('quality')) : undefined;
 const qualityLabels: Record<QualityChoice, string> = { auto: '自动', high: '高', medium: '中', low: '低' };
 const initialInstrument = instrumentPreview ? instrumentOptions.find(option => option.id === new URLSearchParams(location.search).get('instruments'))?.id || 'signal' : initialLocal.instrumentVariant;
+// DEV stills pin the round briefing: `?brief=hold` keeps it up, `?brief=off` skips it.
+const briefMode = import.meta.env.DEV ? new URLSearchParams(location.search).get('brief') : null;
 const scopeControls = ['scope-tune', 'scope-wave', 'scope-rate', 'scope-xy', 'meter-amplitude', 'meter-rate'];
 const isScopeControl = (id: string) => scopeControls.includes(id);
 export default function Console() {
@@ -426,10 +428,21 @@ export default function Console() {
             if (text) setStaleDraft({ round: previous.round, text });
         }
         pending.current = false;
+        // Every beat opens with its briefing on the main CRT, even for a seat that only watches.
+        const brief = briefMode === 'off' ? '' : briefingKey(s);
         setU(old => ({ ...old, clues: ['', '', ''], guess: [0, 0, 0], slot: 0, submitted: false, focus: '', note: '', manual: false, about: false,
-            seconds: preview ? 45 : s.phase === 'encrypting' ? 90 : 60 }));
-        setAnnouncement(s.phase === 'home' ? t("通信终端已就绪") : t("第 {0} 回合，{1}", [s.round, s.phase === 'encrypting' ? t("加密") : s.phase === 'intercept' ? t("拦截") : s.phase === 'decrypt' ? t("解码") : s.phase === 'room' ? t("队伍准备") : t("阶段更新")]));
+            seconds: preview ? 45 : s.phase === 'encrypting' ? 90 : 60, brief }));
+        const cast = roundCast(s);
+        const acting = s.phase === 'intercept' ? cast.receiving : cast.sending;
+        setAnnouncement(s.phase === 'home' ? t("通信终端已就绪") : t("第 {0} 回合，{1}", [s.round, s.phase === 'encrypting' ? t("加密") : s.phase === 'intercept' ? t("拦截") : s.phase === 'decrypt' ? t("解码") : s.phase === 'room' ? t("队伍准备") : t("阶段更新")]) +
+            (brief && acting ? ` · ${t(s.phase === 'encrypting' ? '{0} 队发报' : s.phase === 'intercept' ? '{0} 队拦截' : '{0} 队解码', [acting])}${s.phase === 'encrypting' && s.encryptor ? ` · ${t('加密者 {0}', [s.encryptor])}` : ''}` : ''));
     }, [viewKey]);
+    useEffect(() => {
+        if (!u.brief || briefMode === 'hold') return;
+        const brief = u.brief;
+        const timer = window.setTimeout(() => setU(old => old.brief === brief ? { ...old, brief: '' } : old), briefingDuration(brief));
+        return () => clearTimeout(timer);
+    }, [u.brief]);
     useEffect(() => {
         if (preview) return;
         // Polled four times a second, but the console re-renders only when the second changes.
@@ -493,12 +506,27 @@ export default function Console() {
                 else {
                     if (current.current.u.manual || current.current.u.about)
                         handleFocusPending.current = current.current.u.about ? 'about' : 'manual';
+                    else skipBriefing();
                     patch({ archiveOpen: false, manual: false, about: false });
                 }
                 return;
             }
-            if (!consoleHardware(current.current.u).powered || facingRear() || (current.current.u.manual || current.current.u.about)) return;
             const input = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable);
+            if (!consoleHardware(current.current.u).powered || facingRear()) return;
+            if (current.current.u.manual && !input) {
+                // The guide turns with the arrow keys, or straight to a page with 1–4.
+                const page = event.key === 'ArrowLeft' ? current.current.u.guidePage - 1 : event.key === 'ArrowRight' ? current.current.u.guidePage + 1 :
+                    /^[1-4]$/.test(event.key) ? Number(event.key) - 1 : null;
+                if (page !== null) { event.preventDefault(); turnGuide(page); }
+                return;
+            }
+            if (current.current.u.manual || current.current.u.about) return;
+            // Any deliberate key ends the briefing; a number still goes to the keypad.
+            if (current.current.u.brief && !input && !event.metaKey && !event.ctrlKey && !event.altKey &&
+                (/^[1-4]$/.test(event.key) || ['Enter', ' ', 'Escape', 'Backspace', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key))) {
+                skipBriefing();
+                if (!/^[1-4]$/.test(event.key)) { event.preventDefault(); return; }
+            }
             if (!input && /^[1-4]$/.test(event.key)) {
                 event.preventDefault();
                 act('key-' + (Number(event.key) - 1));
@@ -515,6 +543,18 @@ export default function Console() {
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     });
+    function skipBriefing() {
+        if (!current.current.u.brief) return;
+        current.current.u = { ...current.current.u, brief: '' };
+        setU(old => old.brief ? { ...old, brief: '' } : old);
+    }
+    function turnGuide(page: number) {
+        const next = Math.max(0, Math.min(guidePages - 1, page));
+        if (next === current.current.u.guidePage) return;
+        current.current.u = { ...current.current.u, guidePage: next };
+        patch({ guidePage: next });
+        playSound('key');
+    }
     function progress(clues: string[], guess: number[], slot: number, force = false) {
         const now = performance.now();
         if (!force && now - progressLast.current < 180)
@@ -525,7 +565,9 @@ export default function Console() {
         const r = roleState(state, local);
         if (preview || !consoleHardware(local, state).online || !r.active)
             return;
-        state.sendProgress(r.action, r.encrypt ? clues.filter(c => c.trim()).length : guess.filter(Boolean).length, { state: 'editing', focus: slot + 1, ...(r.guess ? { guesses: guess } : {}) });
+        // Which lines hold a clue travels, never the clue itself.
+        state.sendProgress(r.action, r.encrypt ? clues.filter(c => c.trim()).length : guess.filter(Boolean).length,
+            { state: 'editing', focus: slot + 1, ...(r.guess ? { guesses: guess } : { filled: clues.map(c => !!c.trim()) }) });
     }
     function change(target: Pick<Target, 'id'>, value: string) {
         const local = current.current.u;
@@ -624,6 +666,14 @@ export default function Console() {
             return;
         }
         if (rear) return;
+        // ACTION during a briefing only takes the operator to the working page. The
+        // portable terminal has no briefing page, so there it always transmits.
+        if (id === 'transmit' && local.brief && !failure && !matchMedia('(max-width: 850px)').matches) {
+            skipBriefing();
+            engine.current?.pulse(id);
+            playSound('key');
+            return;
+        }
         if (id === 'receiver-sweep' && local.instrumentVariant === 'signal') {
             patch({ instrumentDemo: !local.instrumentDemo });
             setAnnouncement(local.instrumentDemo ? t("已切回手动调谐") : t("自动信号摆动已开启，旋钮保持原位"));
@@ -634,10 +684,27 @@ export default function Console() {
             adjustInstrument(id.startsWith('meter-amplitude') ? 'amplitude' : 'rate', id.endsWith('-prev') ? -1 : 1);
             return;
         }
-        if (id === 'manual' || id === 'about' || id === 'screen-close') {
-            if (id === 'screen-close') handleFocusPending.current = local.about ? 'about' : 'manual';
-            patch({ manual: id === 'manual' && !local.manual, about: id === 'about' && !local.about, focus: '' });
+        if (id === 'brief-skip') {
+            skipBriefing();
             playSound('key');
+            return;
+        }
+        if (id === 'manual' || id === 'about' || id === 'screen-close' || id === 'guide-done') {
+            if (id === 'screen-close' || id === 'guide-done') handleFocusPending.current = local.about ? 'about' : 'manual';
+            // The guide opens on the page for what the table is doing right now.
+            patch({ manual: id === 'manual' && !local.manual, about: id === 'about' && !local.about, focus: '',
+                ...(id === 'manual' && !local.manual ? { guidePage: guidePageFor(state.phase) } : {}) });
+            playSound('key');
+            return;
+        }
+        if (id === 'guide-prev' || id === 'guide-next' || id.startsWith('guide-page-')) {
+            turnGuide(id === 'guide-prev' ? local.guidePage - 1 : id === 'guide-next' ? local.guidePage + 1 : Number(id.slice(11)));
+            return;
+        }
+        if (local.manual && id.startsWith('key-')) {
+            const n = Number(id.slice(4));
+            engine.current?.pulse(id);
+            turnGuide(n === 4 ? local.guidePage - 1 : n);
             return;
         }
         if (id === 'words') {
@@ -684,11 +751,14 @@ export default function Console() {
             return;
         }
         if (id.startsWith('slot-')) {
-            if (r.active)
+            if (r.active) {
                 patch({ slot: Number(id.slice(5)) });
+                progress(local.clues, local.guess, Number(id.slice(5)), true);
+            }
             return;
         }
         if (id.startsWith('key-')) {
+            if (local.brief) skipBriefing();
             if (!r.guess || !r.active || !consoleHardware(local, state).online || local.manual || local.about)
                 return;
             const n = Number(id.slice(4));

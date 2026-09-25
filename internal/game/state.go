@@ -147,7 +147,7 @@ func (b *Bridge) ValidateProgress(playerID string, data ws.ProgressData) error {
 	default:
 		return fmt.Errorf("invalid progress")
 	}
-	if len(data.Guesses) > 3 {
+	if len(data.Guesses) > 3 || len(data.Filled) > 3 {
 		return fmt.Errorf("invalid progress")
 	}
 	for _, n := range data.Guesses {

@@ -2,7 +2,7 @@
 
 Production asset: `web/public/images/guide/agents.png` (2172 × 724, transparent PNG).
 
-Created with the built-in imagegen tool from the approved single-page tutorial. Three original retro cartoon agents share a text-free sprite sheet. The CRT paints localized labels, secret-code annotations and three complete historical rounds separately; accent colors come from the active theme. The native mobile guide uses the same asset and content. The code annotations are explicitly educational and are never applied to opponents’ live clues.
+Created with the built-in imagegen tool from the approved single-page tutorial. Three original retro cartoon agents share a text-free sprite sheet. The CRT guide now spreads the content over four pages, one idea each: the cast of the round on page 1, and one agent per step on pages 2–4 (encryptor, detective, teammate). It paints localized labels, secret-code annotations and three complete historical rounds separately; accent colors come from the active theme. The native mobile guide uses the same asset and content. The code annotations are explicitly educational and are never applied to opponents’ live clues.
 
 ## Final image prompt
 

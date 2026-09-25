@@ -260,7 +260,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			if json.Unmarshal(msg.Data, &d) != nil || b.ValidateProgress(identity.PlayerID, d) != nil {
 				return
 			}
-			h.Hub.BroadcastToRoom(r.Code, ws.ServerMessage{Type: ws.MsgPlayerProgress, Data: ws.PlayerProgressData{Action: d.Action, Player: identity.Nickname, State: d.State, Step: d.Step, Focus: d.Focus, Guesses: d.Guesses, Total: 3}})
+			h.Hub.BroadcastToRoom(r.Code, ws.ServerMessage{Type: ws.MsgPlayerProgress, Data: ws.PlayerProgressData{Action: d.Action, Player: identity.Nickname, State: d.State, Step: d.Step, Focus: d.Focus, Guesses: d.Guesses, Filled: d.Filled, Total: 3}})
 		}
 		if err != nil {
 			client.SendError(err.Error())

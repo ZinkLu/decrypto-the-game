@@ -7,6 +7,23 @@ export const originalGameLinks = [
 ] as const;
 export const guideWords = ['灯塔', '海岸', '玫瑰', '候鸟'];
 export const guideSteps = ['看我方密词', '按密码给线索', '对手先猜', '队友后猜'] as const;
+/** One idea per page: the lead says it, the diagram shows it, the note adds the rule. */
+export const guideLeads = [
+    '两队各有四个秘密词，编号 1–4，整局不变。',
+    '加密者从软盘读到三位密码，按顺序为每个编号写一条线索。',
+    '对手看不到你们的密词，只能拿公开线索对照旧记录。',
+    '队友对照我方密词解码：三个编号，顺序全对才算成功。',
+] as const;
+export const guideNotes = [
+    '词窗只有本队看得到。每回合，发报方派一人当加密者。',
+    '写好三条线索，按 ACTION 发报。',
+    '三个编号全猜中就是截获。前两次发报不拦截。',
+    '最多 16 回合',
+] as const;
+/** The guide opens on the page that explains what the table is doing right now. */
+export function guidePageFor(phase: string) {
+    return phase === 'encrypting' ? 1 : phase === 'intercept' ? 2 : phase === 'decrypt' ? 3 : 0;
+}
 export const guideOutcome = '截获 2 次胜 · 解码失误 2 次负';
 export const guideOpening = '前两次发报不拦截';
 export const guideClues = ['花园', '航行', '羽毛'];

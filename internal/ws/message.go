@@ -228,7 +228,9 @@ type AIStatusData struct {
 // on slot Focus), and "submitted" (pressed dispatch). Step is the count of
 // completed items (0-3); Focus is the slot the user is on (1-3), 0 otherwise.
 // Guesses carries the current per-slot choice for decrypt/intercept actions
-// (0 for unfilled); used to light up selector oscilloscopes on observer pages.
+// (0 for unfilled); used to light up the receiving slots on observer pages.
+// Filled marks which clue lines hold text while encrypting (never the text
+// itself), so a draft written out of order still reads correctly elsewhere.
 type ProgressData struct {
 	Round   int    `json:"round"`
 	Action  string `json:"action"`            // "encrypt", "intercept", "decrypt"
@@ -236,6 +238,7 @@ type ProgressData struct {
 	Step    int    `json:"step"`              // completed count (0-3)
 	Focus   int    `json:"focus,omitempty"`   // active slot 1-3, 0 if none
 	Guesses []int  `json:"guesses,omitempty"` // per-slot digits 1-4, 0 unfilled
+	Filled  []bool `json:"filled,omitempty"`  // per-slot clue drafted (encrypt only)
 	Total   int    `json:"total"`             // total steps (always 3)
 }
 
@@ -247,6 +250,7 @@ type PlayerProgressData struct {
 	Step    int    `json:"step"`
 	Focus   int    `json:"focus,omitempty"`
 	Guesses []int  `json:"guesses,omitempty"`
+	Filled  []bool `json:"filled,omitempty"`
 	Total   int    `json:"total"`
 }
 

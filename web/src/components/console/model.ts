@@ -189,6 +189,9 @@ export interface LocalState {
     instrumentVariant: InstrumentVariant;
     instrumentDemo: boolean;
     wordDisplay: WordDisplay;
+    /** The briefing on the main CRT (`briefingKey`), or '' once the working page is up. */
+    brief: string;
+    guidePage: number;
 }
 export const initialLocal: LocalState = {
     // FREQ rests on the engraved 2:1 mark: two locked cycles per sweep.
@@ -199,7 +202,7 @@ export const initialLocal: LocalState = {
     scopeWave: .5, scopeRate: .9, scopeAxis: 0,
     backView: false, batteryOpen: false, soundOn: true, musicOn: true, musicVolume: .6, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
-    instrumentVariant: 'signal', instrumentDemo: true, wordDisplay: 'led',
+    instrumentVariant: 'signal', instrumentDemo: true, wordDisplay: 'led', brief: '', guidePage: 0,
 };
 export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'keyDisk' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'musicOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo' | 'wordDisplay'>;
 /** powerOn is the physical switch, never the derived availability of electricity. */
@@ -351,6 +354,62 @@ export function phaseSignal(s: StationState, theme: ThemeId = 'classic') {
     const own = !!actingTeam && actingTeam === s.myTeam;
     return { sendingTeam, actingTeam, own, color: teamPalette(actingTeam, s.myTeam, theme).light };
 }
+/** The three beats of a transmission, in the order the phase panel lights them. */
+export const beats = ['encrypting', 'intercept', 'decrypt'] as const;
+export type Beat = typeof beats[number];
+export const isBeat = (phase: string): phase is Beat => (beats as readonly string[]).includes(phase);
+/**
+ * Who sends, who intercepts and who decodes this round. Spectators learn the sending
+ * team from the encryptor's public name; a nickname shared by two players stays
+ * unattributed. The first two transmissions of a game are never intercepted.
+ */
+export function roundCast(s: StationState) {
+    const members = (team: string) => team === 'A' ? s.teamA : team === 'B' ? s.teamB : [];
+    const named = [...s.teamA, ...s.teamB].filter(p => p.nickname === s.encryptor);
+    const sending = phaseSignal(s).sendingTeam || (named.length === 1 ? s.teamA.includes(named[0]) ? 'A' : 'B' : '');
+    const receiving = sending === 'A' ? 'B' : sending === 'B' ? 'A' : '';
+    const own = members(sending);
+    const encryptor = s.myRole === 'encryptor' ? own.find(p => p.id === s.myPlayerID) :
+        own.filter(p => p.nickname === s.encryptor).length === 1 ? own.find(p => p.nickname === s.encryptor) : undefined;
+    return { sending, receiving, encryptor, decoders: own.filter(p => p !== encryptor), interceptors: members(receiving),
+        intercepted: s.round > 2 };
+}
+/** Every beat opens with a briefing: the round's cast before the first, the handover before the others. */
+export function briefingKey(s: Pick<StationState, 'phase' | 'round' | 'roomCode'>) {
+    return isBeat(s.phase) && s.round > 0 ? `${s.roomCode ?? ''}:${s.round}:${s.phase}` : '';
+}
+export const briefingTime = { round: 3800, handover: 2600 };
+export const briefingDuration = (key: string) => key.endsWith(':encrypting') ? briefingTime.round : briefingTime.handover;
+export interface SlotSignal { active: boolean; done: boolean; digit: number; match?: boolean }
+/**
+ * The acting seat's three slots as the other terminals receive them: which one is being
+ * worked on, which are filled, and the chosen numbers wherever this seat may see them.
+ * Clue text never travels before it is sent. A rival's picks stay hidden from the team
+ * that still has to decode; only the round's encryptor, with the disk read, can compare
+ * them with the code.
+ */
+export function transmission(s: StationState, readable = false) {
+    if (!isBeat(s.phase)) return null;
+    const action = s.phase === 'encrypting' ? 'encrypt' : s.phase;
+    const human = s.playerProgress?.action === action ? s.playerProgress : null;
+    const ai = s.aiStatus?.action === action ? s.aiStatus : null;
+    const thinking = ai && (ai.state === 'thinking' || ai.state === 'retrying') ? ai.step : 0;
+    const submitted = human?.state === 'submitted';
+    const focus = submitted ? 0 : human?.state === 'editing' && human.focus ? human.focus : thinking;
+    const aiDone = ai?.completed ?? 0;
+    const showDigits = action !== 'encrypt' && !(action === 'intercept' && s.myRole === 'teammate');
+    const slots = [0, 1, 2].map<SlotSignal>(i => {
+        const picked = human?.guesses?.[i] ?? 0;
+        const done = submitted || (action === 'encrypt'
+            ? human ? human.filled ? !!human.filled[i] : i < human.step : i < aiDone
+            : human ? picked > 0 : i < aiDone);
+        const digit = showDigits && done ? picked : 0;
+        return { active: focus === i + 1, done, digit, match: readable && digit > 0 ? digit === s.secretDigits[i] : undefined };
+    });
+    const player = human?.player && human.player !== 'AI Agent' ? human.player : action === 'encrypt' ? s.encryptor : '';
+    return { action, player, ai: !!ai || human?.player === 'AI Agent', retrying: ai?.state === 'retrying',
+        slots, count: slots.filter(slot => slot.done).length, started: !!human || !!ai, submitted };
+}
 // Presence and progress are public signals; never infer per-player connectivity.
 export function rosterTeams(s: StationState, u: LocalState) {
     const playing = ['encrypting', 'intercept', 'decrypt'].includes(s.phase);
@@ -429,8 +488,18 @@ export function previewState(base: StationState, name: string, locale: 'zh' | 'e
     }
     const people = [locale === 'en' ? 'You' : '你', 'Alice', 'Bob', 'AI · 01', 'John', 'Lisa', 'AI · 02', 'AI · 03']
         .map((nickname, i) => ({ id: String(i), nickname, is_ai: nickname.startsWith('AI') }));
+    // Watching scenarios show another seat's live progress: `waiting` (teammate) and
+    // `listening` (rival) during encryption, `watch-intercept` and `watch-decrypt` (encryptor).
+    const watching = { 'watch-intercept': 'intercept', 'watch-decrypt': 'decrypt' }[name];
     const phase = ['home', 'room', 'encrypting', 'intercept', 'decrypt', 'round_result', 'game_over'].includes(name)
-        ? name as StationState['phase'] : name === 'room-empty' || name === 'room-partial' ? 'room' : 'encrypting';
+        ? name as StationState['phase'] : watching ? watching as StationState['phase'] : name === 'room-empty' || name === 'room-partial' ? 'room' : 'encrypting';
+    const you = locale === 'en' ? 'You' : '你';
+    const progress: Record<string, StationState['playerProgress']> = {
+        waiting: { action: 'encrypt', player: 'Alice', state: 'editing', step: 2, focus: 3, filled: [true, true, false], total: 3 },
+        listening: { action: 'encrypt', player: 'John', state: 'editing', step: 1, focus: 2, filled: [true, false, false], total: 3 },
+        'watch-intercept': { action: 'intercept', player: 'John', state: 'editing', step: 2, focus: 3, guesses: [2, 1, 0], total: 3 },
+        'watch-decrypt': { action: 'decrypt', player: 'Alice', state: 'editing', step: 1, focus: 2, guesses: [3, 0, 0], total: 3 },
+    };
     if (name === 'room-partial') people[0].nickname = locale === 'en' ? 'The mysterious agent still decoding at three in the morning' : '凌晨三点还在破解频道密码的神秘特工';
     const teamA = phase === 'home' || name === 'room-empty' ? [] : name === 'room-partial' ? people.slice(0, 1) : people.slice(0, 4);
     const teamB = phase === 'home' || name === 'room-empty' ? [] : name === 'room-partial' ? people.slice(4, 6) : people.slice(4);
@@ -438,10 +507,12 @@ export function previewState(base: StationState, name: string, locale: 'zh' | 'e
     return { ...base, phase, connected: true, roomCode: phase === 'home' ? null : '5821',
         myPlayerID: '0', ownerID: '0', myTeam: teamA.length ? 'A' : '', players: phase === 'home' ? [] : name === 'room-empty' ? people.slice(0, 1) : name === 'room-partial' ? [...teamA, ...teamB, people[1]] : people,
         teamA, teamB, canStart: teamA.length >= 2 && teamB.length >= 2,
-        round: playing ? 5 : 0, myRole: !playing ? '' : name === 'waiting' ? 'teammate' : phase === 'intercept' ? 'opponent' : phase === 'decrypt' ? 'teammate' : 'encryptor',
+        round: playing ? 5 : 0, myRole: !playing ? '' : name === 'waiting' ? 'teammate' : name === 'listening' ? 'opponent' : watching ? 'encryptor' :
+            phase === 'intercept' ? 'opponent' : phase === 'decrypt' ? 'teammate' : 'encryptor',
         myWords: phase === 'home' || phase === 'room' ? [] : ['灯塔[lighthouse]', '海岸[coast]', '玫瑰[rose]', '候鸟[migratory bird]'],
         secretDigits: playing ? [3, 1, 4] : [], secretWords: playing ? sample('玫瑰[Rose]', '灯塔[Lighthouse]', '候鸟[Migratory bird]') : [], clues: playing ? sample('花园[Garden]', '航行[Sailing]', '羽毛[Feather]') : [],
-        encryptor: !playing ? '' : phase === 'intercept' ? 'John' : name === 'waiting' || phase === 'decrypt' ? 'Alice' : locale === 'en' ? 'You' : '你', waiting: name === 'waiting',
+        encryptor: !playing ? '' : watching ? you : phase === 'intercept' || name === 'listening' ? 'John' : name === 'waiting' || phase === 'decrypt' ? 'Alice' : you,
+        waiting: name === 'waiting' || name === 'listening' || !!watching,
         scoreA: { interceptions: !playing ? 0 : phase === 'game_over' ? 2 : 1, decrypt_failures: 0 }, scoreB: { interceptions: 0, decrypt_failures: playing ? 1 : 0 },
         history: phase === 'home' || phase === 'room' ? [] : [
             { round: 1, team: 'A', clues: sample('微光[Glimmer]', '沙滩[Beach]', '春天[Spring]'), secret: [1, 2, 3], decrypt: [1, 2, 3] },
@@ -450,6 +521,6 @@ export function previewState(base: StationState, name: string, locale: 'zh' | 'e
             { round: 4, team: 'B', clues: sample('远行[Journey]', '潮汐[Tide]', '花束[Bouquet]'), secret: [4, 2, 3], intercept: [4, 2, 3] },
         ], roundResult: phase === 'round_result' ? { intercept_success: false, decrypt_success: true } : null,
         gameOver: phase === 'game_over' ? { winner: 'A' } : null, error: null,
-        playerProgress: name === 'waiting' ? { action: 'encrypt', player: 'Alice', state: 'editing', step: 2, total: 3 } : null,
+        playerProgress: progress[name] ?? null,
     };
 }

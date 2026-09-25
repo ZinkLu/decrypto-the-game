@@ -7,11 +7,11 @@ import dracoWrapperUrl from 'three/examples/jsm/libs/draco/gltf/draco_wasm_wrapp
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { crtFinish, type Content, type Frame, type Target } from './paint';
+import { crtFinish, screenBackground, type Blink, type Content, type Frame, type Target } from './paint';
 import { RosterMotion, rosterPose } from './rosterMotion';
 import { CrtMotion, crtRestSpot, type CrtKind } from './crtMotion';
 import { CrtSoundMotion, type CrtSoundEvent } from './crtSound';
-import { shadeCrt, crtUniforms, dotUniforms, dotInks, type CrtUniforms, type DotUniforms } from './crtShader';
+import { shadeCrt, crtUniforms, dotUniforms, dotInks, terminalUniforms, terminalRows, type CrtUniforms, type DotUniforms } from './crtShader';
 import { DotBank, DotDriver, dotGrid, type WordDisplay } from './dotMatrix';
 import { defaultDotFilter, type DotFilter } from './dotFiltering';
 import { plateFinish } from './finishes';
@@ -119,6 +119,12 @@ export class ConsoleEngine {
     private crtTubes = new Map<string, { motion: CrtMotion<TubeFrame>; uniforms: CrtUniforms; printed?: Frame }>();
     private crtMotion = new CrtMotion<TubeFrame>();
     private crtSound = new CrtSoundMotion();
+    // The main screen as a terminal: blinking cells, and new pages written out row by row.
+    private terminal = terminalUniforms(screenBackground, 830 / 1400);
+    private screenPage?: string;
+    private screenSignal = '';
+    private writeStarted = -Infinity;
+    private writing = false;
     // The keyword windows can be fitted with dot-matrix modules instead of tubes.
     private wordDisplay: WordDisplay = initialLocal.wordDisplay;
     private dotFilter: DotFilter = defaultDotFilter;
@@ -429,7 +435,8 @@ export class ConsoleEngine {
                 shadeCrt(material, { kind, seed, lite: () => this.quality.crtOptics === 'lite', time: this.crtTime, eye,
                     tube: uniforms, size: new THREE.Vector2(s.w, s.h), curvature, spot: crtRestSpot(kind),
                     display: () => kind === 'word' ? this.wordDisplay : 'crt',
-                    filter: () => kind === 'word' ? this.dotFilter : 'baseline', dots });
+                    filter: () => kind === 'word' ? this.dotFilter : 'baseline', dots,
+                    terminal: kind === 'screen' ? this.terminal : undefined });
                 this.crtMaterials.push(material);
                 this.addScreenGlass(name, plane);
             }
@@ -965,6 +972,7 @@ export class ConsoleEngine {
         // Every tube keeps its outgoing picture and phosphor colour until dark;
         // paint's blank power-off frames wait for that same exchange.
         this.crtMotion.sync(this.powerOn, { id: content.displayKey, frame: content.frames.screen });
+        this.syncTerminal(content);
         // Revoking a key also replaces the outgoing image during palette changes
         // and power-off afterglow; no secret is kept in the phosphor snapshot.
         if (this.screenPrivacyKey !== content.screenPrivacyKey && this.crtMotion.current)
@@ -1042,6 +1050,30 @@ export class ConsoleEngine {
             flag.object.rotation.x = flag.motion.angle;
         }
         this.project();
+    }
+    /**
+     * A briefing is a new signal: the tube loses its hold for a moment and locks on again,
+     * once per briefing. Any new page is then written out from the top, as a terminal
+     * receives it. Only a steady picture does either: never dark glass, a tube still
+     * warming up or changing palette, nor for anyone who asked for reduced motion.
+     */
+    private syncTerminal(content: Content) {
+        const steady = this.powerOn && this.crtMotion.interactive && !this.reduced.matches;
+        if (content.screenSignal && content.screenSignal !== this.screenSignal && steady) this.crtMotion.tube.disturb(.5);
+        if (content.screenSignal) this.screenSignal = content.screenSignal;
+        if (this.screenPage !== undefined && content.screenPage !== this.screenPage && steady) this.writeStarted = performance.now();
+        this.screenPage = content.screenPage;
+        this.setBlink(content.screenBlink, content.frames.screen);
+    }
+    private setBlink(cells: Blink[], page: Frame) {
+        const kinds = [0, 0, 0, 0];
+        cells.slice(0, 4).forEach((cell, i) => {
+            // Canvas rows run down the page; texture rows run up.
+            this.terminal.blink.value[i].set(cell.x / page.width, 1 - (cell.y + cell.h) / page.height,
+                (cell.x + cell.w) / page.width, 1 - cell.y / page.height);
+            kinds[i] = this.reduced.matches ? 0 : cell.kind === 'cursor' ? 1 : 2;
+        });
+        this.terminal.blinkKind.value.fromArray(kinds);
     }
     /** Review only: keep the same frame and supply while exchanging its filter. */
     setDotFilter(filter: DotFilter) {
@@ -1559,6 +1591,12 @@ export class ConsoleEngine {
             this.dotBank.advance(dt * this.rosterMotionRate, this.reduced.matches);
         }
         this.syncCrt();
+        // A page takes a little under half a second to arrive; every frame shows its progress.
+        const written = this.reduced.matches ? 1 : Math.min(1, (now - this.writeStarted) / 450);
+        this.terminal.write.value.x = written * terminalRows;
+        // Including the frame that completes it.
+        if (written < 1 || this.writing) changed = true;
+        this.writing = written < 1;
         if (crtInteractive !== this.crtMotion.interactive) {
             this.project();
             changed = true;

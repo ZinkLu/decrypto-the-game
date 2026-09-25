@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import GuideContent from './GuideContent';
 import type { StationState, LocalState, KeyDiskState } from './model';
 import { useDiskPull } from './useDiskPull';
-import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word } from './model';
+import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word, isBeat, roundCast, transmission } from './model';
 import { translate, localizeError } from './i18n';
 
 type Props = { state: StationState; local: LocalState; ready: boolean; status: string; inert: boolean;
@@ -26,6 +26,20 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
         '--disk-settle-y': `${154 - 72 * (u.keyDisk.pull.target ?? 0)}px`,
     } as CSSProperties : undefined;
     const signal = phaseSignal(s, u.theme);
+    const cast = roundCast(s);
+    // The same round context and live slots as the CRT, without its briefing page.
+    const context = !isBeat(s.phase) ? '' : [
+        s.phase === 'intercept' ? cast.receiving && t('{0} 队拦截', [cast.receiving]) : s.phase === 'decrypt' ? cast.sending && t('{0} 队解码', [cast.sending]) : cast.sending && t('{0} 队发报', [cast.sending]),
+        s.encryptor && t('加密者 {0}', [s.myRole === 'encryptor' ? t('你') : s.encryptor]),
+    ].filter(Boolean).join(' · ');
+    const watching = isBeat(s.phase) && !r.encrypt && !r.guess && !u.submitted && !s.submitted ? transmission(s, keyDiskReadable(s, u) && s.myRole === 'encryptor') : null;
+    const crew = s.phase === 'intercept' ? cast.receiving : cast.sending;
+    const who = watching?.player || (crew ? t('{0} 队', [crew]) : t('对手'));
+    const working = watching ? watching.slots.findIndex(slot => slot.active) : -1;
+    const watchStatus = !watching ? s.aiStatus && ['thinking', 'retrying'].includes(s.aiStatus.state || '') ? t('AI 正在推理第 {0} 条 · 已完成 {1}/3', [s.aiStatus.step, s.aiStatus.completed || 0]) : t('链路已接通 · 等待信号') :
+        !watching.started ? t('链路已接通 · 等待 {0} 开始', [s.phase === 'encrypting' ? s.encryptor || t('加密者') : who]) :
+        watching.ai && working >= 0 ? t(watching.retrying ? '{0} 正在重试第 {1} 条' : '{0} 正在推理第 {1} 条', [who, working + 1]) :
+        t(s.phase === 'encrypting' ? '{0} · 已写好 {1} / 3' : '{0} · 已选 {1} / 3', [who, watching.count]);
     const lobby = s.phase === 'room', home = s.phase === 'home';
     const owner = s.ownerID === s.myPlayerID;
     const disabled = !h.online;
@@ -88,7 +102,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
                     <span style={{ color: '#a44235' }}>{t('失误')} {score.decrypt_failures} / 2</span></p>;
             })}</div>
             {!!s.myWords.length && <section className="mobile-words"><div><h3>{t('我方秘密词')}</h3><button onClick={() => onAct('words')}>{t(u.hiddenWords ? '显示' : '遮住')}</button></div><ol>{s.myWords.map((v, i) => <li key={i}><b>{i + 1}</b> {u.hiddenWords ? '••••' : word(v, u.locale)}</li>)}</ol></section>}
-            {s.phase === 'game_over' ? <h3 className="mobile-result">{s.gameOver?.winner ? t('{0} 队获胜', [s.gameOver.winner]) : t('双方平局')}</h3> : <p>{t('本轮加密者：{0}', [s.encryptor])}</p>}
+            {s.phase === 'game_over' ? <h3 className="mobile-result">{s.gameOver?.winner ? t('{0} 队获胜', [s.gameOver.winner]) : t('双方平局')}</h3> : context ? <p>{context}</p> : null}
             {ownsDisk && <section className="mobile-key-disk" data-phase={diskCurrent ? u.keyDisk.phase : 'queued'} aria-label={t('本轮密钥软盘')}>
                 <div className="mobile-disk-mechanism" style={diskStyle}>
                     <button className="mobile-disk-grip" {...diskPull} disabled={!diskCurrent || !u.powerOn || !['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase)}
@@ -107,12 +121,16 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
                 {u.clues.map((value, i) => <label key={i}>{t('线索 {0}', [i + 1])}
                     <span className="mobile-clue-target">{diskReadable ? `${s.secretDigits[i]} · ${word(s.myWords[s.secretDigits[i] - 1] || s.secretWords[i], u.locale)}` : t('已隐藏')}</span><input value={value} maxLength={80} disabled={!r.active || disabled} onChange={e => onChange(`clue-${i}`, e.target.value)}/></label>)}
             </>}
-            {!r.encrypt && s.clues.length > 0 && <ol className="mobile-clues">{s.clues.map((v, i) => <li key={i}>{v}</li>)}</ol>}
+            {watching ? <ol className="mobile-slots" aria-label={t('实时进度')}>{watching.slots.map((slot, i) => {
+                const text = s.phase === 'encrypting' ? t(slot.active ? slot.done ? '正在修改这一条…' : '正在写这一条…' : slot.done ? '已写好' : '等待') : s.clues[i] || t('等待线索…');
+                const mark = s.phase === 'encrypting' ? slot.done && !slot.active ? '✓' : '' : slot.active ? t('推敲中') : slot.digit ? String(slot.digit) : slot.done ? t('已选定') : '—';
+                return <li key={i} data-state={slot.active ? 'active' : slot.done ? 'done' : 'idle'}><b>{String(i + 1).padStart(2, '0')}</b><span>{text}</span>{mark && <em>{mark}</em>}</li>;
+            })}</ol> : !r.encrypt && s.clues.length > 0 && <ol className="mobile-clues">{s.clues.map((v, i) => <li key={i}>{v}</li>)}</ol>}
             {r.guess && <>
                 <div className="mobile-digits">{u.guess.map((n, i) => <button key={i} aria-label={t('密码第 {0} 位', [i + 1])} aria-pressed={u.slot === i} disabled={!r.active || disabled} onClick={() => onAct(`slot-${i}`)}>{n || '—'}</button>)}</div>
                 <div className="mobile-keypad">{[1, 2, 3, 4].map(n => <button key={n} disabled={!r.active || disabled} onClick={() => onAct(`key-${n - 1}`)}>{n}</button>)}<button disabled={!r.active || disabled} onClick={() => onAct('key-4')}>{t('退格')}</button></div>
             </>}
-            {!r.active && !['round_result', 'game_over'].includes(s.phase) && <p role="status">{s.aiStatus && ['thinking', 'retrying'].includes(s.aiStatus.state || '') ? t('AI 正在推理第 {0} 条 · 已完成 {1}/3', [s.aiStatus.step, s.aiStatus.completed || 0]) : t('链路已接通 · 等待信号')}</p>}
+            {!r.active && !['round_result', 'game_over'].includes(s.phase) && <p role="status">{watchStatus}</p>}
             {s.roundResult && <p>{s.roundResult.intercept_success !== undefined && t(s.roundResult.intercept_success ? '拦截成功' : '拦截失败')} · {s.roundResult.decrypt_success !== undefined && t(s.roundResult.decrypt_success ? '解码成功' : '解码失败')}</p>}
         </>}
         <p className="mobile-status" role={s.error ? 'alert' : 'status'}>{s.error ? localizeError(u.locale, s.error) : status}</p>
