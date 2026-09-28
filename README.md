@@ -57,8 +57,13 @@ export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
 export OPENAI_BASE_URL=https://api.openai.com/v1  # 可选，默认 OpenAI
 export OPENAI_MODEL=gpt-4o                         # 可选，默认 gpt-4o
+export OPENAI_REASONING_EFFORT=low                 # 可选，推理模型的思考强度（low/medium/high）
+export OPENAI_MAX_TOKENS=1024                      # 可选，单次回答（含思考）的 token 上限，默认 2048
+export OPENAI_EXTRA_BODY='{"chat_template_kwargs":{"enable_thinking":false}}'  # 可选，并入每次请求的额外参数
 ./server
 ```
+
+每一步 AI 请求限时 30 秒。推理模型思考过长会超时并改用备用答案，可用上面两项缩短思考。
 
 未设置 API Key 时，AI 玩家会使用固定的占位回复。
 

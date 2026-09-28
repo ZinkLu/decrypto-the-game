@@ -468,10 +468,24 @@ button,input { font: inherit; }
   .mobile-slots [data-state="active"] { border-bottom-color: #273d36; }
   .mobile-slots [data-state="active"] em, .mobile-slots [data-state="active"] span { animation: mobile-slot-blink .625s steps(1) infinite; }
   @media (prefers-reduced-motion: reduce) { .mobile-slots [data-state="active"] em, .mobile-slots [data-state="active"] span { animation: none; } }
-  .mobile-digits,.mobile-keypad { display: flex; gap: 8px; margin: 12px 0; }
-  .mobile-digits button { flex: 1; font: 28px monospace; }
+  .mobile-keypad { display: flex; gap: 8px; margin: 12px 0; }
   .mobile-keypad button { flex: 1; padding-inline: 4px; }
   .mobile-result { font-family: 'Songti SC',serif; font-size: 30px !important; color: #9b422c; }
+  /* What this seat does now, and the warnings that must not be missed. */
+  .mobile-duty { margin: 14px 0; padding: 10px 12px; border-left: 3px solid #273d36; background: #e8e2d2; }
+  .mobile-duty p { margin: 2px 0; font-weight: 600; }
+  .mobile-warning { color: #9b3d2b; font-weight: 600; }
+  .mobile-action-area { scroll-margin-top: 12px; }
+  .mobile-clock[data-idle] { color: #7a8078; }
+  .mobile-clock[data-urgent] { animation: mobile-slot-blink 1s steps(1) infinite; }
+  @media (prefers-reduced-motion: reduce) { .mobile-clock[data-urgent] { animation: none; } }
+  .mobile-guess { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 8px; }
+  .mobile-guess button { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; }
+  .mobile-guess b { font: 13px monospace; }
+  .mobile-guess span { flex: 1; min-width: 0; font-size: 17px; }
+  .mobile-guess em { font: normal 26px monospace; min-width: 1.2em; text-align: right; }
+  .mobile-outcome { margin: 18px 0; padding: 12px 0; border-block: 1px solid #a1a48f; }
+  .mobile-outcome h3 { margin: 0 0 6px; }
   .mobile-status { padding-left: 12px; border-left: 3px solid #9b422c; }
   .mobile-console details { margin: 24px 0 12px; font-size: 14px; }
   .mobile-console summary { cursor: pointer; min-height: 44px; padding-block: 10px; }
@@ -510,3 +524,14 @@ button,input { font: inherit; }
 .field-guide-history tbody th, .field-guide-history td:last-child { white-space: nowrap; color: var(--guide-accent, #d7cfb8); }
 .field-guide-history td:last-child { font-weight: 600; letter-spacing: .12em; }
 .field-guide-footnote { margin: 16px 0; font-size: .8rem; color: #5a6860; }
+
+/* The note sheet: revealed clues under the number they stood for. */
+.archive-notes { padding: 10px 34px 4px; }
+.archive-note h3 { margin: 12px 0 6px; font-size: 13px; font-weight: 600; color: #574c38; }
+.archive-note ol { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.archive-note li { min-width: 0; padding-top: 6px; border-top: 1px dashed #847b6170; font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; color: #403c31; }
+.archive-note b { display: block; font: 600 13px Georgia, serif; color: #9b3d2b; }
+@media (max-width: 850px) {
+  .archive-notes { padding: 10px 20px 4px; }
+  .archive-note ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

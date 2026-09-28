@@ -1,4 +1,4 @@
-type MessageHandler = (type: string, data: unknown) => void;
+type MessageHandler = (type: string, data: unknown, serverTime?: number) => void;
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
@@ -45,8 +45,9 @@ export class WebSocketService {
         const msg = JSON.parse(event.data as string) as {
           type: string;
           data: unknown;
+          server_time?: number;
         };
-        this.handler(msg.type, msg.data);
+        this.handler(msg.type, msg.data, msg.server_time);
       } catch (e) {
         console.error("Failed to parse WebSocket message:", e);
       }

@@ -18,7 +18,7 @@ func (gameSession *Session) StartRound(ctx context.Context) (*Round, bool) {
 	}
 	if gameSession.currentRound != nil && gameSession.currentRound.isFinalRound() {
 		if gamerOverHandler != nil {
-			gamerOverHandler(ctx, gameSession, nil)
+			gamerOverHandler(ctx, gameSession, gameSession.Leader())
 		}
 		return nil, false
 	}
@@ -63,19 +63,37 @@ func (session *Session) createNewRound() *Round {
 	return round
 }
 
-// 如果游戏结束，则返回 true 和 胜利的队伍;
+// 如果游戏结束，则返回 true 和 胜利的队伍（平局时队伍为 nil）;
 // 否则返回 false 和 nil
+//
+// A team wins with two interceptions, or when its opponent makes two decoding
+// errors. When both teams qualify in the same round, the score decides.
 func (s *Session) IsGameOver() (bool, *Team) {
-	for idx, t := range s.teams {
-		if t.InterceptedCounts >= 2 {
-			return true, t
-		}
-
-		if t.DecryptWrongCounts >= 2 {
-			return true, s.teams[1-idx]
-		}
+	a, b := s.teams[0], s.teams[1]
+	aWins := a.InterceptedCounts >= 2 || b.DecryptWrongCounts >= 2
+	bWins := b.InterceptedCounts >= 2 || a.DecryptWrongCounts >= 2
+	switch {
+	case aWins && bWins:
+		return true, s.Leader()
+	case aWins:
+		return true, a
+	case bWins:
+		return true, b
 	}
 	return false, nil
+}
+
+// Leader is the team with the higher score (interceptions minus decoding
+// errors), the original game's tiebreak; nil when the scores are level.
+func (s *Session) Leader() *Team {
+	a, b := s.teams[0].Score(), s.teams[1].Score()
+	switch {
+	case a > b:
+		return s.teams[0]
+	case b > a:
+		return s.teams[1]
+	}
+	return nil
 }
 
 func (s *Session) AutoForward(ctx context.Context) {

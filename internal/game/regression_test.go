@@ -37,7 +37,7 @@ func newTestBridge(t *testing.T) (*Bridge, []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.Timing = Timings{time.Second, time.Second, time.Second, 20 * time.Millisecond, time.Millisecond, time.Millisecond}
+	b.Timing = Timings{time.Second, time.Second, time.Second, 20 * time.Millisecond, time.Millisecond, time.Millisecond, 0}
 	t.Cleanup(func() { b.Stop(); RemoveBridge(b.Session.SessionID()) })
 	return b, ids
 }
@@ -183,7 +183,7 @@ func TestAIInvalidRepeatedAnswersRemainLegalAndFinish(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b.Timing = Timings{time.Second, time.Second, time.Second, 10 * time.Millisecond, time.Millisecond, time.Millisecond}
+	b.Timing = Timings{time.Second, time.Second, time.Second, 10 * time.Millisecond, time.Millisecond, time.Millisecond, 0}
 	b.AIPlayer = ai.NewAIPlayer(constantProvider{})
 	defer func() { b.Stop(); RemoveBridge(b.Session.SessionID()) }()
 	b.Start()
@@ -226,4 +226,44 @@ func TestAIRequestAndActionDeadlines(t *testing.T) {
 	if b.Sync("p").Notice == "" {
 		t.Fatal("fallback warning disappeared")
 	}
+}
+
+func TestTimeoutSendsDraftAndTellsEveryone(t *testing.T) {
+	b, ids := newTestBridge(t)
+	b.Timing.Encrypt = 150 * time.Millisecond
+	b.Start()
+	until := time.Now().Add(3 * time.Second)
+	drafted := false
+	for time.Now().Before(until) {
+		v := b.Sync(ids[0])
+		if v == nil {
+			time.Sleep(time.Millisecond)
+			continue
+		}
+		if v.Phase == "encrypting" && !drafted {
+			d := ws.ProgressData{Round: v.Round, Action: "encrypt", State: "editing", Step: 2, Clues: []string{"harbor", "", "snow"}}
+			if err := b.ValidateProgress(ids[0], d); err != nil {
+				t.Fatal(err)
+			}
+			b.RecordDraft(d)
+			drafted = true
+		}
+		if v.Phase == "decrypt" {
+			if len(v.SecretDigits) != 3 {
+				t.Fatal("the encryptor lost the code after sending")
+			}
+			if v.Timeout == nil || v.Timeout.Action != "encrypt" || v.Timeout.Outcome != "draft" || v.Timeout.Player != ids[0] {
+				t.Fatalf("timeout not announced: %+v", v.Timeout)
+			}
+			if got := v.Clues; len(got) != 3 || got[0] != "harbor" || got[1] != "—" || got[2] != "snow" {
+				t.Fatalf("draft not sent: %v", got)
+			}
+			if b.Sync(ids[2]).Timeout == nil {
+				t.Fatal("the other team was not told about the timeout")
+			}
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("timeout never settled")
 }

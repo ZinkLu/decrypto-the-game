@@ -1,7 +1,7 @@
 import { translate, localizeError } from './i18n';
 import { originalGameLinks, guideWords, guideClues, guideHistory, guideSteps, guideLeads, guideNotes, gameIntroduction } from './guide';
 import { dotGrid, dotText, dotType, dotWordLayout } from './dotMatrix';
-import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures, beats, isBeat, roundCast, briefingKey, transmission } from './model';
+import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, themeColors, rosterTeams, word, resultTint, archiveRows, scopeModes, scopeWaveBlend, scopeTimebase, scopeRatio, scopeSweepHz, scopeAxisAngle, scopeFigures, beats, isBeat, roundCast, briefingKey, transmission, deadlineWarning, timeoutNotice, resultView, gameOverView } from './model';
 import type { Beat, LocalState, StationState } from './model';
 import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextureHeight } from './mechanics';
 export interface Target {
@@ -224,7 +224,7 @@ function paintGuide(c: CanvasRenderingContext2D, u: LocalState, page: number, ar
             line(c, 55, y + 21, 545, '#34423f');
         });
         // This round: the rivals have the public clues and the record, nothing else.
-        label('这一轮', 55, 406, 16, 52, rival, 600);
+        label('对手猜', 55, 406, 16, 52, rival, 600);
         fitLabel(c, guideClues.map(t).join(' · '), 112, 406, 22, CREAM, 400, 336);
         text(c, '→', 466, 406, 20, MUTED);
         text(c, '2·1·4 ✗', 498, 406, 24, warning, 600);
@@ -248,7 +248,7 @@ function paintGuide(c: CanvasRenderingContext2D, u: LocalState, page: number, ar
         line(c, 55, 372, 545, RULE);
         label('截获 2 次 → 获胜', 55, 402, 20, 260, CREAM, 500);
         label('解码失误 2 次 → 落败', 300, 402, 20, 300, CREAM, 500);
-        label(guideNotes[3], 55, 438, 17, 240, MUTED, 400);
+        label(guideNotes[3], 55, 438, 17, 545, MUTED, 400);
         label('BGG 游戏介绍', 55, 474, 17, 180, MUTED, 400);
         c.font = `400 17px ${FONT}`;
         text(c, '↗', 55 + Math.min(180, c.measureText(t('BGG 游戏介绍')).width) + 8, 474, 17, MUTED);
@@ -418,7 +418,9 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     frames.screen.height = 830 / 1.4;
     const w = 1000;
     const right = w - 55;
-    const status = (s.error ? localizeError(u.locale, s.error) : s.aiNotice ? t(s.aiNotice) : '') || (u.note ? t(u.note) : '') || (u.submitted ? t("密报已发送，等待服务器确认。") : '');
+    // Most urgent first: an error, this seat's running-out time, how a timeout was settled, AI trouble.
+    const warning = deadlineWarning(s, u, u.seconds), settled = s.phase === 'game_over' ? null : timeoutNotice(s);
+    const status = (s.error ? localizeError(u.locale, s.error) : warning ? t(...warning) : settled ? t(...settled) : s.aiNotice ? t(s.aiNotice) : '') || (u.note ? t(u.note) : '') || (u.submitted ? t("密报已发送，等待服务器确认。") : '');
     const helpPage = u.manual || u.about;
     const blink: Blink[] = [];
     const cast = roundCast(s);
@@ -438,6 +440,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
         ...!isBeat(s.phase) ? [] : briefing ? [t('简报')] :
             s.phase === 'encrypting' ? [cast.sending && t('{0} 队发报', [cast.sending]), s.encryptor && t('加密者 {0}', [called(s.encryptor)])] :
             s.phase === 'intercept' ? [cast.receiving && t('{0} 队拦截', [cast.receiving])] : [cast.sending && t('{0} 队解码', [cast.sending])],
+        ...isBeat(s.phase) && !['encryptor', 'teammate', 'opponent'].includes(s.myRole) ? [t('旁观')] : [],
     ].filter(Boolean);
     const headerRoom = navX - 79;
     c.font = `500 19px ${FONT}`;
@@ -479,7 +482,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             if (active) line(c, x, 243, 182, tint);
             target('screen', 'mode-' + mode, t(mode === 'create' ? '建立频道' : '加入频道'), x, 190, 192, 56);
         });
-        field('name', u.name, t('输入你的昵称'), 55, 283, 890, 74, 20);
+        field('name', u.name, t('输入你的代号'), 55, 283, 890, 74, 20);
         if (u.mode === 'join') field('code', u.code, t('四位频道编号'), 55, 403, 890, 74, 4);
         else text(c, t('4–8 位玩家 · 支持 AI 队友'), 55, 430, 25, MUTED);
         foot = t(u.mode === 'join' ? '填好代号与频道编号，按 ACTION 加入。' : '填好代号，按 ACTION 建立频道。');
@@ -503,13 +506,32 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             button(c, `team-${team}`, t(joined ? '离开此队' : '加入此队'), x, 395, 249, 56, !s.connected || (!joined && people.length >= 4), joined);
             if (owner) button(c, `ai-${team}`, '+ AI', x + 268, 395, 152, 56, people.length >= 4 || !s.connected);
         });
+        // Anyone in the room without a team would only watch the game.
+        const seated = new Set([...s.teamA, ...s.teamB].map(p => p.id));
+        const unseated = s.players.filter(p => !p.is_ai && !seated.has(p.id));
+        if (unseated.length) fitLabel(c, t('未入队：{0} · 开局后只能旁观', [unseated.map(p => p.id === s.myPlayerID ? t('你') : p.nickname).join(u.locale === 'zh' ? '、' : ', ')]), 55, 487, 20, colors.warning.light, 400, 890);
         foot = owner ? s.canStart ? t('双方就绪，按 ACTION 开始。') : t('等待人员就绪…') : t('等待房主开始行动。');
-    } else if (s.phase === 'round_result' || s.phase === 'game_over') {
-        const final = s.phase === 'game_over';
-        const title = final ? s.gameOver?.winner ? t('{0} 队获胜', [s.gameOver.winner]) : t('双方平局') :
-            s.roundResult?.decrypt_success !== undefined ? t(s.roundResult.decrypt_success ? '解码成功' : '解码失误') :
-            t(s.roundResult?.intercept_success ? '密报被截获' : '拦截未成功');
-        heading(title);
+    } else if (s.phase === 'game_over') {
+        // Why it ended, both teams' scores, and the keywords nobody saw until now.
+        const over = gameOverView(s);
+        heading(t(...over.title), [over.mine && t(over.mine), t(...over.reason)].filter(Boolean).join(' · '));
+        (['A', 'B'] as const).forEach((team, j) => {
+            const y = 252 + j * 104, score = team === 'A' ? s.scoreA : s.scoreB;
+            const words = (team === 'A' ? s.gameOver?.wordsA : s.gameOver?.wordsB) ?? (team === s.myTeam ? s.myWords : []);
+            fitLabel(c, t('{0} 队', [team]) + (team === s.myTeam ? t(' · 我方') : ''), 55, y, 25, teamPalette(team, s.myTeam, u.theme).light, 600, 200);
+            fitLabel(c, t('截获 {0} · 失误 {1}', [score.interceptions, score.decrypt_failures]), 55, y + 36, 17, MUTED, 400, 200);
+            words.forEach((value, i) => {
+                const x = 280 + i * 168;
+                text(c, String(i + 1), x, y + 2, 18, MUTED, 600);
+                fitLabel(c, word(value, u.locale), x + 24, y + 2, 27, CREAM, 500, 136);
+            });
+            line(c, 55, y + 64, 890, RULE);
+        });
+        button(c, 'leave-room', t('离开频道'), 55, 459, 200, 46);
+        foot = t('按 ACTION 回到房间，原班人马再来一局。');
+    } else if (s.phase === 'round_result') {
+        const view = resultView(s);
+        heading(t(...view.title), view.sub ? t(...view.sub) : '');
         // Only a server-revealed history row may be shown to every role.
         const revealed = [...s.history].reverse().find(row => row.round === s.round && row.secret?.length === 3);
         if (revealed) {
@@ -525,9 +547,9 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             const outcome = [verdict(revealed.intercept, '拦截 {0}'), verdict(revealed.decrypt, '解码 {0}')].filter(Boolean).join('     ');
             if (outcome) fitLabel(c, outcome, 55, 484, 22, MUTED, 400, 890);
         } else {
-            fitLabel(c, t(final ? '每句看似普通的话，都藏着一场交锋。' : s.roundResult?.intercept_success === false && s.roundResult.decrypt_success === undefined ? '即将进入解码阶段。' : '结果已记录，等待下一轮通信。'), 55, 311, 30, tint, 400, 890);
+            fitLabel(c, t('本轮结束后揭晓密码。'), 55, 311, 30, tint, 400, 890);
         }
-        foot = t(final ? '按 ACTION 返回通信局；纸带仍可翻阅。' : '结果已记入纸带 · 等待下一步通信。');
+        foot = t('结果已记入纸带 · 等待下一步通信。');
     } else if (briefing) {
         paintBriefing(briefing);
     } else if (sent) {
@@ -579,7 +601,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             text(c, '●', 55, 555, 15, tint);
             blink.push({ x: 50, y: 543, w: 22, h: 24, kind: 'live' });
             fitLabel(c, foot, 80, 555, 21, MUTED, 400, 865);
-        } else fitLabel(c, status || foot, 55, 555, 21, status ? colors.warning.light : MUTED, 400, 890);
+        } else fitLabel(c, status || foot, 55, 555, warning ? 23 : 21, status ? colors.warning.light : MUTED, warning ? 600 : 400, 890);
     } else if (status && s.error) {
         c.fillStyle = DARK; c.fillRect(50, 539, 900, 42);
         fitLabel(c, status, 55, 559, 19, colors.warning.light, 400, 890);
@@ -596,7 +618,9 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
         // Teams by letter, never "rivals": the same page reaches both sides of the table.
         fitLabel(c, beat === 'encrypting' ? t('加密者读取密码，为三个编号各写一条线索。') :
             beat === 'intercept' ? t('{0} 队的三条线索已公开，{1} 队先猜。', [cast.sending || '—', cast.receiving || '—']) :
-            cast.intercepted ? t('{0} 队没能截获，轮到 {1} 队解码。', [cast.receiving || '—', cast.sending || '—']) : t('前两次发报不拦截，线索直达 {0} 队。', [cast.sending || '—']),
+            !cast.intercepted ? t('前两次发报不拦截，线索直达 {0} 队。', [cast.sending || '—']) :
+            s.roundResult?.intercept_success ? t('{0} 队已截获，{1} 队仍要解码。', [cast.receiving || '—', cast.sending || '—']) :
+            t('{0} 队没能截获，轮到 {1} 队解码。', [cast.receiving || '—', cast.sending || '—']),
             55, 180, 22, MUTED, 400, 890);
         // The round as the phase panel shows it: three stations, the current one lit.
         const stations = [
@@ -616,7 +640,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             c.fillRect(x, state === 'now' ? 259 : 260, 266, state === 'now' ? 4 : 2);
             fitLabel(c, station.name, x, 304, 28, state === 'now' || state === 'done' ? CREAM : MUTED, 600, 266);
             text(c, station.who, x, 342, 17, MUTED, 400, 266);
-            const mark = t(state === 'now' ? '进行中' : state === 'done' ? i === 1 ? '未截获' : '已完成' : state === 'skip' ? '本轮跳过' : '稍后');
+            const mark = t(state === 'now' ? '进行中' : state === 'done' ? i === 1 ? s.roundResult?.intercept_success ? '已截获' : '未截获' : '已完成' : state === 'skip' ? '本轮跳过' : '稍后');
             if (state === 'now') {
                 cursor(x, 382, color(i));
                 text(c, mark, x + 22, 382, 19, color(i), 600);
@@ -653,6 +677,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             s.phase === 'encrypting'
                 ? t(s.myRole === 'teammate' ? cast.intercepted ? '线索写好后，对手先拦截，再轮到你解码。' : '线索写好后，就轮到你解码。'
                     : s.myRole === 'opponent' ? cast.intercepted ? '线索写好后，轮到你方拦截。' : '前两次发报不拦截，这一轮你方旁听。' : '让队友听懂，让对手猜不透。')
+                : s.myRole === 'encryptor' && diskReadable ? t('本轮密码 {0} · 对照看他们猜得对不对。', [s.secretDigits.join('·')])
                 : t(s.phase === 'intercept' ? '他们只看得到公开线索和旧记录。' : s.myRole === 'encryptor' ? '你只能看着，不能提示。' : '看看他们能不能译对。'));
         tx.slots.forEach((slot, i) => {
             const y = 239 + i * 92, middle = y + 27;
@@ -949,7 +974,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     const homeReady = s.phase === 'home' && !!u.name.trim() && (u.mode === 'create' || u.code.length === 4) && s.connected;
     const lobbyReady = s.phase === 'room' && s.canStart && s.ownerID === s.myPlayerID && s.connected;
     const ready = !!(r.ready || homeReady || lobbyReady || s.phase === 'game_over') && h.online && !u.manual && !u.about;
-    const transmitText = s.phase === 'home' ? u.mode === 'create' ? t("建立频道") : t("接入频道") : s.phase === 'room' ? t("开始行动") : s.phase === 'game_over' ? t("返回通信局") : u.submitted ? t("已发送") : t("发报 · 确认");
+    const transmitText = s.phase === 'home' ? u.mode === 'create' ? t("建立频道") : t("加入频道") : s.phase === 'room' ? t("开始行动") : s.phase === 'game_over' ? t("回到房间") : u.submitted ? t("已发送") : t("发报 · 确认");
     const command = 'ACTION';
     tr.textAlign = 'center';
     tr.letterSpacing = '7px';

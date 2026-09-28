@@ -20,10 +20,14 @@ type Handler struct {
 	mu          sync.Mutex
 	active      map[string]*ws.Client
 	expiry      map[string]*time.Timer
+	release     map[string]*time.Timer
 }
 
+// SeatGrace is how long an offline player keeps their seat and host role.
+var SeatGrace = 20 * time.Second
+
 func NewHandler(manager *room.Manager, hub *ws.Hub) *Handler {
-	return &Handler{RoomManager: manager, Hub: hub, active: map[string]*ws.Client{}, expiry: map[string]*time.Timer{}}
+	return &Handler{RoomManager: manager, Hub: hub, active: map[string]*ws.Client{}, expiry: map[string]*time.Timer{}, release: map[string]*time.Timer{}}
 }
 
 func validName(name string) bool {
@@ -36,6 +40,10 @@ func (h *Handler) attach(client *ws.Client, r *room.Room, p *room.PlayerInfo, to
 	}
 	client.SetIdentity(p.ID, p.Nickname)
 	h.active[p.ID] = client
+	if timer := h.release[p.ID]; timer != nil {
+		timer.Stop()
+		delete(h.release, p.ID)
+	}
 	h.Hub.JoinRoom(client, r.Code)
 	if timer := h.expiry[r.Code]; timer != nil {
 		timer.Stop()
@@ -67,6 +75,18 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 		delete(h.active, identity.PlayerID)
 		r.Disconnect(identity.PlayerID)
 		h.broadcastRoomState(r)
+		id := identity.PlayerID
+		if timer := h.release[id]; timer != nil {
+			timer.Stop()
+		}
+		h.release[id] = time.AfterFunc(SeatGrace, func() {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			delete(h.release, id)
+			if r.Release(id) {
+				h.broadcastRoomState(r)
+			}
+		})
 		if r.OnlineHumans() == 0 {
 			if timer := h.expiry[r.Code]; timer != nil {
 				timer.Stop()
@@ -128,6 +148,8 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError(err.Error())
 			return
 		}
+		// A new arrival takes a seat at once; they can still switch sides.
+		r.AutoSeat(p.ID)
 		h.attach(client, r, p, token, false)
 		return
 	case ws.MsgResumeRoom:
@@ -231,6 +253,20 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 		b.Start()
 	case ws.MsgRequestSync:
 		h.sendSync(client, r)
+	case ws.MsgReopenRoom:
+		// After the game any player may reopen the room with the same teams.
+		if b, ok := game.GetBridge(state.SessionID); ok && !b.Finished() {
+			client.SendError("game still in progress")
+			return
+		}
+		if state.Started {
+			if err := r.Reopen(); err != nil {
+				client.SendError(err.Error())
+				return
+			}
+			game.RemoveBridge(state.SessionID)
+		}
+		h.broadcastRoomState(r)
 	case ws.MsgSubmitClues, ws.MsgSubmitIntercept, ws.MsgSubmitDecrypt, ws.MsgProgress:
 		b, ok := game.GetBridge(state.SessionID)
 		if !ok {
@@ -260,6 +296,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			if json.Unmarshal(msg.Data, &d) != nil || b.ValidateProgress(identity.PlayerID, d) != nil {
 				return
 			}
+			b.RecordDraft(d)
 			h.Hub.BroadcastToRoom(r.Code, ws.ServerMessage{Type: ws.MsgPlayerProgress, Data: ws.PlayerProgressData{Action: d.Action, Player: identity.Nickname, State: d.State, Step: d.Step, Focus: d.Focus, Guesses: d.Guesses, Filled: d.Filled, Total: 3}})
 		}
 		if err != nil {

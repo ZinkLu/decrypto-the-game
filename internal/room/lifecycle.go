@@ -145,15 +145,32 @@ func (r *Room) LeaveTeam(playerID string) error {
 	return nil
 }
 
+// Disconnect marks the seat offline. The seat and the host role are kept, so a
+// refresh or a short network drop changes nothing; Release frees them later.
 func (r *Room) Disconnect(playerID string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if m := r.members[playerID]; m != nil {
 		m.player.Disconnected = true
 	}
+}
+
+// Release frees a seat that stayed offline: before the game the player leaves
+// their team, and a host hands the room to someone still here. It reports
+// whether anything changed.
+func (r *Room) Release(playerID string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m := r.members[playerID]
+	if m == nil || !m.player.Disconnected {
+		return false
+	}
+	changed := false
 	if !r.Started {
+		before := len(r.TeamA) + len(r.TeamB)
 		r.TeamA = removeByID(r.TeamA, playerID)
 		r.TeamB = removeByID(r.TeamB, playerID)
+		changed = before != len(r.TeamA)+len(r.TeamB)
 	}
 	if r.OwnerID == playerID {
 		r.OwnerID = ""
@@ -163,7 +180,56 @@ func (r *Room) Disconnect(playerID string) {
 				break
 			}
 		}
+		changed = true
 	}
+	return changed
+}
+
+// AutoSeat puts a new arrival on the team with fewer players, if either has room.
+func (r *Room) AutoSeat(playerID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	m := r.members[playerID]
+	if r.Started || m == nil {
+		return
+	}
+	for _, team := range [][]*PlayerInfo{r.TeamA, r.TeamB} {
+		for _, p := range team {
+			if p.ID == playerID {
+				return
+			}
+		}
+	}
+	if len(r.TeamB) < len(r.TeamA) && len(r.TeamB) < maxTeamSize {
+		r.TeamB = append(r.TeamB, m.player)
+	} else if len(r.TeamA) < maxTeamSize {
+		r.TeamA = append(r.TeamA, m.player)
+	} else if len(r.TeamB) < maxTeamSize {
+		r.TeamB = append(r.TeamB, m.player)
+	}
+}
+
+// Reopen returns a finished room to its lobby with the same teams. Players
+// who left during the game give up their seats.
+func (r *Room) Reopen() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.Started {
+		return nil
+	}
+	r.Started = false
+	r.SessionID = ""
+	keep := func(team []*PlayerInfo) []*PlayerInfo {
+		out := team[:0]
+		for _, p := range team {
+			if !p.Disconnected {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	r.TeamA, r.TeamB = keep(r.TeamA), keep(r.TeamB)
+	return nil
 }
 
 func (r *Room) OnlineHumans() int {

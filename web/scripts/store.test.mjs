@@ -109,6 +109,32 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     refreshed.receive('error', {code:'resume_expired',message:'room resume expired; please create or join a room'});
     assert.equal(store.getState().phase, 'home'); assert.equal(saved.size, 0);
 
+    // Deadlines follow the server clock, whatever this device's clock says.
+    store.getState().reset(); store.getState().connect();
+    const clock = sockets.at(-1); clock.onopen();
+    const skew = 120000; // this device runs two minutes behind the server
+    const send = (type, data) => clock.onmessage?.({ data: JSON.stringify({ type, data, server_time: Date.now() + skew }) });
+    send('room_created', { room_code: '5555', my_player_id: 'me' });
+    send('phase_change', { phase: 'encrypting', round: 1, your_role: 'encryptor', deadline: Date.now() + skew + 60000 });
+    const left = store.getState().deadline - Date.now();
+    assert.ok(left > 59000 && left <= 60500, `deadline converted to the local clock: ${left} ms left`);
+    store.getState().sendProgress('encrypt', 1, { state: 'editing', focus: 2, filled: [true, false, false], clues: ['harbor', '', ''] });
+    assert.deepEqual(clock.sent.at(-1).data.clues, ['harbor', '', ''], 'the draft goes to the server for a timeout');
+    send('timeout', { round: 1, action: 'encrypt', team: 'A', player: 'me', outcome: 'draft' });
+    assert.equal(store.getState().timeout.outcome, 'draft');
+    send('phase_change', { phase: 'new_round', round: 2, your_role: 'opponent' });
+    assert.equal(store.getState().timeout, null, 'a timeout notice ends with its round');
+    send('game_over', { winner: 'A', reason: 'interceptions', words_a: ['a', 'b', 'c', 'd'], words_b: ['e', 'f', 'g', 'h'] });
+    assert.deepEqual(store.getState().gameOver.wordsB, ['e', 'f', 'g', 'h']);
+    send('room_state', { started: false, room_code: '5555', team_a: [{ id: 'me', nickname: 'me' }] });
+    assert.equal(store.getState().phase, 'game_over', 'another player reopening the room does not close this final screen');
+    store.getState().returnToRoom();
+    assert.equal(clock.sent.at(-1).type, 'reopen_room');
+    send('room_state', { started: false, room_code: '5555', team_a: [{ id: 'me', nickname: 'me' }] });
+    assert.equal(store.getState().phase, 'room');
+    assert.equal(store.getState().gameOver, null);
+    assert.equal(store.getState().history.length, 0, 'the reopened room starts a fresh game');
+
   } finally {
     store?.getState().disconnect();
     globalThis.window = previousWindow;

@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -46,5 +47,26 @@ func TestTransportHonorsDeadline(t *testing.T) {
 	}
 	if time.Since(start) > time.Second {
 		t.Fatal("timeout did not bound request")
+	}
+}
+
+func TestReasoningSettingsReachTheRequest(t *testing.T) {
+	t.Setenv("OPENAI_REASONING_EFFORT", "low")
+	t.Setenv("OPENAI_MAX_TOKENS", "1024")
+	t.Setenv("OPENAI_EXTRA_BODY", `{"chat_template_kwargs":{"enable_thinking":false}}`)
+	p := NewOpenAIProvider("k", "http://model.invalid/v1", "test")
+	var sent map[string]any
+	p.Client = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(body, &sent); err != nil {
+			t.Fatal(err)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"choices":[{"finish_reason":"stop","message":{"content":"3"}}]}`)), Header: make(http.Header)}, nil
+	})}
+	if _, err := p.Complete(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if sent["reasoning_effort"] != "low" || sent["max_tokens"] != float64(1024) || sent["chat_template_kwargs"] == nil || sent["model"] != "test" {
+		t.Fatalf("settings missing from request: %v", sent)
 	}
 }

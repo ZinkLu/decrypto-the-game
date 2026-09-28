@@ -131,10 +131,8 @@ func (round *Round) AutoForward(c context.Context) bool {
 			}
 
 		case DECRYPT:
-			if round.IsInterceptSuccess() {
-				continue
-			}
-
+			// As in the original game, the team still decodes after an interception:
+			// the two guesses score independently.
 			decryptedSecret, isCancelled := decryptHandler(c, round, round.currentTeam, DECRYPT)
 			if isCancelled {
 				return isCancelled

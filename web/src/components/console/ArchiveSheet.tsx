@@ -10,8 +10,8 @@ const exitDuration = paperTearDuration / motionRate;
 
 interface Props { locale: 'zh' | 'en'; open: boolean; state: StationState; onClose: () => void; onClosed: () => void }
 
-function sequence(values?: number[]) {
-    return values?.some(Boolean) ? values.join(' — ') : '— — —';
+function sequence(values?: number[], late = '') {
+    return values?.some(Boolean) ? values.join(' — ') : late || '— — —';
 }
 
 function matches(actual?: number[], guess?: number[]) {
@@ -23,6 +23,10 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, locale }:
     const dialog = useRef<HTMLDialogElement>(null);
     // A printer roll reads from the oldest impression at the top to the newest at the tear.
     const rows = archiveRows(state, 'all').slice().reverse();
+    // The players' note sheet: every revealed clue under the number it stood for, rivals first.
+    const teams = state.myTeam === 'A' ? ['B', 'A'] : state.myTeam === 'B' ? ['A', 'B'] : ['A', 'B'];
+    const byNumber = (team: string) => [1, 2, 3, 4].map(n => rows.filter(row => row.team === team && row.secret?.length === 3)
+        .flatMap(row => row.secret!.flatMap((digit, i) => digit === n && row.clues[i] ? [row.clues[i]] : [])));
 
     function requestClose() {
         if (!open) return;
@@ -66,6 +70,13 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, locale }:
                 </div>
             </header>
             <div className="archive-body">
+                {rows.length > 0 && <section className="archive-notes" aria-label={t('按编号归档')}>
+                    <p className="archive-ledger-head"><span>{t('按编号归档')}</span><span>{t('揭晓过的线索')}</span></p>
+                    {teams.map(team => <div key={team} className="archive-note">
+                        <h3>{t('{0} 队', [team])} · {team === state.myTeam ? t('我方') : state.myTeam ? t('对方') : t('公开')}</h3>
+                        <ol>{byNumber(team).map((clues, i) => <li key={i}><b>{i + 1}</b>{clues.length ? clues.join(' · ') : '—'}</li>)}</ol>
+                    </div>)}
+                </section>}
                 <section className="archive-records" aria-label={t("公开回合记录")}>
                     <p className="archive-ledger-head"><span>{String(rows.length).padStart(2, '0')} {t("条记录")}</span><span>{t("按时间顺序")}</span></p>
                     {!rows.length ? <div className="archive-empty"><span aria-hidden="true">— 00 —</span><h3>{t("等待第一份密报")}</h3>
@@ -82,13 +93,14 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, locale }:
                             </header>
                             <p className="archive-clue-line">{row.clues.map((clue, index) => <span key={index}><small>{String(index + 1).padStart(2, '0')}</small>{clue}</span>)}</p>
                             <dl className="archive-sequences">
-                                <div><dt>{interceptOwner} · {t('截获')}</dt><dd>{sequence(row.intercept)}</dd></div>
-                                <div><dt>{decryptOwner} · {t('解码')}</dt><dd>{sequence(row.decrypt)}</dd></div>
+                                <div><dt>{interceptOwner} · {t('截获')}</dt><dd>{sequence(row.intercept, row.timeouts?.includes('intercept') ? t('超时未提交') : '')}</dd></div>
+                                <div><dt>{decryptOwner} · {t('解码')}</dt><dd>{sequence(row.decrypt, row.timeouts?.includes('decrypt') ? t('超时未提交') : '')}</dd></div>
                                 <div className="archive-secret"><dt>{t("公开密码")}</dt><dd>{sequence(row.secret)}</dd></div>
                             </dl>
                             <p className="archive-outcome">
+                                {row.timeouts?.includes('encrypt') && <span data-result="failure">{t('发报超时')}</span>}
                                 {row.intercept?.some(Boolean) && <span data-result={interceptSuccess ? 'success' : 'failure'}>{t('截获')} · {interceptSuccess ? t("成功") : t("失败")}</span>}
-                                {row.decrypt?.some(Boolean) && <span data-result={decryptSuccess ? 'success' : 'failure'}>{t('解码')} · {decryptSuccess ? t("成功") : t("失败")}</span>}
+                                {(row.decrypt?.some(Boolean) || row.timeouts?.includes('decrypt')) && <span data-result={decryptSuccess ? 'success' : 'failure'}>{t('解码')} · {decryptSuccess ? t("成功") : t("失败")}</span>}
                             </p>
                         </article>;
                     })}

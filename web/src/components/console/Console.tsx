@@ -4,7 +4,7 @@ import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
 import { ConsoleAudio, gameSound, type ConsoleSound } from './sound';
 import { ConsoleMusic, readMusicPreferences, saveMusicPreferences, type MusicPreferences, type MusicStatus } from './music';
-import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, syncDiskPower, initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, syncKeyDisk, advanceKeyDisk, actKeyDisk, keyDiskDurations, briefingKey, briefingDuration, roundCast } from './model';
+import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, syncDiskPower, initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, syncKeyDisk, advanceKeyDisk, actKeyDisk, keyDiskDurations, briefingKey, briefingDuration, roundCast, deadlineWarning, timeoutNotice, warningSeconds, readDraft, saveDraft, readName, saveName } from './model';
 import type { WordDisplay } from './dotMatrix';
 import { defaultDotFilter, dotFilterOptions, readDotFilter, readWordScale, type DotFilter } from './dotFiltering';
 import { paint, paintClock, knobLabel, guidePages } from './paint';
@@ -43,7 +43,7 @@ const scopeControls = ['scope-tune', 'scope-wave', 'scope-rate', 'scope-xy', 'me
 const isScopeControl = (id: string) => scopeControls.includes(id);
 export default function Console() {
     const live = useGameStore();
-    const [u, setU] = useState<LocalState>(() => { const music = readMusicPreferences(); return { ...initialLocal, musicOn: music.enabled, musicVolume: music.volume, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal', wordDisplay: initialWordDisplay,
+    const [u, setU] = useState<LocalState>(() => { const music = readMusicPreferences(); return { ...initialLocal, name: readName(), musicOn: music.enabled, musicVolume: music.volume, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal', wordDisplay: initialWordDisplay,
         meterAmplitude: initialInstrument === 'signal' ? 14 : initialInstrument === 'tuning' ? 4 : initialInstrument === 'status' ? 0 : 2 }; });
     const [previewPeople, setPreviewPeople] = useState<PlayerInfo[]>([{ id: '0', nickname: '你', is_ai: false }]);
     const previewSerial = useRef(1);
@@ -104,8 +104,9 @@ export default function Console() {
     const controls = useRef(new Map<string, HTMLElement>());
     // Analog input updates targets and hardware, without repainting all the
     // game screens and the long receipt for each fraction of a knob turn.
-    // The countdown only repaints its clock.
-    const paintKey = JSON.stringify({ ...u, seconds: 0, keyDisk: { ...u.keyDisk, pull: u.keyDisk.pull ? { ...u.keyDisk.pull, amount: 0 } : undefined }, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
+    // Otherwise the countdown only repaints its clock.
+    // The last seconds of a turn repaint the screen too, for its countdown warning.
+    const paintKey = JSON.stringify({ ...u, seconds: u.seconds <= warningSeconds ? u.seconds : 0, keyDisk: { ...u.keyDisk, pull: u.keyDisk.pull ? { ...u.keyDisk.pull, amount: 0 } : undefined }, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
     const painted = useMemo(() => paint(displayState, u, inspection, guideArt), [displayState, paintKey, diskFontReady, guideArt]);
     const clock = useMemo(() => paintClock(displayState, u), [displayState, paintKey, u.seconds]);
     const content = useMemo(() => ({ ...painted, frames: { ...painted.frames, clock }, targets: [...painted.targets, ...Object.keys(handleSurfaces).filter(surface =>
@@ -120,6 +121,7 @@ export default function Console() {
     current.current = { s, u, content, level };
     const pending = useRef(false);
     const progressLast = useRef(0);
+    const progressTrail = useRef<number | undefined>(undefined);
     const tuningDrag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
     const suppressTuningClick = useRef(false);
     const pullDrag = useRef<{ y: number; moved: boolean } | null>(null);
@@ -430,7 +432,9 @@ export default function Console() {
         pending.current = false;
         // Every beat opens with its briefing on the main CRT, even for a seat that only watches.
         const brief = briefMode === 'off' ? '' : briefingKey(s);
-        setU(old => ({ ...old, clues: ['', '', ''], guess: [0, 0, 0], slot: 0, submitted: false, focus: '', note: '', manual: false, about: false,
+        // A reload returns to the draft this seat had written in this very beat.
+        const draft = preview ? null : readDraft(viewKey);
+        setU(old => ({ ...old, clues: draft?.clues ?? ['', '', ''], guess: draft?.guess ?? [0, 0, 0], slot: draft?.slot ?? 0, submitted: false, focus: '', note: '', manual: false, about: false,
             seconds: preview ? 45 : s.phase === 'encrypting' ? 90 : 60, brief }));
         const cast = roundCast(s);
         const acting = s.phase === 'intercept' ? cast.receiving : cast.sending;
@@ -456,6 +460,17 @@ export default function Console() {
         return () => clearInterval(timer);
     }, [s.deadline, viewKey]);
     useEffect(() => { if (!s.recovering) patch({ submitted: s.submitted }); }, [s.submitted, s.recovering]);
+    useEffect(() => {
+        // The acting seat hears its time running out: a call at 15 s, then a tick each second from 5.
+        const warning = deadlineWarning(s, u, u.seconds);
+        if (!warning || !consoleHardware(u, s).online || u.seconds <= 0) return;
+        if (u.seconds === warningSeconds) { playSound('turn', false); setAnnouncement(t(...warning)); }
+        else if (u.seconds <= 5) playSound('key', false);
+    }, [u.seconds]);
+    const settled = timeoutNotice(s);
+    useEffect(() => { if (settled) setAnnouncement(t(...settled)); }, [settled?.[0], s.timeout?.round]);
+    useEffect(() => { if (!preview) saveDraft(viewKey, { clues: u.clues, guess: u.guess, slot: u.slot }); }, [u.clues, u.guess, u.slot]);
+    useEffect(() => { saveName(u.name); }, [u.name]);
     useEffect(() => {
         saveMusicPreferences(musicPreferences);
         music.current?.configure(musicPreferences);
@@ -557,17 +572,23 @@ export default function Console() {
     }
     function progress(clues: string[], guess: number[], slot: number, force = false) {
         const now = performance.now();
-        if (!force && now - progressLast.current < 180)
+        clearTimeout(progressTrail.current);
+        if (!force && now - progressLast.current < 180) {
+            // The last change inside the window still goes out once it closes.
+            progressTrail.current = window.setTimeout(() => progress(clues, guess, slot, true), 180 - (now - progressLast.current));
             return;
+        }
         progressLast.current = now;
         const state = current.current.s;
         const local = current.current.u;
         const r = roleState(state, local);
         if (preview || !consoleHardware(local, state).online || !r.active)
             return;
-        // Which lines hold a clue travels, never the clue itself.
+        // Other seats learn which lines hold a clue, never the clue itself. The draft goes to the
+        // server alone, which sends it if time runs out.
+        const chosen = r.guess && guess.every(Boolean);
         state.sendProgress(r.action, r.encrypt ? clues.filter(c => c.trim()).length : guess.filter(Boolean).length,
-            { state: 'editing', focus: slot + 1, ...(r.guess ? { guesses: guess } : { filled: clues.map(c => !!c.trim()) }) });
+            { state: 'editing', focus: chosen ? 0 : slot + 1, ...(r.guess ? { guesses: guess } : { filled: clues.map(c => !!c.trim()), clues }) });
     }
     function change(target: Pick<Target, 'id'>, value: string) {
         const local = current.current.u;
@@ -742,6 +763,13 @@ export default function Console() {
             adjustKnob(id.replace('-prev', '').replace('scope-prev', 'scope-tune'), id.endsWith('-prev') || id === 'scope-prev' ? -1 : 1, true);
             return;
         }
+        if (id === 'leave-room') {
+            if (!consoleHardware(local, state).online) return;
+            playSound('key');
+            state.reset();
+            state.connect();
+            return;
+        }
         if (id === 'copy-code') {
             if (!consoleHardware(local, state).online) return;
             if (state.roomCode) playSound('key');
@@ -810,8 +838,8 @@ export default function Console() {
                 state.startGame();
             }
             else if (state.phase === 'game_over') {
-                state.reset();
-                state.connect();
+                patch({ note: '正在回到房间…' });
+                state.returnToRoom();
             }
             else if (r.ready) {
                 patch({ submitted: true, note: '' });
@@ -1065,7 +1093,7 @@ export default function Console() {
       </div>
     </div>
     {loaded && !failure && <div className="station-workbench" inert={archiveBlocking}>
-      {!scoreBench && <span className="station-orbit-hint">{t(inspection ? '拖动机身旋转 · 滚轮缩放 · 拖动把手翻面' : u.backView ? '点击把手连接处，回到正面' : '向内拖动把手，即可翻面')}</span>}
+      {!scoreBench && !hint && <span className="station-orbit-hint">{t(inspection ? '拖动机身旋转 · 滚轮缩放 · 拖动把手翻面' : u.backView ? '点击把手连接处，回到正面' : '向内拖动把手，即可翻面')}</span>}
       {inspection && <button className="station-reset-view" onClick={() => engine.current?.resetInspection()}>{t('重置视角')}</button>}
       {scoreBench && !u.backView && <div className="station-roster-preview station-score-preview" aria-label={t('翻旗积分板试装')}>
         <span>{t('翻旗试装')}</span>

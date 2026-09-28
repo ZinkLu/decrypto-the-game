@@ -36,6 +36,12 @@ type Bridge struct {
 	accepted    bool
 	roundNotice string
 	Timing      Timings
+	// The acting seat's latest draft, sent if its time runs out.
+	draftClues [3]string
+	draftGuess [3]int
+	// This round's timeout notice, and every timed-out action by round.
+	timeout  *ws.TimeoutData
+	timeouts map[int][]string
 }
 
 // NewBridge creates a Bridge from room data, initialises the core Session,
@@ -65,6 +71,7 @@ func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
 		Room:        r,
 		Timing:      DefaultTimings,
 		views:       make(map[string]ws.GameSyncData),
+		timeouts:    make(map[int][]string),
 		Session:     session,
 		Hub:         hub,
 		CluesCh:     make(chan [3]string, 1),
@@ -190,29 +197,23 @@ func encryptHandler(ctx context.Context, r *core.Round, t *core.Team, p *core.Pl
 	}
 
 	// Block on channel waiting for player input.
+	var clues [3]string
 	select {
-	case clues := <-b.CluesCh:
-		// Broadcast clues_submitted to the room.
-		scoreA, scoreB := b.buildScores()
-		b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
-			Type: ws.MsgCluesSubmitted,
-			Data: ws.PhaseChangeData{
-				Phase:   "encrypting",
-				Round:   int(r.GetNumberOfRounds()),
-				Clues:   clues[:],
-				History: b.buildHistory(r),
-				Waiting: false,
-			},
-		})
-		_ = scoreA
-		_ = scoreB
-		return clues, false
+	case clues = <-b.CluesCh:
 	case <-time.After(b.remaining()):
 		log.Printf("bridge: encryptHandler: timeout waiting for clues in session %s", r.GetGameSession().SessionID())
-		return [3]string{"...", "...", "..."}, false
+		b.closeInput()
+		var outcome string
+		clues, outcome = b.draftCluesOnTimeout()
+		b.timedOut(r, "encrypt", b.teamLabel(t), p.NickName, outcome)
 	case <-ctx.Done():
 		return [3]string{}, true
 	}
+	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
+		Type: ws.MsgCluesSubmitted,
+		Data: ws.PhaseChangeData{Phase: "encrypting", Round: int(r.GetNumberOfRounds()), Clues: clues[:], History: b.buildHistory(r)},
+	})
+	return clues, false
 }
 
 func interceptHandler(ctx context.Context, r *core.Round, opponent *core.Team, ts core.TeamState) ([3]int, bool) {
@@ -237,7 +238,10 @@ func interceptHandler(ctx context.Context, r *core.Round, opponent *core.Team, t
 		return guess, false
 	case <-time.After(b.remaining()):
 		log.Printf("bridge: interceptHandler: timeout waiting for intercept in session %s", r.GetGameSession().SessionID())
-		return [3]int{0, 0, 0}, false
+		b.closeInput()
+		guess, outcome := b.draftGuessOnTimeout()
+		b.timedOut(r, "intercept", b.teamLabel(opponent), "", outcome)
+		return guess, false
 	case <-ctx.Done():
 		return [3]int{}, true
 	}
@@ -251,6 +255,13 @@ func interceptSuccessHandler(ctx context.Context, r *core.Round, opponent *core.
 
 	log.Printf("[RESULT] Round %d | INTERCEPT SUCCESS by team %s", r.GetNumberOfRounds(), b.teamLabel(opponent))
 	b.broadcastRoundResult(r, boolPtr(true), nil)
+
+	// Show the interception before the team decodes all the same.
+	select {
+	case <-time.After(b.Timing.AfterIntercept):
+	case <-ctx.Done():
+		return true
+	}
 	return false
 }
 
@@ -295,7 +306,10 @@ func decryptHandler(ctx context.Context, r *core.Round, t *core.Team, ts core.Te
 		return guess, false
 	case <-time.After(b.remaining()):
 		log.Printf("bridge: decryptHandler: timeout waiting for decrypt in session %s", r.GetGameSession().SessionID())
-		return [3]int{0, 0, 0}, false
+		b.closeInput()
+		guess, outcome := b.draftGuessOnTimeout()
+		b.timedOut(r, "decrypt", b.teamLabel(t), "", outcome)
+		return guess, false
 	case <-ctx.Done():
 		return [3]int{}, true
 	}
@@ -558,7 +572,10 @@ func (b *Bridge) broadcastGameOver(winner *core.Team) {
 	}
 
 	r := b.Session.GetCurrentRound()
-	result := &ws.GameOverData{Notice: b.roundNotice, Winner: winnerLabel, ScoreA: scoreA, ScoreB: scoreB, Round: int(r.GetNumberOfRounds()), History: append(b.buildHistory(r), b.historyRow(r))}
+	teams := b.Session.GetTeams()
+	wordsA, wordsB := teams[0].GetWords(), teams[1].GetWords()
+	result := &ws.GameOverData{Notice: b.roundNotice, Winner: winnerLabel, ScoreA: scoreA, ScoreB: scoreB, Round: int(r.GetNumberOfRounds()), History: append(b.buildHistory(r), b.historyRow(r)),
+		Reason: gameOverReason(teams, winner), WordsA: wordsA[:], WordsB: wordsB[:]}
 	b.mu.Lock()
 	b.phase = "game_over"
 	b.accepted = true
@@ -573,6 +590,26 @@ func (b *Bridge) broadcastGameOver(winner *core.Team) {
 	}
 	b.mu.Unlock()
 	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{Type: ws.MsgGameOver, Data: result})
+}
+
+// gameOverReason names what decided the game: two interceptions, the opponent's
+// two decoding errors, the score (both qualified, or all rounds played), or a draw.
+func gameOverReason(teams [2]*core.Team, winner *core.Team) string {
+	if winner == nil {
+		return "draw"
+	}
+	qualified := func(t, o *core.Team) bool { return t.InterceptedCounts >= 2 || o.DecryptWrongCounts >= 2 }
+	loser := teams[0]
+	if winner == teams[0] {
+		loser = teams[1]
+	}
+	if !qualified(winner, loser) || qualified(loser, winner) {
+		return "score"
+	}
+	if winner.InterceptedCounts >= 2 {
+		return "interceptions"
+	}
+	return "errors"
 }
 
 // isTeamAllAI returns true if every member of the team is an AI player.

@@ -11,9 +11,11 @@ import (
 )
 
 // Timings are assigned before Start. Tests can exercise real deadlines without waiting minutes.
-type Timings struct{ Encrypt, Guess, AI, Request, BetweenRounds, AfterIntercept time.Duration }
+// Grace keeps accepting a submission sent just before the deadline while it crosses the network;
+// players are always shown the deadline itself.
+type Timings struct{ Encrypt, Guess, AI, Request, BetweenRounds, AfterIntercept, Grace time.Duration }
 
-var DefaultTimings = Timings{90 * time.Second, 60 * time.Second, 120 * time.Second, 30 * time.Second, 5 * time.Second, 3 * time.Second}
+var DefaultTimings = Timings{90 * time.Second, 60 * time.Second, 120 * time.Second, 30 * time.Second, 8 * time.Second, 4 * time.Second, 1500 * time.Millisecond}
 
 // Only the game goroutine reads core state. Socket handlers use these immutable snapshots.
 func (b *Bridge) Sync(playerID string) *ws.GameSyncData {
@@ -73,7 +75,8 @@ func (b *Bridge) setPhase(phase string, r *core.Round) {
 			words := b.Session.GetTeams()[idx].GetWords()
 			v.Words = words[:]
 		}
-		if phase == "encrypting" && role == "encryptor" {
+		// The encryptor keeps the code for the whole round, to follow the guesses.
+		if role == "encryptor" {
 			digits := r.GetSecretDigits()
 			words := r.GetSecretWords()
 			v.SecretDigits = digits[:]
@@ -102,9 +105,13 @@ func (b *Bridge) setPhase(phase string, r *core.Round) {
 	}
 	if b.round != int(r.GetNumberOfRounds()) {
 		b.roundNotice = ""
+		b.timeout = nil
 	}
+	b.draftClues = [3]string{}
+	b.draftGuess = [3]int{}
 	for id, v := range views {
 		v.Notice = b.roundNotice
+		v.Timeout = b.timeout
 		if phase == "decrypt" {
 			v.RoundResult = b.views[id].RoundResult
 		}
@@ -126,7 +133,7 @@ func (b *Bridge) validateLocked(playerID string, round int, phase string) error 
 	if !ok || !canAct(v.YourRole, phase) {
 		return fmt.Errorf("not allowed to act in this phase")
 	}
-	if b.round != round || b.phase != phase || b.accepted || !time.Now().Before(b.deadline) {
+	if b.round != round || b.phase != phase || b.accepted || !time.Now().Before(b.deadline.Add(b.Timing.Grace)) {
 		return fmt.Errorf("stale or already submitted action; sync and try again")
 	}
 	return nil
@@ -147,8 +154,13 @@ func (b *Bridge) ValidateProgress(playerID string, data ws.ProgressData) error {
 	default:
 		return fmt.Errorf("invalid progress")
 	}
-	if len(data.Guesses) > 3 || len(data.Filled) > 3 {
+	if len(data.Guesses) > 3 || len(data.Filled) > 3 || len(data.Clues) > 3 || len(data.Clues) > 0 && data.Action != "encrypt" {
 		return fmt.Errorf("invalid progress")
+	}
+	for _, c := range data.Clues {
+		if utf8.RuneCountInString(c) > 80 {
+			return fmt.Errorf("invalid progress")
+		}
 	}
 	for _, n := range data.Guesses {
 		if n < 0 || n > 4 {
@@ -156,6 +168,20 @@ func (b *Bridge) ValidateProgress(playerID string, data ws.ProgressData) error {
 		}
 	}
 	return b.validateLocked(playerID, data.Round, phase)
+}
+
+// RecordDraft keeps the acting seat's latest draft, used if time runs out.
+// Call only after ValidateProgress accepted the same data.
+func (b *Bridge) RecordDraft(data ws.ProgressData) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if data.Action == "encrypt" && len(data.Clues) > 0 {
+		b.draftClues = [3]string{}
+		copy(b.draftClues[:], data.Clues)
+	}
+	if data.Action != "encrypt" && len(data.Guesses) == 3 {
+		copy(b.draftGuess[:], data.Guesses)
+	}
 }
 
 func validGuess(guess [3]int) bool {
@@ -216,9 +242,57 @@ func (b *Bridge) SubmitGuess(playerID, phase string, data ws.SubmitGuessData) er
 	return nil
 }
 
+// Finished reports whether the game has ended.
+func (b *Bridge) Finished() bool { b.mu.Lock(); defer b.mu.Unlock(); return b.phase == "game_over" }
+
 func (b *Bridge) closeInput()              { b.mu.Lock(); defer b.mu.Unlock(); b.accepted = true }
 func (b *Bridge) phaseDeadline() time.Time { b.mu.Lock(); defer b.mu.Unlock(); return b.deadline }
-func (b *Bridge) remaining() time.Duration { return time.Until(b.phaseDeadline()) }
+func (b *Bridge) remaining() time.Duration {
+	return time.Until(b.phaseDeadline()) + b.Timing.Grace
+}
+
+// timedOut settles an action whose time ran out and tells every seat how.
+func (b *Bridge) timedOut(r *core.Round, action, team, player, outcome string) {
+	round := int(r.GetNumberOfRounds())
+	d := &ws.TimeoutData{Round: round, Action: action, Team: team, Player: player, Outcome: outcome}
+	b.mu.Lock()
+	b.timeout = d
+	b.timeouts[round] = append(b.timeouts[round], action)
+	for id, v := range b.views {
+		v.Timeout = d
+		b.views[id] = v
+	}
+	b.mu.Unlock()
+	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{Type: ws.MsgTimeout, Data: d})
+}
+
+// draftCluesOnTimeout sends what the encryptor wrote; empty lines become a dash.
+func (b *Bridge) draftCluesOnTimeout() ([3]string, string) {
+	b.mu.Lock()
+	clues := b.draftClues
+	b.mu.Unlock()
+	outcome := "blank"
+	for i, c := range clues {
+		if c = strings.TrimSpace(c); c == "" {
+			clues[i] = "—"
+		} else {
+			clues[i] = c
+			outcome = "draft"
+		}
+	}
+	return clues, outcome
+}
+
+// draftGuessOnTimeout sends the chosen digits when all three are chosen.
+func (b *Bridge) draftGuessOnTimeout() ([3]int, string) {
+	b.mu.Lock()
+	guess := b.draftGuess
+	b.mu.Unlock()
+	if validGuess(guess) {
+		return guess, "guess"
+	}
+	return [3]int{}, "none"
+}
 
 func (b *Bridge) finishRound(r *core.Round) {
 	history := append(b.buildHistory(r), b.historyRow(r))
@@ -244,5 +318,5 @@ func (b *Bridge) historyRow(r *core.Round) ws.RoundHistoryRow {
 	secret := r.GetSecretDigits()
 	intercept := r.GetInterceptSecret()
 	decrypt := r.GetDecryptSecret()
-	return ws.RoundHistoryRow{Round: int(r.GetNumberOfRounds()), Team: b.teamLabel(r.GetCurrentTeam()), Clues: clues[:], Secret: secret[:], Intercept: intercept[:], Decrypt: decrypt[:]}
+	return ws.RoundHistoryRow{Round: int(r.GetNumberOfRounds()), Team: b.teamLabel(r.GetCurrentTeam()), Clues: clues[:], Secret: secret[:], Intercept: intercept[:], Decrypt: decrypt[:], Timeouts: b.timeouts[int(r.GetNumberOfRounds())]}
 }

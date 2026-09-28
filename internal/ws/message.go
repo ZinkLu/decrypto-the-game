@@ -17,6 +17,7 @@ const (
 	MsgSubmitDecrypt   = "submit_decrypt"
 	MsgRequestSync     = "request_sync"
 	MsgProgress        = "progress"
+	MsgReopenRoom      = "reopen_room"
 )
 
 // Server -> Client message type constants
@@ -32,6 +33,7 @@ const (
 	MsgAIThinking     = "ai_thinking"
 	MsgAIActed        = "ai_acted"
 	MsgPlayerProgress = "player_progress"
+	MsgTimeout        = "timeout"
 	MsgError          = "error"
 )
 
@@ -41,10 +43,13 @@ type ClientMessage struct {
 	Data json.RawMessage `json:"data"`
 }
 
-// ServerMessage is a message sent from server to client.
+// ServerMessage is a message sent from server to client. ServerTime is the
+// server clock (Unix ms) when the message left, so clients can convert
+// deadlines to their own clock whatever their system time says.
 type ServerMessage struct {
-	Type string      `json:"type"`
-	Data interface{} `json:"data"`
+	Type       string      `json:"type"`
+	Data       interface{} `json:"data"`
+	ServerTime int64       `json:"server_time,omitempty"`
 }
 
 // --- Client message data types ---
@@ -138,6 +143,8 @@ type RoundHistoryRow struct {
 	Secret    []int    `json:"secret,omitempty"`
 	Intercept []int    `json:"intercept,omitempty"`
 	Decrypt   []int    `json:"decrypt,omitempty"`
+	// Timeouts lists the actions of this round that ran out of time.
+	Timeouts []string `json:"timeouts,omitempty"`
 }
 
 // PhaseChangeData is the data payload for MsgPhaseChange.
@@ -181,6 +188,22 @@ type GameOverData struct {
 	Winner  *string           `json:"winner,omitempty"`
 	ScoreA  ScoreInfo         `json:"score_a"`
 	ScoreB  ScoreInfo         `json:"score_b"`
+	// Reason: "interceptions", "errors", "score" or "draw".
+	Reason string `json:"reason,omitempty"`
+	// Both teams' keywords, revealed once the game is over.
+	WordsA []string `json:"words_a,omitempty"`
+	WordsB []string `json:"words_b,omitempty"`
+}
+
+// TimeoutData tells everyone that an action ran out of time and how it was settled.
+// Outcome: "draft" (the written draft was sent), "blank" (nothing was written),
+// "guess" (the chosen digits were sent) or "none" (no complete guess).
+type TimeoutData struct {
+	Round   int    `json:"round"`
+	Action  string `json:"action"` // "encrypt", "intercept", "decrypt"
+	Team    string `json:"team"`
+	Player  string `json:"player,omitempty"`
+	Outcome string `json:"outcome"`
 }
 
 // GameSyncData holds the in-game state for a full sync.
@@ -192,6 +215,7 @@ type GameSyncData struct {
 	Submitted    bool              `json:"submitted"`
 	GameOver     *GameOverData     `json:"game_over,omitempty"`
 	AIStatus     *AIStatusData     `json:"ai_status,omitempty"`
+	Timeout      *TimeoutData      `json:"timeout,omitempty"`
 	Notice       string            `json:"notice,omitempty"`
 	Phase        string            `json:"phase"`
 	Round        int               `json:"round"`
@@ -240,6 +264,9 @@ type ProgressData struct {
 	Guesses []int  `json:"guesses,omitempty"` // per-slot digits 1-4, 0 unfilled
 	Filled  []bool `json:"filled,omitempty"`  // per-slot clue drafted (encrypt only)
 	Total   int    `json:"total"`             // total steps (always 3)
+	// Clues is the encryptor's draft. It stays on the server, which sends it if
+	// time runs out; it is never relayed to other players.
+	Clues []string `json:"clues,omitempty"`
 }
 
 // PlayerProgressData is the server broadcast payload for MsgPlayerProgress.

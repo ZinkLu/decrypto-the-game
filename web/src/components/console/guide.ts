@@ -15,10 +15,10 @@ export const guideLeads = [
     '队友对照我方密词解码：三个编号，顺序全对才算成功。',
 ] as const;
 export const guideNotes = [
-    '词窗只有本队看得到。每回合，发报方派一人当加密者。',
+    '词窗只有本队看得到。每回合由发报方队员轮流当加密者。',
     '写好三条线索，按 ACTION 发报。',
     '三个编号全猜中就是截获。前两次发报不拦截。',
-    '最多 16 回合',
+    '截获后队友照样解码。打满 16 回合按截获减失误定胜负。',
 ] as const;
 /** The guide opens on the page that explains what the table is doing right now. */
 export function guidePageFor(phase: string) {
@@ -40,6 +40,6 @@ export const guideRules = [
     '同一队的密词整局不变，旧线索和每轮揭晓的密码会留在记录里。',
     '三个编号，顺序全对才成功。',
     '截获两次，或对方解码失误两次，即获胜。',
-    '本线上版前两次发报不拦截；截获成功即结束该回合，最多 16 回合。',
+    '本线上版前两次发报不拦截；截获后队友照样解码。最多 16 回合，打满按截获减失误定胜负。',
 ] as const;
 export const gameIntroduction = '两支队伍传递暗号：让队友从线索中还原密码，同时提防对手从历次记录里摸清规律。';

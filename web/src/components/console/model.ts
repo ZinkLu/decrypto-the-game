@@ -230,6 +230,27 @@ export function hardwareRecovery(u: LocalState) {
         !u.powerOn ? { id: 'restore-switch', label: '开启终端电源' } :
         !h.linked ? { id: 'restore-link', label: '接回网线' } : null;
 }
+/** Drafts survive a reload of the same seat and beat, in this tab only. */
+const draftKey = 'decrypto-draft';
+export function readDraft(identity: string): { clues: string[]; guess: number[]; slot: number } | null {
+    try {
+        const saved = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
+        return saved?.identity === identity && Array.isArray(saved.clues) && Array.isArray(saved.guess) ? saved : null;
+    } catch { return null; }
+}
+export function saveDraft(identity: string, draft: { clues: string[]; guess: number[]; slot: number }) {
+    try {
+        if (draft.clues.some(c => c.trim()) || draft.guess.some(Boolean)) sessionStorage.setItem(draftKey, JSON.stringify({ identity, ...draft }));
+        else if (readDraft(identity)) sessionStorage.removeItem(draftKey);
+    } catch { /* Drafts stay in memory when storage is blocked. */ }
+}
+const nameKey = 'decrypto-name';
+export function readName() {
+    try { return (localStorage.getItem(nameKey) || '').slice(0, 20); } catch { return ''; }
+}
+export function saveName(name: string) {
+    try { localStorage.setItem(nameKey, name.trim()); } catch { /* The name is typed again next time. */ }
+}
 export function draftIdentity(s: StationState) {
     return JSON.stringify([s.roomCode, s.myPlayerID, s.myTeam, s.round, s.phase, s.myRole]);
 }
@@ -279,13 +300,10 @@ export const scopeAxisAngle = (value: number) => clampControl(value) * Math.PI /
 export const scopeFigures = (value: number) => value.toFixed(value < 10 ? 2 : value < 100 ? 1 : 0);
 export function resultTint(s: StationState) {
     if (s.phase === 'game_over')
-        return s.gameOver?.winner === null ? '#b9c5c7' : s.gameOver?.winner === s.myTeam ? '#8bc995' : '#ed9781';
-    const result = s.roundResult;
-    if (result?.decrypt_success !== undefined)
-        return result.decrypt_success ? '#8bc995' : '#ed9781';
-    if (result?.intercept_success)
-        return s.myRole === 'opponent' ? '#8bc995' : '#ed9781';
-    return '#b9c5c7';
+        return !s.gameOver?.winner || !s.myTeam ? '#b9c5c7' : s.gameOver.winner === s.myTeam ? '#8bc995' : '#ed9781';
+    // Good or bad news for this seat's team; neutral for spectators.
+    const tone = resultView(s).tone;
+    return tone === 'good' ? '#8bc995' : tone === 'bad' ? '#ed9781' : '#b9c5c7';
 }
 export function roleState(s: StationState, u: LocalState) {
     const encrypt = s.phase === 'encrypting' && s.myRole === 'encryptor' && !s.waiting;
@@ -371,8 +389,70 @@ export function roundCast(s: StationState) {
     const own = members(sending);
     const encryptor = s.myRole === 'encryptor' ? own.find(p => p.id === s.myPlayerID) :
         own.filter(p => p.nickname === s.encryptor).length === 1 ? own.find(p => p.nickname === s.encryptor) : undefined;
-    return { sending, receiving, encryptor, decoders: own.filter(p => p !== encryptor), interceptors: members(receiving),
+    return { sending, receiving, encryptor, decoders: acting(own.filter(p => p !== encryptor)), interceptors: acting(members(receiving)),
         intercepted: s.round > 2 };
+}
+/** Who actually plays a beat: a team's humans, or its AI when it has no humans. */
+function acting(people: StationState['teamA']) {
+    const humans = people.filter(p => !p.is_ai);
+    return humans.length ? humans : people;
+}
+/** A translation key and its values. */
+export type Line = [string, unknown[]];
+/** What this seat does in the current beat, in one line. */
+export function seatDuty(s: StationState): Line | null {
+    if (!isBeat(s.phase)) return null;
+    const role = s.myRole, cast = roundCast(s);
+    if (role !== 'encryptor' && role !== 'teammate' && role !== 'opponent') return ['你在旁观这一局，下一局可以入队。', []];
+    if (s.phase === 'encrypting') return role === 'encryptor' ? ['你来加密：等软盘读出密码，再写三条线索。', []] :
+        role === 'teammate' ? ['你负责解码：先等 {0} 写好线索。', [s.encryptor || '—']] :
+        [cast.intercepted ? '你方稍后拦截：留意他们的线索。' : '本轮你方旁听：前两次发报不拦截。', []];
+    if (s.phase === 'intercept') return role === 'opponent' ? ['轮到你拦截：三个编号全对才算截获。', []] : ['对手正在猜你们的密码。', []];
+    return role === 'teammate' ? ['轮到你解码：对照我方密词，按顺序选编号。', []] :
+        role === 'encryptor' ? ['队友正在解码，你只能等待。', []] : ['{0} 队正在解码。', [cast.sending || '—']];
+}
+/** Seconds at which the acting seat is warned that its time is running out. */
+export const warningSeconds = 15;
+/** The acting seat's countdown warning, and what happens when time runs out. */
+export function deadlineWarning(s: StationState, u: LocalState, seconds: number): Line | null {
+    const r = roleState(s, u);
+    if (!s.deadline || u.submitted || s.submitted || !(r.encrypt || r.guess) || seconds > warningSeconds) return null;
+    if (seconds <= 0) return ['时间到 · 正在按规则提交', []];
+    return [r.encrypt ? '还剩 {0} 秒 · 到时自动发出已写的线索' : s.phase === 'intercept' ? '还剩 {0} 秒 · 到时未选满三位视为未拦截' :
+        '还剩 {0} 秒 · 到时未选满三位记一次解码失误', [seconds]];
+}
+/** How this round's timed-out action was settled, for everyone at the table. */
+export function timeoutNotice(s: StationState): Line | null {
+    const d = s.timeout;
+    if (!d || d.round !== s.round) return null;
+    if (d.action === 'encrypt') return [d.outcome === 'draft' ? '{0} 没在时限内发报，已发出写好的线索（空行记为 —）。' : '{0} 没在时限内写线索，本轮线索为空。', [d.player || d.team]];
+    if (d.action === 'intercept') return [d.outcome === 'guess' ? '{0} 队拦截超时，已发出选好的号码。' : '{0} 队拦截超时，本轮视为未拦截。', [d.team]];
+    return [d.outcome === 'guess' ? '{0} 队解码超时，已发出选好的号码。' : '{0} 队解码超时，记一次解码失误。', [d.team]];
+}
+/** A round result told from this seat: which team did what, and whether it helps us. */
+export function resultView(s: StationState): { title: Line; sub: Line | null; tone: 'good' | 'bad' | 'neutral' } {
+    const cast = roundCast(s), result = s.roundResult;
+    const score = (team: string) => team === 'A' ? s.scoreA : s.scoreB;
+    const side = (team: string) => !s.myTeam || !team ? 0 : s.myTeam === team ? 1 : -1;
+    const sending = cast.sending || '—', receiving = cast.receiving || '—';
+    if (result?.decrypt_success !== undefined) {
+        const tone = side(cast.sending) * (result.decrypt_success ? 1 : -1);
+        return { title: [result.decrypt_success ? '{0} 队解码成功' : '{0} 队解码失误', [sending]],
+            sub: result.decrypt_success ? null : ['{0} 队失误 {1} / 2', [sending, score(cast.sending).decrypt_failures]],
+            tone: tone > 0 ? 'good' : tone < 0 ? 'bad' : 'neutral' };
+    }
+    const tone = side(cast.receiving) * (result?.intercept_success ? 1 : -1);
+    return { title: [result?.intercept_success ? '{0} 队截获成功' : '{0} 队拦截未成功', [receiving]],
+        sub: result?.intercept_success ? ['{0} 队截获 {1} / 2 · {2} 队仍要解码', [receiving, score(cast.receiving).interceptions, sending]] : ['轮到 {0} 队解码', [sending]],
+        tone: tone > 0 ? 'good' : tone < 0 ? 'bad' : 'neutral' };
+}
+/** Why the game ended, and what it means for this seat. */
+export function gameOverView(s: StationState): { title: Line; reason: Line; mine: string | null } {
+    const winner = s.gameOver?.winner ?? null, loser = winner === 'A' ? 'B' : 'A';
+    const reason: Line = !winner ? ['双方得分相同，平局', []] : s.gameOver?.reason === 'interceptions' ? ['{0} 队截获 2 次', [winner]] :
+        s.gameOver?.reason === 'errors' ? ['{0} 队解码失误 2 次', [loser]] : ['按得分定胜负：截获减失误，{0} 队领先', [winner]];
+    return { title: winner ? ['{0} 队获胜', [winner]] : ['双方平局', []], reason,
+        mine: !winner || !s.myTeam ? null : winner === s.myTeam ? '你方获胜' : '你方落败' };
 }
 /** Every beat opens with a briefing: the round's cast before the first, the handover before the others. */
 export function briefingKey(s: Pick<StationState, 'phase' | 'round' | 'roomCode'>) {
@@ -395,7 +475,8 @@ export function transmission(s: StationState, readable = false) {
     const ai = s.aiStatus?.action === action ? s.aiStatus : null;
     const thinking = ai && (ai.state === 'thinking' || ai.state === 'retrying') ? ai.step : 0;
     const submitted = human?.state === 'submitted';
-    const focus = submitted ? 0 : human?.state === 'editing' && human.focus ? human.focus : thinking;
+    const chosen = action !== 'encrypt' && (human?.guesses?.filter(Boolean).length ?? 0) === 3;
+    const focus = submitted || chosen ? 0 : human?.state === 'editing' && human.focus ? human.focus : thinking;
     const aiDone = ai?.completed ?? 0;
     const showDigits = action !== 'encrypt' && !(action === 'intercept' && s.myRole === 'teammate');
     const slots = [0, 1, 2].map<SlotSignal>(i => {
@@ -406,7 +487,7 @@ export function transmission(s: StationState, readable = false) {
         const digit = showDigits && done ? picked : 0;
         return { active: focus === i + 1, done, digit, match: readable && digit > 0 ? digit === s.secretDigits[i] : undefined };
     });
-    const player = human?.player && human.player !== 'AI Agent' ? human.player : action === 'encrypt' ? s.encryptor : '';
+    const player = human?.player && human.player !== 'AI Agent' && human.player !== 'AI' ? human.player : action === 'encrypt' ? s.encryptor : '';
     return { action, player, ai: !!ai || human?.player === 'AI Agent', retrying: ai?.state === 'retrying',
         slots, count: slots.filter(slot => slot.done).length, started: !!human || !!ai, submitted };
 }

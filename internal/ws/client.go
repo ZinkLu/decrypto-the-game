@@ -61,6 +61,7 @@ func NewClient(hub *Hub, conn *websocket.Conn) *Client {
 // SendMessage marshals msg to JSON and writes it to the send channel non-blocking.
 // If the channel is full the message is dropped.
 func (c *Client) SendMessage(msg ServerMessage) {
+	msg.ServerTime = time.Now().UnixMilli()
 	data, err := json.Marshal(msg)
 	if err != nil {
 		log.Printf("ws: marshal error: %v", err)

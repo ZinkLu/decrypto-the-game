@@ -20,6 +20,26 @@ export interface RoundHistoryRow {
   secret?: number[];
   intercept?: number[];
   decrypt?: number[];
+  /** Actions of this round that ran out of time: "encrypt", "intercept", "decrypt". */
+  timeouts?: string[];
+}
+
+/** An action whose time ran out, and how the server settled it. */
+export interface TimeoutInfo {
+  round: number;
+  action: "encrypt" | "intercept" | "decrypt";
+  team: string;
+  player?: string;
+  /** "draft" | "blank" for clues, "guess" | "none" for guesses. */
+  outcome: string;
+}
+
+export interface GameOverInfo {
+  winner: string | null;
+  /** "interceptions" | "errors" | "score" | "draw" */
+  reason?: string;
+  wordsA?: string[];
+  wordsB?: string[];
 }
 
 export type GamePhase =
@@ -72,7 +92,10 @@ interface GameStore {
     intercept_success?: boolean;
     decrypt_success?: boolean;
   } | null;
-  gameOver: { winner: string | null } | null;
+  gameOver: GameOverInfo | null;
+  timeout: TimeoutInfo | null;
+  /** Set while this player asks to go back to the reopened lobby after a game. */
+  pendingLobby: boolean;
   aiStatus: {
     action: string;
     player: string;
@@ -114,9 +137,11 @@ interface GameStore {
       focus?: number;
       guesses?: number[];
       filled?: boolean[];
+      clues?: string[];
     },
   ) => void;
   requestSync: () => void;
+  returnToRoom: () => void;
   reset: () => void;
 }
 
@@ -153,7 +178,9 @@ const initialState = {
     intercept_success?: boolean;
     decrypt_success?: boolean;
   } | null,
-  gameOver: null as { winner: string | null } | null,
+  gameOver: null as GameOverInfo | null,
+  timeout: null as TimeoutInfo | null,
+  pendingLobby: false,
   aiStatus: null as {
     action: string;
     player: string;
@@ -186,6 +213,37 @@ type SetFn = (
 type GetFn = () => GameStore;
 
 const sessionKey = "decrypto-session-v1";
+
+// Server clock minus this device's clock. Each message carries the server time
+// it was sent at; the true offset is that sample plus the network delay, so the
+// largest recent sample is the best estimate. Deadlines are then kept in this
+// device's clock, whatever its system time says.
+let clockSamples: number[] = [];
+export function clockOffset() {
+  return clockSamples.length ? Math.max(...clockSamples) : 0;
+}
+export function noteServerTime(serverTime: number | undefined, now = Date.now()) {
+  if (!serverTime) return;
+  clockSamples = [...clockSamples.slice(-15), serverTime - now];
+}
+export function localDeadline(serverDeadline: unknown) {
+  const value = Number(serverDeadline) || 0;
+  return value ? value - clockOffset() : 0;
+}
+export function resetClock() { clockSamples = []; }
+
+/** Everything that belongs to one game, cleared when the room reopens. */
+const gameFields = {
+  deadline: 0, submitted: false, aiNotice: "", round: 0, myRole: "" as PlayerRole, myTeam: "", myWords: [] as string[],
+  secretDigits: [] as number[], secretWords: [] as string[], clues: [] as string[], encryptor: "", history: [] as RoundHistoryRow[],
+  waiting: false, scoreA: { interceptions: 0, decrypt_failures: 0 }, scoreB: { interceptions: 0, decrypt_failures: 0 },
+  roundResult: null, gameOver: null, timeout: null, aiStatus: null, playerProgress: null,
+};
+
+function gameOverInfo(d: Record<string, unknown>): GameOverInfo {
+  return { winner: (d.winner as string | null) ?? null, reason: d.reason as string | undefined,
+    wordsA: d.words_a as string[] | undefined, wordsB: d.words_b as string[] | undefined };
+}
 function savedSession(): { roomCode: string; resumeToken: string } | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(sessionKey) || "null");
@@ -204,8 +262,10 @@ function handleServerMessage(
   get: GetFn,
   type: string,
   data: unknown,
+  serverTime?: number,
 ) {
   const d = data as Record<string, unknown>;
+  noteServerTime(serverTime);
 
   switch (type) {
     case "_connected":
@@ -239,9 +299,12 @@ function handleServerMessage(
       });
       break;
 
-    case "room_state":
+    case "room_state": {
+      // A reopened room waits on the final screen until this player moves on.
+      const lobby = !d.started && (get().phase !== "game_over" || get().pendingLobby);
       set({
-        phase: d.started ? get().phase : "room",
+        ...(lobby && get().phase !== "room" && get().phase !== "home" ? { ...gameFields, pendingLobby: false } : {}),
+        phase: d.started ? get().phase : lobby ? "room" : get().phase,
         roomCode: (d.room_code as string) ?? get().roomCode,
         players: (d.players as PlayerInfo[]) ?? [],
         teamA: (d.team_a as PlayerInfo[]) ?? [],
@@ -251,6 +314,7 @@ function handleServerMessage(
         myPlayerID: (d.my_player_id as string) ?? get().myPlayerID,
       });
       break;
+    }
 
     case "game_start":
       set({
@@ -262,7 +326,8 @@ function handleServerMessage(
       break;
 
     case "phase_change": {
-      set({ deadline: Number(d.deadline) || 0, submitted: false, aiNotice: String(d.notice || ""), recovering: false });
+      set({ deadline: localDeadline(d.deadline), submitted: false, aiNotice: String(d.notice || ""), recovering: false });
+      if (get().timeout && get().timeout!.round !== ((d.round as number) ?? get().round)) set({ timeout: null });
       const newPhase = d.phase as string;
       if (newPhase === "new_round") {
         // Map new_round to the correct GamePhase based on role
@@ -334,7 +399,7 @@ function handleServerMessage(
         deadline: 0,
         round: Number(d.round) || get().round,
         history: (d.history as RoundHistoryRow[]) ?? get().history,
-        gameOver: { winner: (d.winner as string | null) ?? null },
+        gameOver: gameOverInfo(d),
         scoreA: (d.score_a as ScoreInfo) ?? get().scoreA,
         scoreB: (d.score_b as ScoreInfo) ?? get().scoreB,
         phase: "game_over",
@@ -360,12 +425,13 @@ function handleServerMessage(
 
       if (gameData) {
         set({
-          deadline: Number(gameData.deadline) || 0,
+          deadline: localDeadline(gameData.deadline),
+          timeout: (gameData.timeout as TimeoutInfo) ?? null,
           submitted: !!gameData.submitted,
           roundResult: (gameData.round_result as GameStore["roundResult"]) ?? null,
           aiStatus: (gameData.ai_status as GameStore["aiStatus"]) ?? null,
           aiNotice: String(gameData.notice || ""),
-          gameOver: gameData.game_over ? { winner: (gameData.game_over as { winner?: string }).winner ?? null } : null,
+          gameOver: gameData.game_over ? gameOverInfo(gameData.game_over as Record<string, unknown>) : null,
           round: (gameData.round as number) ?? get().round,
           myRole: (gameData.your_role as PlayerRole) ?? get().myRole,
           myTeam: (gameData.your_team as string) ?? get().myTeam,
@@ -381,7 +447,7 @@ function handleServerMessage(
           phase: ({ new: "encrypting", init: "encrypting", done: "round_result" } as Record<string, GamePhase>)[String(gameData.phase)] ?? (gameData.phase as GamePhase) ?? get().phase,
         });
       } else if (roomData) {
-        set({ phase: "room" });
+        set({ ...gameFields, phase: "room", pendingLobby: false });
       } else {
         set({
           ...initialState,
@@ -400,6 +466,10 @@ function handleServerMessage(
           step: Number(d.step) || 1, completed: Number(d.completed) || 0, total: Number(d.total) || 3 },
         aiNotice: get().aiNotice.startsWith('AI 未能') ? get().aiNotice : String(d.notice || ''),
       });
+      break;
+
+    case "timeout":
+      set({ timeout: d as unknown as TimeoutInfo });
       break;
 
     case "player_progress":
@@ -454,8 +524,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     if (get().wsService) return;
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const url = `${protocol}://${window.location.host}/ws`;
-    const ws = new WebSocketService(url, (type: string, data: unknown) => {
-      handleServerMessage(set, get, type, data);
+    const ws = new WebSocketService(url, (type: string, data: unknown, serverTime?: number) => {
+      handleServerMessage(set, get, type, data, serverTime);
     });
     const previous = get().resumeToken ? null : savedSession();
     set({ wsService: ws, ...(previous ? { ...previous, recovering: true } : {}) });
@@ -517,7 +587,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       focus: opts?.focus ?? 0,
       guesses: opts?.guesses,
       filled: opts?.filled,
+      clues: opts?.clues,
     });
+  },
+
+  returnToRoom() {
+    // The first request reopens the room; the lobby then arrives as room_state.
+    set({ pendingLobby: true });
+    get().wsService?.send("reopen_room", {});
   },
 
   requestSync() {

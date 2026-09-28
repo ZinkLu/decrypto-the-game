@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/ZinkLu/decrypto-the-game/internal/core"
 	"github.com/ZinkLu/decrypto-the-game/internal/ws"
@@ -91,6 +92,18 @@ func handleAIGuess(parent context.Context, b *Bridge, r *core.Round, intercept b
 	}
 	clues := r.GetEncryptedMessage()
 	history := formatHistoryForAI(b, r)
+	// Progress carries the AI seat's own call sign.
+	player := "AI"
+	team := r.GetCurrentTeam()
+	if intercept {
+		team = r.GetOpponent()
+	}
+	for _, p := range team.Members() {
+		if isAI(p.UID) && p.UID != r.EncryptPlayer().UID {
+			player = p.NickName
+			break
+		}
+	}
 	var result [3]int
 	for i := range result {
 		if parent.Err() != nil {
@@ -109,16 +122,29 @@ func handleAIGuess(parent context.Context, b *Bridge, r *core.Round, intercept b
 			}
 			fallback++
 		}
-		b.broadcastAIProgress(action, "AI Agent", "editing", i, i+1, result[:i])
-		result[i] = aiStep(ctx, b, action, "AI Agent", i+1, func(ctx context.Context) (int, error) {
-			if b.AIPlayer == nil {
-				return 0, fmt.Errorf("AI provider unavailable")
-			}
-			return b.AIPlayer.GuessSingleNumber(ctx, clues[i], words, intercept, history, result[:i])
-		}, fallback)
-		b.broadcastAIProgress(action, "AI Agent", "editing", i+1, 0, result[:i+1])
+		b.broadcastAIProgress(action, player, "editing", i, i+1, result[:i])
+		if placeholderClue(clues[i]) {
+			// A line left empty by a timeout carries nothing to reason about.
+			result[i] = fallback
+		} else {
+			result[i] = aiStep(ctx, b, action, player, i+1, func(ctx context.Context) (int, error) {
+				if b.AIPlayer == nil {
+					return 0, fmt.Errorf("AI provider unavailable")
+				}
+				return b.AIPlayer.GuessSingleNumber(ctx, clues[i], words, intercept, history, result[:i])
+			}, fallback)
+		}
+		b.broadcastAIProgress(action, player, "editing", i+1, 0, result[:i+1])
 		log.Printf("[AI-%s] Round %d step %d/3 → %d", action, r.GetNumberOfRounds(), i+1, result[i])
 	}
-	b.broadcastAIProgress(action, "AI Agent", "submitted", 3, 0, result[:])
+	b.broadcastAIProgress(action, player, "submitted", 3, 0, result[:])
 	return result
+}
+
+func placeholderClue(clue string) bool {
+	switch strings.TrimSpace(clue) {
+	case "", "—", "...", "…":
+		return true
+	}
+	return false
 }

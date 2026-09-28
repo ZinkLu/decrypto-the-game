@@ -8,6 +8,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +23,14 @@ type OpenAIProvider struct {
 	APIKey  string
 	Model   string
 	BaseURL string // e.g. "https://api.openai.com/v1" or "http://localhost:11434/v1"
+	// MaxTokens bounds each answer, reasoning included (OPENAI_MAX_TOKENS, default 2048).
+	MaxTokens int
+	// ReasoningEffort ("low", "medium", "high") shortens a reasoning model's
+	// thinking where the server supports it (OPENAI_REASONING_EFFORT).
+	ReasoningEffort string
+	// Extra is merged into every request body (OPENAI_EXTRA_BODY, a JSON object),
+	// e.g. {"chat_template_kwargs":{"enable_thinking":false}}.
+	Extra map[string]any
 }
 
 // NewOpenAIProvider creates a provider for any OpenAI-compatible API.
@@ -35,23 +45,28 @@ func NewOpenAIProvider(apiKey, baseURL, model string) *OpenAIProvider {
 	if model == "" {
 		model = "gpt-4o"
 	}
-	return &OpenAIProvider{
-		APIKey:  apiKey,
-		Client:  &http.Client{Timeout: 35 * time.Second},
-		Model:   model,
-		BaseURL: baseURL,
+	p := &OpenAIProvider{
+		APIKey:          apiKey,
+		Client:          &http.Client{Timeout: 35 * time.Second},
+		Model:           model,
+		BaseURL:         baseURL,
+		MaxTokens:       2048,
+		ReasoningEffort: strings.TrimSpace(os.Getenv("OPENAI_REASONING_EFFORT")),
 	}
+	if n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("OPENAI_MAX_TOKENS"))); err == nil && n > 0 {
+		p.MaxTokens = n
+	}
+	if raw := strings.TrimSpace(os.Getenv("OPENAI_EXTRA_BODY")); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &p.Extra); err != nil {
+			log.Printf("[AI] ignoring OPENAI_EXTRA_BODY: %v", err)
+		}
+	}
+	return p
 }
 
 type openaiMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
-}
-
-type openaiRequest struct {
-	Model     string          `json:"model"`
-	Messages  []openaiMessage `json:"messages"`
-	MaxTokens int             `json:"max_tokens"`
 }
 
 type openaiChoice struct {
@@ -80,13 +95,22 @@ func (p *OpenAIProvider) Complete(ctx context.Context, messages []ai.Message) (s
 		})
 	}
 
-	reqBody := openaiRequest{
-		Model:     p.Model,
-		Messages:  chatMessages,
-		MaxTokens: 2048,
+	maxTokens := p.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 2048
+	}
+	body := map[string]any{}
+	for k, v := range p.Extra {
+		body[k] = v
+	}
+	body["model"] = p.Model
+	body["messages"] = chatMessages
+	body["max_tokens"] = maxTokens
+	if p.ReasoningEffort != "" {
+		body["reasoning_effort"] = p.ReasoningEffort
 	}
 
-	bodyBytes, err := json.Marshal(reqBody)
+	bodyBytes, err := json.Marshal(body)
 	if err != nil {
 		return "", fmt.Errorf("openai: marshal request: %w", err)
 	}

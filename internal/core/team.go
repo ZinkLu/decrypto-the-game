@@ -19,6 +19,11 @@ func (t *Team) DecryptFailed() {
 	t.DecryptWrongCounts++
 }
 
+// Score is interceptions minus decoding errors.
+func (t *Team) Score() int {
+	return int(t.InterceptedCounts) - int(t.DecryptWrongCounts)
+}
+
 func newTeam(players []*Player) (*Team, error) {
 	if 2 < len(players) && len(players) > 4 {
 		return nil, fmt.Errorf("%s", "A Team Can Only Take 2 - 4 Player")
