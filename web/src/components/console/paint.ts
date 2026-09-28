@@ -435,7 +435,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     const listed = (people: StationState['teamA']) => people.map(p => p.id === s.myPlayerID ? t('你') : p.nickname).join(u.locale === 'zh' ? '、' : ', ');
     const navX = right - (h.batteryPercent === null ? 112 : 265);
     // The header keeps the round's context on every page: which round, and who acts in it.
-    const context = u.manual ? [t('玩法 · {0} / {1}', [guidePage + 1, guidePages])] : u.about ? [t('原版桌游')] : !hasGame ? ['DECRYPTO'] : [
+    const context = u.manual ? [t('玩法 · {0} / {1}', [guidePage + 1, guidePages])] : u.about ? [t('原版桌游')] : !hasGame ? ['ENCRYPTO'] : [
         briefing ? t('第 {0} / 16 回合', [s.round]) : t('第 {0} 回合', [String(s.round).padStart(2, '0')]),
         ...!isBeat(s.phase) ? [] : briefing ? [t('简报')] :
             s.phase === 'encrypting' ? [cast.sending && t('{0} 队发报', [cast.sending]), s.encryptor && t('加密者 {0}', [called(s.encryptor)])] :
@@ -465,7 +465,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
         paintGuide(c, u, guidePage, guideArt);
         guideNav(guidePage);
     } else if (u.about) {
-        heading(t('每条线索，都是一次试探。'), 'DECRYPTO · Le Scorpion Masqué');
+        heading(t('每条线索，都是一次试探。'), t('原作：Decrypto · 发行：Le Scorpion Masqué'));
         wrap(c, t(gameIntroduction), 55, 253, 865, 29, CREAM, 3);
         originalGameLinks.forEach((link, i) => {
             const x = 55 + i * 303;
@@ -473,7 +473,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
             targets[targets.length - 1].href = link.href;
         });
         button(c, 'manual', t('一图读懂玩法') + ' →', 55, 478, 270, 46);
-        foot = t('非官方线上改编 · 喜欢这场交锋，也请支持原版。');
+        foot = t('非官方玩家作品 · 与原作方无关联 · 请支持原版桌游。');
     } else if (s.phase === 'home') {
         heading(t('接通你的秘密频道。'));
         ['create', 'join'].forEach((mode, i) => {
@@ -904,7 +904,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     const printedTop = paperTextureHeight - printedHeight;
     leader.textAlign = 'center';
     text(leader, t("{0} 条记录", [String(records.length).padStart(2, '0')]), 420, paperTextureHeight - 84, 18, '#87765b');
-    text(leader, t("DECRYPTO / 密报记录"), 420, printedTop + 43, 29, '#4e493b', 600);
+    text(leader, t("ENCRYPTO / 密报记录"), 420, printedTop + 43, 29, '#4e493b', 600);
     text(leader, t("频道 {0}   ·   {1} 条记录", [s.roomCode || '----', String(records.length).padStart(2, '0')]), 420, printedTop + 79, 21, '#786b52');
     line(leader, 52, printedTop + 103, 736, '#887b6266');
     leader.textAlign = 'left';
@@ -1017,7 +1017,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     }
     dl.restore();
     text(dl, `KEY / ${String(s.round || 0).padStart(2, '0')}`, 16, 87, 13, '#817c70', 500);
-    fitLabel(dl, ownsDisk ? t('{0} 队 · 仅你可见', [s.myTeam]) : 'DECRYPTO', 116, 87, 13, '#817c70', 500, 168);
+    fitLabel(dl, ownsDisk ? t('{0} 队 · 仅你可见', [s.myTeam]) : 'ENCRYPTO', 116, 87, 13, '#817c70', 500, 168);
     frame('powerControl', 320, 180);
     target('powerControl', 'power-toggle', u.powerOn ? t("关闭终端电源") : t("开启终端电源"), 0, 0, 320, 180);
     const ft = frame('footer', 1100, 65);

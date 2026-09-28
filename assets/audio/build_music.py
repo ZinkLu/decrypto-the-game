@@ -82,7 +82,7 @@ def main():
             destination = OUT / f'{name}-v1.mp3'
             ffmpeg('-i', wav, '-af', f'volume={gain_db}dB', '-c:a', 'libmp3lame', '-b:a', '128k',
                    '-write_xing', 1, '-metadata', 'artist=Spring Spring / Julie Damsgaard',
-                   '-metadata', f'title=Decrypto {name} edit – (Basically not) Fusion Jazz', destination)
+                   '-metadata', f'title=Encrypto {name} edit – (Basically not) Fusion Jazz', destination)
             final = measure(destination)
             decoded = array.array('f', ffmpeg('-i', destination, '-ar', RATE, '-ac', 2, '-f', 'f32le', '-', capture=True))
             seam = max(abs(decoded[ch] - decoded[-2 + ch]) for ch in range(2))

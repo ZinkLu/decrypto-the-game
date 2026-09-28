@@ -140,7 +140,7 @@ export default function Console() {
         axis: () => engine.current?.diskPullAxis() ?? { x: 0, y: 1, pixels: 90 },
         onChange: changeDisk, onClick: () => act('disk-toggle') });
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
-    useEffect(() => { saveLocale(u.locale); document.documentElement.lang = u.locale === 'zh' ? 'zh-CN' : 'en'; document.title = (u.locale === 'zh' ? 'Decrypto - 谍报风云' : 'Decrypto') + (inspection ? ' · Preview' : ''); setAnnouncement(translate(u.locale, '语言已切换'));  }, [u.locale]);
+    useEffect(() => { saveLocale(u.locale); document.documentElement.lang = u.locale === 'zh' ? 'zh-CN' : 'en'; document.title = (u.locale === 'zh' ? 'Encrypto - 密报终端' : 'Encrypto') + (inspection ? ' · Preview' : ''); setAnnouncement(translate(u.locale, '语言已切换'));  }, [u.locale]);
     useEffect(() => { saveTheme(u.theme); }, [u.theme]);
     function patch(values: Partial<LocalState>) { setU(old => ({ ...old, ...values })); }
     function changeDisk(disk: KeyDiskState) {
@@ -946,11 +946,11 @@ export default function Console() {
       </div>
       </div></details>
     </div>
-    <h1 className="sr-only">{t("Decrypto 谍报风云 · 密码通信终端")}</h1>
+    <h1 className="sr-only">{t("Encrypto · 密报终端")}</h1>
     <MobileConsole state={displayState} local={u} ready={content.ready} status={content.status} onAct={act} onChange={(id, value) => change({ id }, value)} onDiskChange={changeDisk} reducedMotion={reducedMotion} inert={archiveBlocking}/>
     <div className="station-viewport" inert={archiveBlocking}>
       <div className="station-stage" ref={stage}>
-        {!loaded && !failure && <div className="station-loading"><strong>DECRYPTO</strong><span>{t("正在启动密码终端…")}</span></div>}
+        {!loaded && !failure && <div className="station-loading"><strong>ENCRYPTO</strong><span>{t("正在启动密码终端…")}</span></div>}
         {failure && <div className="station-error" role="alert">{t(failure)}<button onClick={() => location.reload()}>{t("重新载入")}</button></div>}
         <div className="sr-only">{(u.manual || u.about) && <GuideContent locale={u.locale} about={u.about} transcript/>}</div>
         <div className="station-controls" aria-label={t("密码通信终端控件")} style={{ visibility: loaded || failure ? 'visible' : 'hidden' }}>

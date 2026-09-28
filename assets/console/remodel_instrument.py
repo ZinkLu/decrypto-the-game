@@ -318,7 +318,7 @@ box(PREFIX+'rear service cover',0,0,-2.79,15.22,9.90,.18,REAR,.16)
 for i,(x,y) in enumerate([(-7.23,4.65),(7.23,4.65),(-7.23,-4.65),(7.23,-4.65),
                          (0,4.65),(0,-4.65),(-7.23,0),(7.23,0)]):
     back_screw('rear captive screw '+str(i),x,y)
-back_label('rear wordmark','D E C R Y P T O',4.2,4.05,-2.906,.23)
+back_label('rear ENCRYPTO wordmark','E N C R Y P T O',4.2,4.05,-2.906,.23)
 back_label('rear model','465-D   /   FIELD COMMUNICATION TERMINAL',3.48,3.60,-2.906,.10)
 back_label('rear serial','SERIAL  05821  /  TYPE B     •     SERVICE PANEL',-3.65,4.05,-2.906,.10)
 

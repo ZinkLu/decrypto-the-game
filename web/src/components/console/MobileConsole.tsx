@@ -62,7 +62,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
         <span aria-hidden="true">{h.batteryPercent}%</span>
     </span>;
     if (!h.online) return <section className="mobile-console" aria-label={t('便携通信终端')} inert={inert}>
-        <header>{battery}<p className="mobile-brand">DECRYPTO <span>FIELD TERMINAL / 01</span></p>
+        <header>{battery}<p className="mobile-brand">ENCRYPTO <span>FIELD TERMINAL / 01</span></p>
             <div className="mobile-title"><h2>{t(!h.powered ? '终端电源已关闭' : '已断开连接')}</h2></div>
             {h.powered && <p className="mobile-channel">CH 0000 · {t('离线')}</p>}</header>
         <p>{t(hardwareMessage(u, s))}</p>
@@ -142,7 +142,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
         </section>;
     })();
     return <section className="mobile-console" data-acting={acting || undefined} aria-label={t('便携通信终端')} inert={inert}>
-        <header>{battery}{!beat && <p className="mobile-brand">DECRYPTO <span>FIELD TERMINAL / 01</span></p>}
+        <header>{battery}{!beat && <p className="mobile-brand">ENCRYPTO <span>FIELD TERMINAL / 01</span></p>}
             <div className="mobile-title"><h2 style={signal.actingTeam ? { color: teamPalette(signal.actingTeam, s.myTeam, u.theme).ink } : undefined}>{title}</h2>{s.deadline > 0 && <span className="mobile-clock" data-urgent={!!warning || undefined} data-idle={!acting || undefined}>{u.seconds}s</span>}</div>
             <p className="mobile-channel">{s.roomCode ? `CH ${s.roomCode}` : t('双队通信  /  4–8 人')} · {s.recovering ? t('正在恢复原座位…') : s.connected ? t('已连接') : t('连接中')}
                 {s.myTeam && ` · ${t('{0} 队', [s.myTeam])}`}</p>

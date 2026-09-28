@@ -34,9 +34,9 @@ var SECRET_CODES = [24][3]int{
 
 const MAX_ROUND = 16
 
-// 代表一场 decrypto 游戏对局
+// 代表一场 Encrypto 游戏对局
 type Session struct {
-	teams        [2]*Team // decrypto 一共只有两支队伍
+	teams        [2]*Team // Encrypto 一共只有两支队伍
 	currentRound *Round   // 当前轮数
 	rounds       []*Round // 轮次记录
 	sessionId    string   // 游戏 id，一般来说可以使用 Bot 收到的 messageId 来填写

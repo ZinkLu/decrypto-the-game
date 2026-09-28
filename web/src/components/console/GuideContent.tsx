@@ -20,7 +20,7 @@ export default function GuideContent({ locale, about = false, transcript = false
     </section>;
     return <div className="field-guide">
         <h2 className={about ? undefined : 'field-guide-title'}>{t(about ? '原版桌游' : '四步看懂玩法')}</h2>
-        {about ? <><p>DECRYPTO · Le Scorpion Masqué</p><p>{t(gameIntroduction)}</p><p>{t('非官方线上改编 · 喜欢这场交锋，也请支持原版。')}</p></> : <>
+        {about ? <><p>{t('原作：Decrypto · 发行：Le Scorpion Masqué')}</p><p>{t(gameIntroduction)}</p><p>{t('非官方玩家作品 · 与原作方无关联 · 请支持原版桌游。')}</p></> : <>
             {!transcript && <div className="field-guide-flow">
                 {step(0)}
                 <div className="field-guide-words">{guideWords.map((word, i) => <span key={word}><b>{i + 1}</b>{t(word)}</span>)}</div>

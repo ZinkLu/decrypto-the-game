@@ -101,7 +101,7 @@ export const instrumentOptions: { id: InstrumentVariant; label: string; descript
     { id: 'signal', label: 'A · 调谐接收机', description: 'AUTO 让表针随机摆动，旋钮保持原位。MAN 可手动调谐；右侧调整增益。' },
     { id: 'tuning', label: 'B · 中央归零表', description: '对称刻度与绿色校准区。左侧大旋钮调谐，右侧微调，让指针回到中央。' },
     { id: 'status', label: 'C · 机械状态窗', description: '三面转鼓显示 READY / SEND / WAIT。左侧切换状态，右侧调演示停留时间。' },
-    { id: 'original', label: '原版 VU', description: '保留原有 VU 表作为对照。左侧调整摆幅，右侧调整速度。' },
+    { id: 'original', label: '初版 VU', description: '保留原有 VU 表作为对照。左侧调整摆幅，右侧调整速度。' },
 ];
 export function instrumentSteps(variant: InstrumentVariant, control: 'amplitude' | 'rate') {
     return variant === 'signal' && control === 'amplitude' ? 41 : variant === 'status' && control === 'amplitude' ? 3 :
@@ -322,7 +322,7 @@ const themeBase = {
 /** Enamel, ink on paper, and luminous type are distinct materials, especially for the white team.
  * Keyword windows use a third device colour shared by both teams, never either team's light. */
 export const themeChoices = [
-    { ...themeBase, id: 'classic', label: '原版黑白红',
+    { ...themeBase, id: 'classic', label: '经典黑白红',
         own: { light: '#e9dfc7', ink: '#383b36', plate: '#efe5cf', onPlate: '#383b36' },
         opponent: { light: '#afc2cc', ink: '#2c3539', plate: '#2c3539', onPlate: '#f2e8d3' },
         crt: { background: '#4a1612', light: '#f1b09d', rim: '#8e493a' },

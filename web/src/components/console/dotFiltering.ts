@@ -2,7 +2,7 @@ export type DotFilter = 'baseline' | 'area' | 'lod' | 'ssaa';
 export const defaultDotFilter: DotFilter = 'area';
 
 export const dotFilterOptions: { id: DotFilter; label: string; description: string }[] = [
-    { id: 'baseline', label: '原版', description: '当前基准：缩小时逐渐把灯珠混成均匀亮面。' },
+    { id: 'baseline', label: '基准', description: '当前基准：缩小时逐渐把灯珠混成均匀亮面。' },
     { id: 'area', label: '1 · 像素积分', description: '按像素覆盖面积计算灯珠亮度，保留可分辨的亮点与暗缝。' },
     { id: 'lod', label: '2 · 远景颗粒', description: '近看真实灯珠，远看平滑切换到较粗的颗粒纹理；文字内容保持不变。' },
     { id: 'ssaa', label: '3 · 16 点超采样', description: '每个像素取 4×4 个样本，仅用于 LED 发光层；计算量更高。' },

@@ -369,7 +369,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'console-visual-polish-20260923-v1';
+        const revision = 'console-encrypto-20260928-v1';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -388,6 +388,8 @@ export class ConsoleEngine {
             testControl: { x: -.05, y: -2.76, z: -3.27, w: .70, h: .70, rotationY: Math.PI },
         };
         this.model = gltf.scene;
+        // Old exports may still contain the previous title on the rear panel.
+        gltf.scene.getObjectByName('Instrument_rear wordmark')?.removeFromParent();
         gltf.scene.traverse(o => { if (o instanceof THREE.Mesh) {
             o.castShadow = true;
             o.receiveShadow = true;

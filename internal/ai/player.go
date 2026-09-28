@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-const systemPrompt = `你是一个正在玩 Decrypto（谍报风云）桌游的 AI 玩家。
+const systemPrompt = `你是一个正在玩 Encrypto 的 AI 玩家。
 
 游戏规则：
 - 两支队伍各有 4 个密语词（编号 1-4）
@@ -20,7 +20,7 @@ const systemPrompt = `你是一个正在玩 Decrypto（谍报风云）桌游的 
 
 你需要认真思考后给出答案。`
 
-// AIPlayer uses an LLMProvider to play Decrypto.
+// AIPlayer uses an LLMProvider to play Encrypto.
 type AIPlayer struct {
 	Provider LLMProvider
 }

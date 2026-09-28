@@ -67,7 +67,7 @@ func main() {
 	}
 	server := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
-		log.Printf("Starting Decrypto server on port %s, rooms kept in %s", port, dbPath)
+		log.Printf("Starting Encrypto server on port %s, rooms kept in %s", port, dbPath)
 		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal(err)
 		}
