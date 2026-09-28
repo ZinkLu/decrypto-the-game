@@ -8,9 +8,9 @@ const compile = source => ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const dataUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const modelUrl = dataUrl(compile(await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8')));
+const modelUrl = dataUrl(compile(await readFile(new URL('../src/console/model.ts', import.meta.url), 'utf8')));
 const { initialLocal } = await import(modelUrl);
-const source = compile(await readFile(new URL('../src/components/console/instruments.ts', import.meta.url), 'utf8'))
+const source = compile(await readFile(new URL('../src/console/instruments.ts', import.meta.url), 'utf8'))
   .replace("'three'", JSON.stringify(import.meta.resolve('three')))
   .replace("'three/addons/utils/BufferGeometryUtils.js'", JSON.stringify(import.meta.resolve('three/addons/utils/BufferGeometryUtils.js')))
   .replace("'./model'", JSON.stringify(modelUrl));

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { Vector3 } from 'three';
 import ts from 'typescript';
 
-const source = ts.transpileModule(await readFile(new URL('../src/components/console/crt.ts', import.meta.url), 'utf8'), {
+const source = ts.transpileModule(await readFile(new URL('../src/console/crt.ts', import.meta.url), 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText.replace("'three'", JSON.stringify(import.meta.resolve('three')));
 const { crtProfile, crtHeight, crtGeometry, crtRasterUv, crtDisplayUv } = await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`);

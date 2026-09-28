@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import { readFile } from 'node:fs/promises';
 
-const source = await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8');
+const source = await readFile(new URL('../src/console/model.ts', import.meta.url), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { themeChoices, teamPalette, readTheme, saveTheme, roleState, phaseSignal, rosterTeams, archiveRows, archiveStart, resultTint, previewState, initialLocal } = await import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 

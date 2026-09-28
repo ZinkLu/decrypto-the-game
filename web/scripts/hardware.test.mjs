@@ -7,13 +7,13 @@ const compile = source => ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const modelUrl = url(compile(await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8')));
-const mechanicsUrl = url(compile(await readFile(new URL('../src/components/console/mechanics.ts', import.meta.url), 'utf8')));
-const dotMatrixUrl = url(compile(await readFile(new URL('../src/components/console/dotMatrix.ts', import.meta.url), 'utf8')));
+const modelUrl = url(compile(await readFile(new URL('../src/console/model.ts', import.meta.url), 'utf8')));
+const mechanicsUrl = url(compile(await readFile(new URL('../src/console/mechanics.ts', import.meta.url), 'utf8')));
+const dotMatrixUrl = url(compile(await readFile(new URL('../src/console/dotMatrix.ts', import.meta.url), 'utf8')));
 const { initialLocal, previewState, keyDiskIdentity, word, instrumentSteps, stepInstrumentValue, receiverSignal, ReceiverActivity } = await import(modelUrl);
-const i18nUrl = url(compile(await readFile(new URL('../src/components/console/i18n.ts', import.meta.url), 'utf8')));
-const paintSource = await readFile(new URL('../src/components/console/paint.ts', import.meta.url), 'utf8');
-const guideUrl = url(compile(await readFile(new URL('../src/components/console/guide.ts', import.meta.url), 'utf8')));
+const i18nUrl = url(compile(await readFile(new URL('../src/console/i18n.ts', import.meta.url), 'utf8')));
+const paintSource = await readFile(new URL('../src/console/paint.ts', import.meta.url), 'utf8');
+const guideUrl = url(compile(await readFile(new URL('../src/console/guide.ts', import.meta.url), 'utf8')));
 const { paint } = await import(url(compile(paintSource).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl)).replace("'./guide'", JSON.stringify(guideUrl))));
 
 // These tests validate control routing, not pixel output. Browser checks cover

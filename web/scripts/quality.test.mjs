@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 
 const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const load = async name => import(`data:text/javascript;base64,${Buffer.from(compile(await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8'))).toString('base64')}`);
+const load = async name => import(`data:text/javascript;base64,${Buffer.from(compile(await readFile(new URL(`../src/console/${name}.ts`, import.meta.url), 'utf8'))).toString('base64')}`);
 const { qualityChoices, qualityProfiles, describeQuality, settleQuality, frameBudget, ambientPace, ambientRate,
   readQuality, saveQuality, readAutoQuality, saveAutoQuality } = await load('quality');
 const { translate, messages } = await load('i18n');

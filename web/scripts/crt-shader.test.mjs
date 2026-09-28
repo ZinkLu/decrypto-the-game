@@ -5,7 +5,7 @@ import ts from 'typescript';
 import * as THREE from 'three';
 
 const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const compile = async name => ts.transpileModule(await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8'), {
+const compile = async name => ts.transpileModule(await readFile(new URL(`../src/console/${name}.ts`, import.meta.url), 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText.replace("'three'", JSON.stringify(import.meta.resolve('three')));
 const dependencies = Object.fromEntries(await Promise.all(['crt', 'dotMatrix', 'dotFiltering'].map(async name => [name, moduleUrl(await compile(name))])));

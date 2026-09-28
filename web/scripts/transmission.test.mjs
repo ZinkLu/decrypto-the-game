@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const { previewState, roundCast, transmission, briefingKey, briefingDuration, briefingTime, initialLocal, seatDuty, deadlineWarning, paintedSeconds, timeoutNotice, resultView, gameOverView, resultTint } =
-    await import(`data:text/javascript;base64,${Buffer.from(compile(await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8'))).toString('base64')}`);
+    await import(`data:text/javascript;base64,${Buffer.from(compile(await readFile(new URL('../src/console/model.ts', import.meta.url), 'utf8'))).toString('base64')}`);
 
 test('the round cast names who sends, intercepts and decodes, for players and spectators', () => {
     const s = previewState({}, 'waiting');

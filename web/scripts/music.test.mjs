@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, stat } from 'node:fs/promises';
 import ts from 'typescript';
-const compiled = ts.transpileModule(await readFile(new URL('../src/components/console/music.ts', import.meta.url), 'utf8'), {
+const compiled = ts.transpileModule(await readFile(new URL('../src/console/music.ts', import.meta.url), 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 }).outputText;
 const { ConsoleMusic, musicScene, musicEnding, readMusicPreferences, saveMusicPreferences, musicFiles } =

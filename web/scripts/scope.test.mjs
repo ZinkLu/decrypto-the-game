@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 const moduleUrls = new Map();
 async function moduleUrl(name) {
   if (moduleUrls.has(name)) return moduleUrls.get(name);
-  const source = await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8');
+  const source = await readFile(new URL(`../src/console/${name}.ts`, import.meta.url), 'utf8');
   let js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
   for (const dependency of [...js.matchAll(/from '\.\/(\w+)'/g)].map(match => match[1])) {
     js = js.replaceAll(`from './${dependency}'`, `from '${await moduleUrl(dependency)}'`);

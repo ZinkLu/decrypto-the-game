@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from console_parts import box, ring
 
-SPEC = json.loads((ROOT / 'web/src/components/console/scoreRegister.json').read_text())
+SPEC = json.loads((ROOT / 'web/src/console/scoreRegister.json').read_text())
 SURFACE = json.loads((ROOT / 'web/public/models/console-surfaces.json').read_text())['score']
 PREFIX = 'ScoreRegister_'
 plate = bpy.data.objects['Front_score enamel bed']

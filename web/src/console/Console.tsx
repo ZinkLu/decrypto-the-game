@@ -1,6 +1,6 @@
 import { translate, localizeError, readLocale, saveLocale } from './i18n';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useGameStore } from '../../store/gameStore';
+import { useGameStore } from '../store/gameStore';
 import { ConsoleEngine } from './engine';
 import { ConsoleAudio, gameSound, type ConsoleSound } from './sound';
 import { ConsoleMusic, readMusicPreferences, saveMusicPreferences, type MusicPreferences, type MusicStatus } from './music';
@@ -16,7 +16,7 @@ import { guideArtUrl, guidePageFor } from './guide';
 import { useDiskPull } from './useDiskPull';
 import type { LocalState, InstrumentVariant, KeyDiskState } from './model';
 import type { Target } from './paint';
-import type { PlayerInfo } from '../../store/gameStore';
+import type { PlayerInfo } from '../store/gameStore';
 import type { QualityChoice, QualityLevel } from './quality';
 import { consoleRoute, handleSurfaces, handlePull, handleCommit, type HandleSide } from './view';
 const route = consoleRoute(location.pathname, location.search, import.meta.env.DEV);

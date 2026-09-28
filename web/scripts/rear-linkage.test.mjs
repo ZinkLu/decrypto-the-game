@@ -7,7 +7,7 @@ import * as THREE from 'three';
 const modules = new Map();
 async function moduleUrl(name) {
     if (modules.has(name)) return modules.get(name);
-    let js = ts.transpileModule(await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8'), {
+    let js = ts.transpileModule(await readFile(new URL(`../src/console/${name}.ts`, import.meta.url), 'utf8'), {
         compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
     }).outputText;
     for (const [, dependency] of [...js.matchAll(/from '\.\/(\w+)'/g)])

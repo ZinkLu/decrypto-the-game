@@ -1,4 +1,4 @@
-import type { useGameStore } from '../../store/gameStore';
+import type { useGameStore } from '../store/gameStore';
 import type { WordDisplay } from './dotMatrix';
 export type StationState = ReturnType<typeof useGameStore.getState>;
 export type KeyDiskPhase = 'absent' | 'queued' | 'arriving' | 'inserting' | 'reading' | 'ready' | 'ejecting' | 'ejected' | 'removed' | 'returning' | 'pulling' | 'settling';

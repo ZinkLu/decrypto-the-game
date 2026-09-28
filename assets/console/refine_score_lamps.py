@@ -2,7 +2,7 @@
 
 blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_score_lamps.py
 Only the eight lamp assemblies and obsolete diffuser bars are changed.
-The frontend shares scoreLamps.json and uses the exported geometry and maps.
+The layout is described in scoreLamps.json beside this script.
 """
 import json
 import math
@@ -16,7 +16,7 @@ import numpy as np
 from mathutils import Matrix, Vector
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = json.loads((ROOT / 'web/src/components/console/scoreLamps.json').read_text())
+SPEC = json.loads((ROOT / 'assets/console/scoreLamps.json').read_text())
 TEX = ROOT / 'assets/console/textures'
 OUT = ROOT / 'web/public/models/decrypto-console.glb'
 RADIUS = SPEC['radius']

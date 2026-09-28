@@ -71,8 +71,6 @@ button,input { font: inherit; }
 .station-roster-preview button:focus-visible { outline: 2px solid #a65232; outline-offset: 2px; }
 .station-score-preview { order: -1; box-shadow: 0 2px 12px #28332918; }
 .station-score-preview button { min-height: 36px; font-variant-numeric: tabular-nums; }
-.station-rear-status { margin: 0 auto 0 0; background: #eee8dbed; border-left: 2px solid #8a7f6a; padding: 8px 12px; color: #3b372f; font-size: 12px; line-height: 1.7; }
-.station-rear-status span { display: block; color: #77715f; font-size: 10px; letter-spacing: .06em; }
 /* Terminal status sits in the quiet band above the machine, between the page
    navigation and Settings, instead of over the chassis corner. */
 .station-hardware-status { position: fixed; z-index: 4; top: 12px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 14px; width: max-content; max-width: min(680px, calc(100vw - 400px)); padding: 6px 14px; background: #eee8dbf5; color: #3b372f; border-left: 2px solid #8a7f6a; font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; box-shadow: 0 2px 8px #2e281f14; }
@@ -95,7 +93,6 @@ button,input { font: inherit; }
   .station-workbench { right: 10px; left: 10px; bottom: 10px; gap: 8px; }
   .station-orbit-hint { display: none; }
   .station[data-view="preview"] .station-orbit-hint { display: block; bottom: 48px; max-width: calc(100vw - 32px); white-space: normal; width: max-content; text-align: center; }
-  .station-rear-status { font-size: 11px; }
 }
 .station-hint { position: fixed; z-index: 3; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 9px 16px; background: #2f2b26; color: #f0e4c9; font-size: 12px; letter-spacing: .04em; pointer-events: none; box-shadow: 0 3px 12px #1c181320; }
 
@@ -156,41 +153,17 @@ button,input { font: inherit; }
 .archive-eyebrow span { color: #983f2b; }
 .archive-header h2 { font-family: 'Songti SC', 'Noto Serif SC', 'SimSun', serif; font-size: clamp(28px, 3vw, 38px); margin: 0; font-weight: 700; letter-spacing: .08em; }
 .archive-header h2 span { font-size: .5em; font-weight: 400; margin-left: 16px; letter-spacing: .03em; }
-.archive-subtitle { font-size: 13px; margin: 12px 0 0; color: #716b59; }
-.archive-close { flex-shrink: 0; padding: 8px 0 8px 16px; min-height: 44px; border: 0; background: transparent; color: #6f4634; font-size: 13px; cursor: pointer; }
-.archive-close span { margin-left: 12px; font-size: 24px; }
 .archive-body { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(260px, 1fr); overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
 .archive-records { min-width: 0; padding: 24px clamp(22px, 4vw, 48px) 40px; }
-.archive-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-bottom: 16px; }
-.archive-filters { display: flex; gap: 4px; }
-.archive-filters button { border: 1px solid transparent; background: transparent; color: #736952; padding: 8px 12px; min-height: 40px; cursor: pointer; }
-.archive-filters [aria-pressed="true"] { border-color: #8e4834; color: #8e3828; background: #a8593810; }
-.archive-count { color: #7b715d; font-size: 11px; }
 .archive-record { padding: 24px 0; border-top: 1px solid #847b6155; }
 .archive-record header { display: flex; align-items: center; justify-content: space-between; }
 .archive-record h3 { margin: 0; font-size: 15px; font-weight: 500; }
 .archive-round { font-family: Georgia, serif; font-size: 29px; color: #9b4b33; margin-right: 14px; font-variant-numeric: tabular-nums; }
 .archive-team { font-size: 11px; letter-spacing: .06em; padding: 4px 8px; border: 1px solid #506157; color: #506157; }
 .archive-team.team-B { color: #99503b; border-color: #99503b; }
-.archive-clues { list-style: none; padding: 0; margin: 15px 0; }
-.archive-clues li { display: grid; grid-template-columns: 26px 1fr 26px; align-items: baseline; gap: 10px; padding: 9px 0; border-bottom: 1px solid #a59a7e40; }
-.archive-clues li > span { color: #91846b; font-size: 10px; }
-.archive-clues strong { font-size: 17px; font-weight: 500; overflow-wrap: anywhere; }
-.archive-clues b { text-align: center; font-family: Georgia, serif; color: #8d3c2c; font-size: 19px; }
-.archive-result { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 11px; line-height: 1.8; color: #79715e; }
-.archive-result strong { color: #383f34; font-weight: 500; }
-.round-note { display: block; margin-top: 15px; color: #7c745f; font-size: 11px; }
-.round-note textarea { width: 100%; display: block; resize: vertical; border: 0; border-bottom: 1px dashed #a39778; background: #fff9e41f; padding: 8px 0; min-height: 62px; margin-top: 4px; font-size: 14px; line-height: 1.6; color: #3e594e; }
-.archive-notebook { align-self: start; position: sticky; top: 0; padding: 28px clamp(20px, 3vw, 36px) 32px; border-left: 1px solid #a18e624d; background: #e9dcba66; min-width: 0; }
-.notebook-classification { margin: 0 0 26px; color: #8b442f; font-size: 10px; letter-spacing: .1em; }
-.archive-notebook label { font-family: 'Songti SC', 'Noto Serif SC', serif; font-size: 24px; font-weight: 600; }
-.archive-notebook > p:not(.notebook-classification) { color: #7b725d; font-size: 12px; line-height: 1.8; margin: 8px 0 20px; }
-.archive-notebook textarea { display: block; width: 100%; min-height: 280px; height: 36vh; resize: vertical; padding: 0 4px; border: 0; border-radius: 0; background: repeating-linear-gradient(transparent 0 31px, #9b987644 31px 32px); line-height: 32px; font-size: 15px; color: #345248; }
 .archive-dialog textarea { font-family: 'Kaiti SC', 'STKaiti', 'KaiTi', 'PingFang SC', sans-serif; }
 .archive-dialog textarea::placeholder { color: #92856a; opacity: 1; }
 .archive-dialog :focus-visible { outline: 2px solid #9c593b; outline-offset: 4px; }
-.notebook-status { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-top: 20px; font-size: 10px; color: #7f755e; }
-.archive-footnote { font-size: 11px; color: #85765d; line-height: 1.8; margin: 20px 0 0; }
 .archive-empty { padding: 50px 0; }
 .archive-empty > span { font-family: Georgia, serif; font-size: 30px; color: #a18b65; }
 .archive-empty h3 { font-family: 'Songti SC', serif; font-size: 22px; font-weight: 500; }
@@ -203,11 +176,7 @@ button,input { font: inherit; }
   .archive-dialog { padding: 22px 0 0; }
   .archive-header { padding: 22px 20px 18px; gap: 12px; }
   .archive-header h2 span { display: block; margin: 8px 0 0; font-size: 16px; }
-  .archive-subtitle { display: none; }
   .archive-body { display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: #a99b80 transparent; }
-  .archive-notebook { position: static; align-self: stretch; width: 100%; order: -1; border-left: 0; border-bottom: 1px solid #a18e624d; padding: 22px; }
-  .archive-notebook textarea { min-height: 128px; height: 160px; }
-  .notebook-classification { margin-bottom: 12px; }
   .archive-records { padding: 24px 22px; }
   .station-hint { bottom: 42px; }
 }
@@ -231,22 +200,10 @@ button,input { font: inherit; }
 .archive-header h2 { font-size: 30px; letter-spacing: .15em; }
 .archive-eyebrow { justify-content: center; margin-bottom: 10px; font-size: 10px; gap: 6px 12px; }
 .receipt-subtitle { margin: 10px 0 0; font-size: 11px; color: #86785e; letter-spacing: .2em; }
-.archive-close { position: absolute; right: 18px; top: 12px; padding: 4px 0; font-size: 11px; }
-.archive-close span { margin-left: 6px; font-size: 20px; }
 .archive-body { display: flex; flex-direction: column; scrollbar-width: thin; scrollbar-color: #a99b80 transparent; }
 .archive-records { padding: 14px 30px 8px; }
-.archive-toolbar { gap: 8px; padding-bottom: 8px; }
-.archive-filters button { padding: 6px 9px; font-size: 12px; }
 .archive-record { padding: 16px 0; border-top-style: dashed; }
 .archive-round { font-size: 22px; }
-.archive-clues { margin: 12px 0; }
-.archive-clues li { padding: 7px 0; }
-.archive-result { margin: 10px 0 4px; }
-.archive-details summary, .archive-notebook summary { cursor: pointer; padding: 10px 0; font-size: 12px; color: #6e5941; }
-.archive-notebook { position: static; order: 1; align-self: stretch; border: 0; border-top: 1px dashed #a18e6266; padding: 8px 30px; background: transparent; }
-.archive-notebook summary { font-size: 13px; }
-.archive-notebook summary span { font-size: 11px; color: #7b725d; margin-left: 12px; }
-.archive-notebook textarea { min-height: 160px; height: 180px; margin-top: 12px; }
 .receipt-footer { flex-shrink: 0; text-align: center; padding: 12px 20px 16px; border-top: 1px dashed #a18e6266; }
 .receipt-footer > span { display: block; width: 210px; max-width: 80%; height: 23px; margin: 0 auto; font-size: 0; background: repeating-linear-gradient(90deg, #655b47 0 1px, transparent 1px 3px, #655b47 3px 6px, transparent 6px 8px, #655b47 8px 9px, transparent 9px 13px); }
 .receipt-footer p { margin: 7px 0 0; color: #8b7d62; font-size: 9px; letter-spacing: .16em; }
@@ -263,7 +220,6 @@ button,input { font: inherit; }
   .archive-paper-track { padding: 56px 10px; }
   .archive-header { padding: 26px 50px 18px; }
   .archive-records { padding: 12px 20px; }
-  .archive-notebook { padding: 8px 20px; }
   .receipt-footer { padding: 10px 16px; }
 }
 @media (prefers-reduced-motion: reduce) {

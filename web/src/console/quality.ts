@@ -5,7 +5,7 @@ export const qualityChoices: QualityChoice[] = ['auto', 'high', 'medium', 'low']
 /**
  * Every switch a quality level owns. Costs were measured on the late-game
  * console (2880x1800, one switch off at a time against 5.9 ms per frame) and
- * are recorded in assets/console/README.md.
+ * are recorded in docs/console/quality.md.
  */
 export interface QualityProfile {
     /** Cap on the display's device pixel ratio. */

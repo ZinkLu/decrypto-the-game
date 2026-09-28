@@ -4,11 +4,11 @@ import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
 const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const load = async name => compile(await readFile(new URL(`../src/components/console/${name}.ts`, import.meta.url), 'utf8'));
+const load = async name => compile(await readFile(new URL(`../src/console/${name}.ts`, import.meta.url), 'utf8'));
 const modelUrl = url(await load('model')), mechanicsUrl = url(await load('mechanics')), i18nUrl = url(await load('i18n')), dotMatrixUrl = url(await load('dotMatrix'));
 const { initialLocal, previewState, keyDiskIdentity, scopeTimebase, scopeRatio, stepInstrumentValue, receiverSignal, word } = await import(modelUrl);
 const { messages, translate, readLocale, saveLocale } = await import(i18nUrl);
-const guideUrl = url(compile(await readFile(new URL('../src/components/console/guide.ts', import.meta.url), 'utf8')));
+const guideUrl = url(compile(await readFile(new URL('../src/console/guide.ts', import.meta.url), 'utf8')));
 const { paint } = await import(url((await load('paint')).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl)).replace("'./guide'", JSON.stringify(guideUrl))));
 globalThis.document = { createElement: () => {
   const ink = [], draws = [];
