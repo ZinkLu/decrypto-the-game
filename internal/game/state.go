@@ -122,6 +122,10 @@ func (b *Bridge) setPhase(phase string, r *core.Round) {
 	b.deadline = deadline
 	b.accepted = false
 	b.views = views
+	// "new_round" only announces the phase that follows at once.
+	if phase != "new_round" {
+		b.saveLocked()
+	}
 }
 
 func canAct(role, phase string) bool {
@@ -308,6 +312,7 @@ func (b *Bridge) finishRound(r *core.Round) {
 		v.Deadline = 0
 		b.views[id] = v
 	}
+	b.saveLocked()
 	b.mu.Unlock()
 	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{Type: ws.MsgRoundResult, Data: ws.RoundResultData{
 		Notice: b.roundNotice, Round: int(r.GetNumberOfRounds()), History: history, Complete: true, ScoreA: a, ScoreB: bb}})

@@ -54,15 +54,19 @@ type ServerMessage struct {
 
 // --- Client message data types ---
 
-// CreateRoomData is the data payload for MsgCreateRoom.
+// CreateRoomData is the data payload for MsgCreateRoom. DeviceToken is a
+// secret the browser keeps for good: it tells which rooms one browser opened
+// and entered. It is optional, and never sent to other players.
 type CreateRoomData struct {
-	Nickname string `json:"nickname"`
+	Nickname    string `json:"nickname"`
+	DeviceToken string `json:"device_token,omitempty"`
 }
 
 // JoinRoomData is the data payload for MsgJoinRoom.
 type JoinRoomData struct {
-	RoomCode string `json:"room_code"`
-	Nickname string `json:"nickname"`
+	RoomCode    string `json:"room_code"`
+	Nickname    string `json:"nickname"`
+	DeviceToken string `json:"device_token,omitempty"`
 }
 
 // SelectTeamData is the data payload for MsgSelectTeam.

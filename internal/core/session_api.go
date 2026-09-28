@@ -105,6 +105,15 @@ func (s *Session) AutoForward(ctx context.Context) {
 	}
 }
 
+// Resume continues a restored session from the phase it was saved in. On a
+// session that has not started it is the same as AutoForward.
+func (s *Session) Resume(ctx context.Context) {
+	if s.currentRound != nil && s.currentRound.Resume(ctx) {
+		return
+	}
+	s.AutoForward(ctx)
+}
+
 // 获取某玩家的队伍
 func (s *Session) GetUserTeam(uid string) *Team {
 	var target *Team

@@ -14,8 +14,14 @@ test('multiplayer protocol state survives incremental messages and disconnects c
   const previousWindow = globalThis.window;
   const previousWebSocket = globalThis.WebSocket;
   const previousStorage = globalThis.sessionStorage;
+  const previousLocal = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   const saved = new Map();
   globalThis.sessionStorage = { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) };
+  const kept = new Map();
+  let storageBlocked = false;
+  const unlessBlocked = action => (...args) => { if (storageBlocked) throw new Error('storage is blocked'); return action(...args); };
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true,
+    value: { getItem: unlessBlocked(key => kept.get(key) ?? null), setItem: unlessBlocked((key, value) => kept.set(key, value)) } });
   const sockets = [];
   class FakeSocket {
     static OPEN = 1;
@@ -41,6 +47,21 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     store.getState().connect(); store.getState().connect();
     assert.equal(sockets.length, 1, 'connect is idempotent');
     const socket = sockets[0]; socket.onopen();
+    store.getState().createRoom('Ann');
+    const device = socket.sent.at(-1).data.device_token;
+    assert.match(device, /^[0-9a-f]{64}$/, 'the browser names itself with a random token');
+    assert.deepEqual(socket.sent.at(-1), { type: 'create_room', data: { nickname: 'Ann', device_token: device } });
+    assert.equal(kept.get('decrypto-device-v1'), device, 'and keeps it beyond this tab');
+    store.getState().joinRoom('1234', 'Ann');
+    assert.deepEqual(socket.sent.at(-1), { type: 'join_room', data: { room_code: '1234', nickname: 'Ann', device_token: device } }, 'every room sees the same token');
+    kept.set('decrypto-device-v1', 'edited by hand');
+    store.getState().createRoom('Ann');
+    assert.match(socket.sent.at(-1).data.device_token, /^[0-9a-f]{64}$/, 'a damaged token is replaced');
+    assert.notEqual(socket.sent.at(-1).data.device_token, device);
+    storageBlocked = true;
+    store.getState().createRoom('Ann');
+    assert.equal(socket.sent.at(-1).data.device_token, '', 'a browser without storage stays unnamed');
+    storageBlocked = false;
     socket.receive('room_created', { room_code: 'A1B2', my_player_id: 'me' });
     assert.equal(store.getState().phase, 'room');
     socket.receive('phase_change', { phase: 'encrypting', round: 3, your_role: 'encryptor', secret_digits: [2, 4, 1] });
@@ -140,6 +161,8 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     globalThis.window = previousWindow;
     globalThis.WebSocket = previousWebSocket;
     globalThis.sessionStorage = previousStorage;
+    if (previousLocal) Object.defineProperty(globalThis, 'localStorage', previousLocal);
+    else delete globalThis.localStorage;
     await rm(dir, { recursive: true, force: true });
   }
 });

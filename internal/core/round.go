@@ -19,4 +19,6 @@ type Round struct {
 	encryptPlayer      *Player   // 本局中，负责加密的人
 	interceptedSecret  [3]int    // 本局中，对手给出的拦截密码
 	decryptSecret      [3]int    // 本局中，队友给出的破译密码
+	intercepted        bool      // 拦截密码是否已经结算（超时的空密码同样是 0,0,0）
+	decrypted          bool      // 破译密码是否已经结算
 }

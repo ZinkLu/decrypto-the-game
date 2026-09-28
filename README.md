@@ -13,12 +13,13 @@
 - **3D 冷战通信机** — 可操作的实体按钮、显示器、密语词窗和纸带记录
 - **角色视角分离** — 加密者、队友、对手各自看到不同的界面和信息
 - **断线重连** — WebSocket 自动重连并恢复游戏状态
+- **重启不丢局** — 房间与对局保存在 SQLite 文件中，服务重启后玩家自动回到原座位继续
 
 ## 快速开始
 
 ### 环境要求
 
-- Go 1.20+
+- Go 1.25+
 - Node.js 18+（pnpm）
 
 ### 构建与运行
@@ -40,7 +41,9 @@ go build -o server ./cmd/server
 
 服务启动后访问 http://localhost:8080 即可开始游戏。
 
-需要通过自己的服务器提供在线试玩时，参见[试玩环境部署说明](docs/demo-deployment.md)。服务须部署为单实例，重启会结束内存中的对局。
+房间与对局保存在工作目录下的 `data/decrypto.db`（可用 `DECRYPTO_DB_PATH` 指定别处），服务重启后未关闭的房间会回来。其中也记录了谁开过、进过哪些房间。
+
+需要通过自己的服务器提供在线试玩时，参见[试玩环境部署说明](docs/demo-deployment.md)。服务须部署为单实例。
 
 桌面游戏页 `/` 固定正面视角，按窗口大小自动取景。向内拖动任一侧把手可翻到背面，点击背面的把手连接处即可返回；键盘可聚焦把手后按 Enter 操作。
 
@@ -100,7 +103,9 @@ internal/
   ws/                # WebSocket 基础设施（Hub、Client、消息类型）
   room/              # 房间管理（创建、加入、队伍、AI 槽位）
   game/              # 桥接层（WebSocket <-> 游戏状态机）
-  server/            # 消息分发（路由 WebSocket 消息到房间/游戏处理器）
+  server/            # 消息分发（路由 WebSocket 消息到房间/游戏处理器），重启后恢复房间
+  store/             # 存储接口（房间与对局状态、开房与进房记录）
+    sqlite/          # SQLite 实现
   ai/                # AI 玩家（LLM Provider 抽象 + Claude/OpenAI 实现）
 web/                 # React 前端
   src/
@@ -117,7 +122,7 @@ web/                 # React 前端
 NEW → INIT → ENCRYPTING → INTERCEPT → DECRYPT → DONE
 ```
 
-通过 Handler 注册模式（Observer Pattern）驱动，`AutoForward()` 自动推进状态并在每个阶段调用注册的回调。
+通过 Handler 注册模式（Observer Pattern）驱动，`AutoForward()` 自动推进状态并在每个阶段调用注册的回调。重启后恢复的对局由 `Resume()` 从被打断的阶段继续。
 
 ### 前端技术栈
 

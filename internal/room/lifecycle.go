@@ -2,14 +2,23 @@ package room
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"sort"
 )
 
+// A member's token is known only to their browser and, until a restart, to
+// this process. Storage keeps the hash, which is enough to recognise it.
 type member struct {
 	player *PlayerInfo
 	token  string
+	hash   string
+}
+
+func newMember(player *PlayerInfo) *member {
+	token := newToken()
+	return &member{player: player, token: token, hash: hashToken(token)}
 }
 
 func newToken() string {
@@ -18,6 +27,11 @@ func newToken() string {
 		panic(err)
 	}
 	return hex.EncodeToString(token[:])
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 // Snapshot owns its player copies; broadcasts never read mutable room slices.
@@ -100,7 +114,7 @@ func (r *Room) Join(player *PlayerInfo) (string, error) {
 	if len(r.members) >= 32 {
 		return "", fmt.Errorf("room is full")
 	}
-	m := &member{player: player, token: newToken()}
+	m := newMember(player)
 	r.members[player.ID] = m
 	if r.OwnerID == "" {
 		r.OwnerID = player.ID
@@ -121,8 +135,9 @@ func (r *Room) Token(playerID string) string {
 func (r *Room) Resume(token string) (*PlayerInfo, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	hash := hashToken(token)
 	for _, m := range r.members {
-		if token != "" && m.token == token {
+		if token != "" && m.hash == hash {
 			m.player.Disconnected = false
 			if r.OwnerID == "" {
 				r.OwnerID = m.player.ID

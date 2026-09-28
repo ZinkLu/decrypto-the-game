@@ -3,6 +3,7 @@
 .env.*
 .DS_Store
 server
+data/
 assets/
 design/
 docs/

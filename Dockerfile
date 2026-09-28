@@ -20,7 +20,10 @@ WORKDIR /app
 COPY --from=server-build --chown=app:app /out/server ./server
 COPY --from=web-build --chown=app:app /src/web/dist ./web/dist
 COPY --chown=app:app words.txt ./words.txt
-ENV PORT=8080
+# Rooms are kept here. Mount a named volume to keep them when the container is replaced.
+RUN mkdir /data && chown app:app /data
+ENV PORT=8080 DECRYPTO_DB_PATH=/data/decrypto.db
+VOLUME /data
 EXPOSE 8080
 USER app
 CMD ["./server"]

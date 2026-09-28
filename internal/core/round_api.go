@@ -10,6 +10,7 @@ import (
 // 自动增加拦截正确计数, 返回是否拦截成功
 func (r *Round) SetInterceptSecret(interceptedSecret [3]int) bool {
 	r.interceptedSecret = interceptedSecret
+	r.intercepted = true
 	result := r.IsInterceptSuccess()
 	if result {
 		r.opponent.InterceptedSuccess()
@@ -27,6 +28,7 @@ func (r *Round) IsInterceptSuccess() bool {
 // 自动增加解密错误计数, 返回是否解密成功
 func (r *Round) SetDecryptedSecret(secret [3]int) bool {
 	r.decryptSecret = secret
+	r.decrypted = true
 	result := r.IsDecryptedCorrect()
 	if !result {
 		r.currentTeam.DecryptFailed()
@@ -96,7 +98,17 @@ func (round *Round) Next() TeamState {
 // 在注册 handler 后进行这个方法的注册
 // 如果手动结束了对局则会返回 true
 func (round *Round) AutoForward(c context.Context) bool {
-	for state := round.Next(); state <= DONE; state = round.Next() {
+	return round.forward(c, round.Next())
+}
+
+// Resume re-enters the phase a restored round was saved in. A guess that was
+// already scored is not asked for again.
+func (round *Round) Resume(c context.Context) bool {
+	return round.forward(c, round.state)
+}
+
+func (round *Round) forward(c context.Context, state TeamState) bool {
+	for ; state <= DONE; state = round.Next() {
 		switch state {
 		case INIT:
 			isCancelled := initHandler(c, round, INIT)
@@ -111,6 +123,9 @@ func (round *Round) AutoForward(c context.Context) bool {
 			round.encryptedMessage = eString
 		case INTERCEPT:
 			if round.roundN <= 2 { // 前两局（每个队伍的第一局）都进行拦截
+				continue
+			}
+			if round.intercepted {
 				continue
 			}
 			opponent := round.opponent
@@ -131,6 +146,9 @@ func (round *Round) AutoForward(c context.Context) bool {
 			}
 
 		case DECRYPT:
+			if round.decrypted {
+				continue
+			}
 			// As in the original game, the team still decodes after an interception:
 			// the two guesses score independently.
 			decryptedSecret, isCancelled := decryptHandler(c, round, round.currentTeam, DECRYPT)

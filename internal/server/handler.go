@@ -9,6 +9,7 @@ import (
 
 	"github.com/ZinkLu/decrypto-the-game/internal/game"
 	"github.com/ZinkLu/decrypto-the-game/internal/room"
+	"github.com/ZinkLu/decrypto-the-game/internal/store"
 	"github.com/ZinkLu/decrypto-the-game/internal/ws"
 	"github.com/google/uuid"
 )
@@ -17,17 +18,23 @@ import (
 type Handler struct {
 	RoomManager *room.Manager
 	Hub         *ws.Hub
-	mu          sync.Mutex
-	active      map[string]*ws.Client
-	expiry      map[string]*time.Timer
-	release     map[string]*time.Timer
+	// Store keeps rooms across restarts. Without one they live in memory only.
+	Store store.Rooms
+	// SeatGrace is how long an offline player keeps their seat and host role.
+	SeatGrace time.Duration
+	// RoomGrace is how long a room without any human online is kept.
+	RoomGrace time.Duration
+
+	mu      sync.Mutex
+	active  map[string]*ws.Client
+	expiry  map[string]*time.Timer
+	release map[string]*time.Timer
+	stored  map[string][]byte // by room ID, the room state last written
 }
 
-// SeatGrace is how long an offline player keeps their seat and host role.
-var SeatGrace = 20 * time.Second
-
-func NewHandler(manager *room.Manager, hub *ws.Hub) *Handler {
-	return &Handler{RoomManager: manager, Hub: hub, active: map[string]*ws.Client{}, expiry: map[string]*time.Timer{}, release: map[string]*time.Timer{}}
+func NewHandler(manager *room.Manager, hub *ws.Hub, rooms store.Rooms) *Handler {
+	return &Handler{RoomManager: manager, Hub: hub, Store: rooms, SeatGrace: 20 * time.Second, RoomGrace: 10 * time.Minute,
+		active: map[string]*ws.Client{}, expiry: map[string]*time.Timer{}, release: map[string]*time.Timer{}, stored: map[string][]byte{}}
 }
 
 func validName(name string) bool {
@@ -54,10 +61,51 @@ func (h *Handler) attach(client *ws.Client, r *room.Room, p *room.PlayerInfo, to
 		typ = "room_resumed"
 	}
 	client.SendMessage(ws.ServerMessage{Type: typ, Data: ws.RoomCreatedData{RoomCode: r.Code, MyPlayerID: p.ID, ResumeToken: token}})
-	h.broadcastRoomState(r)
+	h.roomChanged(r)
 	if resume {
+		// A game restored after a restart waits for its first player.
+		if b, ok := game.GetBridge(r.Snapshot().SessionID); ok {
+			b.Start()
+		}
 		h.sendSync(client, r)
 	}
+}
+
+// holdSeat frees the seat of an offline player once SeatGrace has passed.
+func (h *Handler) holdSeat(r *room.Room, id string) {
+	if timer := h.release[id]; timer != nil {
+		timer.Stop()
+	}
+	h.release[id] = time.AfterFunc(h.SeatGrace, func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		delete(h.release, id)
+		if r.Release(id) {
+			h.roomChanged(r)
+		}
+	})
+}
+
+// expireLater closes a room that stays without any human online for RoomGrace.
+// Until then its game, running or finished, is preserved.
+func (h *Handler) expireLater(r *room.Room) {
+	if timer := h.expiry[r.Code]; timer != nil {
+		timer.Stop()
+	}
+	h.expiry[r.Code] = time.AfterFunc(h.RoomGrace, func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if r.OnlineHumans() != 0 {
+			return
+		}
+		if b, ok := game.GetBridge(r.Snapshot().SessionID); ok {
+			b.Stop()
+			game.RemoveBridge(b.Session.SessionID())
+		}
+		h.RoomManager.RemoveRoom(r.Code)
+		delete(h.expiry, r.Code)
+		h.closeStored(r)
+	})
 }
 
 func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
@@ -74,37 +122,10 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 		}
 		delete(h.active, identity.PlayerID)
 		r.Disconnect(identity.PlayerID)
-		h.broadcastRoomState(r)
-		id := identity.PlayerID
-		if timer := h.release[id]; timer != nil {
-			timer.Stop()
-		}
-		h.release[id] = time.AfterFunc(SeatGrace, func() {
-			h.mu.Lock()
-			defer h.mu.Unlock()
-			delete(h.release, id)
-			if r.Release(id) {
-				h.broadcastRoomState(r)
-			}
-		})
+		h.roomChanged(r)
+		h.holdSeat(r, identity.PlayerID)
 		if r.OnlineHumans() == 0 {
-			if timer := h.expiry[r.Code]; timer != nil {
-				timer.Stop()
-			}
-			// Preserve active and finished sessions for ten minutes after the last human disconnects.
-			h.expiry[r.Code] = time.AfterFunc(10*time.Minute, func() {
-				h.mu.Lock()
-				defer h.mu.Unlock()
-				if r.OnlineHumans() != 0 {
-					return
-				}
-				if b, ok := game.GetBridge(r.Snapshot().SessionID); ok {
-					b.Stop()
-					game.RemoveBridge(b.Session.SessionID())
-				}
-				h.RoomManager.RemoveRoom(r.Code)
-				delete(h.expiry, r.Code)
-			})
+			h.expireLater(r)
 		}
 		return
 	}
@@ -125,6 +146,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError("room capacity reached; try later")
 			return
 		}
+		h.recordCreated(r, p, d.DeviceToken)
 		h.attach(client, r, p, r.Token(p.ID), false)
 		return
 	case ws.MsgJoinRoom:
@@ -148,6 +170,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError(err.Error())
 			return
 		}
+		h.recordJoined(r, p, d.DeviceToken)
 		// A new arrival takes a seat at once; they can still switch sides.
 		r.AutoSeat(p.ID)
 		h.attach(client, r, p, token, false)
@@ -203,13 +226,13 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError(err.Error())
 			return
 		}
-		h.broadcastRoomState(r)
+		h.roomChanged(r)
 	case ws.MsgLeaveTeam:
 		if err := r.LeaveTeam(identity.PlayerID); err != nil {
 			client.SendError(err.Error())
 			return
 		}
-		h.broadcastRoomState(r)
+		h.roomChanged(r)
 	case ws.MsgAddAI:
 		var d ws.AddAIData
 		if json.Unmarshal(msg.Data, &d) != nil {
@@ -224,7 +247,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError(err.Error())
 			return
 		}
-		h.broadcastRoomState(r)
+		h.roomChanged(r)
 	case ws.MsgRemoveAI:
 		var d ws.RemoveAIData
 		if json.Unmarshal(msg.Data, &d) != nil {
@@ -239,7 +262,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError(err.Error())
 			return
 		}
-		h.broadcastRoomState(r)
+		h.roomChanged(r)
 	case ws.MsgStartGame:
 		if state.OwnerID != identity.PlayerID {
 			client.SendError("only the room owner can start the game")
@@ -250,7 +273,11 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError(err.Error())
 			return
 		}
+		h.keepGame(b, r)
+		// The game is stored before the room says it began: a restart between
+		// the two finds a lobby, never a game that is missing.
 		b.Start()
+		h.saveRoom(r)
 	case ws.MsgRequestSync:
 		h.sendSync(client, r)
 	case ws.MsgReopenRoom:
@@ -266,7 +293,10 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			}
 			game.RemoveBridge(state.SessionID)
 		}
-		h.broadcastRoomState(r)
+		h.roomChanged(r)
+		if state.Started {
+			h.saveGame(r, nil)
+		}
 	case ws.MsgSubmitClues, ws.MsgSubmitIntercept, ws.MsgSubmitDecrypt, ws.MsgProgress:
 		b, ok := game.GetBridge(state.SessionID)
 		if !ok {

@@ -1,14 +1,18 @@
 package main
 
 import (
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/internal/game"
 	"github.com/ZinkLu/decrypto-the-game/internal/room"
 	"github.com/ZinkLu/decrypto-the-game/internal/server"
+	"github.com/ZinkLu/decrypto-the-game/internal/store/sqlite"
 	"github.com/ZinkLu/decrypto-the-game/internal/ws"
 )
 
@@ -16,10 +20,24 @@ func main() {
 	game.RegisterHandlers()
 	roomManager := room.NewManager()
 
+	dbPath := os.Getenv("DECRYPTO_DB_PATH")
+	if dbPath == "" {
+		dbPath = "data/decrypto.db"
+	}
+	rooms, err := sqlite.Open(dbPath)
+	if err != nil {
+		log.Fatalf("cannot open the room database: %v", err)
+	}
+
 	// Handler needs hub reference. Create handler first with nil hub, then create hub, then set handler.Hub.
-	handler := server.NewHandler(roomManager, nil)
+	handler := server.NewHandler(roomManager, nil, rooms)
 	hub := ws.NewHub(handler.HandleMessage)
 	handler.Hub = hub
+
+	// Rooms come back before the first connection is accepted.
+	if err := handler.Restore(); err != nil {
+		log.Fatalf("cannot restore rooms from %s: %v", dbPath, err)
+	}
 
 	go hub.Run()
 
@@ -48,6 +66,21 @@ func main() {
 		port = "8080"
 	}
 	server := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-	log.Printf("Starting Decrypto server on port %s", port)
-	log.Fatal(server.ListenAndServe())
+	go func() {
+		log.Printf("Starting Decrypto server on port %s, rooms kept in %s", port, dbPath)
+		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal(err)
+		}
+	}()
+
+	// Every change is stored as it happens, so stopping loses nothing. Closing
+	// the database leaves it complete in its one file.
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	<-stop
+	log.Println("Stopping: open rooms return with the next start")
+	server.Close()
+	if err := rooms.Close(); err != nil {
+		log.Printf("closing the room database: %v", err)
+	}
 }

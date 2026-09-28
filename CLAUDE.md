@@ -22,13 +22,15 @@ cd web && pnpm install && pnpm build && cd ..
 cd web && pnpm dev    # port 3000, proxies /ws and /api to 8080
 
 # Run tests
-go test ./internal/room/ ./internal/ws/
+go test ./internal/room/ ./internal/ws/ ./internal/store/...
 
-# Core game logic tests (needs words.txt in cwd)
-go test ./internal/core/
+# Tests that load the word list need its absolute path
+DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
 ```
 
 **Runtime dependency:** `words.txt` must exist in the working directory.
+
+**Runtime state:** rooms and games are kept in `data/decrypto.db` (SQLite; override with `DECRYPTO_DB_PATH`). The server refuses to start if it cannot open the file.
 
 ## Architecture
 
@@ -39,7 +41,9 @@ go test ./internal/core/
 - **`internal/ws/`** — WebSocket infrastructure (Hub, Client, message types)
 - **`internal/room/`** — Room management (create, join, teams, AI slots)
 - **`internal/game/`** — Bridge layer (WebSocket <-> game state machine)
-- **`internal/server/`** — Message dispatcher (routes WebSocket messages to room/game handlers)
+- **`internal/server/`** — Message dispatcher (routes WebSocket messages to room/game handlers); stores rooms as they change and restores them at startup
+- **`internal/store/`** — What the server needs from storage: the `Rooms` interface and its data types (room and game states, who opened and entered each room). No implementation, no dependencies
+- **`internal/store/sqlite/`** — The SQLite implementation of `store.Rooms` (pure Go driver, builds with `CGO_ENABLED=0`)
 - **`internal/ai/`** — AI players (LLM Provider abstraction + Claude/OpenAI implementations)
 - **`web/`** — React frontend (pages, components, store, services)
 
@@ -56,6 +60,8 @@ RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, t
 **State Machine:** Rounds progress through states: NEW → INIT → ENCRYPTING → INTERCEPT → DECRYPT → DONE. `Round.AutoForward()` advances through all states by calling registered handlers.
 
 **WebSocket Message Flow:** Client → `ws.Hub` → `server.Handler` → `room.Room` / `game.Bridge` → broadcast back to clients.
+
+**Persistence:** Each layer has a plain snapshot type with JSON tags and a restore function that refuses impossible states: `core.SessionSnapshot`, `room.State`, `game.Snapshot`. The bridge saves at every point where it changes what players see, while holding its lock. After a restart `Session.Resume()` re-enters the interrupted phase with a fresh deadline; a guess already scored is not asked for again. A restored game stays paused until the first human resumes. `server.Handler` knows storage only as `store.Rooms`; `cmd/server/main.go` chooses the implementation. Storing is best effort: a store that fails is logged and the game goes on. Raise `room.StateVersion` or `game.SnapshotVersion` when a stored state can no longer be read as written: a game of another version returns its room to the lobby.
 
 ## Game Logic Summary
 

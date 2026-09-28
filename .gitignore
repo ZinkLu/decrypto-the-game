@@ -30,6 +30,9 @@ dist/
 build/
 /server
 
+# Rooms kept by the server
+/data/
+
 # Environment files
 .env
 .env.local

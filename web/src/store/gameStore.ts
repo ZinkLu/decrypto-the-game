@@ -213,6 +213,7 @@ type SetFn = (
 type GetFn = () => GameStore;
 
 const sessionKey = "decrypto-session-v1";
+const deviceKey = "decrypto-device-v1";
 
 // Server clock minus this device's clock. Each message carries the server time
 // it was sent at; the true offset is that sample plus the network delay, so the
@@ -255,6 +256,18 @@ function saveSession(value: { roomCode: string; resumeToken: string } | null) {
     if (value) sessionStorage.setItem(sessionKey, JSON.stringify(value));
     else sessionStorage.removeItem(sessionKey);
   } catch { /* Resume still works in memory when storage is blocked. */ }
+}
+
+/** A secret this browser keeps for good, so the server can tell which rooms one
+ *  browser opened and entered. The server keeps only its hash. */
+function deviceToken(): string {
+  try {
+    const saved = localStorage.getItem(deviceKey) || "";
+    if (/^[0-9a-f]{64}$/.test(saved)) return saved;
+    const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    localStorage.setItem(deviceKey, token);
+    return token;
+  } catch { return ""; /* Without storage this browser stays unnamed. */ }
 }
 
 function handleServerMessage(
@@ -538,11 +551,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   createRoom(nickname: string) {
-    get().wsService?.send("create_room", { nickname });
+    get().wsService?.send("create_room", { nickname, device_token: deviceToken() });
   },
 
   joinRoom(code: string, nickname: string) {
-    get().wsService?.send("join_room", { room_code: code, nickname });
+    get().wsService?.send("join_room", { room_code: code, nickname, device_token: deviceToken() });
   },
 
   selectTeam(team: string) {

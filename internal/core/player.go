@@ -1,6 +1,6 @@
 package core
 
 type Player struct {
-	UID      string
-	NickName string
+	UID      string `json:"uid"`
+	NickName string `json:"nickname"`
 }

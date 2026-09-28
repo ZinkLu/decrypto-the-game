@@ -42,6 +42,12 @@ type Bridge struct {
 	// This round's timeout notice, and every timed-out action by round.
 	timeout  *ws.TimeoutData
 	timeouts map[int][]string
+	// OnSave receives the game each time it moves on, to keep it across a
+	// restart. Assign it before Start.
+	OnSave func(Snapshot)
+	// Closed once the running game has shown its players where it stands.
+	shown     chan struct{}
+	shownOnce sync.Once
 }
 
 // NewBridge creates a Bridge from room data, initialises the core Session,
@@ -67,6 +73,12 @@ func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
 		return nil, err
 	}
 
+	b := newBridge(r, hub, session, roster)
+	RegisterBridge(session.SessionID(), b)
+	return b, nil
+}
+
+func newBridge(r *room.Room, hub *ws.Hub, session *core.Session, roster room.Snapshot) *Bridge {
 	b := &Bridge{
 		Room:        r,
 		Timing:      DefaultTimings,
@@ -77,6 +89,7 @@ func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
 		CluesCh:     make(chan [3]string, 1),
 		InterceptCh: make(chan [3]int, 1),
 		DecryptCh:   make(chan [3]int, 1),
+		shown:       make(chan struct{}),
 	}
 
 	// Wire up AI player if any team has AI members.
@@ -112,21 +125,36 @@ func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
 			log.Printf("bridge: no LLM API key set (OPENAI_API_KEY or ANTHROPIC_API_KEY); AI players will use fallback stubs")
 		}
 	}
-
-	RegisterBridge(session.SessionID(), b)
-	return b, nil
+	return b
 }
 
-// Start launches AutoForward in a background goroutine.
+// Start forwards the game in a background goroutine. A restored game goes on
+// from the phase it was saved in; a finished one has nothing left to run.
+// Start returns once the game shows where it stands, so that a phase taking
+// input is never seen without its deadline.
 func (b *Bridge) Start() {
 	b.startOnce.Do(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		b.mu.Lock()
+		defer b.mu.Unlock()
+		if b.phase == "game_over" {
+			cancel()
+			b.show()
+			return
+		}
+		if b.OnSave != nil {
+			b.OnSave(b.snapshotLocked())
+		}
 		b.cancel = cancel
-		b.mu.Unlock()
-		go b.Session.AutoForward(ctx)
+		go func() {
+			defer b.show()
+			b.Session.Resume(ctx)
+		}()
 	})
+	<-b.shown
 }
+
+func (b *Bridge) show() { b.shownOnce.Do(func() { close(b.shown) }) }
 
 func (b *Bridge) Stop() {
 	b.mu.Lock()
@@ -526,6 +554,7 @@ func (b *Bridge) broadcastRoundResult(round *core.Round, interceptSuccess *bool,
 		v.Deadline = 0
 		b.views[id] = v
 	}
+	b.saveLocked()
 	b.mu.Unlock()
 
 	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
@@ -588,6 +617,7 @@ func (b *Bridge) broadcastGameOver(winner *core.Team) {
 		v.Deadline = 0
 		b.views[id] = v
 	}
+	b.saveLocked()
 	b.mu.Unlock()
 	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{Type: ws.MsgGameOver, Data: result})
 }

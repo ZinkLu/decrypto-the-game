@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 // Cold War themed AI codenames by faction.
@@ -27,6 +29,7 @@ type PlayerInfo struct {
 
 // Room represents a game lobby with two teams.
 type Room struct {
+	ID        string // never reused, unlike the code
 	Code      string
 	OwnerID   string
 	TeamA     []*PlayerInfo
@@ -42,11 +45,12 @@ const maxTeamSize = 4
 // NewRoom creates a new room with the given code and owner, placing the owner in Team A.
 func NewRoom(code string, owner *PlayerInfo) *Room {
 	r := &Room{
+		ID:      uuid.NewString(),
 		Code:    code,
 		OwnerID: owner.ID,
 		TeamA:   []*PlayerInfo{owner},
 		TeamB:   []*PlayerInfo{},
-		members: map[string]*member{owner.ID: {player: owner, token: newToken()}},
+		members: map[string]*member{owner.ID: newMember(owner)},
 	}
 	return r
 }
@@ -86,7 +90,7 @@ func (r *Room) AddToTeam(player *PlayerInfo, team string) error {
 
 	*other = removeByID(*other, player.ID)
 	if _, exists := r.members[player.ID]; !exists {
-		r.members[player.ID] = &member{player: player, token: newToken()}
+		r.members[player.ID] = newMember(player)
 	}
 	player = r.members[player.ID].player
 	*target = append(*target, player)

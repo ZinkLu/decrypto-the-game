@@ -1,6 +1,7 @@
 package room
 
 import (
+	"fmt"
 	"math/rand"
 	"sync"
 )
@@ -36,6 +37,18 @@ func (m *Manager) CreateRoom(owner *PlayerInfo) *Room {
 	r := NewRoom(code, owner)
 	m.rooms[code] = r
 	return r
+}
+
+// Add registers a room restored from storage. Its code must be free.
+func (m *Manager) Add(r *Room) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.rooms[r.Code]; exists {
+		return fmt.Errorf("room code %s is already in use", r.Code)
+	}
+	m.rooms[r.Code] = r
+	return nil
 }
 
 // GetRoom returns the room with the given code, or nil if not found.
