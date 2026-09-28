@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+.DS_Store
+server
+assets/
+design/
+docs/
+web/node_modules/
+web/dist/
+web/.vite/
+web/package-lock.json
+*.blend
+*.blend1

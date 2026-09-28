@@ -2,7 +2,11 @@ package ws
 
 import (
 	"log"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -151,8 +155,45 @@ func (h *Hub) HandleMessage(client *Client, msg ClientMessage) {
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	// Allow all origins for development.
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin:     allowedOrigin,
+}
+
+// Browser WebSocket connections must come from this site. Local Vite development
+// uses a different port, while deployments with a rewritten Host may specify
+// exact extra origins with DECRYPTO_ALLOWED_ORIGINS.
+func allowedOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true // Non-browser clients do not send Origin.
+	}
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil || u.Path != "" || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	if strings.EqualFold(u.Host, r.Host) {
+		return true
+	}
+	host := r.Host
+	if parsed, err := url.Parse("//" + host); err == nil {
+		host = parsed.Hostname()
+	}
+	if loopbackHost(host) && loopbackHost(u.Hostname()) {
+		return true
+	}
+	for _, allowed := range strings.Split(os.Getenv("DECRYPTO_ALLOWED_ORIGINS"), ",") {
+		if strings.EqualFold(strings.TrimSpace(allowed), origin) {
+			return true
+		}
+	}
+	return false
+}
+
+func loopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // ServeWS upgrades an HTTP request to a WebSocket connection, creates a Client,

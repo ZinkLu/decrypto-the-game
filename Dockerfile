@@ -1,0 +1,26 @@
+FROM node:22-alpine AS web-build
+WORKDIR /src/web
+RUN npm install --global pnpm@10.20.0
+COPY web/package.json web/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+RUN pnpm build
+
+FROM golang:1.27-alpine AS server-build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+
+FROM alpine:3.22
+RUN addgroup -S app && adduser -S -G app app
+WORKDIR /app
+COPY --from=server-build --chown=app:app /out/server ./server
+COPY --from=web-build --chown=app:app /src/web/dist ./web/dist
+COPY --chown=app:app words.txt ./words.txt
+ENV PORT=8080
+EXPOSE 8080
+USER app
+CMD ["./server"]

@@ -10,7 +10,7 @@
 
 - **实时多人对战** — 基于 WebSocket，创建房间后分享房间码即可开始
 - **AI 玩家** — 支持 Claude、OpenAI 及兼容接口（DeepSeek、Ollama 等）作为 AI 队友/对手
-- **冷战情报风格 UI** — 打字机文字、蜡封、橡皮图章、机密文件夹等主题化组件
+- **3D 冷战通信机** — 可操作的实体按钮、显示器、密语词窗和纸带记录
 - **角色视角分离** — 加密者、队友、对手各自看到不同的界面和信息
 - **断线重连** — WebSocket 自动重连并恢复游戏状态
 
@@ -39,6 +39,8 @@ go build -o server ./cmd/server
 ```
 
 服务启动后访问 http://localhost:8080 即可开始游戏。
+
+需要通过自己的服务器提供在线试玩时，参见[试玩环境部署说明](docs/demo-deployment.md)。服务须部署为单实例，重启会结束内存中的对局。
 
 桌面游戏页 `/` 固定正面视角，按窗口大小自动取景。向内拖动任一侧把手可翻到背面，点击背面的把手连接处即可返回；键盘可聚焦把手后按 Enter 操作。
 
@@ -102,8 +104,7 @@ internal/
   ai/                # AI 玩家（LLM Provider 抽象 + Claude/OpenAI 实现）
 web/                 # React 前端
   src/
-    pages/           # 11 个游戏阶段页面（角色视角分离）
-    components/      # 主题化 UI 组件库（dossier 风格）
+    components/console/ # 3D 通信机、移动端界面与本地交互模型
     store/           # Zustand 状态管理
     services/        # WebSocket 客户端
 ```
@@ -120,16 +121,16 @@ NEW → INIT → ENCRYPTING → INTERCEPT → DECRYPT → DONE
 
 ### 前端技术栈
 
-React 19 + TypeScript + Tailwind CSS 4 + Framer Motion + Zustand
+React 19 + TypeScript + Three.js + Tailwind CSS 4 + Zustand
 
 ## 测试
 
 ```bash
-# Go 测试（room + ws 消息格式）
-go test ./internal/room/ ./internal/ws/
+# 在项目根目录运行；core 测试需要词库的绝对路径
+DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
 
-# 核心游戏逻辑测试（需要在项目根目录运行，依赖 words.txt）
-go test ./internal/core/
+# 前端测试与生产构建
+cd web && pnpm test && pnpm build
 ```
 
 ## License
