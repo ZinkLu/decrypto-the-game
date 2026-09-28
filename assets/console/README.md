@@ -57,7 +57,7 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 
 ## 脚本一览
 
-下表按运行顺序排列。从基础模型重建时按 0 到 21 依次运行；平时只重跑要改的那一个工序，然后再运行一次 `refine_visual_polish.py`。
+下表按运行顺序排列。从基础模型重建时按 0 到 22 依次运行；平时只重跑要改的那一个工序，然后再运行一次 `refine_visual_polish.py`。
 
 最后补跑 `refine_visual_polish.py` 有两个原因：
 
@@ -95,6 +95,7 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 | 19 | `refine_rear_audio.py` | 背面 MUSIC、SFX 两个滑钮 | 是 | 40 个数字 |
 | 20 | `refine_handles.py` | 两侧把手，每侧一根弯管，螺丝固定在背板 | 是 | 40 个数字 |
 | 21 | `refine_visual_polish.py` | 暖中性色、背面格栅、各处边距和字样位置 | 是 | 贴图生成结果与已打包贴图一致；40 个数字 |
+| 22 | `refine_rear_wordmark.py` | 背面的 `E N C R Y P T O` 字样，只换这一个部件 | 是 | 字样宽度、贴在背面、旧字样已不存在；40 个数字 |
 
 `refine_score_register.py` 运行时会删除所有 `ScoreLamp_*` 对象，已发布的模型里没有计分灯。`refine_score_lamps.py` 和 `scoreLamps.json` 只作为被取代的方案保留。
 
@@ -191,7 +192,9 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 
 ## 背面字样
 
-`remodel_instrument.py` 在背面检修面板写上 `E N C R Y P T O`。当前的 `.blend` 和已发布的 GLB 里仍有旧字样节点 `Instrument_rear wordmark`，运行时载入后把它移除。下次从 `.blend` 导出之前先运行 `remodel_instrument.py`，把字样换掉。
+背面检修面板左上角的字样是 `E N C R Y P T O`，部件名 `Instrument_rear ENCRYPTO wordmark`，材质与旁边的型号、序列号字样相同。前端测试检查它在模型里，并且旧的 `Instrument_rear wordmark` 已不存在。
+
+要改这行字，修改并运行 `refine_rear_wordmark.py`。`remodel_instrument.py` 里也写着同样的字样，但它会删除并重建所有 `Instrument_` 部件，之后各道工序对这些部件的调整都要重做，所以不要为了一行字去运行它。
 
 ## 参考资料
 

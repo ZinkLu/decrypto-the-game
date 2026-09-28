@@ -159,6 +159,9 @@ test('rear model keeps the hinged cover separate from cells and has actual conne
   for (let i = 0; i < 8; i++) assert.ok(node(`Instrument_RJ45 contact ${i}`));
   for (const name of ['Instrument_perforated speaker grille', 'RearSoundSwitch', 'RearMusicSwitch', 'RearTestLamp',
     'Instrument_coax lead', 'Instrument_rear service cover']) assert.ok(node(name), name);
+  const wordmark = node('Instrument_rear ENCRYPTO wordmark');
+  assert.ok(wordmark && gltf.scenes[0].nodes.includes(gltf.nodes.indexOf(wordmark)), 'the rear panel carries the ENCRYPTO lettering');
+  assert.ok(!node('Instrument_rear wordmark'), 'the former wordmark is gone from the model');
   assert.ok(gltf.extensionsRequired.includes('KHR_draco_mesh_compression'));
   assert.ok(bytes.length < 12_000_000, 'keep the geometry plus embedded PBR texture set below 12 MB');
   const alloy = gltf.materials.findIndex(m => m.name === 'Tactile brushed aluminium');
