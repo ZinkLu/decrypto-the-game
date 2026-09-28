@@ -413,6 +413,12 @@ export function seatDuty(s: StationState): Line | null {
 }
 /** Seconds at which the acting seat is warned that its time is running out. */
 export const warningSeconds = 15;
+/** The countdown as the painted screen follows it: each of the last seconds, and
+ *  one value for any time above them. That value is not 0, which means time is up:
+ *  a turn that gets its time back, as after a server restart, is painted again. */
+export function paintedSeconds(seconds: number) {
+    return Math.min(seconds, warningSeconds + 1);
+}
 /** The acting seat's countdown warning, and what happens when time runs out. */
 export function deadlineWarning(s: StationState, u: LocalState, seconds: number): Line | null {
     const r = roleState(s, u);

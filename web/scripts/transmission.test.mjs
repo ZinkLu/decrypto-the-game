@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 
 const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const { previewState, roundCast, transmission, briefingKey, briefingDuration, briefingTime, initialLocal, seatDuty, deadlineWarning, timeoutNotice, resultView, gameOverView, resultTint } =
+const { previewState, roundCast, transmission, briefingKey, briefingDuration, briefingTime, initialLocal, seatDuty, deadlineWarning, paintedSeconds, timeoutNotice, resultView, gameOverView, resultTint } =
     await import(`data:text/javascript;base64,${Buffer.from(compile(await readFile(new URL('../src/components/console/model.ts', import.meta.url), 'utf8'))).toString('base64')}`);
 
 test('the round cast names who sends, intercepts and decodes, for players and spectators', () => {
@@ -84,6 +84,14 @@ test('the acting seat is warned in its last 15 seconds, and told what a timeout 
     const intercept = { ...previewState({}, 'intercept'), deadline: Date.now() + 9000, waiting: false };
     assert.match(deadlineWarning(intercept, u, 9)[0], /视为未拦截/);
     assert.deepEqual(deadlineWarning(s, u, 0), ['时间到 · 正在按规则提交', []]);
+});
+
+test('the screen is painted again when a turn gets its time back', () => {
+    // After a server restart the interrupted turn begins again with its full time.
+    assert.notEqual(paintedSeconds(0), paintedSeconds(90), 'time up and a full turn looked the same to the screen');
+    assert.notEqual(paintedSeconds(0), paintedSeconds(60));
+    assert.equal(paintedSeconds(90), paintedSeconds(16), 'the screen follows the clock before the warning');
+    for (const seconds of [15, 14, 5, 1, 0]) assert.equal(paintedSeconds(seconds), seconds, 'each warned second is painted');
 });
 
 test('a timeout is explained to everyone for the rest of its round only', () => {

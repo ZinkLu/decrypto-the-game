@@ -4,7 +4,7 @@ import { useGameStore } from '../../store/gameStore';
 import { ConsoleEngine } from './engine';
 import { ConsoleAudio, gameSound, type ConsoleSound } from './sound';
 import { ConsoleMusic, readMusicPreferences, saveMusicPreferences, type MusicPreferences, type MusicStatus } from './music';
-import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, syncDiskPower, initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, syncKeyDisk, advanceKeyDisk, actKeyDisk, keyDiskDurations, briefingKey, briefingDuration, roundCast, deadlineWarning, timeoutNotice, warningSeconds, readDraft, saveDraft, readName, saveName } from './model';
+import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, syncDiskPower, initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, syncKeyDisk, advanceKeyDisk, actKeyDisk, keyDiskDurations, briefingKey, briefingDuration, roundCast, deadlineWarning, timeoutNotice, warningSeconds, paintedSeconds, readDraft, saveDraft, readName, saveName } from './model';
 import type { WordDisplay } from './dotMatrix';
 import { defaultDotFilter, dotFilterOptions, readDotFilter, readWordScale, type DotFilter } from './dotFiltering';
 import { paint, paintClock, knobLabel, guidePages } from './paint';
@@ -106,7 +106,7 @@ export default function Console() {
     // game screens and the long receipt for each fraction of a knob turn.
     // Otherwise the countdown only repaints its clock.
     // The last seconds of a turn repaint the screen too, for its countdown warning.
-    const paintKey = JSON.stringify({ ...u, seconds: u.seconds <= warningSeconds ? u.seconds : 0, keyDisk: { ...u.keyDisk, pull: u.keyDisk.pull ? { ...u.keyDisk.pull, amount: 0 } : undefined }, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
+    const paintKey = JSON.stringify({ ...u, seconds: paintedSeconds(u.seconds), keyDisk: { ...u.keyDisk, pull: u.keyDisk.pull ? { ...u.keyDisk.pull, amount: 0 } : undefined }, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
     const painted = useMemo(() => paint(displayState, u, inspection, guideArt), [displayState, paintKey, diskFontReady, guideArt]);
     const clock = useMemo(() => paintClock(displayState, u), [displayState, paintKey, u.seconds]);
     const content = useMemo(() => ({ ...painted, frames: { ...painted.frames, clock }, targets: [...painted.targets, ...Object.keys(handleSurfaces).filter(surface =>
