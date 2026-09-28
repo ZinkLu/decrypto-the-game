@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A web-based implementation of the board game "Decrypto" (谍报风云), with real-time multiplayer via WebSocket and AI player support.
+Encrypto is an unofficial web-based fan project inspired by the board game "Decrypto" (谍报风云), with real-time multiplayer via WebSocket and AI player support. The whole interface is one modeled machine, the Console (Three.js), in `web/`.
+
+The project began as a chat-channel bot. That code is gone; `origin_msg.md` and `docs/intro.gif` remain from it, and `internal/core` still knows nothing about WebSocket so that other channels can drive a game later. Leave those in place.
 
 ## Build & Run Commands
 
@@ -19,14 +21,16 @@ cd web && pnpm install && pnpm build && cd ..
 ./server
 
 # Development (frontend hot reload)
-cd web && pnpm dev    # port 3000, proxies /ws and /api to 8080
+cd web && pnpm dev    # port 3000, proxies /ws to 8080
 
-# Run tests
-go test ./internal/room/ ./internal/ws/ ./internal/store/...
-
-# Tests that load the word list need its absolute path
+# Backend tests (the word list needs its absolute path)
 DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
+
+# Frontend tests (Node, no browser) and type check + build
+cd web && pnpm test && pnpm build
 ```
+
+pnpm is the only package manager for `web/`.
 
 **Runtime dependency:** `words.txt` must exist in the working directory.
 
@@ -45,7 +49,10 @@ DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
 - **`internal/store/`** — What the server needs from storage: the `Rooms` interface and its data types (room and game states, who opened and entered each room). No implementation, no dependencies
 - **`internal/store/sqlite/`** — The SQLite implementation of `store.Rooms` (pure Go driver, builds with `CGO_ENABLED=0`)
 - **`internal/ai/`** — AI players (LLM Provider abstraction + Claude/OpenAI implementations)
-- **`web/`** — React frontend (pages, components, store, services)
+- **`web/src/console/`** — The Console: the whole interface. React holds state and accessibility (`Console.tsx`), Three.js draws the machine (`engine.ts`), 2D canvases painted by `paint.ts` become its screens and print, and transparent DOM controls are projected over the 3D parts
+- **`web/src/store/gameStore.ts`**, **`web/src/services/websocket.ts`** — Game state from the server (Zustand) and the WebSocket connection
+- **`web/scripts/*.test.mjs`** — Frontend tests; they transpile the TypeScript modules and run in Node, so logic under test lives in modules without Three.js or DOM imports
+- **`assets/console/`**, **`assets/audio/`** — Blender source and passes for the model, build scripts for sounds and music
 
 ### Key Architectural Patterns
 
@@ -63,9 +70,22 @@ RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, t
 
 **Persistence:** Each layer has a plain snapshot type with JSON tags and a restore function that refuses impossible states: `core.SessionSnapshot`, `room.State`, `game.Snapshot`. The bridge saves at every point where it changes what players see, while holding its lock. After a restart `Session.Resume()` re-enters the interrupted phase with a fresh deadline; a guess already scored is not asked for again. A restored game stays paused until the first human resumes. `server.Handler` knows storage only as `store.Rooms`; `cmd/server/main.go` chooses the implementation. Storing is best effort: a store that fails is logged and the game goes on. Raise `room.StateVersion` or `game.SnapshotVersion` when a stored state can no longer be read as written: a game of another version returns its room to the lobby.
 
+**Console:** `paint()` is memoized by `paintKey`; a state change that alters neither `displayState` nor `paintKey` leaves a stale screen. Analog input (knobs) must not repaint. After exporting a new GLB, bump `revision` in `ConsoleEngine.load()`. Strings are written in Chinese and translated through `translate()`; every new string needs its English entry in `i18n.ts`.
+
+## Documentation
+
+`README.md` introduces the project and stays short and non-technical. Everything else lives in `docs/` (index: `docs/README.md`) and is written in Chinese, describing the current state without changelog sections:
+
+- `docs/gameplay.md`, `docs/getting-started.md`, `docs/deployment.md`
+- `docs/architecture.md`, `docs/protocol.md`
+- `docs/console/` — design overview, code organisation, displays, mechanics, rear linkage, audio, themes, quality, preview URLs
+- `assets/console/README.md`, `assets/audio/README.md` — how the model and the audio are made
+
+When behaviour changes, update the document that describes it.
+
 ## Game Logic Summary
 
 - Two teams with 2+ players each
 - Max 16 rounds (8 per team as encryptor)
-- Win conditions: 2 successful interceptions OR opponent makes 2 decryption errors
-- Round flow: Encryptor gets secret indices [1-4], provides clues, opponent intercepts (rounds 3+), team decrypts
+- Win conditions: 2 successful interceptions OR opponent makes 2 decryption errors; both in one round, or 16 rounds played, is decided by interceptions minus errors
+- Round flow: Encryptor gets secret indices [1-4], provides clues, opponent intercepts (rounds 3+), team decrypts; an interception does not skip the decryption

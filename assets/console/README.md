@@ -1,926 +1,204 @@
-# Decrypto console
+# 建模流水线
 
-Approved visual: `reference.png`. Editable model: `decrypto-console.blend`.
-The running interface uses actual Blender-exported geometry, not the reference bitmap.
+这里是密报终端 3D 模型的源文件和生成脚本。本文只讲怎样改模型、怎样导出。机器在页面里的表现见 [`docs/console/`](../../docs/console/README.md)：[显示器件](../../docs/console/displays.md)、[机械与交互](../../docs/console/mechanics.md)、[背面联动](../../docs/console/rear-linkage.md)、[画质与性能](../../docs/console/quality.md)、[开发预览](../../docs/console/preview.md)、[代码组织](../../docs/console/code.md)。
 
-## Device details — 2026-09-20
+## 目录内容
 
-Fixed chassis ink is English and independent of gameplay: the connection lens is
-NETWORK, the red key is ACTION / PRESS TO CONFIRM, and the scoreboard keeps its English legends. The session's 中文 / EN
-selector persists locally. Main and word CRTs, roster inserts,
-phase indicators, receipts and accessible controls change language together.
-Names and submitted clues retain their original text; bilingual word-bank entries
-use their supplied translation. Authored preview clues have both languages. Keyword windows share a 60 px base size; long phrases wrap and measured overflow shrinks without ellipses. Translations live in `i18n.ts`.
+| 文件 | 说明 |
+| --- | --- |
+| `decrypto-console.blend` | 整机的可编辑源文件，几何以它为准。文件名沿用历史名称 |
+| `instrument-studies.blend` | 三种仪表方案并排摆放的独立源文件，由 `build_instrument_studies.py` 生成 |
+| `textures/` | 脚本生成的 512 px PBR 贴图（颜色、法线、粗糙度），同时打包进 `.blend` 和 GLB |
+| `*.py` | Blender 工序脚本，见[脚本一览](#脚本一览) |
+| `console_parts.py` | 各工序共用的建模函数（`box`、`cylinder`、`ring`、`material`、`finish`） |
+| `scoreLamps.json` | 计分灯方案的尺寸，只供 `refine_score_lamps.py` 读取 |
 
-The vector monitor is simulated from the tube outward (`scope.ts`): two
-oscillators steer one beam, and a floating-point phosphor keeps what it wrote.
-Brightness is dwell time, so sine crests burn brighter than zero crossings and
-square-wave risers stay faint. The afterglow is deliberately short (a departed
-trace is below a tenth of its brightness within about 80 ms), so drifting and
-tumbling figures stay crisp instead of smearing. Each frame shows the glow
-averaged over its own interval, as a shutter would, which removes the beat
-between a 48 Hz beam and a 60 Hz display that a short afterglow would otherwise
-expose as shimmer. It rests on a locked 2:1 sine in Y/T.
+计分翻牌的尺寸和颜色在 `web/src/console/scoreRegister.json`，由 `refine_score_register.py` 和前端共用。
 
-- **FREQ**, the large vernier dial, tunes the CAL OUT oscillator from 1:1 to 5:1
-  of the sweep reference. Its eight engraved marks are calibrated to 1:1, 4:3,
-  3:2, 2:1, 5:2, 3:1, 4:1 and 5:1, with finer travel around each mark. The
-  oscillators pull on each other (Adler's equation): inside a p:q tongue the
-  figure locks and fine tuning tilts its phase; just outside, it slips with a
-  hesitation each turn; far away it runs free as a woven mesh.
-- **WAVE** blends steplessly through the generator's five engraved shapes, and
-  each stretch of the dial is one circuit parameter: integrator symmetry
-  (sawtooth to triangle), the diode shaper (triangle to sine, the resting
-  mark at the top), amplifier overdrive (sine to square) and comparator duty
-  (square to pulse). A sudden turn still melts while the blend settles.
-- **TIME/DIV** spans 200 to 1.25 ms/div and slows both oscillators together, so
-  a figure keeps its shape while the line resolves into a moving spot with a
-  fading trail. Beam current and persistence track the sweep, keeping standing
-  figures equally bright.
-- **X-Y** pans the horizontal amplifier from the sweep ramp to the reference
-  sine. A sine wave and its Lissajous figure are the side and end views of one
-  space curve; this quarter turn rolls one into the other.
+导出结果放在 `web/public/models/`：
 
-The LOCK lamp is a phase detector behind a slow filament: it beats while the
-oscillators slip, steadies as they lock and is brightest dead in tune. The tube
-itself is only a display. Generator dials (FREQ, WAVE) sit left of the tube
-dials (TIME/DIV, X-Y); the row and its legends are placed so the mark above each
-dial clears the CRT hood and the leaning knobs clear the legends. Knobs have end
-stops. Drag,
-scroll or use arrow keys; Shift gives fine adjustment, Home/End go to the limits,
-and FREQ's arrow steps are quarter-marks so keys land on every calibrated ratio.
-Reduced motion shows each standing figure as one long exposure. Analog input
-reuses game-screen and receipt canvases. Lay out and engrave the controls with:
-
-```sh
-blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_scope_controls.py
-```
-
-References: [Tektronix systems and controls](https://www.tek.com/fr/documents/primer/oscilloscope-systems-and-controls);
-R. Adler, "A Study of Locking Phenomena in Oscillators", Proc. IRE 34 (1946).
-
-The coax is a local INPUT–CAL OUT patch beside the scope, clear of all controls.
-The drive has curved thumb reliefs cut into its actual fascia, inset guides,
-a dust flap, an independently moving eject button, and a disk with shell seams,
-grip ribs, a write-protect slider and a folded metal shutter aperture.
-The disk lies flat in the guides at y=−4.59 and travels only along the
-front-panel normal (z), with no pitch or vertical drift. Its shell, shutter and
-printed label share that plane. Insertion first reaches the fascia at travel
-−0.77, pauses 160 ms for the
-fingertip to reach the scallop, then presses to −0.93. The tail ends 0.16 units
-behind the fascia; latch compression is only 0.012 units. Ejection first depresses the button and
-releases the latch, then springs the disk out to a supported grip position.
-Reduced motion settles both mechanisms immediately. Inspect with
-`/preview?preview=encrypting&detail=disk` or `&detail=scope`; `&motion=slow` slows travel.
-
-Regenerate only these details against the current editable scene:
-
-```sh
-blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_scope_drive.py
-```
-
-This pass preserves other refinements and all 40 room-code digit variants.
-
-The main console now ships the selected SIGNAL receiver in both the editable
-`.blend` and the production GLB. It starts in AUTO with the low, recessed toggle;
-only the needle moves, with softened attack/release and irregular 0.45–1.1-second
-phrases (0.8–1.5-second quiet rests). The physical toggle selects MAN, and the
-tuning/gain controls work throughout the normal game. No study query is needed.
-To install a regenerated receiver into the current console without rebuilding
-the housing or other refined assemblies:
-
-```sh
-blender -b assets/console/decrypto-console.blend --python assets/console/install_receiver.py
-```
-
-This repeatable pass archives the old VU in `instrument-vu.glb` for the development
-comparison, replaces only the receiver assembly, and registers its switch surface.
-It exports all 40 room-code digit variants while preserving the editable scene's
-digit visibility and excluding Boolean cutters.
-
-## Mechanical score register
-
-The scoreboard now uses four recessed twin windows and eight bistable flags.
-Each flag is a thick charcoal blade with warm ivory enamel on its reverse:
-intercepts reveal an ink tally, errors reveal a vermilion cross. The
-horizontal axle, end bearings, deep well, rear partition, satin rim and thin
-clear cover are modeled parts. Four Boolean apertures cut through the actual
-score plate. The blade's full turning envelope clears the back and glass.
-The center partitions end behind the flags to keep their marks visible obliquely.
-Folded hems frame the blades; turned bushings, dark seating rings and bracket
-feet connect the shafts to the rear well. Small vertex-colored contact pools
-ground the feet without per-frame shadow-map updates. The enamel is matte,
-with slightly brighter bevels and satin collars.
-
-`scoreRegister.json` describes the manufacturing layout and materials;
-`refine_score_register.py` regenerates only this assembly against the current
-editable console. Both `.blend` and GLB retain eight named `ScoreFlag_*` pivots.
-The runtime turns those pivots, keeping their faces and marks together, while
-static surrounds can still batch with the rest of the scene. Restoring a game
-seats its score immediately; subsequent changes release after 22 ms, turn through
-180 degrees in 170 ms and settle with 1.2 degrees of recoil over 64 ms. Concurrent
-pulses stagger by 22 ms. A quiet dry click marks the first stop contact when the
-rear sound switch is enabled. Reduced motion seats flags immediately and silently.
-Bistable flags retain the
-last commanded score without power and catch up when the supply returns.
-
-```sh
-blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_score_register.py
-```
-
-The pass is repeatable, leaves the rest of the console intact, and exports all
-40 room-code digits while restoring their editable visibility. The former lamp
-studies are superseded by this register.
-
-Review at `/preview?score=flags&preview=round_result&detail=score&view=oblique`.
-The development-only bench cycles each team's interceptions and errors through
-0, 1 and 2, and resets all four groups. Drag the machine to inspect the cavity
-and glass, add `motion=slow` to inspect the rotation, or remove `detail=score`
-to judge it at the full console scale.
-These controls do not write to a live game.
-
-## Keyword windows
-
-The four keyword windows are LED dot-matrix modules (120x70) behind a smoked
-contrast filter: the electronic counterpart of the original's red film windows,
-in a console that digitises the whole board game. Die colours follow the
-palette: the keyword glows in the player's team colour, index and legends in the
-palette's neutral, warnings in its warning colour. `paint.ts` draws one texel per
-lamp, a channel per die colour, and a stroke's antialiased coverage becomes that
-lamp's duty cycle. `dotMatrixShader` in `crtShader.ts` draws each lamp as a lens
-with a hotter die and binned brightness, and adds the light scattered inside the
-filter window as a faint halo around words; a tight halo around each stroke
-only blurred the type.
-
-How much of a lamp is drawn follows its size on screen (cells per pixel, from
-the derivatives), not the camera: lamps are full lenses above about five pixels
-and blend to an evenly lit cell of the same mean brightness by about two. Cells
-are read whole, with a one-pixel step between neighbours, so type stays crisp. The
-window's size, a quality level's pixel ratio and a tilted console therefore
-change how much detail is resolved and never beat against the grid. Drawing
-lenses at one to two pixels per lamp is what produced moire. Emission stays
-near the ink's own level: the material is not tone mapped, so overdriven lamps
-clip to white.
-
-The controller (`DotDriver` in `dotMatrix.ts`) proves every dot at start-up,
-clears, then clocks the columns in; a new word is clocked in the same way, and
-the panel dies with its supply in about 0.1 s, with no afterglow.
-
-Development comparison: `/?words=led` or `/?words=crt` (add `&detail=words`)
-opens a bottom bench that swaps in the earlier ruby-filtered tubes, cycles word
-sets that exercise every layout, and offers the close-up. A neon plasma module
-was tried on the same grid and dropped: it differed from the LED only in colour,
-which the palette now provides.
-
-The grid is a judgement: keywords stand 20 dots tall and legends 12. That is
-fine enough for every stroke of a
-five-character keyword on one line and coarse enough that single lamps show at the
-ordinary viewing distance (about three pixels each); at 240x140 and still at
-144x84 the module read as a screen, at 64x36 ideographs lost strokes. Both
-scripts use the outline face, medium for keywords and regular for legends, and
-the duty curve keeps strokes one or two lamps wide. Words that do not fit shrink
-to 15 dots, then
-split over two lines, and only then crawl as a marquee with every character
-kept. A canvas of another size needs
-fresh GPU storage, so `updateFrame` disposes the texture when its size changes.
-
-## Interchangeable instrument studies
-
-Development comparison: `/preview?preview=encrypting&instruments=signal`.
-The bottom review bench switches between `signal` (tunable receiver), `tuning`
-(center-zero discriminator), `status` (three-sided mechanical state drum), and
-`original` (the former VU). Add `&detail=meter` for the close-up, or use the
-bench's whole-machine / detail buttons. All alternatives share the same console,
-camera and lighting. The physical knobs accept clicks, drags, wheel and arrow keys.
-The optional motion demo is local and does not report real radio/network quality
-or change a game. Reduced motion disables automatic sweeps and drum cycling.
-
-The refined `signal` study combines the S-meter face with a larger tuning knob
-and smaller gain knob. Tuning has a continuous 0–40 range with end stops; three fixed local stations produce peaks with quiet gaps between them.
-Gain independently scales the received envelope. The needle has inertial settling
-and restrained signal flutter; reduced motion retains tuning without flutter.
-The miniature bat toggle between the knobs selects AUTO (up) / MAN (down).
-Its independent `SignalSweep` assembly has a pivot at z=.591, buried .044 units
-below a genuinely bored hex collar. The gasket is almost flush to the face;
-the shortened stem and ivory tip stay behind z=.780 through the entire throw,
-roughly halving the previous projection. The script validates all 65 sampled
-poses and the shaft clearance at both ends of the throw.
-AUTO animates only the needle with irregular VU-like peaks, short phrases and
-occasional quieter rests. Tuning and gain knobs remain at their manual settings,
-and the toggle stays in its selected position. Returning to MAN restores the
-manual frequency without moving its knob. Touching tuning selects MAN; gain
-remains adjustable in AUTO. Power off and reduced motion pause the random signal
-without advancing its clock. Signal attack is quicker than release.
-The signal study uses this physical control in place of the review bench's demo
-button. These controls do not use game progress,
-private clues, connection latency, microphone input, or a real radio source.
-
-`instrument-studies.blend` is an independent, editable source presenting the
-three assemblies side by side. `build_instrument_studies.py` generates that file
-and `web/public/models/instrument-studies.glb` without opening or changing the
-approved console source. Regenerate using:
-
-```sh
-blender -b --python assets/console/build_instrument_studies.py
-```
-
-The GLB exports all variants at one local mounting origin; the runtime places
-it at `(5.83, -1.4, 0)`. Needles, knob assemblies, and the complete triangular
-drum retain independent origins. Scale marks and legends are Blender geometry;
-the drum's three labels rotate with its faces. Its housing accommodates the
-entire swept volume between the mounting floor and front glass, validated by
-the build script. The production console embeds only the selected receiver;
-the studies and archived VU load only for the development comparison bench.
-Selecting a study updates the development URL, so a
-particular option and viewing distance can be shared or reloaded directly.
-
-## Editable model and base geometry
-
-The `.blend` is the current geometry source. On 2026-09-06 it was refined directly
-in Blender using the UI: four nickel guard mounts, two guard rails with separate
-rubber grips, and two printer roller bearing caps were added. The updated GLB was
-exported from that scene with cameras and lights disabled. Existing interactive
-part names and surface positions were preserved.
-
-Blender MCP was used to add seven dial indices and the named `FloppyTransport` and
-`ScopeTuning` assemblies. The fixed `Floppy mount` is outside the transport.
-These assembly names are required by the frontend animation engine.
-
-The command below regenerates the **base model only** and overwrites the current
-`.blend` and GLB, discarding these manual refinements. For subsequent edits, open
-`decrypto-console.blend`, save it, and export glTF Binary to
-`web/public/models/decrypto-console.glb` with cameras and lights disabled.
-
-The oscilloscope refinement is reproducible and safe to rerun against the current
-editable scene. It preserves the manual guard rails, archive and drive assemblies:
-
-```sh
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_scope.py
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_console.py
-blender -b assets/console/decrypto-console.blend --python assets/console/remodel_instrument.py
-blender -b assets/console/decrypto-console.blend --python assets/console/remodel_front.py
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_front_mechanics.py
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_tactile.py
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_score_roster.py
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_roster_manual.py
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_front_layout.py
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_panel_layout.py
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_nixie_recorder.py
-blender -b assets/console/decrypto-console.blend --python assets/console/refine_nixie_cover.py
-```
-
-Run `remodel_instrument.py` before `remodel_front.py`. The instrument pass replaces the slab
-surrounds with hollow profiled castings, deepens the folded sleeve, adds louvres,
-recessed ruby cartridges and a coax lead, and builds the reverse service panel.
-It preserves the hand-made guard rails, floppy transport, keys, and all live
-surface positions. The source keeps its bevel modifiers editable; export applies
-them and uses Draco mesh compression. The decoder ships locally with the web
-bundle—no external decoder/CDN dependency. With the front assemblies included,
-the current compressed GLB, including embedded PBR maps, is about 9.6 MB.
-
-`remodel_front.py` builds the roster carrier, eight inserts, score bank and
-printer frame. `refine_front_mechanics.py` establishes the first moving assemblies,
-then run `refine_tactile.py`, `refine_score_roster.py`, `refine_roster_manual.py`,
-then `refine_front_layout.py` and `refine_panel_layout.py`. These final passes change the front
-finishes, card retainers, manual key and component spacing, preserving the rear
-contacts, plugs and cable morphs. The layout passes remove all front screw
-assemblies while retaining rear fasteners. The drive occupies the bottom-left
-rail; the power bat toggle sits on the top side of the sleeve above the
-room code. Its nickel bat with a red resin tip rests tipped 16 degrees toward
-the I mark, pivoting below the collar rim of a threaded bushing that runs down
-into the casing. A ring hex nut clamps the bushing to a solid legend plinth
-half-sunk into the deck, the pivot ball nesting inside the bores. Disk animation
-uses the exported assembly's resting position, including after relocation.
-The base interaction pass uses
-`console_parts.py` and updates the editable scene, GLB and surface manifest together:
-
-- Warm black phenolic cassettes, ivory name inserts and restrained satin metal edges.
-- `ManualKey` has a solid matte graphite cap, an ivory FIELD GUIDE legend and
-  a charcoal spring-loaded skirt with a single low socket. It has no emission or decorative lamp dots. The 33 duplicate speaker
-  perforations beneath it are removed; the lower and rear grilles remain.
-  The front DECRYPTO wordmark is removed; the four-cell room code has a clearly labeled ivory copy key.
-- Eight independent `ScoreLamp_*` domed lenses with dark sockets and retaining collars.
-  Runtime materials follow real team scores; flat token textures are removed.
-  The inset plate around the lenses uses fine horizontal brushed nickel with
-  dark printed legends. `Score bezel` keeps its smooth satin black finish.
-  The five large body panels use uniform satin alloy without grain maps.
-- A continuous, subdivided `Paper back` under `PaperFeed`, anchored at the roller nip.
-  The resting leader is 0.36 units long. Each new pull extends to 0.98–7.06 units
-  based on the archived record count (0.38 extra per completed round, up to 16 rounds).
-  Its free edge curls and the roller turns with actual feed travel. Ink moves
-  down with the stock at a fixed physical letter size. At runtime the mesh is the
-  tearing simulation's particle grid, so the cut opens wherever fibers actually fail. Later rounds
-  hang in front of the signal gauge and launch key, with a three-degree forward feed
-  angle keeping the stock clear of the raised key; the longer paper prints every archived record
-  at the original letter size. Thirty-five
-  tear teeth and two guides register to the same centerline.
-- A warm SIGNAL scale, tapered `SignalNeedle`, counterweight, brass hub and
-  beveled glass. `SignalTuning`, `SignalGain` and the low `SignalSweep` AUTO/MAN
-  toggle are independent assemblies; the pointer is a local toy, unrelated to game progress.
-  The obsolete archive wheel and legacy monitor/sync toggles are removed. Only
-  the paper leader opens the archive; no extra knob is painted over the model.
-- `TransmitLever` keeps its compatibility name but is now a large red pushbutton
-  beneath the receiver panel, with linear travel, a black skirt and a satin
-  gunmetal collar. Its oxide-red resin cap has fine grain, subtle edge wear and
-  no clear coat. The fixed ACTION legend sits above a smaller
-  PRESS TO CONFIRM label; both move with the cap.
-- The amber clock uses seven individually drawn segments per digit, faint unlit
-  bars and a restrained glow. It displays MM:SS during a timed turn and dim
-  dashes while idle.
-- Four `BatteryCell_0` through `BatteryCell_3` groups have alternating raised
-  positive terminals and flat negative ends. Matching coil springs and copper
-  leaf contacts belong to the tray. Each complete cell can be removed and replaced.
-- Eight `RosterCard_A0`–`RosterCard_B3` assemblies each hold one paper card and its
-  exposed cut edge. A departing card first lifts .045 above its fixed low
-  retainers, moves .16 forward to clear the rack, then lifts away; an arriving
-  card aligns with the slot before lowering behind the retainers. The L-shaped
-  shelf and front lip never intersect the stock. Exported-model tests sample
-  the complete path against both the current and preceding row. Solid stock
-  writes depth throughout travel; only its fully withdrawn end fades using
-  alpha coverage. Printed ink retains normal antialiasing. Clips, channels and
-  wells stay on the rack. Each well floor
-  has a `rosterWell{team}{i}` print surface for stamped join instructions, covered
-  whenever a card is inserted.
-- `CablePlug_RJ45`, `CablePlug_Serial` and `CablePlug_DC` include contact structures,
-  molded boots and strain reliefs, independently of the fixed sockets. Each flexible
-  lead is a separate mesh anchored below the console, not parented to its plug; an
-  `unplugged` morph target bends the cable as the plug travels out.
-
-The tactile pass generates deterministic 512-pixel color, roughness and tangent-space
-normal textures for aluminum, nickel, phenolic, paper, enamel and rubber. PNGs are
-saved under `assets/console/textures/` and packed into both the editable source and
-GLB. Manufacturing UVs preserve grain direction and material scale. The browser
-batcher must preserve UV attributes. The script uses the macOS STHeiti font for
-modeled Chinese legends; those glyphs are exported as geometry.
-
-Construction references: [Sifam Presentor AL](https://www.sifam.com/meterCategory.asp?cat=Presentor+-+AL)
-for the acrylic front, buff dial and light box; [APEM panel indicators](https://www.apem.com/en-us/led-indicators/professional-grade-panel-mount-led-indicators)
-for retained diffused lenses; [Epson EU-T300](https://epson.com/For-Work/Printers/POS/EU-T300-Kiosk-Printer-Series/p/C41D383001)
-for the feed mechanism. These guide original geometry and materials, with no copied artwork.
-
-The rear has an actually perforated speaker grille, a hinged `BatteryDoor`, four
-separately modeled cells with coil contacts, a keyed RJ45 socket with eight pins,
-a serial connector, and a DC jack. `RearSoundSwitch` and `RearTestLamp` must remain
-independent animated/material-controlled parts. The battery cells do **not**
-belong to the moving door. The model is complete on both sides, not two images.
-
-From the repository root:
-
-```sh
-blender -b --python assets/console/build_console.py
-```
-
-This saves the editable `.blend`, `web/public/models/decrypto-console.glb`, and
-`web/public/models/console-surfaces.json`. The script defines the base geometry
-positions and the exported surface manifest. Meshes for the lever,
-number keys, floppy, paper roller and scroll wheel remain separately editable.
-The `.blend` contains the physical chassis; live lettering is supplied by Three.js.
-
-## Runtime
-
-- `web/src/components/console/engine.ts`: GLB loading, lighting, canvas textures,
-  mechanical animation and projection of accessible interaction targets.
-- `paint.ts`: console text/controls are drawn into Three.js textures, including
-  home, room setup, clues, guesses, waiting, results and instrument scales.
-- `ArchiveSheet.tsx` / `notebook.ts`: torn receipt rising into the center from its projected feed position, private notes,
-  keyboard focus, responsive layout and local persistence.
-- `Console.tsx`: store integration, Chinese IME/native input support, transparent
-  keyboard-accessible targets and WebGL failure fallback.
-- `model.ts`: action eligibility, archive visibility and development fixtures.
-- `rosterMotion.ts`: identity-aware insertion/retraction, retaining outgoing ink
-  until the card is hidden; rapid changes resolve to the latest occupant.
-- `quality.ts`: the graphics quality levels, the switches each one owns, Auto's
-  step-down rule and the saved choice. See "Graphics quality" below.
-
-Geometry and surface URLs share the revision in `ConsoleEngine.load()`; bump it
-when exporting a new model to prevent old geometry and new labels being mixed
-in a cached production page.
-
-The final `refine_panel_layout.py` pass moves the small CRT and its backing up,
-places MODE / TIME / PERSIST in a clear row below it, and reroutes the coax around
-the controls. Room-code and score instruments have separate margins; the recorder
-is centered on the VU column, and its paper animation reads the exported feed nip
-instead of a fixed coordinate. Fixed panel legends are English; Chinese gameplay
-screens, secret words, player data, and archive contents retain their language.
-Eleven bottom vents are Boolean cuts through the overlapping skins, with actual
-inner walls and a recessed plenum. Their editable cutters are hidden from renders
-and excluded from glTF. The export pass verifies 44 aperture rays plus the metal
-bridges between slots. Saved baseline transforms make this pass safe to repeat.
-
-Run the existing Go server and the frontend dev server (`cd web && npm run dev`).
-If the local pnpm wrapper attempts to reinstall dependencies, `npm run build` and
-`npm test` use the same installed tools without changing the lockfile.
-
-The public `/preview` route supports orbit, wheel zoom, and handle-driven turnover.
-The live `/` route locks the camera head-on. Both expose quality and language in
-Settings. Development-only visual fixtures (no WebSocket connection and no backend writes):
-
-- `/preview?preview=encrypting`
-- `/preview?preview=intercept`
-- `/preview?preview=decrypt`
-- `/preview?preview=waiting`
-- `/preview?preview=room`
-- `/preview?preview=room-empty` and `/preview?preview=room-partial` (empty seats and a long nickname)
-- `/preview?preview=roster-motion` (buttons for human/AI entry, removal and replacement)
-  Add `&motion=slow` to inspect the roster travel at one fifth speed. These
-  controls are development-only and never connect to the multiplayer server.
-- `/preview?preview=round_result`
-- `/preview?preview=game_over`
-
-Add `&quality=high|medium|low|auto` to pin a level for a still or a benchmark
-without touching the saved choice.
-
-## Graphics quality
-
-Quality is session UI beside the language selector, outside the console and its
-fixed legends: 自动 / 高 / 中 / 低 (Auto / High / Med / Low). The choice is kept in
-`localStorage`. Hovering a level lists exactly what it switches, generated from
-the same `qualityProfiles` table the engine applies, so the hint cannot drift
-from the behaviour. Every switch changes live; nothing reloads. The phone layout
-replaces the 3D stage, so the selector is hidden there and a stage without a
-size renders nothing at all.
-
-| Switch | High | Medium | Low | Alone saves (GPU / software raster) |
-| --- | --- | --- | --- | --- |
-| `pixelRatio` cap | 2 | 1.5 | 1 | 34% at 1.5, 51% at 1 |
-| `areaLights` (softbox and rim `RectAreaLight`) | on | off | off | 46% / 28% |
-| `shadows` (PCF, 1024 map) | on | on | off | 20% / 13%, plus each map refresh (189 calls, 492k triangles) |
-| `screenGlass` (physical glass on six CRTs) | on | on | off | 22% / 10% |
-| `nixieCover` (clearcoat acrylic, tube glass) | on | on | off | 15% / 8% |
-| `crtOptics` | full | full | lite | up to 15% / 12% |
-| `ambientFps` while someone is at the console | 60 | 30 | 30 | halves the steady load |
-| `backdropBlur` behind the archive sheet | on | on | off | not measured |
-
-Savings were measured one switch at a time on the late-game console at 2880x1800
-(Apple M4 Max, 5.9 ms per synchronised frame) and, for ratios only, on a software
-rasteriser at 1440x900. They overlap, so they do not add up. Whole levels on the
-same machine: high 5.2 ms, medium 2.6 ms, low 1.8 ms. Environment reflections
-stay on at every level: removing them costs the metals their look and saved
-nothing further once the other low switches were off. MSAA also stays, because
-it is fixed when the context is created. The 645k triangles are not the bottleneck.
-
-- With the area lights off, the key, fill and sky rise by 1.26 to the same mean
-  exposure; the visible change is a slightly firmer cast shadow.
-- `lite` optics print the picture on the faceplate: no ray through the glass, no
-  halation taps and no colour fringing; raster rows, roll, flicker and grain stay.
-  `bounds()` passes the same choice to `crtDisplayUv`, because the DOM inputs
-  must invert whichever optical path the shader draws.
-- Only ambient frames are paced: frames in which nothing but the raster, the
-  beam and the needle moved. Anything the player changes renders at once, and
-  the scope runs its beam for all the time since the phosphor was last shown.
-  Quality never shortens or removes an interaction animation, and it is
-  independent of `prefers-reduced-motion`.
-- Ambient motion also slows when nobody is at the console, at every level
-  (`ambientRate`): after 10 s without a pointer, key or wheel event it runs at
-  no more than 30 fps, and in a background window at no more than 20 fps, the
-  scope's step (`maxStep`). The next input restores the level's own rate.
-- Between frames the loop sleeps. A tick that drew nothing and has nothing
-  moving sets a timer for just before the next ambient frame or lamp timeout
-  instead of asking for every display refresh; input and every public engine
-  call wake it at once. Powered off, it wakes only for changes.
-
-Idle cost, measured on 2026-09-23 with the late-game console in a 5K-display
-window (5120x2600 canvas, high, M4 Max; GPU time per process from the
-accelerator's `accumulatedGPUTime`, CPU energy from `proc_pid_rusage`):
-
-| State | Before | After |
+| 文件 | 大小 | 何时加载 |
 | --- | --- | --- |
-| Using the console | 60 fps, GPU busy 39%, CPU 0.86 W | unchanged |
-| Idle 10 s | 60 fps, GPU busy 36%, CPU 0.77 W | 30 fps, 17%, 0.26 W |
-| Background window | 60 fps, GPU busy 35%, CPU 0.79 W | 20 fps, 12%, 0.16 W |
-| Powered off | 175 wakeups/s, main thread 2.1% | 58 wakeups/s, 0.1% |
+| `decrypto-console.glb` | 约 9.9 MB | 正式页面，整机模型 |
+| `console-surfaces.json` | 约 8 KB | 正式页面，画面和点击区域的位置表 |
+| `instrument-studies.glb` | 约 1.3 MB | 只在开发环境的仪表对比台加载 |
+| `instrument-vu.glb` | 约 1.5 MB | 只在开发环境的仪表对比台加载，是被替换下来的 VU 表 |
 
-Every frame at this size costs about 2.3 ms of GPU even when it draws a single
-pixel (clearing, resolving and compositing the multisampled 5K buffer), so a
-frame not drawn saves far more than a partial redraw would: scissoring ambient
-frames to the animated screens saved only about a fifth.
+## 坐标和单位
 
-The phase clock is painted on its own (`paintClock`), so a countdown second
-repaints one 520x218 texture instead of all 61 surfaces. Whole repaints hash
-their canvases through one mipmapped atlas and a single readback instead of one
-readback per canvas (6 ms instead of 26 ms). A countdown second fell from 31 ms
-(up to 48 ms) of main thread to 8 ms.
-- Auto measures instead of guessing from hardware names. After the first frames
-  it renders back to back for a quarter second, reading one pixel back per frame
-  so the GPU's share counts; the burst is needed because an idle GPU clocks down
-  and would otherwise report stretched frames. A level is kept when a frame fits
-  13 ms. Auto only steps down (straight to low when even medium could not fit),
-  remembers the result for the next visit, and measures afresh from high when
-  Auto is chosen again.
+脚本使用机器坐标：x 向右，y 向上，z 朝向玩家，单位是任意的「机器单位」。Blender 里对应 `(x, -z, y)`，glTF 导出器再把它转回 Three.js 的坐标。机器正面在 z ≈ 0.55，背面朝 −z。
 
-## Controls
+## 两种改法
 
-The top-side power toggle flips with a click, Enter or Space. `PowerSwitch`
-swings the pivot ball, nickel bat and red tip together through a 32-degree
-throw; its hex nut, threaded bushing, legend plate and generous click region
-stay fixed. Turning it off lets the CRTs and word windows die as tubes (see the
-theme paragraph below), blanks the electronic readouts, extinguishes the lamps
-and parks the VU needle. Front entry and submission stop until it is switched back on. Connection,
-room membership and prepared clues/guesses remain intact; a running game continues
-to count down. Reduced motion switches positions immediately.
+### 在 Blender 里手工修改
 
-The bat pivots at the bushing mouth, its stem working inside the open bore
-above a dark base, with the collar ring clearing the swing in both positions.
-`refine_panel_layout.py` runs
-`validate_power_clearance.py` before saving/exporting: 65 poses check the evaluated
-meshes against the chassis, bushing and legend plate for intersections,
-contained vertices and a minimum sampled gap of .045 console units.
-`preview_switch.py` renders a close-up of the switch (optionally in its OFF
-pose) for visual review.
+1. 打开 `decrypto-console.blend`，修改，保存。
+2. 导出 glTF Binary 到 `web/public/models/decrypto-console.glb`。导出设置与脚本一致：
+   - 应用修改器（倒角等修改器在源文件里保持可编辑）；
+   - 只导出可渲染对象，布尔切割体因此不进入 GLB；
+   - 开启 Draco 压缩（压缩级别 6，位置量化 16 位，法线量化 12 位）；
+   - 不导出相机和灯光；
+   - 导出自定义属性（extras）。
+3. 导出前把 40 个 `Nixie_Digit_*` 全部设为可见、可渲染，导出后再恢复。源文件平时只点亮演示房间码 5821。
+4. 位置变了的画面或点击区域，要同步修改 `console-surfaces.json`。
+5. 按[导出之后](#导出之后)检查。
 
-The front roster uses separately modeled ivory name inserts with human/AI lettering, seat numbers,
-owner/self marks, and phase-aware public progress. The inserts are physical cards:
-a joining player's card slides into its channel, a departing one lifts out, and an
-empty seat reveals join instructions stamped into the well floor. Joining takes
-540 ms and leaving takes 420 ms. Replacement withdraws the old named card before
-inserting the new one, even when both players have the same nickname. Updating
-the same person's status does not replay insertion. Reduced motion settles
-immediately. The rack is a passive display, with no click target or central-screen
-roster view. The printed paper leader is the handle for the public archive. Per-player
-connectivity is not inferred, and ambiguous nickname progress is not attributed.
+### 运行可重复的工序
 
-Settings offers Classic, Amber, Violet and Rose palettes, remembered locally. Each
-palette has one color for the player's team and another for the opponent, shared
-by the active CRT, phase lamps, roster and compact mobile view. The fixed scoreboard
-flags show the same ink tally and vermilion cross in every palette; its A/B
-letters use the plate's neutral ink, independent of team and theme, and print
-directly on the metal with no colored background blocks.
-Bulbs and diffuser strips share the same runtime
-material so the exported amber lens cannot obscure the new color.
-
-Team plaques are colored enamel on the modeled plate, with transparent silk-screen
-lettering rather than an opaque color rectangle covering the geometry. Runtime
-PBR pigment, normal and roughness maps provide a soft orange-peel ripple (about
-ten texels, not texel noise, which read as sandpaper) under a satin clearcoat;
-the beveled return receives the same team color. The score plate uses
-directional nickel brushing; its legends are printed at twice the layout
-resolution and keep only a trace of the relief, so the grain never stripes the
-letters. Rolled lip highlights and print pinholes stay deterministic across
-updates and theme changes.
-`finishes.ts` creates these small maps once per console; they do not require extra
-GLB downloads. DEV `?detail=roster` and `?detail=score` expose the two close-ups.
-
-The six picture tubes (main display, four ruby word windows, vector monitor) switch
-on and off as tubes, not as pictures being scaled. `CrtTube` in `crtMotion.ts` is a
-small electrical simulation in fixed 2 ms substeps: supply rail, cathode heat
-(Richardson emission), anode voltage held by the tube's own capacitance, vertical
-and horizontal deflection, focus, the screen-grid reservoir, beam limiter, sync
-lock and degauss thermistor. No timeline is authored; `crtTuning` holds the
-constants. What follows from them:
-
-- Off: the video amplifier dies first, so the unblanked gun floods a raster that
-  is already collapsing. Vertical deflection goes within about 130 ms, the line
-  shortens to a spot by about 380 ms, and the spot fades through decades until
-  about 900 ms as the grid reservoir drains. The same light in less area is
-  brighter (`crtDensity` integrates to one for every extent), phosphor
-  saturates toward white, and the faceplate scatters a bloom and halo around it.
-  The last full picture stays where it stood as decaying afterglow; it is never
-  squeezed along with the raster. Edges of a raster in flight are blurred over
-  one 24 ms exposure, so nothing reads as a hard-edged card.
-- Cold start: deflection and anode are up long before the cathode emits, so
-  nothing unfolds. The picture fades in from about 250 ms, soft and up to 3%
-  over-sized, shimmering under the degauss field, and is usable after about 1 s.
-- Warm restart: a cathode that is still hot brings the picture back in about
-  0.4 s, with the vertical hold slipping once before it locks.
-
-A theme change is such an off/on cycle of the main tube. `CrtMotion` keeps the
-outgoing texture until the old picture is past recognising (about 350 ms),
-exchanges it in the dark and applies only the latest requested palette. A blank
-power-off frame waits until the last afterglow has gone. Normal game updates do
-not reboot the display. Projected input controls hide until the raster is
-steady, keeping DOM text off a moving picture. Word windows and the vector
-monitor are smaller, quicker tubes with seeded tolerances: they come up and die
-at slightly different moments, each with its own roll. New content on a lit word
-window (new words, conceal/reveal) costs it its vertical hold for about 150 ms.
-The fragment stage lives in `crtShader.ts`; a resting tube takes the old
-single-sample path, so steady frames cost what they did before.
-Reduced motion applies the final state immediately. The two roster team plaques
-still lift out and reseat using `RosterMotion`; the scoreboard stays fixed.
-`&motion=slow` slows both effects for inspection. Colors are applied to runtime
-materials and canvas textures; no alternative GLB models are loaded.
-
-Click clue lines to type with the system IME. In guessing phases, choose an answer
-slot and use the 1–4 physical keys or the keyboard; Backspace removes a digit.
-The large red transmit button is the single confirmation action. Ctrl/Cmd+Enter is
-its keyboard shortcut. Complete guesses must contain three distinct numbers.
-
-Click a red word window to conceal/reveal the team's words. Click or pull the short paper
-leader down to extend it to 2.7–19.6 times its resting length over 420 ms as records accumulate. The centered
-DOM reader slides up from below the viewport at its full reading size, starting at
-the same time and using the same duration, including in slow-motion inspection.
-The entire paper has its natural content height and scrolls through the viewport,
-including the header and footer; there is no separately scrolling body. A stationary
-clipped track keeps scroll extents constant during entry, with balanced scrollbar
-gutters and a persistent compositor layer for the moving paper. It moves
-down and fades from the current reading position on dismissal. The physical sheet
-remains extended and attached while reading.
-Escape, the close button, or a backdrop click dismisses the reader and starts the
-800 ms tear/disposal and reader exit at the same time. The physical tear is a
-position-based sheet simulation (`tearing.ts`): the mesh is its particle grid,
-two columns per tear tooth and rows crowding toward the tooth line. Paper
-stiffness comes from three-point bending stencils at one, two and four grid
-spacings, which resist even gentle curvature so the stock stays flat and
-card-like, and three in-plane sweeps per substep keep it inextensible. The
-sheet is plastic rather than elastic: past a small yield deflection a stencil's
-rest bend follows the current bend (paper takes a set), a stencil folded past
-three tenths of its span becomes a limp permanent crease, and heavy air damping
-removes any springy after-motion. Every tooth holds the stock with a fiber
-whose strength varies in small bundles. A kinematic hand pinches a rounded pad
-on the right side a short way below the teeth, first swings it on an arc just
-inside its material distance so the stock bends over the teeth without slack,
-then drags it down, left and outward. Nothing scripts the cut: fibers part only
-where the in-plane pull across the teeth (shear along the tooth line, plus a
-quarter of the tension along the stock; pressure from bending over the teeth
-never counts) exceeds their strength above the standing load of the hanging
-stock, so the crack starts under the pinch at about 125 ms, hesitates at
-strong bundles, and accelerates leftward as the shrinking ligament carries more
-load, finishing between roughly 190 and 225 ms for every sheet length (a guard
-parts any survivors at 270 ms). Long-range attachments to each column's fiber
-and, once detached, to the pinch bound the stretch; the fold over the teeth
-and the diagonal tension crease are the sheet's own response, and the settled
-sheet swings from the hand after the last fiber parts. The simulation is
-deterministic, runs at 480 substeps per second (about 5 ms per frame), and
-completes immediately under reduced motion.
-The stub above the tear line (`Receipt clamped head`) is built at runtime from
-`receiptHeadPath` against the exported `Paper roller` and `Printer opening`:
-paper leaves the opening behind the platen, comes over the top of the roller
-and down its front, then drops behind the tear bar to the teeth, so the sheet
-visibly comes out of the roller. (A nip under the roller would be hidden behind
-the tear bar from the console's viewpoint.) The stub shares the sheet's print
-texture and shows the roll beyond the sheet's top: the paper canvas is taller
-than the longest sheet by `paperHeadReserve`, and the start of the next sheet
-(the same leader that emerges after tearing) is copied above the current
-header, so print scrolls continuously off the roller during feeding and refill.
-The detached sheet moves
-1.2 units toward the viewer at its existing length; both faces stay opaque for
-the first fifth of that travel, then fade together;
-a fresh opaque edge emerges from the nip and feeds to the short resting length over
-520 ms. The roller follows the stock without rewinding at detachment. Reopening during
-disposal waits for that fresh leader. Each pull captures the latest completed-round
-count; incoming records never resize the sheet being read or torn. Closing during
-entry tears the partially fed sheet at its current length without jumping to full extension.
-Focus returns to the paper after dismissal or cancellation. The raised
-manual key toggles the action manual and visibly depresses while selected.
-
-Click the exposed floppy to push it in; the drive/eject key depresses the eject
-button before releasing the disk. LEVEL, FREQ and PERSIST are continuous analog
-controls. Click the scope display to choose vector, sine, dual-trace, square,
-triangle, pulse, sweep or noise. These local controls send no game messages.
-Reduced motion disables spatial transitions while retaining state changes.
-
-The bottom-right **翻到背面** control rotates the entire console around its body
-center, with a small lift to clear the table. **回到操作面** or Escape returns;
-clues/guesses are preserved and an open battery lid closes automatically. Hidden
-face controls are removed from keyboard/pointer routing, including submit
-shortcuts. Game state continues to update while inspecting the back, with a
-persistent round/turn reminder. Reduced motion switches faces/door immediately.
-
-Rear interactions change the local terminal, while the room socket stays alive:
-
-- Click the battery compartment to open/close its hinged lid. With the lid open,
-  click any cell to remove it, then click it below the compartment to reinstall it.
-- Click each rear plug to unplug/reinsert it. The anchored cable lead bends with
-  the travel instead of translating rigidly. DC takes priority over four complete
-  cells; without either supply, the terminal goes dark while its physical switch
-  stays in place. Restoring supply respects that switch. Read-head progress and
-  powered paper feed pause; spring ejection and hand tearing remain mechanical.
-- RJ45 isolates terminal presentation and all game submissions, including progress
-  messages and keyboard shortcuts. The actual socket still receives room state.
-  Reconnection presents the current round without submitting expired drafts or
-  replaying missed sound cues. Old private codes are revoked even while offline.
-- AUX supplies the SIGNAL receiver's telemetry in both AUTO and MAN. Disconnecting
-  it releases the needle while retaining the dials. The oscilloscope keeps its
-  independent INPUT–CAL OUT calibration circuit and only needs power.
-- MUSIC and SFX have independent switches; both default on and wait for a user
-  gesture before audio starts. Their preferences survive loss of terminal power.
-- LAMP TEST temporarily proves rear, NETWORK and LOCK lamps without changing
-  connection state or score flags. It requires power.
-- A persistent service status and conditional recovery controls work on desktop,
-  mobile and the text fallback. Supply and plug positions reset for a new room
-  and are not saved across reloads. See `docs/console-rear-linkage-design.md`.
-
-At runtime, static opaque meshes are batched by material; each moving assembly
-is also batched internally without changing its pivot. Meshes with morph targets
-(the three cable leads) always stay independent so the bend animation survives. Shadows update when
-mechanical parts move, including the independent VU needle. The earlier untextured
-4.32 MB model measured about 60 fps and 154 draw calls; that measurement does not
-describe the present textured model. DEV canvas data attributes expose current
-frame rate, draw calls, triangles, and face for checks.
-
-## Current limits
-
-This is the first playable modeled version, with simplified geometry/materials.
-Portrait phones retain a readable console width and allow horizontal panning.
-They do not yet have a separate compact machine layout.
-Countdowns are approximate because the server sends phase changes but no deadline.
-The unchanged server does not restore seats after disconnect: the terminal returns
-to the connection screen and explains the loss of the previous seat.
-The server sends completed history with the following round, so the final round's
-full answer is not currently available in the archive. Never synthesize it from a
-player's private state.
-
-
-## Nixie and receipt refinement (2026-09-13)
-
-`refine_nixie_recorder.py` precedes the cover pass, preserving the existing panel layout and
-using saved baseline transforms for repeatable changes. It exports all digit
-variants, then saves the editable Blender scene with only the demo code 5821 lit.
-The room-code readout has four original IN-14-inspired glass envelopes, rounded
-shoulders and exhaust tips, twelve pins per tube, ceramic sockets, mica discs,
-support rods, a fine modeled anode mesh and ten individually spaced wire cathodes.
-Forty `Nixie_Digit_{slot}_{digit}` meshes retain digit/slot and curved-path metadata.
-The browser selects one per tube from the actual room code; a matching soft
-corona surrounds the emitting geometry: a tight neon sheath, a wide bloom and a
-haze that fills the envelope, plus a dim orange pool thrown onto the recess behind
-each lit tube. Every tube breathes a few percent on its own; reduced motion holds
-them still. Power off extinguishes all cathodes and pools.
-The source was informed by the [CC0 BlendSwap reference](https://blendswap.com/blend/10631);
-its download was unavailable, so no third-party geometry was imported.
-
-The three CRT surfaces (main display, ruby word windows, and oscilloscope) combine
-visible scanlines, emission halation, edge falloff, and a subtle moving refresh
-band. Shallow elliptic paraboloids provide continuous convex curvature through
-the corners: center rise is 0.18 / 0.035 / 0.04 units respectively, within the
-existing recessed hoods. The old product of edge-pinned arcs produced pinched
-corners and balloon-like rolled shoulders; the faceplate normals now stay within
-nine degrees of forward. The glass extends beneath the retaining lip so its cut
-edge does not leave a second outline above the gasket; raster dimensions remain
-unchanged. The main face uses a 128-column mesh and a finely sampled outline.
-Restrained barrel distortion keeps frontal raster displacement
-below 2% per axis across the visible content area. Scanlines integrate over the
-projected pixel footprint to avoid distant moire; the previous baked raster was
-removed to avoid stacking two grids. Halation samples bright text and traces,
-preserving dark glass and extinguishing with power; the ruby windows glow from
-one soft mip tap around their glyphs. The CRT textures fill their
-full bounds so barrel distortion cannot expose transparent corner holes.
-The exported ruby slabs serve as matte dark seats beneath the curved glass,
-preventing a second flat specular surface from leaving straight white strips.
-The glass envelope and emitting coating have distinct optical surfaces. For each
-fragment the shader refracts the camera ray through the actual front-face normal
-(IOR 1.52), then intersects a recessed curved phosphor surface. Its depth is
-0.04 / 0.012 / 0.013 units and its rise is 0.168 / 0.03 / 0.034 units for the main
-display, word windows and scope. Text, rules, scanlines and halation share this
-view-dependent mapping and slight barrel distortion. The thin, softly masked
-inner border keeps the picture seated within the glass. Optical tests cover
-convexity, rim slope, bounded distortion, parallax and inverse input alignment.
-Glass reflections use the scene's
-actual lights and environment with restrained physical specular; raster highlights,
-painted softboxes, and the previous synthetic reflection shader have been removed.
-The SIGNAL meter's crystal uses the same lights, but was exported as ordinary
-alpha (7% opacity), which faded its reflections with it. At run time it becomes
-a slightly convex pane whose mirrored light is added over the pale dial: trading
-background for reflection, as the dark tubes do, cancels out on ivory.
-Projected input bounds numerically invert the same refraction and raster mapping
-using the current camera, keeping input controls aligned during inspection.
-DEV close-ups: `/preview?preview=encrypting&detail=screen` (also `words` and `scope`);
-append `&view=oblique` or `&view=opposite` to compare the two viewing directions.
-Reduced motion freezes the band. Scope history uses source-over
-compositing and is displayed at a bounded 32% opacity beneath a fresh sharp trace.
-The 45–1440 ms decay retains history during continuous tuning; changing waveform,
-power or standby state clears stale history.
-
-The printed leader and enlarged receipt both use `archiveRows`, including the
-preview fixtures. Public answers are never derived from private current-round
-state. The receipt exposes historical results directly and keeps team filtering,
-scrolling, annotations and per-player local notes. The shortened top toggle is
-64% of its former exposed height; the complete throw still passes 65-pose
-geometry clearance validation (minimum sampled gap 0.0536).
-
-DEV inspection URLs: `/preview?preview=encrypting&detail=nixie` and
-`/preview?preview=encrypting&detail=recorder`. `&motion=slow` also slows paper mechanics
-for inspecting the 420 ms feed/reader entrance and the 800 ms tear/disposal/reader dismissal.
-`/preview?preview=late-game` shows round 16 with 15 completed public records, varied clues,
-and one interception/error per team. Pull the paper to inspect a nearly full-length
-receipt and the scrolling DOM archive; `&detail=recorder` gives a close-up.
-`&paper-frame=0.5` runs the real feed and tear mechanics to that point and holds
-the frame; add `&paper-phase=feed` to inspect feeding instead, or
-`&paper-phase=refill` to inspect the emerging new tip.
-The reader starts when feeding begins, and shares its duration with the physical paper.
-Its exit also shares the physical tear duration. Reduced motion
-settles each transition immediately.
-
-
-`refine_nixie_cover.py` is the final model pass. It moves the complete Nixie
-assemblies 0.64 units into a pocket cut through the column, enamel and chassis.
-Their frontmost point is z=0.483, behind the console face at z=0.55. Tapered
-sidewalls descend to a dark floor at z=-0.16. The tube bank is centered over the
-score instrument, with the copy key in a separate ROOM CODE header row. Tubes
-are 85% of their original height; the score assembly scales uniformly to 84%,
-preserving circular lenses and leaving a 0.218-unit gap beneath the tube frame.
-
-A single fitted acrylic cover has 0.024-unit walls, a 0.036-unit face, polished
-rounded edges and a dark gasket. The enamel return uses the console column's
-own material and sits flush to its face. The acrylic front is z=0.604, with
-0.085 units between its inner face and the tubes. A continuous horizontal carrier
-has four machined bores, socket retaining collars and tongues into both sidewalls.
-The script checks that every socket intersects its carrier seat, as well as full
-tube bounds, score separation and twelve rays through the machined recess.
-Runtime transparency is ordered from cathode corona through each tube to the
-cover. Global studio softboxes create view-dependent reflections; the
-acrylic shader preserves physical specular light separately from its low-opacity
-substrate, keeping the tube glass and digits visible underneath. Corona placement
-and height follow the exported channel surface.
-
-The entire console now shares a 28-degree perspective camera. Its distance
-adapts to the viewport while keeping a consistent inspection direction. Detail
-URLs crop this same camera frustum without repositioning or flattening it.
-The global lighting balances a warm upper-left key, cool fill and two broad
-studio sources against restrained environment light. Filtered (PCF) shadow maps
-soften the machine's cast shadow and the contacts between its hardware. Copy-key
-travel is relative to its exported mounting depth, including after model changes.
-
-## Visual polish — 2026-09-23
-
-`refine_visual_polish.py` runs after `refine_handles.py` and is repeatable:
+每个工序脚本打开当前的 `.blend`，只重建自己负责的部件，然后保存 `.blend`、导出 GLB，需要时更新 `console-surfaces.json`。在仓库根目录运行，例如：
 
 ```sh
 blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_visual_polish.py
 ```
 
-- **Warm neutrals.** Every neutral finish shares the ivory front's warm undertone.
-  Blacks, graphite, charcoal inks, nickel, satin alloy, the shell powder coat and the
-  rear enamel keep their lightness but sit at an OKLCH hue of about 68-82 degrees
-  with grey-level chroma (the packed nickel and aluminium maps were authored green,
-  around 116-135 degrees, which made every "black" and "silver" part read olive).
-  Colour maps are rescaled by the change of base colour, so their grain is kept.
-  Lamps, glass, displays, paper, brass, the red parts and the theme team colours
-  are untouched. The number keys are warm graphite; the score flags show an ink
-  tally and a vermilion cross; the receiver's study materials join the same family.
-- **Quieter phenolic.** Texel-scale noise in the mottled phenolic maps read as
-  granite on the recorder caps; it is reduced, and the slow mottling stays.
-- **Rear grille.** Each square cell is sampled at 16 angles so its corners are
-  included; 12 samples at 30 degrees missed them and left a diamond hole at every
-  junction (also fixed at the source in `remodel_instrument.py`).
-- **Handles** (`refine_handles.py`) are formed from straight runs and constant
-  radius bends in single planes, instead of Auto Bezier handles through a bow-out
-  point (an S wobble and a kink where the bend met the grip).
-- **Margins.** The keyword row sits .06 higher to clear the CRT hood; the filter
-  numbers under each window are removed because the LED module prints its own.
-  The phase panel takes the clock's width, centred between the keypad and the deck
-  edge, with its print relaid to the modeled dividers. The roster frame is drawn
-  in toward its cassettes. The bottom rail and the vector monitor panel grow so the
-  drive and the legend row have margins. FREQ sits under its own dial, the WAVE
-  glyphs hug the WAVE dial, LOCK heads its lamp, INPUT and CAL OUT label their jacks,
-  and the scope knurls are moulded phenolic. COPY sits inside its header band and
-  ROOM CODE aligns with the tube bay. Rear legends move clear of the cable leads.
-- **Page chrome.** The framing keeps 44 px below the machine for the flip hint;
-  the disk hint shows for a few seconds and on hover or focus, flipping above the
-  drive when there is no room below; the terminal status is a one-row strip above
-  the machine instead of a box over the chassis corner.
+工序用三种办法保证可以重复运行：先删除带自己前缀的对象再重建；把部件的原始位置存进自定义属性，每次都从原始位置算起；改过形状的网格打上标记，下次跳过。
 
-## Main CRT guidance — 2026-09-23
+> **`build_console.py` 会重建基础模型并覆盖 `.blend`、GLB 和位置表，之后的手工修改和所有工序成果都会丢失。** 日常修改不要运行它。
 
-The main display behaves as a terminal, so its page never changes without saying why:
+## 脚本一览
 
-- **Briefing.** Every beat of a round opens with a briefing page (`briefingKey`,
-  `paintBriefing`): 3.8 s at the round start, 2.6 s at the intercept and decode
-  handovers. Like the phase panel it shows three stations (01 ENCODE › 02 INTERCEPT
-  › 03 DECODE) with who is at each (the encryptor, the intercepting team, the
-  decoders) and which one is live, then one line on what this seat does now. The
-  first two transmissions show interception as skipped. Any key, a click on the
-  glass or ACTION goes to the working page at once; a digit still reaches the keypad.
-  The phone layout has no briefing and its ACTION always transmits. Working pages
-  keep the context in their header ("ROUND 05 · Team A sending · Encryptor Alice").
-- **Live slots.** A seat that is not acting sees the actor's three slots
-  (`transmission`, `paintWatch`) from `player_progress` and the AI status: the one
-  being worked on blinks, filled ones are marked. Clue text never travels before it
-  is sent; encryption progress carries only which lines hold text (`filled` in the
-  protocol, so drafts written out of order read correctly). A rival's picks stay
-  hidden from the team that still has to decode, and only the round's encryptor,
-  with the disk read, sees them graded (HIT/MISS, RIGHT/WRONG). A teammate on the
-  same keypad shows in the footer ("Carol picked 3 · 1 · —"). The phone layout lists
-  the same slots.
-- **Paged guide.** Four pages, one idea each: the keywords, the clues, interception,
-  decoding and how a game ends. Dots show the page; PREV/NEXT, the dots, the arrow
-  keys and the keypad (1–4 and ←) turn it. It opens on the page for the current beat.
+下表按运行顺序排列。从基础模型重建时按 0 到 21 依次运行；平时只重跑要改的那一个工序，然后再运行一次 `refine_visual_polish.py`。
 
-The page itself is painted once; the tube animates it (`crtAttribute` in `crtShader.ts`):
+最后补跑 `refine_visual_polish.py` 有两个原因：
 
-- Blink attribute: up to four cells per page blink at a character generator's
-  ~1.6 Hz, lit three fifths of the cycle, or breathe at 0.55 Hz for a quiet link.
-  A blinking cell falls to the page background with the page's own falloff, never
-  to black. Frames come from the ambient pace, so a blinking page costs nothing more.
-- Page write: a new page is cleared and written out from the top in 20 rows over
-  450 ms, each row left to right. Only then does the loop render at the display rate.
-- A briefing is a new signal: the sync is disturbed once (`CrtTube.disturb(.5)`), and
-  the picture tears and jitters for about 150 ms before it locks, as the word windows
-  do for new words.
-- None of this happens on dark or unsteady glass (power-up, palette change) or with
-  reduced motion; the cursor then stays lit and pages appear at once.
+- 多数工序会按自己的原始配色重建材质和贴图，暖中性色要由它重新套上；
+- 早期工序写于辉光管加入之前，导出时不处理 40 个数字的可见性，需要由后期工序重新导出。
 
-DEV: `?brief=hold` pins a briefing and `?brief=off` skips it. The watching screens
-have preview scenarios: `waiting` (a teammate) and `listening` (a rival) during
-encryption, `watch-intercept` and `watch-decrypt` (the encryptor).
+### 基础和早期工序
 
-## Rear audio slides — 2026-09-22
+| 顺序 | 脚本 | 负责的部件 | 可重复 | 自检 |
+| --- | --- | --- | --- | --- |
+| 0 | `build_console.py` | 基础机身、基础位置表 | 会覆盖全部成果 | 无 |
+| 1 | `refine_scope.py` | 示波器细节（`ScopeDetail_` 对象） | 是 | 缺少 `ScopeTuning` 时拒绝导出 |
+| 2 | `refine_console.py` | 面板上的通用仪器细节（`ConsoleDetail_` 对象） | 是 | 无 |
+| 3 | `remodel_instrument.py` | 机身结构：空心铸件边框、折弯外壳、百叶窗、同轴线、背面检修面板和背面字样 | 是 | 无 |
+| 4 | `remodel_front.py` | 正面各组件：名牌架、八张名牌、计分区、打印机框架 | 是 | 无 |
+| 5 | `refine_front_mechanics.py` | 第一批活动部件：按键帽、纸带、发报键等 | 是 | 无 |
+| 6 | `refine_tactile.py` | 材质贴图、可拆卸硬件：电池、插头、线缆、触点 | 是 | 无 |
+| 7 | `refine_score_roster.py` | 正面饰面、计分板拉丝镍、顶部装卡的名牌架 | 是 | 无 |
+| 8 | `refine_roster_manual.py` | 名牌固定卡扣、实心的手册键 | 是 | 名牌行程由前端测试核对 |
+| 9 | `refine_front_layout.py` | 正面布局：软驱移到底部导轨、发报键的哑光红树脂 | 是 | 无 |
+| 10 | `refine_panel_layout.py` | 英文面板字样、顶部电源拨杆、小 CRT 和旋钮排布、底部通风槽 | 是 | 运行 `validate_power_clearance.py`；检查拨杆朝上；44 条射线检查通风槽通透，并检查槽间金属 |
 
-`refine_rear_audio.py` replaces the old master slide with independent MUSIC and SFX
-controls below the speaker. `RearMusicSwitch` and `RearSoundSwitch` retain animated
-assemblies, `centerX` extras and .44 units of travel. Their brushed nickel rims,
-rubber seats, mottled phenolic caps and five grip ribs use the existing packed PBR
-textures. Both rest at ON; runtime moves each cap to its own state. Surfaces live
-in `console-surfaces.json`. Run the pass against the current editable model:
+### 后期工序
 
-```bash
-blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python assets/console/refine_rear_audio.py
-```
+| 顺序 | 脚本 | 负责的部件 | 可重复 | 自检 |
+| --- | --- | --- | --- | --- |
+| 11 | `refine_nixie_recorder.py` | 四支辉光管（40 个数字阴极）、纸带进纸口对位、缩短的电源拨杆 | 是 | 无 |
+| 12 | `refine_nixie_cover.py` | 辉光管下沉的凹槽、整块亚克力罩 | 是 | 管体不超出机面；管座穿过托架；与计分区的间距；12 条射线检查凹槽 |
+| 13 | `build_instrument_studies.py` | 三种仪表方案，输出 `instrument-studies.blend` 和 `instrument-studies.glb`，不改整机 | 是 | 转鼓、拨杆的扫掠空间不碰底板、玻璃和孔壁 |
+| 14 | `install_receiver.py` | 把选定的 SIGNAL 接收机装进整机；旧 VU 表另存为 `instrument-vu.glb` | 是 | 接收机部件归属；40 个数字 |
+| 15 | `refine_scope_drive.py` | 示波器旁的同轴跳线、手动软驱机构 | 是 | 40 个数字随导出保留 |
+| 16 | `refine_scope_controls.py` | 示波器四个旋钮的排布和刻字（FREQ、WAVE、TIME/DIV、X-Y）、LOCK 灯 | 是 | 刻字朝向操作者；每条字样唯一 |
+| 17 | `refine_score_lamps.py` | 计分灯方案（已被计分翻牌取代，见下） | 是 | 40 个数字 |
+| 18 | `refine_score_register.py` | 四个双窗计分翻牌、八个 `ScoreFlag_*` 转轴 | 是 | 翻牌转动空间不碰背板和玻璃；40 个数字 |
+| 19 | `refine_rear_audio.py` | 背面 MUSIC、SFX 两个滑钮 | 是 | 40 个数字 |
+| 20 | `refine_handles.py` | 两侧把手，每侧一根弯管，螺丝固定在背板 | 是 | 40 个数字 |
+| 21 | `refine_visual_polish.py` | 暖中性色、背面格栅、各处边距和字样位置 | 是 | 贴图生成结果与已打包贴图一致；40 个数字 |
+
+`refine_score_register.py` 运行时会删除所有 `ScoreLamp_*` 对象，已发布的模型里没有计分灯。`refine_score_lamps.py` 和 `scoreLamps.json` 只作为被取代的方案保留。
+
+`install_receiver.py` 依赖 `instrument-studies.blend`。接收机的几何有改动时，先运行 `build_instrument_studies.py`。
+
+### 辅助脚本
+
+| 脚本 | 用途 |
+| --- | --- |
+| `validate_power_clearance.py` | 电源拨杆在 32 度行程内取 65 个姿态，检查与机壳、衬套、字牌不相交，最小间隙不低于 0.045。由 `refine_panel_layout.py` 在保存前调用 |
+| `preview_switch.py` | 渲染电源拨杆特写，供目视检查。`-- /tmp/switch.png off` 渲染关机姿态 |
+
+`refine_scope_controls.py` 支持试导出：`-- --dry /tmp/out.glb` 只写出一份 GLB，不保存场景，不改位置表和已发布的模型。
+
+## 与运行时的约定
+
+前端按名称查找部件（`web/src/console/engine.ts`、`instruments.ts`）。名称里的空格可以写成下划线。改模型时这些名称、层级和原点要保持不变。
+
+### 必须存在的组件
+
+缺少下列任一组件，页面载入时报错：
+
+`FloppyTransport`、`ScopeTuning`、`ScopeWave`、`ScopeRate`、`ScopePersistence`、`BatteryDoor`、`PowerSwitch`、`Instrument_signal`、`RearTestLamp`。
+
+### 活动部件
+
+| 名称 | 运行时的用法 |
+| --- | --- |
+| `FloppyTransport`、`Floppy disk`、`FloppyEject` | 软盘沿 `travel_axis` 进出；弹出键独立下压。固定的软驱外壳不属于 `FloppyTransport` |
+| `ScopeTuning`、`ScopeWave`、`ScopeRate`、`ScopePersistence` | 示波器四个旋钮，绕自身原点转动 |
+| `PowerSwitch` | 电源拨杆，行程取自 `throw_degrees` |
+| `TransmitLever` | 红色发报键，直线下压。名称是为兼容保留的 |
+| `Key_0` … `Key_4` | 数字键 1–4 和退格键 |
+| `ManualKey`、`ChannelCopy` | 手册键、房间码复制键 |
+| `RosterCard_A0` … `RosterCard_B3` | 八张名牌，行程取自 `travel` |
+| `ScoreFlag_{A,B}_{intercept,failure}_{0,1}` | 八个计分翻牌的转轴 |
+| `Nixie_Digit_{管位}_{数字}` | 40 个数字阴极，每支管同时只显示一个 |
+| `Instrument_signal` 下的 `SignalNeedle`、`SignalTuning`、`SignalGain`、`SignalSweep` | 接收机的指针、两个旋钮、AUTO/MAN 拨杆 |
+| `SignalGlass` | 表盖，运行时换成微凸的玻璃 |
+| `PaperFeed`、`Paper back`、`Paper roller`、`Printer opening` | 纸带、辊轴和出纸口。`Paper back` 必须是 `PaperFeed` 的子对象 |
+| `BatteryDoor`、`BatteryCell_0` … `BatteryCell_3` | 电池仓盖和四节电池。电池不属于仓盖 |
+| `CablePlug_RJ45`、`CablePlug_Serial`、`CablePlug_DC` | 三个背面插头 |
+| `Tactile_RJ45 flexible lead`、`Tactile_Serial flexible lead`、`Tactile_DC flexible lead` | 三根线缆，见下文的变形目标 |
+| `RearMusicSwitch`、`RearSoundSwitch` | 背面两个滑钮，位置取自 `centerX` |
+| `RearTestLamp`、`Connection lens`、`Instrument_RJ45 lamp 0`、`Instrument_RJ45 lamp 1` | 指示灯，运行时各自克隆材质 |
+| `Front_roster team plaque A`、`Front_roster team plaque B`、`Front_score enamel bed` | 队牌和计分板，运行时换饰面 |
+| `NixieCover_*`、`Nixie_* glass`、`ScoreRegister_glass *`、`Ruby lens 0` … `Ruby lens 3` | 透明罩和词窗底座，运行时调整材质 |
+
+`ReceiverNeedle`、`MeterAmplitude`、`MeterRate` 是旧 VU 表的部件，只在 `instrument-vu.glb` 里。仪表方案的组名是 `Instrument_signal`、`Instrument_tuning`、`Instrument_status`，三者共用一个安装原点，运行时放在 `(5.83, -1.4, 0)`。
+
+### 自定义属性
+
+导出时带上这些属性，运行时读取：
+
+| 对象 | 属性 | 含义 |
+| --- | --- | --- |
+| `FloppyTransport` | `travel_axis` | 软盘行进方向，当前为 `[0, 0, 1]` |
+| `PowerSwitch` | `throw_degrees` | 拨杆行程，当前为 32 |
+| `RosterCard_*` | `travel` | 名牌抽出行程，当前为 0.58 |
+| `RearMusicSwitch`、`RearSoundSwitch` | `centerX` | 滑钮行程的中心，两端各偏 0.22 |
+| `Nixie_Digit_*` | `slot`、`digit`、`cathode_path` | 管位、数字，以及画辉光用的阴极路径 |
+
+### 线缆的变形目标
+
+三根线缆各有一个名为 `unplugged` 的变形目标（morph target）。线缆是固定在机器下方的独立网格，不是插头的子对象；插头拔出时运行时调节变形量，线缆随之弯曲。带变形目标的网格在运行时不参与合并。
+
+### 位置表
+
+`console-surfaces.json` 列出 60 个平面，运行时在这些位置贴上画面或放置点击区域。每项有 `x`、`y`、`z`、`w`、`h`，可选 `rotationX`、`rotationY`（背面的平面转 180 度）、`lit`（受场景灯光照明的印刷面；不带 `lit` 的是自发光的显示面）和 `digitScale`。
+
+把手和背面两处点击区域不在位置表里：把手的位置写在 `web/src/console/view.ts`，坐标要与 `refine_handles.py` 一致；电池仓和灯光自检的位置写在 `engine.ts`。
+
+### 合并与 UV
+
+运行时把静止的不透明网格按材质合并，活动组件内部各自合并，原点不变。合并时只保留 `position`、`normal`、`uv`、`color` 四种顶点属性，所以：
+
+- 贴图依赖的 UV 要在导出时保留，脚本生成的 UV 按材料纹理方向和真实尺寸排布；
+- 计分翻牌支架脚下的接触阴影是顶点色，不是阴影贴图；
+- 新加的活动部件如果不在 `batchStaticGeometry` 的名单里，会被并入静态网格，无法再单独移动。
+
+### 导出之后
+
+1. 修改 `ConsoleEngine.load()` 里的 `revision` 字符串。模型和位置表的地址共用这个版本号，浏览器和缓存服务器才不会把旧几何和新字样混在一起。
+2. 在 `web/` 下运行 `pnpm test`。读取已导出模型的测试在 `scripts/notebook.test.mjs`、`score-flags.test.mjs`、`disk-motion.test.mjs`、`instruments.test.mjs`，它们核对纸带对位、名牌行程、电池和插头结构、八个翻牌转轴、40 个数字、软盘姿态和接收机部件。
+3. 用[开发预览](../../docs/console/preview.md)的特写地址目视检查改动的部位。
+
+## 材质和贴图
+
+- **贴图是生成的。** `refine_tactile.py` 生成拉丝铝、拉丝镍、酚醛、棉纸、搪瓷、橡胶六组贴图，`refine_front_layout.py` 生成发报键的红树脂，每组三张 512 px 的颜色、法线、粗糙度贴图。它们存在 `textures/`，并打包进 `.blend` 和 GLB，不依赖 Blender 专有的程序化着色器。
+- **`textures/` 里有两组贴图没有进入已发布的模型**：`Score fine brushed nickel`（计分板的拉丝由运行时的 `finishes.ts` 生成）和 `Score pressed glass`（属于被取代的计分灯方案）。
+- **中性色共用暖底色。** 所有黑、石墨、炭灰、镍、合金、机壳粉末涂层和背面搪瓷保持各自的明度，色相统一在 OKLCH 约 68–82 度，彩度很低。打包的镍和铝贴图原本偏绿（约 116–135 度），`refine_visual_polish.py` 按基色的变化重新着色，纹理保留。灯、玻璃、显示器件、纸、黄铜、红色部件和主题队伍色不受影响。
+- **固定字样是英文几何体。** 机身上的字样（NETWORK、ACTION、ROOM CODE、旋钮和接口标记等）不随游戏状态和界面语言变化，建模为几何体随模型导出。会变的文字由 Three.js 画在贴图上，见[显示器件](../../docs/console/displays.md)。
+- **建模用的中文字体**是 macOS 自带的 `STHeiti Medium.ttc`（`refine_tactile.py`），字形导出为几何体，运行时不需要这个字体。
+
+## 背面字样
+
+`remodel_instrument.py` 在背面检修面板写上 `E N C R Y P T O`。当前的 `.blend` 和已发布的 GLB 里仍有旧字样节点 `Instrument_rear wordmark`，运行时载入后把它移除。下次从 `.blend` 导出之前先运行 `remodel_instrument.py`，把字样换掉。
+
+## 参考资料
+
+以下资料用来确定构造和比例，几何和材质都是自己建的，没有复制任何美术资源。
+
+- [Sifam Presentor AL](https://www.sifam.com/meterCategory.asp?cat=Presentor+-+AL)：表头的亚克力前盖、米色表盘和灯箱。
+- [APEM 面板指示灯](https://www.apem.com/en-us/led-indicators/professional-grade-panel-mount-led-indicators)：带固定环的漫射灯罩。
+- [Epson EU-T300](https://epson.com/For-Work/Printers/POS/EU-T300-Kiosk-Printer-Series/p/C41D383001)：打印机的进纸机构。
+- [Tektronix 示波器系统与控制](https://www.tek.com/fr/documents/primer/oscilloscope-systems-and-controls)：示波器旋钮的分组和命名。
+- [BlendSwap 辉光管模型（CC0）](https://blendswap.com/blend/10631)：辉光管的构造参考。下载不可用，没有导入任何第三方几何。

@@ -1,143 +1,74 @@
-# Decrypto - 谍报风云
+# Encrypto
 
-一个基于 Web 的 [Decrypto（谍报风云）](https://boardgamegeek.com/boardgame/225694/decrypto) 桌游实现，支持实时多人对战和 AI 玩家。
+[English](README.en.md)
 
-游戏规则可参考 [B站桌游怪讲解视频](https://www.bilibili.com/video/BV1Pt411K7ro/)。
+一台开在浏览器里的密码通信机。两支队伍隔着它传暗号：让队友听懂，让对手听不懂。
 
-![首页](docs/screenshot_home.png)
+![Encrypto 的界面：一台密码通信机](docs/media/console.jpg)
 
-## 功能特性
+## 这是什么
 
-- **实时多人对战** — 基于 WebSocket，创建房间后分享房间码即可开始
-- **AI 玩家** — 支持 Claude、OpenAI 及兼容接口（DeepSeek、Ollama 等）作为 AI 队友/对手
-- **3D 冷战通信机** — 可操作的实体按钮、显示器、密语词窗和纸带记录
-- **角色视角分离** — 加密者、队友、对手各自看到不同的界面和信息
-- **断线重连** — WebSocket 自动重连并恢复游戏状态
-- **重启不丢局** — 房间与对局保存在 SQLite 文件中，服务重启后玩家自动回到原座位继续
+Encrypto 是一个多人在线的猜词游戏，玩法取材于桌游《Decrypto（谍报风云）》。
 
-## 快速开始
+每队有四个只有自己看得见的密词。每个回合，一位队员拿到一组三位密码，为密码指向的三个词各写一条线索；队友要从线索里猜出密码，对手则对照历次线索，试着把它截下来。截获对手两次获胜，译错自己人两次落败。
 
-### 环境要求
+整个界面是一台建模出来的机器。屏幕、词窗、名牌、计分翻牌、打印纸带和软盘各管一件事，按键可以按，旋钮可以拧，机器还能翻到背面去拔线。
 
-- Go 1.25+
-- Node.js 18+（pnpm）
+![一局游戏：加密、解码、拦截、查看记录](docs/media/gameplay.gif)
 
-### 构建与运行
+<sub>[更清晰的视频（52 秒）](docs/media/gameplay.mp4)</sub>
+
+## 有什么
+
+- **和朋友联机。** 建一个房间，把四位房间码发出去，4 到 8 人分成两队。
+- **人不够，AI 来凑。** 任何座位都可以交给 AI 队员，它会写线索，也会猜密码。
+- **掉线不丢局。** 刷新页面、断网、服务器重启之后，你会回到原来的座位和原来的回合。
+- **中文和英文**，四套配色，手机上有紧凑的界面，键盘和读屏软件都能操作。
+
+| | | |
+| --- | --- | --- |
+| ![查看公开记录](docs/media/play-archive.jpg) | ![机器的背面](docs/media/play-rear.jpg) | ![局部](docs/media/console-details.jpg) |
+| 拉出纸带，查看已公开的线索 | 背面：供电、接线和声音 | 词窗、辉光管、翻牌、示波器 |
+
+想知道具体怎么玩，见[玩法](docs/gameplay.md)。
+
+## 在自己的电脑上运行
+
+需要 Go、Node.js 和 pnpm。
 
 ```bash
-# 克隆仓库
 git clone https://github.com/ZinkLu/decrypto-the-game.git
 cd decrypto-the-game
 
-# 构建前端
 cd web && pnpm install && pnpm build && cd ..
-
-# 构建后端
 go build -o server ./cmd/server
-
-# 运行（words.txt 必须在工作目录下）
 ./server
 ```
 
-服务启动后访问 http://localhost:8080 即可开始游戏。
+打开 <http://localhost:8080>。版本要求、AI 队员的配置和其他选项见[构建与运行](docs/getting-started.md)；放到服务器上见[部署](docs/deployment.md)。
 
-房间与对局保存在工作目录下的 `data/decrypto.db`（可用 `DECRYPTO_DB_PATH` 指定别处），服务重启后未关闭的房间会回来。其中也记录了谁开过、进过哪些房间。
+## 文档
 
-需要通过自己的服务器提供在线试玩时，参见[试玩环境部署说明](docs/demo-deployment.md)。服务须部署为单实例。
+| | |
+| --- | --- |
+| [玩法](docs/gameplay.md) | 规则，一个回合怎么进行，机器上每个部件做什么 |
+| [构建与运行](docs/getting-started.md) | 构建、配置、开发与测试 |
+| [部署](docs/deployment.md) | 用 Docker 部署，房间数据的保存 |
+| [Console 设计总览](docs/console/README.md) | 为什么是一台机器，设计原则，部件一览 |
+| [Console 代码组织](docs/console/code.md) | 前端代码怎么组织，怎样往里加东西 |
+| [后端架构](docs/architecture.md) | 服务端的分层、回合状态机和持久化 |
+| [WebSocket 协议](docs/protocol.md) | 页面与服务端之间的全部消息 |
 
-桌面游戏页 `/` 固定正面视角，按窗口大小自动取景。向内拖动任一侧把手可翻到背面，点击背面的把手连接处即可返回；键盘可聚焦把手后按 Enter 操作。
+完整的目录在 [docs/](docs/README.md)。
 
-`/preview` 是独立的机身预览页：拖动空白处或机身可旋转，滚轮缩放，把手翻面与游戏页相同。旋钮上的滚轮仍用于调节旋钮。画质和语言位于右上角“设置”，演示轮次、仪表试装等调试参数仅在开发环境可用，例如 `/preview?preview=late-game`。
+## 关于原版
 
-### AI 玩家配置
+这是玩家出于兴趣制作的非官方、非商业项目，玩法取材于桌游《Decrypto（谍报风云）》。原作由 Thomas Dagenais-Lespérance 设计、Le Scorpion Masqué 发行。网页代码与主要视觉交互由本项目重新设计，`words.txt` 词库由项目作者自行整理；本项目与原作设计者及发行商无关联，未获其认可或赞助，也不代表官方线上版本。
 
-AI 玩家功能需要设置 LLM API Key，支持以下两种方式（二选一）：
+想了解或支持原作，请访问[原版官方网站](https://www.scorpionmasque.com/en/decrypto)或[官方购买页面](https://shop.scorpionmasque.com/products/decrypto)。本项目不收费，也没有商业运营计划。
 
-```bash
-# 方式一：使用 Claude
-export ANTHROPIC_API_KEY=sk-ant-...
-./server
-
-# 方式二：使用 OpenAI 兼容接口（OpenAI / DeepSeek / Ollama 等）
-export OPENAI_API_KEY=sk-...
-export OPENAI_BASE_URL=https://api.openai.com/v1  # 可选，默认 OpenAI
-export OPENAI_MODEL=gpt-4o                         # 可选，默认 gpt-4o
-export OPENAI_REASONING_EFFORT=low                 # 可选，推理模型的思考强度（low/medium/high）
-export OPENAI_MAX_TOKENS=1024                      # 可选，单次回答（含思考）的 token 上限，默认 2048
-export OPENAI_EXTRA_BODY='{"chat_template_kwargs":{"enable_thinking":false}}'  # 可选，并入每次请求的额外参数
-./server
-```
-
-每一步 AI 请求限时 30 秒。推理模型思考过长会超时并改用备用答案，可用上面两项缩短思考。
-
-未设置 API Key 时，AI 玩家会使用固定的占位回复。
-
-## 游戏流程
-
-### 1. 创建/加入房间
-
-![房间大厅](docs/screenshot_room.png)
-
-创建房间后获得 4 位房间码，分享给其他玩家加入。房主可以为任意队伍添加 AI 玩家。每队至少 2 人才能开始游戏。
-
-### 2. 游戏进行
-
-每局游戏最多 16 轮（每队各 8 轮作为加密方），每轮流程：
-
-1. **加密阶段** — 加密者收到 3 个密码序号（对应本队 4 个词中的 3 个），需要给出 3 条线索
-2. **拦截阶段**（第 3 轮起）— 对方队伍根据线索猜测密码序列
-3. **解密阶段** — 本队队友根据线索猜测密码序列
-
-### 3. 胜负条件
-
-- 成功拦截对方 **2 次** 即获胜
-- 对方解密失败 **2 次** 也算己方获胜
-
-## 技术架构
-
-```
-cmd/server/          # 入口
-internal/
-  core/              # 核心游戏逻辑（状态机、回合管理）
-    word_providers/  # 词库抽象（基于 words.txt）
-  ws/                # WebSocket 基础设施（Hub、Client、消息类型）
-  room/              # 房间管理（创建、加入、队伍、AI 槽位）
-  game/              # 桥接层（WebSocket <-> 游戏状态机）
-  server/            # 消息分发（路由 WebSocket 消息到房间/游戏处理器），重启后恢复房间
-  store/             # 存储接口（房间与对局状态、开房与进房记录）
-    sqlite/          # SQLite 实现
-  ai/                # AI 玩家（LLM Provider 抽象 + Claude/OpenAI 实现）
-web/                 # React 前端
-  src/
-    components/console/ # 3D 通信机、移动端界面与本地交互模型
-    store/           # Zustand 状态管理
-    services/        # WebSocket 客户端
-```
-
-### 状态机
-
-游戏回合按以下状态推进：
-
-```
-NEW → INIT → ENCRYPTING → INTERCEPT → DECRYPT → DONE
-```
-
-通过 Handler 注册模式（Observer Pattern）驱动，`AutoForward()` 自动推进状态并在每个阶段调用注册的回调。重启后恢复的对局由 `Resume()` 从被打断的阶段继续。
-
-### 前端技术栈
-
-React 19 + TypeScript + Three.js + Tailwind CSS 4 + Zustand
-
-## 测试
-
-```bash
-# 在项目根目录运行；core 测试需要词库的绝对路径
-DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
-
-# 前端测试与生产构建
-cd web && pnpm test && pnpm build
-```
+仓库地址沿用历史名称 `decrypto-the-game`。
 
 ## License
 
-MIT
+项目作者有权授权的代码和内容采用 [MIT License](LICENSE)。“非商业”描述本项目目前的分享方式，不改变 MIT 对这些内容的授权范围。MIT 不授予对《Decrypto》名称、原版商标、美术或其他第三方内容的权利。第三方[音效与音乐](web/public/audio/CREDITS.md)及[字体](web/public/fonts/README.md)分别按其来源许可使用。
