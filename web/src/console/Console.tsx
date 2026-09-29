@@ -337,19 +337,22 @@ export default function Console() {
         let cancelled = false;
         let instance: ConsoleEngine | undefined;
         try {
-            instance = new ConsoleEngine(stage.current!, project, setFailure, () => {
-                if (!cancelled && current.current.u.archiveOpen) {
-                    setArchiveVisible(true);
-                    setAnnouncement(t("正在拉出纸带并展开密报记录；关闭后撕下小票"));
-                }
-            }, inspection, instrumentPreview, cue => {
-                if (consoleHardware(current.current.u).powered && (inspection || !matchMedia('(max-width: 850px)').matches)) playSound(cue, false);
-            }, moving => {
-                void audio.current?.setPaperFeed(moving && consoleHardware(current.current.u).powered &&
-                    (inspection || !matchMedia('(max-width: 850px)').matches));
-            }, event => {
+            instance = new ConsoleEngine(stage.current!, { project, fail: setFailure, inspection, instrumentPreview,
+                onPaperPull: () => {
+                    if (!cancelled && current.current.u.archiveOpen) {
+                        setArchiveVisible(true);
+                        setAnnouncement(t("正在拉出纸带并展开密报记录；关闭后撕下小票"));
+                    }
+                },
+                playSound: cue => {
+                    if (consoleHardware(current.current.u).powered && (inspection || !matchMedia('(max-width: 850px)').matches)) playSound(cue, false);
+                },
+                setPaperFeed: moving => {
+                    void audio.current?.setPaperFeed(moving && consoleHardware(current.current.u).powered &&
+                        (inspection || !matchMedia('(max-width: 850px)').matches));
+                },
                 // A tube still discharges after mains-off; the effects switch still gates it.
-                if (inspection || !matchMedia('(max-width: 850px)').matches) void audio.current?.crt(event);
+                playCrt: event => { if (inspection || !matchMedia('(max-width: 850px)').matches) void audio.current?.crt(event); },
             });
             instance.setQuality(qualityProfiles[current.current.level]);
             engine.current = instance;

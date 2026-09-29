@@ -14,6 +14,7 @@ export class ConsoleInstruments {
     private aux = true;
     private demoStart = 0;
     private drum = 0;
+    private meter = -.82;
     private receiverActivity: ReceiverActivity;
 
     constructor(public object: THREE.Group, original?: THREE.Object3D, random: () => number = Math.random) {
@@ -98,7 +99,7 @@ export class ConsoleInstruments {
      * `needle` that swings by itself is ambient motion, paced by the quality level.
      */
     tick(now: number, dt: number, reduced: boolean): 'control' | 'needle' | false {
-        if (this.variant === 'original') return false;
+        if (this.variant === 'original') return this.tickOriginal(now, dt, reduced);
         const t = (now - this.demoStart) / 1000;
         const animate = this.powered && !reduced;
         let control = false, needle = false;
@@ -138,5 +139,23 @@ export class ConsoleInstruments {
             rotate('StatusSpeed', 'z', .85 - this.rate * .425);
         }
         return control ? 'control' : needle && 'needle';
+    }
+
+    /** The first VU meter, kept on the development bench for comparison. */
+    private tickOriginal(now: number, dt: number, reduced: boolean) {
+        const before = this.meter;
+        // A local analog toy. Its motion has no connection to game progress.
+        const level = .12 + this.amplitude * .19;
+        const speed = .5 * 2 ** (this.rate * .62);
+        const wave = Math.sin(now / 1000 * speed * 3.2) * .70 + Math.sin(now / 1000 * speed * 7.7) * .30;
+        const target = this.powered ? reduced ? 0 : wave * level : -.82;
+        this.meter = reduced ? target : THREE.MathUtils.damp(this.meter, target, 12, dt);
+        const needle = this.parts.get('ReceiverNeedle');
+        if (needle) needle.rotation.z = -this.meter;
+        for (const [name, value] of [['MeterAmplitude', this.amplitude], ['MeterRate', this.rate]] as const) {
+            const knob = this.parts.get(name);
+            if (knob) knob.rotation.z = -.85 + value * .425;
+        }
+        return Math.abs(before - this.meter) > .0001 && 'needle' as const;
     }
 }
