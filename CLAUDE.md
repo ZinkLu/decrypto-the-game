@@ -49,9 +49,9 @@ pnpm is the only package manager for `web/`.
 - **`internal/store/`** — What the server needs from storage: the `Rooms` interface and its data types (room and game states, who opened and entered each room). No implementation, no dependencies
 - **`internal/store/sqlite/`** — The SQLite implementation of `store.Rooms` (pure Go driver, builds with `CGO_ENABLED=0`)
 - **`internal/ai/`** — AI players (LLM Provider abstraction + Claude/OpenAI implementations)
-- **`web/src/console/`** — The Console: the whole interface. React holds state and accessibility (`Console.tsx`), Three.js draws the machine (`engine.ts`), 2D canvases painted by `paint.ts` become its screens and print, and transparent DOM controls are projected over the 3D parts
+- **`web/src/console/`** — The Console: the whole interface. React holds state and accessibility (`Console.tsx`, with `Controls.tsx`, `Settings.tsx`, `Transcript.tsx`), Three.js draws the machine (`engine.ts` owns the renderer and the frame loop; every moving assembly is a module in `parts/`), 2D canvases painted by `paint()` (`paint.ts`, `paintScreen.ts`, `paintFaces.ts`) become its screens and print, and transparent DOM controls are projected over the 3D parts
 - **`web/src/store/gameStore.ts`**, **`web/src/services/websocket.ts`** — Game state from the server (Zustand) and the WebSocket connection
-- **`web/scripts/*.test.mjs`** — Frontend tests; they transpile the TypeScript modules and run in Node, so logic under test lives in modules without Three.js or DOM imports
+- **`web/scripts/*.test.mjs`** — Frontend tests; they transpile the TypeScript modules and run in Node (`scripts/load.mjs` links a module with its siblings), so logic under test lives in modules without Three.js or DOM imports
 - **`assets/console/`**, **`assets/audio/`** — Blender source and passes for the model, build scripts for sounds and music
 
 ### Key Architectural Patterns
@@ -70,7 +70,7 @@ RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, t
 
 **Persistence:** Each layer has a plain snapshot type with JSON tags and a restore function that refuses impossible states: `core.SessionSnapshot`, `room.State`, `game.Snapshot`. The bridge saves at every point where it changes what players see, while holding its lock. After a restart `Session.Resume()` re-enters the interrupted phase with a fresh deadline; a guess already scored is not asked for again. A restored game stays paused until the first human resumes. `server.Handler` knows storage only as `store.Rooms`; `cmd/server/main.go` chooses the implementation. Storing is best effort: a store that fails is logged and the game goes on. Raise `room.StateVersion` or `game.SnapshotVersion` when a stored state can no longer be read as written: a game of another version returns its room to the lobby.
 
-**Console:** `paint()` is memoized by `paintKey`; a state change that alters neither `displayState` nor `paintKey` leaves a stale screen. Analog input (knobs) must not repaint. After exporting a new GLB, bump `revision` in `ConsoleEngine.load()`. Strings are written in Chinese and translated through `translate()`; every new string needs its English entry in `i18n.ts`.
+**Console:** `paint()` is memoized by `paintKey`; a state change that alters neither `displayState` nor `paintKey` leaves a stale screen. Analog input (knobs) must not repaint. After exporting a new GLB, bump `revision` in `ConsoleEngine.load()`. A part fetches what it moves with `chassis.moving(name)`, which keeps it out of the static batch, and returns an `Effect` from `tick()` so that a still machine draws nothing. Whether a control works in the machine's state (power, face, link) is decided by `reachable()` in `actions.ts`, not inside `act()`. Strings are written in Chinese and translated through `translate()`; every new string needs its English entry in `i18n.ts`.
 
 ## Documentation
 

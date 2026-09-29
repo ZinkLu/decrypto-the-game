@@ -156,8 +156,11 @@ LAMP TEST 只检查灯。按下后 1.8 秒内，背面的测试灯、RJ45 两个
 | --- | --- |
 | `web/src/console/model.ts` | `consoleHardware()`、`hardwareMessage()`、`hardwareRecovery()`、`terminalView()`、`syncDiskPower()`、接收机的模拟电台与 AUTO 活动 |
 | `web/src/console/Console.tsx` | 接口、电池、开关和自检的动作分发（`act()`、`changeHardware()`），状态条与旧草稿 |
-| `web/src/console/engine.ts` | 插头与线缆形变、电池取放、仓盖、指示灯、滑动开关 |
+| `web/src/console/parts/rearPanel.ts` | 插头与线缆形变、电池取放、仓盖、滑动开关 |
+| `web/src/console/parts/lamps.ts` | 指示灯、灯光自检 |
 | `web/src/console/instruments.ts` | SIGNAL 指针对供电和 AUX 的响应 |
-| `web/src/console/paint.ts` | 背面控件的目标与说明、脱机页、电池标记 |
+| `web/src/console/paintFaces.ts` | 背面控件的目标与说明（`paintRear`） |
+| `web/src/console/paintScreen.ts` | 脱机页、电池标记 |
+| `web/src/console/actions.ts` | 断电、背对、脱机时哪些控件还起作用 |
 | `web/scripts/rear-linkage.test.mjs` | 全部供电组合、逐项恢复、脱机时的保留与撤销、读盘暂停、AUX、断电时的走纸与撕纸 |
 | `web/scripts/hardware.test.mjs` | 正反面控件互斥、断电和脱机时的控件范围、脱机页与重连后的还原、声音开关 |

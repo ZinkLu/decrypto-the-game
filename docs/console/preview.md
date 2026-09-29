@@ -7,7 +7,7 @@
 
 两者都不建立 WebSocket 连接，也不向后端写任何数据。在预览里按 ACTION 只会在本机标记为已提交。
 
-路由和参数的解析在 `web/src/console/view.ts`（`consoleRoute`）、`Console.tsx` 的开头和 `engine.ts`；夹具的内容在 `model.ts` 的 `previewState()`。
+路由的解析在 `web/src/console/view.ts`（`consoleRoute`），各个参数集中在 `options.ts`；试装台的界面在 `Workbench.tsx`。`view`、`detail`、`motion` 和 `paper-frame` 由引擎的部件自己读取（`parts/viewpoint.ts`、`engine.ts`、`parts/printer.ts`）。夹具的内容在 `model.ts` 的 `previewState()`。
 
 ## `/preview` 页面
 

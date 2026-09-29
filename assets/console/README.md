@@ -112,7 +112,7 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 
 ## 与运行时的约定
 
-前端按名称查找部件（`web/src/console/engine.ts`、`instruments.ts`）。名称里的空格可以写成下划线。改模型时这些名称、层级和原点要保持不变。
+前端按名称查找部件（`web/src/console/parts/` 下的各个模块、`instruments.ts`）。名称里的空格可以写成下划线。改模型时这些名称、层级和原点要保持不变。
 
 ### 必须存在的组件
 
@@ -166,7 +166,7 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 
 `console-surfaces.json` 列出 60 个平面，运行时在这些位置贴上画面或放置点击区域。每项有 `x`、`y`、`z`、`w`、`h`，可选 `rotationX`、`rotationY`（背面的平面转 180 度）、`lit`（受场景灯光照明的印刷面；不带 `lit` 的是自发光的显示面）和 `digitScale`。
 
-把手和背面两处点击区域不在位置表里：把手的位置写在 `web/src/console/view.ts`，坐标要与 `refine_handles.py` 一致；电池仓和灯光自检的位置写在 `engine.ts`。
+把手和背面两处点击区域不在位置表里：把手的位置写在 `web/src/console/view.ts`，坐标要与 `refine_handles.py` 一致；电池仓和灯光自检的位置写在 `engine.ts` 的 `load()` 里。
 
 ### 合并与 UV
 
@@ -174,7 +174,7 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 
 - 贴图依赖的 UV 要在导出时保留，脚本生成的 UV 按材料纹理方向和真实尺寸排布；
 - 计分翻牌支架脚下的接触阴影是顶点色，不是阴影贴图；
-- 新加的活动部件如果不在 `batchStaticGeometry` 的名单里，会被并入静态网格，无法再单独移动。
+- 活动部件要由 `web/src/console/parts/` 里的某个模块用 `chassis.moving(名字)` 取用，否则会被并入静态网格，无法再单独移动。`web/scripts/parts.test.mjs` 检查代码里写的名字都在模型里。
 
 ### 导出之后
 

@@ -6,9 +6,9 @@
 
 页面分四层，各管一件事：
 
-- **React 管状态和无障碍。** `Console.tsx` 持有全部状态，渲染设置面板、纸带阅读器和屏幕阅读器用的文字记录。
-- **Three.js 画机器。** `engine.ts` 载入 Blender 导出的模型，负责灯光、材质和所有机械动作。
-- **2D canvas 画内容。** 屏幕上的字、名牌、纸带、按键上的印刷都由 `paint.ts` 画在 canvas 上，再作为贴图贴到机器对应的表面。
+- **React 管状态和无障碍。** `Console.tsx` 持有全部状态，决定每个控件做什么；设置面板、透明控件、文字记录各是一个组件。
+- **Three.js 画机器。** `engine.ts` 载入 Blender 导出的模型，拥有渲染器和帧循环；每个会动的部件在 `parts/` 下有自己的模块。
+- **2D canvas 画内容。** 屏幕上的字、名牌、纸带、按键上的印刷都由 `paint()` 画在 canvas 上，再作为贴图贴到机器对应的表面。
 - **透明的 DOM 控件盖在 3D 零件上。** 每个可操作的零件都有一个真实的 `<button>`、`<input>` 或 `<a>`，位置由引擎每帧从 3D 投影到屏幕。键盘焦点、读屏软件和中文输入法因此都走浏览器原生路径。
 
 窗口宽度不超过 850 px 时，游戏页隐藏 3D 舞台，改用 `MobileConsole.tsx` 的紧凑界面。两者共用同一份状态、同一套校验和同一个 `act()`。WebGL 无法启动或模型载入失败时，DOM 控件和文字记录直接显示出来，游戏仍可进行。
@@ -26,6 +26,7 @@ web/
     App.tsx               懒加载 Console，加载期间显示启动画面
     index.css             全部样式
     console/              这台机器（见下表）
+      parts/              引擎的部件，每个会动的组件一个模块
     store/gameStore.ts    对局状态与发往服务器的动作（Zustand）
     services/websocket.ts WebSocket 连接与自动重连
   scripts/*.test.mjs      测试
@@ -43,10 +44,16 @@ web/
 | 文件 | 职责 |
 | --- | --- |
 | `Console.tsx` | 整个界面的根组件。持有 `LocalState`，从 store 取对局状态，调用 `paint()`，驱动引擎、声音和音乐，把输入分发给 `act()` / `change()` |
+| `Controls.tsx` | 盖在 3D 零件上的透明 DOM 控件，以及旋钮、纸带、把手的指针手势（`useHandleGrip`） |
+| `Settings.tsx` | 页面右上角的导航和设置：画质、主题、声音、语言 |
+| `Transcript.tsx` | 机器上全部内容的文字记录，给读屏软件用；3D 无法启动时直接显示 |
 | `MobileConsole.tsx` | 窄屏的紧凑终端。只接收状态和回调，不持有自己的草稿 |
 | `ArchiveSheet.tsx` | 纸带拉出后的阅读器（`<dialog>`）：按编号归档的线索和逐回合记录 |
 | `GuideContent.tsx` | 玩法说明和原版桌游介绍的 DOM 版本，供窄屏和读屏软件使用 |
+| `hooks.ts` | 从 `Console.tsx` 分出来的几组 effect：扬声器和音乐的生命周期、软盘状态机的定时器、减弱动效、字体和插图的载入 |
 | `useDiskPull.ts` | 拖拽软盘的指针手势，桌面和窄屏共用 |
+| `options.ts` | 地址栏对这次访问的要求：路由、预览夹具和各个开发参数；`portable()` 判断是否窄屏 |
+| `Workbench.tsx` | 开发试装台：翻旗、名牌、仪表、词窗的试装界面和它们改动过的夹具状态。生产构建里到不了 |
 
 ### 状态与规则
 
@@ -54,6 +61,7 @@ web/
 
 | 文件 | 职责 |
 | --- | --- |
+| `actions.ts` | `reachable()`：一个控件在机器当前状态下是否起作用（有没有电、哪一面朝前、连没连上、有没有请求在途） |
 | `model.ts` | `LocalState` 及其初始值；硬件状态推导（`consoleHardware`、`terminalView`）；行动资格（`roleState`）；软盘状态机；回合角色（`roundCast`、`transmission`）；名册、纸带记录、主题色；浏览器存储的读写；预览夹具 `previewState` |
 | `view.ts` | 路由（`consoleRoute`）、正面取景（`gameFraming`）、把手拖拽与滚轮缩放的换算、把手的投影表面 |
 | `i18n.ts` | 中英文对照表、`translate`、语言偏好、服务器错误文案的本地化 |
@@ -66,7 +74,11 @@ web/
 
 | 文件 | 职责 |
 | --- | --- |
-| `paint.ts` | `paint()` 画出所有表面的 canvas 并列出可操作的目标；`paintClock()` 单独画倒计时；`knobLabel()` 生成旋钮的读数文字 |
+| `paint.ts` | `paint()`：准备好画笔（`Painter`），按顺序调用下面几个模块，最后汇总成 `Content`。`Content`、`Frame`、`Target` 的类型也在这里 |
+| `paintScreen.ts` | 主屏的每一页：首页、房间、简报、填写、旁观、回执、结局，以及脱机提示和电量条 |
+| `paintFaces.ts` | 主屏以外的表面：词窗、名册、计分板、纸带、键盘、相位面板、ACTION、软盘标签、背面控件；`paintClock()` 单独画倒计时，`knobLabel()` 生成旋钮的读数文字 |
+| `paintGuide.ts` | 玩法说明的四页和翻页导航 |
+| `paintKit.ts` | 绘图工具：配色、排字、换行、七段数码、磨损；`Painter` 的类型 |
 | `dotMatrix.ts` | 词窗 LED 点阵的字体、排版规则和驱动器（自检、逐列载入、断电） |
 | `dotFiltering.ts` | LED 灯珠缩放时的采样方式及其着色器片段 |
 | `finishes.ts` | 运行时生成的队牌珐琅和计分板拉丝镍贴图 |
@@ -75,7 +87,8 @@ web/
 
 | 文件 | 职责 |
 | --- | --- |
-| `engine.ts` | `ConsoleEngine`：渲染器、相机、灯光、模型载入、贴图上传、所有零件的动画、渲染循环、把目标投影成屏幕坐标 |
+| `engine.ts` | `ConsoleEngine`：渲染器、模型载入、把状态分发给各部件、帧循环和它的节奏、画质、把目标投影成屏幕坐标（`bounds()`） |
+| `parts/` | 引擎的部件，见下一节 |
 | `crt.ts` | 显像管面板的几何：曲面网格、透过玻璃的折射映射及其逆映射 |
 | `crtShader.ts` | 显像管和 LED 点阵的片段着色器，包括主屏的闪烁单元和逐行写屏 |
 | `crtMotion.ts` | 显像管开关机的电路模拟（`CrtTube`）和换画面的时序（`CrtMotion`） |
@@ -100,6 +113,38 @@ web/
 | `music.ts` | `ConsoleMusic`：背景音乐的切换、淡入淡出和偏好 |
 
 `scoreRegister.json` 是计分板的尺寸和材质，建模脚本和引擎共用。
+
+### 引擎的部件：`parts/`
+
+每个模块是一个类，持有自己的零件和状态。引擎在构造时创建它们，模型载入后调用 `install()`，状态变化时调用 `update()`，每帧调用 `tick()`。
+
+| 文件 | 职责 |
+| --- | --- |
+| `chassis.ts` | `Chassis`：载入后的机身。按名字查零件，为每个表面建平面，上传贴图（带哈希去重），登记会动的组件并合批其余网格。`Effect` 和 `settle()` 也在这里 |
+| `viewpoint.ts` | `Viewpoint`：相机、取景和特写、沿把手翻面、预览页的旋转与缩放 |
+| `studio.ts` | `Studio`：环境光、主光、面光源、背景墙 |
+| `glass.ts` | 显像管玻璃、辉光管亚克力罩和接收机表蒙的材质 |
+| `displays.ts` | `Displays`：六只显像管和四个 LED 词窗的开关机、换画面、主屏的闪烁与逐行写屏 |
+| `oscilloscope.ts` | `Oscilloscope`：示波器的四个旋钮和屏幕 |
+| `nixies.ts` | `NixieBay`：房间码辉光管的数字、光晕和呼吸 |
+| `lamps.ts` | `Lamps`：各指示灯、灯光自检、LOCK 灯 |
+| `keys.ts` | `Keys`：电源开关、说明键、数字键、ACTION 和复制键的行程 |
+| `printer.ts` | `Printer`：纸带的网格、送纸、撕纸和补纸 |
+| `diskDrive.ts` | `DiskDrive`：软盘和弹出键的姿态 |
+| `roster.ts` | `RosterRack`：八张名牌、两块队牌和它们的珐琅 |
+| `scoreRegister.ts` | `ScoreRegister`：八片计分翻牌 |
+| `rearPanel.ts` | `RearPanel`：电池仓盖、电池、插头与线缆、两个滑动开关 |
+
+`tick()` 返回这一帧做了什么，用 `Effect` 的几个标志按位或起来：
+
+| 标志 | 含义 |
+| --- | --- |
+| `ambient` | 只有自己在动的东西变了（指针、电子束），按画质档位的节奏画 |
+| `redraw` | 玩家改变了什么，立即画 |
+| `shadow` | 立即画，并重新投射阴影 |
+| `project` | 立即画，并让 DOM 控件跟上零件的新位置 |
+
+引擎把各部件的标志合并，每帧最多重投影一次、更新一次阴影。没有部件报告变化时，帧循环就睡到下一个氛围帧。
 
 各部件的行为分别写在[显示器件](displays.md)、[机械与交互](mechanics.md)、[背面联动](rear-linkage.md)、[声音](audio.md)和[主题色](themes.md)里。
 
@@ -161,15 +206,22 @@ web/
 
 ### 从输入回到服务器
 
-所有按钮都走 `act(id)`，文本输入走 `change(target, value)`。`act()` 按顺序处理：
+所有按钮都走 `act(id)`，文本输入走 `change(target, value)`。
 
-1. 翻面、电源开关、音效和音乐开关：任何时候都可用，只改 `LocalState`
-2. 机器没电且在正面时，除了软盘以外的操作到此为止
-3. 背面的电池仓、电池、插头和灯光自检；机器背对时，其余操作到此为止
-4. 本机的屏幕操作：跳过简报、翻页、遮词、纸带、软盘、旋钮、复制房间码、数字键
-5. 脱机或已有请求在途时，发往服务器的操作到此为止
-6. `transmit`（红色 ACTION 键）：按当前阶段调用 `createRoom` / `joinRoom` / `startGame` / `submitClues` / `submitIntercept` / `submitDecrypt` / `returnToRoom`
-7. 选队、加减 AI
+`act()` 先问 `actions.ts` 的 `reachable(id, 机器状态)`，这个控件现在起不起作用。规则按顺序是：
+
+1. 翻面、电源开关、音效和音乐开关：任何时候都可用（电源开关在正面，背对时够不着）
+2. 机器没电且在正面时，只有软盘还能取放
+3. 背面的电池仓、电池、插头和灯光自检：电池要先打开仓盖，插头要从背面拔，自检要有电
+4. 机器背对时，正面的控件都不起作用
+5. 本机的屏幕操作不需要网络：跳过简报、翻页、遮词、纸带、软盘、旋钮、数字键；简报期间的 ACTION 也算
+6. 离开频道和复制房间码需要网络，但不等在途的请求
+7. 其余都是发往服务器的操作，需要网络，并且一次只发一个请求
+
+通过之后，`act()` 才执行这个控件的动作，其中还有座位自己的规则（比如只有当前行动的人能选号）：
+
+- `transmit`（红色 ACTION 键）：按当前阶段调用 `createRoom` / `joinRoom` / `startGame` / `submitClues` / `submitIntercept` / `submitDecrypt` / `returnToRoom`
+- 选队、加减 AI
 
 键盘快捷键（数字键 1–4、Backspace、Ctrl/Cmd+Enter、Esc、方向键）在 `Console.tsx` 的全局 `keydown` 监听里转换成同样的 `act()` 调用。
 
@@ -180,13 +232,13 @@ web/
 - `/models/decrypto-console.glb`：机器的几何和材质
 - `/models/console-surfaces.json`：表面清单，给出每个可贴图表面在机器坐标里的位置、尺寸和朝向
 
-引擎为清单里的每个表面建一个平面（显像管是曲面），`paint()` 里同名的 frame 就贴在上面。把手、电池仓和灯光自检三个表面的坐标写在代码里（`view.ts` 的 `handleSurfaces` 和 `load()` 内），不在清单中。
+`Chassis` 为清单里的每个表面建一个平面（显像管是曲面），`paint()` 里同名的 frame 就贴在上面。把手、电池仓和灯光自检三个表面的坐标写在代码里（`view.ts` 的 `handleSurfaces` 和 `load()` 内），不在清单中。
 
 **两个文件共用一个版本号。** `load()` 里的 `revision` 会拼进两个 URL。导出新模型后必须改这个值，否则浏览器可能拿缓存里的旧几何配新标签。
 
 ### 引擎按名字查找的零件
 
-下列名字由 Blender 场景决定，引擎按名字取用。缺少标了“必需”的零件时载入失败，界面退回文字控件。
+下列名字由 Blender 场景决定，各部件在 `install()` 里按名字取用。缺少标了“必需”的零件时载入失败，界面退回文字控件。
 
 | 零件 | 用途 |
 | --- | --- |
@@ -207,11 +259,13 @@ web/
 
 ### 运行时合批
 
-`.blend` 和 GLB 里每个零件都保持独立，便于编辑。载入后 `batchStaticGeometry()` 把静止、不透明的网格按材质合并，减少绘制调用。这些东西不参与合并：
+`.blend` 和 GLB 里每个零件都保持独立，便于编辑。载入后 `Chassis.batch()` 把静止、不透明的网格按材质合并，减少绘制调用。这些东西不参与合并：
 
-- 上表中会动的组件。它们各自在内部合批，轴心不变
+- 部件登记过的组件。部件用 `chassis.moving(名字)` 取零件，取到的同时就登记为“会动”，它和它里面的网格不会并进机身；带 `merge` 的组件在自己内部合批，轴心不变
 - 带形变目标的网格，即三根线缆
 - 透明材质
+
+只用来读取位置、自己不动的零件用 `chassis.part(名字)` 取，不登记。
 
 合批保留 `position`、`normal`、`uv`、`color` 四个属性，因为材质贴图和烘焙的接触阴影要用。
 
@@ -265,9 +319,9 @@ cd web && pnpm test
 
 它运行 `node --test scripts/*.test.mjs`，不需要浏览器和 GPU。
 
-测试直接读 TypeScript 源文件：用 `typescript` 的 `transpileModule` 转成 JavaScript，再以 `data:` URL 的形式 `import`。模块之间的相对引用在转译后替换成对应的 `data:` URL。需要 Three.js 的模块（`instruments.ts`、`crtShader.ts`）把 `'three'` 替换成 `import.meta.resolve('three')` 的结果。`paint.ts` 的测试给 `document.createElement` 一个假的 canvas，记录画了哪些字。
+测试直接读 TypeScript 源文件：用 `typescript` 的 `transpileModule` 转成 JavaScript，再以 `data:` URL 的形式 `import`。模块之间的相对引用在转译后替换成对应的 `data:` URL。`scripts/load.mjs` 的 `moduleUrl(名字)` 会顺着引用把同目录的模块一并载入；较早的测试各自写了替换。需要 Three.js 的模块（`instruments.ts`、`crtShader.ts`）把 `'three'` 替换成 `import.meta.resolve('three')` 的结果。`paint()` 的测试给 `document.createElement` 一个假的 canvas，记录画了哪些字。
 
-由此得出一条规则：**要测试的逻辑放在不依赖 WebGL 和真实 DOM 的模块里。** `engine.ts` 和 `Console.tsx` 没有测试，所以时序、状态机、几何和物理都写在独立模块中，引擎只负责调用。
+由此得出一条规则：**要测试的逻辑放在不依赖 WebGL 和真实 DOM 的模块里。** `engine.ts`、`parts/` 和各个 `.tsx` 组件没有测试，所以时序、状态机、几何、物理和操作规则都写在独立模块中，引擎和组件只负责调用。
 
 一部分测试还读 `public/models/` 下的 GLB 和表面清单，检查导出的模型是否符合运行时的假设。
 
@@ -277,6 +331,8 @@ cd web && pnpm test
 | `transmission.test.mjs` | 回合角色、简报、旁观席看到的进度、倒计时警告与超时说明 |
 | `store.test.mjs` | store 对协议消息的处理、设备令牌、断线与恢复 |
 | `hardware.test.mjs` | 正反面目标互不重叠、断电和拔网线后哪些控件还在、接收机信号、背面的声音开关 |
+| `actions.test.mjs` | 哪些控件不需要电、哪些不需要网络、背对时哪些够不着；所有控件在所有机器状态下的穷举 |
+| `parts.test.mjs` | 引擎按名字取用的零件都在导出的模型里；会动的组件互不嵌套 |
 | `rear-linkage.test.mjs` | 供电组合、脱机时的显示与私密信息收回、读盘暂停、AUX |
 | `key-disk.test.mjs` | 密钥软盘的发放、读取、弹出和作废 |
 | `disk-motion.test.mjs` | 软盘插入和弹出的行程，导出模型的轴向 |
@@ -302,18 +358,18 @@ cd web && pnpm test
 ### 加一个控件
 
 1. 确定它在哪个表面上。现有表面放得下，就在该表面的 canvas 坐标里选一个矩形；否则要在模型里加零件，并在 `console-surfaces.json` 里加表面（见[建模流水线](../../assets/console/README.md)），然后更新 `revision`。
-2. 在 `paint.ts` 里画出它，并调用 `target(surface, id, label, x, y, w, h)`。主屏上的按钮用 `button()`，它同时完成这两件事。`label` 是无障碍标签，要经过 `t()`。
-3. 在 `Console.tsx` 的 `act()` 里处理这个 `id`。分支的位置决定它受哪些条件限制：放在断电检查之前就不需要电，放在脱机检查之前就不需要网络。
-4. 背面的控件要把 `id` 加进 `paint.ts` 末尾的 `rearControls`，否则翻到背面时会被过滤掉。
-5. 零件要动的话，在 `engine.ts` 的 `tick()` 里加动画；新的可动组件的名字要加进 `batchStaticGeometry()` 的 `moving` 正则，否则会被合并进静态批次。
+2. 主屏上的控件在 `paintScreen.ts` 里画，其他表面在 `paintFaces.ts` 里画，并调用 `target(surface, id, label, x, y, w, h)`。主屏上的按钮用 `button()`，它同时完成这两件事。`label` 是无障碍标签，要经过 `t()`。
+3. 在 `Console.tsx` 的 `act()` 里处理这个 `id`。它受哪些条件限制由 `actions.ts` 的 `reachable()` 决定：没有登记的 `id` 按发往服务器的操作对待，需要电、网络和空闲的线路。不需要网络的本机操作要加进 `local` 名单。
+4. 背面的控件要把 `id` 加进 `paintFaces.ts` 里 `paintRear()` 的 `rearControls`，否则翻到背面时会被过滤掉。
+5. 零件要动的话，在 `parts/` 里找到它所属的部件（或新建一个），在 `install()` 里用 `chassis.moving(名字)` 取零件，在 `tick()` 里移动它并返回对应的 `Effect`。新部件要在 `engine.ts` 的构造函数、`load()`、`update()` 和 `tick()` 里各接一行。
 6. 窄屏界面不会自动出现这个控件，需要时在 `MobileConsole.tsx` 里加对应的按钮，调用同一个 `onAct(id)`。
-7. 补测试。`hardware.test.mjs` 会检查正反面的目标互不重叠。
+7. 补测试。`hardware.test.mjs` 会检查正反面的目标互不重叠，`actions.test.mjs` 检查操作规则。
 
 ### 加一种屏幕状态
 
 1. 状态来自服务器：在 `gameStore.ts` 加字段，在 `handleServerMessage` 里赋值，并按需加进 `gameFields`，让回到大厅时清空。
 2. 状态属于本机：在 `LocalState` 和 `initialLocal` 里加字段。
-3. 在 `paint.ts` 里画这一页。换页时让 `screenPage` 的值随之变化，引擎才会从上到下重写屏幕。
+3. 在 `paintScreen.ts` 里画这一页。换页时让 `paint.ts` 末尾算出的 `screenPage` 随之变化，引擎才会从上到下重写屏幕。
 4. 检查记忆化：新状态必须改变 `displayState` 或 `paintKey`。
 5. 脱机时是否应该保留，在 `terminalView()` 里决定；私密内容一律收回。
 6. 在 `MobileConsole.tsx` 里显示同样的信息。

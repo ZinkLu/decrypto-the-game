@@ -14,7 +14,7 @@
 
 路径定义在 `web/src/console/guide.ts` 的 `guideArtUrl`，教程的文字内容（四个步骤、示例密词、示例线索、三轮历史记录）也在这个文件里，主屏、手机布局和无障碍文本共用。
 
-**主屏教程**（`paint.ts` 的 `paintGuide`）。`Console.tsx` 载入图片后交给 `paint()`，每个人物按三分之一宽度从图上裁出：
+**主屏教程**（`paintGuide.ts` 的 `paintGuide`）。`Console.tsx` 载入图片后交给 `paint()`，每个人物按三分之一宽度从图上裁出：
 
 | 页 | 内容 | 人物 |
 |---|---|---|

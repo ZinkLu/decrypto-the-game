@@ -6,7 +6,7 @@
 
 ## 共同的做法
 
-- **文字画在纹理上。** `paint.ts` 的 `paint()` 把每个表面画进一张 Canvas，`engine.ts` 把它贴到模型上对应的平面。机身上固定的刻字属于模型；会变的内容都来自这里。
+- **文字画在纹理上。** `paint.ts` 的 `paint()` 把每个表面画进一张 Canvas，引擎的 `Chassis` 把它贴到模型上对应的平面。机身上固定的刻字属于模型；会变的内容都来自这里。
 - **器件自己会动，画面不重画。** 光标闪烁、整页写出、显像管开关机、点阵逐列点亮，都由着色器和一个小的状态模拟完成，Canvas 只在内容变化时重画一次。
 - **不写时间线。** 显像管、点阵驱动和示波器各有一组状态量，由物理关系推进。显像管和点阵驱动按固定的 2 ms 子步长积分，同一个动作在 30、60、144 fps 下走出同样的过程，测试里直接断言这一点。
 - **`prefers-reduced-motion`。** 所有器件直接落到最终状态：显像管不塌缩，点阵不自检，光标常亮，示波器显示一次长曝光的完整图形。
@@ -14,7 +14,7 @@
 
 ## 主屏 CRT
 
-源文件：`paint.ts`（页面）、`model.ts`（谁在行动、看得到什么）、`crtShader.ts`（闪烁与写屏）、`crt.ts`（玻璃光学与输入框定位）、`engine.ts`（`syncTerminal`、`bounds`）。
+源文件：`paintScreen.ts`（页面）、`model.ts`（谁在行动、看得到什么）、`crtShader.ts`（闪烁与写屏）、`crt.ts`（玻璃光学与输入框定位）、`parts/displays.ts`（`syncTerminal`）、`engine.ts`（`bounds`）。
 
 主屏一次只呈现一件事。房间、队伍、比分由周围的硬件承担。画布为 1400×830，按 1000 个逻辑单位排版，让中文在不放大 GPU 文字的情况下保持清晰。
 
@@ -93,7 +93,7 @@
 
 ## 玻璃与光学
 
-源文件：`crt.ts`（`crtProfile`、`crtGeometry`、`crtRasterUv`、`crtOpticsShader`）、`crtShader.ts`（`crtPictureShader`、`crtRasterShader`）、`engine.ts`（`glassMaterial`、`addScreenGlass`）。
+源文件：`crt.ts`（`crtProfile`、`crtGeometry`、`crtRasterUv`、`crtOpticsShader`）、`crtShader.ts`（`crtPictureShader`、`crtRasterShader`）、`parts/glass.ts`（`glassMaterial`）、`parts/displays.ts`（`addGlass`）。
 
 - **面板曲率。** 面板是一个浅的椭圆抛物面，曲率连续到四角。中心隆起分别为 0.18（主屏）、0.035（词窗）、0.04（示波器）个机身单位。两条端点固定的弧相乘会得到四角被捏住、肩部陡峭的枕形；抛物面的法线始终保持在正前方九度以内。玻璃向外延伸到模型的压条之下，切边藏在壳体里；UV 仍按原显示尺寸，所以座入不会拉伸画面。圆角附近加密取样，法线用解析式计算，没有面片感。
 - **玻璃与荧光层是两个面。** 每个片元先让视线按玻璃正面的真实法线折射（折射率 1.52），再与后面凹陷的、同样弯曲的荧光面求交（五次牛顿迭代）。荧光面深度为 0.04 / 0.012 / 0.013，隆起为 0.168 / 0.03 / 0.034。因此画面随视角有视差，文字、分隔线、扫描线和光晕共用这条光路。
@@ -105,7 +105,7 @@
 
 ## 词窗 LED 点阵
 
-源文件：`dotMatrix.ts`（`dotGrid`、`dotWordLayout`、`DotDriver`、`DotBank`）、`dotFiltering.ts`（像素积分）、`crtShader.ts`（`dotMatrixShader`）、`paint.ts`（逐灯绘制）。
+源文件：`dotMatrix.ts`（`dotGrid`、`dotWordLayout`、`DotDriver`、`DotBank`）、`dotFiltering.ts`（像素积分）、`crtShader.ts`（`dotMatrixShader`）、`paintFaces.ts`（`paintWords`，逐灯绘制）。
 
 四个词窗是茶色滤光片后面的 LED 点阵模块，对应原版桌游里的红色滤片窗口——整台机器把桌游数字化，词窗是其中的电子件。
 
@@ -115,7 +115,7 @@
 
 ### 从画布到灯
 
-- `paint.ts` 为每个模块画一张「每颗灯一个纹素」的画布。纹理的 RGB 是三个语义通道，不是最终颜色：R 是关键词，G 是编号与说明，B 是脱机提示。最终颜色由主题的 LED 配色给出（见[主题色](themes.md)）；模块只有两种管芯颜色，脱机提示与说明共用一种。
+- `paintFaces.ts` 的 `paintWords()` 为每个模块画一张「每颗灯一个纹素」的画布。纹理的 RGB 是三个语义通道，不是最终颜色：R 是关键词，G 是编号与说明，B 是脱机提示。最终颜色由主题的 LED 配色给出（见[主题色](themes.md)）；模块只有两种管芯颜色，脱机提示与说明共用一种。
 - 笔画抗锯齿后的覆盖率成为那颗灯的占空比：汉字的一条细笔画点亮两颗半亮的灯。
 - 发光强度保持在墨色本身的水平。这层材质不做色调映射，过驱动的灯会直接截到白色。
 - 滤光片内的散射是贴着笔画的两圈小光晕，词的周围留着暗。紧贴每一笔的宽光晕只会把字弄糊。
@@ -165,11 +165,11 @@
 
 ### 红宝石管（开发对比）
 
-早先的词窗是红宝石滤光的小显像管。它仍保留在代码里，只在开发对比台上可以换装：`paint.ts` 为它画 480×284 的画布，`CrtTube('word', seed)` 负责开关机，新内容到达时让它失去垂直同步约 0.2 秒。在同一栅格上还试过氖气等离子模块，它与 LED 只差颜色，而颜色已经由主题提供，因此没有保留。
+早先的词窗是红宝石滤光的小显像管。它仍保留在代码里，只在开发对比台上可以换装：`paintWords()` 为它画 480×284 的画布，`CrtTube('word', seed)` 负责开关机，新内容到达时让它失去垂直同步约 0.2 秒。在同一栅格上还试过氖气等离子模块，它与 LED 只差颜色，而颜色已经由主题提供，因此没有保留。
 
 ## 矢量示波器
 
-源文件：`scope.ts`（`ScopeSignal`、`Phosphor`、`VectorMonitor`、`scopeTuning`）、`model.ts`（`scopeRatio`、`scopeSweepHz`、`scopeAxisAngle`）、`engine.ts`（`drawScope`）。
+源文件：`scope.ts`（`ScopeSignal`、`Phosphor`、`VectorMonitor`、`scopeTuning`）、`model.ts`（`scopeRatio`、`scopeSweepHz`、`scopeAxisAngle`）、`parts/oscilloscope.ts`（`Oscilloscope.draw`）。
 
 示波器是一件本地玩具，不发送任何游戏消息，只需要供电。它从显像管往外模拟：显像管只会显示一样东西——位于 (X, Y) 的电子束，和它留下的辉光。两个振荡器操纵这束电子：参考振荡器驱动水平偏转板，CAL OUT 经跳线接入 INPUT，驱动垂直偏转板。
 
@@ -199,7 +199,7 @@
 
 ## 辉光管房间码
 
-源文件：`engine.ts`（`setupNixies`、`updateNixies`）；几何见[建模流水线](../../assets/console/README.md)。
+源文件：`parts/nixies.ts`（`NixieBay`）；几何见[建模流水线](../../assets/console/README.md)。
 
 四支辉光管，每支十个独立建模的线状阴极，共四十个 `Nixie_Digit_{槽位}_{数字}` 网格。运行时按真实房间码每支只显示一个。发光由三层组成，都跟随模型导出的阴极路径：贴着阴极的氖光鞘、较宽的辉光、充满管壳的橙色薄雾；另有一片暗淡的橙色光池投在管后的凹槽上。
 
@@ -209,7 +209,7 @@
 
 ## 相位时钟
 
-源文件：`paint.ts`（`paintClock`、`segmentDigit`）、`model.ts`（`warningSeconds`、`paintedSeconds`）。
+源文件：`paintFaces.ts`（`paintClock`）、`paintKit.ts`（`segmentDigit`）、`model.ts`（`warningSeconds`、`paintedSeconds`）。
 
 琥珀色七段数码，每位七条单独绘制的笔段，未点亮的笔段隐约可见。数字是几何图形，外观不依赖字体。计时阶段显示 MM:SS，其余时候显示暗淡的短横。最后 15 秒变为橙红色。
 
@@ -229,7 +229,7 @@
 
 ## 指示灯
 
-源文件：`paint.ts`（相位面板）、`engine.ts`（`syncIndicators`、`testLamps`）。
+源文件：`paintFaces.ts`（相位面板）、`parts/lamps.ts`（`Lamps`）。
 
 | 灯 | 含义 |
 | --- | --- |
