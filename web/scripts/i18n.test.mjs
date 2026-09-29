@@ -234,6 +234,15 @@ test('original-game links are native external links and the physical badge opens
   ]);
 });
 
+test('no screen, label or translation names the original game or its publisher', () => {
+  const named = /decrypto|谍报风云|截码战|scorpion\s*masqu/i;
+  assert.deepEqual(Object.entries(messages).flat().filter(value => named.test(value)), []);
+  for (const phase of phases) for (const extra of [{}, { manual: true }, { about: true }]) for (const locale of ['zh', 'en']) {
+    const output = paint(fixture(phase), { ...initialLocal, ...extra, locale });
+    assert.deepEqual([...ink(output), ...output.targets.map(t => t.label)].filter(value => named.test(value)), [], `${phase} in ${locale}`);
+  }
+});
+
 test('results reveal only the current public history code, never private encryptor state', () => {
   const s = fixture('round_result');
   s.secretDigits = [4, 3, 2];

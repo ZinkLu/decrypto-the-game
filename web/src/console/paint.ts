@@ -465,7 +465,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
         paintGuide(c, u, guidePage, guideArt);
         guideNav(guidePage);
     } else if (u.about) {
-        heading(t('每条线索，都是一次试探。'), t('原作：Decrypto · 发行：Le Scorpion Masqué'));
+        heading(t('每条线索，都是一次试探。'), t('玩法取材于原版桌游 · 可从链接了解原作'));
         wrap(c, t(gameIntroduction), 55, 253, 865, 29, CREAM, 3);
         originalGameLinks.forEach((link, i) => {
             const x = 55 + i * 303;
