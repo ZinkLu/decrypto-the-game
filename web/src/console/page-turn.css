@@ -1,0 +1,33 @@
+/* Only inert visual copies enter perspective. The editable paper keeps its
+   affine coordinates, so text selection and SVG ink remain exact at rest. */
+.field-notebook[data-page-turn="true"] .notebook-spread > .notebook-page[data-team] { visibility: hidden; }
+.notebook-turn-stage {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  perspective: 1800px; perspective-origin: center top; transform-style: preserve-3d;
+}
+.notebook-turn-stage .notebook-page {
+  position: absolute; inset: 0; width: 100%; height: var(--turn-height); margin: 0;
+}
+.notebook-turn-base { z-index: 0; isolation: isolate; will-change: opacity; }
+.notebook-turn-strip {
+  position: absolute; top: 0; left: 0; width: 100%; z-index: 2; transform-origin: center top;
+  transform-style: preserve-3d; will-change: transform;
+}
+.notebook-turn-face { position: absolute; inset: 0; overflow: hidden; backface-visibility: hidden; }
+.notebook-turn-front { transform: translateZ(.1px); }
+.notebook-turn-back {
+  will-change: opacity;
+  transform: rotateX(180deg); background-color: #f0e5ce;
+  background-image: radial-gradient(#94826326 .6px, transparent .7px);
+  background-size: 6px 6px;
+}
+.notebook-turn-shadow {
+  position: absolute; inset: 0; z-index: 1; opacity: 0; border-radius: 2px;
+  background: linear-gradient(180deg, #473b25, #473b2555 64%, #473b2500); transform-origin: center top;
+  will-change: transform, opacity;
+}
+.notebook-turn-light {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  background: #695435;
+  will-change: opacity;
+}

@@ -11,6 +11,8 @@ export const route = consoleRoute(location.pathname, location.search, dev);
 export const inspection = route.view === 'preview';
 /** The fixture shown instead of a live game, if any. */
 export const preview = route.scenario;
+/** DOM notebook study, restricted to fixture data on the development server. */
+export const notebookPreview = dev && !!preview && params.has('notebook');
 export const instrumentPreview = dev && params.has('instruments');
 // DEV bench for the keyword windows' hardware: `/?words=led` or `crt`.
 export const wordBench = dev && !instrumentPreview && params.has('words');

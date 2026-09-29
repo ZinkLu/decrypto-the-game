@@ -1,0 +1,86 @@
+/* Desk objects are the controls. Their larger clear hit areas retain a usable
+   keyboard/touch target while the pencil itself remains thin and physical. */
+.notebook-toolbar.notebook-objects {
+  position: relative; z-index: 5; display: block; height: 42px; margin: 0 0 28px;
+  padding: 0; color: #ece3cb;
+}
+.notebook-objects .notebook-object,
+.notebook-objects .notebook-object-undo {
+  position: absolute; display: block; margin: 0; padding: 0; border: 0;
+  background: transparent; color: inherit; cursor: pointer; touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.notebook-objects button:focus-visible {
+  outline: 2px solid #eee3c9; outline-offset: 3px; border-radius: 5px;
+}
+.notebook-pencil { right: 100px; top: -3px; width: min(224px, calc(100% - 100px)); height: 44px; transform: rotate(-5deg); }
+.notebook-eraser { right: 14px; top: 0; width: 68px; height: 44px; transform: rotate(8deg); }
+.notebook-pencil-object,
+.notebook-eraser-object {
+  position: absolute; display: block; pointer-events: none;
+  transition: transform 150ms cubic-bezier(.22,1,.36,1);
+}
+.notebook-pencil-object { inset: 16px 7px; height: 12px; }
+.notebook-pencil-wood {
+  position: absolute; inset: 0 auto 0 0; width: 30px;
+  background: linear-gradient(#c39d6e, #e2c293 40%, #c6a478 45%, #b18a5b 82%, #d7b589);
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+}
+.notebook-pencil-graphite {
+  position: absolute; top: 4px; left: 0; width: 11px; height: 4px;
+  background: linear-gradient(#80786a, #343931 45%, #202920);
+  clip-path: polygon(0 50%, 100% 0, 100% 100%);
+}
+.notebook-pencil-barrel {
+  position: absolute; inset: 0 10px 0 28px; border-radius: 1px;
+  background: linear-gradient(#e6c77c 0 22%, #cba45b 22% 69%, #a9813f 69% 94%, #b99652 94%);
+  box-shadow: inset 0 1px #f3dba466, inset 0 -1px #795d3266;
+}
+.notebook-pencil-barrel::after {
+  content: ''; position: absolute; top: 4px; right: 14px; width: 52%; height: 1px;
+  background: #82623355; box-shadow: 0 2px #ead19745;
+}
+.notebook-pencil-cap {
+  position: absolute; inset: 0 0 0 auto; width: 13px; border-radius: 0 2px 2px 0;
+  background: linear-gradient(#666750 0 24%, #393d31 24% 72%, #292f26 72%);
+  border-left: 2px solid #bcb28c; box-shadow: inset 0 1px #aaa48b55;
+}
+.notebook-eraser-object {
+  top: 10px; left: 7px; width: 54px; height: 26px; border-radius: 4px 5px 5px 4px;
+  background: linear-gradient(160deg, #f0e4ce, #e4d7bf 65%, #cbbb9e);
+  box-shadow: inset 0 1px #fff2dc99, inset 0 -3px #9a856827, inset 1px 0 #d1c3a4;
+}
+.notebook-eraser-sleeve {
+  position: absolute; inset: -1px 9px -1px 18px; border-radius: 1px;
+  background: linear-gradient(#b5755a, #a86249 17%, #9e5741 81%, #7f4132);
+  box-shadow: 1px 0 1px #72513d55, inset 0 1px #dba88966;
+}
+.notebook-eraser-sleeve::before,
+.notebook-eraser-sleeve::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 1px; background: #e6ccb079;
+}
+.notebook-eraser-sleeve::before { top: 5px; }
+.notebook-eraser-sleeve::after { bottom: 5px; }
+.notebook-object-shadow {
+  position: absolute; pointer-events: none; background: #20271c33; filter: blur(2px);
+  transition: transform 150ms cubic-bezier(.22,1,.36,1), opacity 150ms linear;
+}
+.notebook-pencil .notebook-object-shadow { left: 23px; right: 5px; top: 25px; height: 8px; border-radius: 50%; transform: rotate(.5deg); }
+.notebook-eraser .notebook-object-shadow { left: 9px; right: 5px; top: 22px; height: 18px; border-radius: 6px; }
+.notebook-object:hover .notebook-pencil-object,
+.notebook-object:hover .notebook-eraser-object { transform: translateY(-2px); }
+.notebook-object[aria-pressed="true"] .notebook-pencil-object { transform: translateY(-6px) rotate(-2deg); }
+.notebook-object[aria-pressed="true"] .notebook-eraser-object { transform: translateY(-6px) rotate(3deg); }
+.notebook-object[aria-pressed="true"] .notebook-object-shadow { opacity: .5; transform: translateY(3px) scale(1.04); }
+.notebook-objects .notebook-object-undo { top: 44px; right: -4px; width: 38px; height: 38px; color: #b8b4a2; }
+.notebook-object-undo svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.notebook-object-undo:hover { color: #f0e6cd; }
+@media (max-width: 640px) {
+  .notebook-toolbar.notebook-objects { margin-bottom: 26px; }
+  .notebook-pencil { right: 82px; width: min(210px, calc(100% - 84px)); }
+  .notebook-eraser { right: 1px; }
+  .notebook-objects .notebook-object-undo { right: -7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notebook-pencil-object, .notebook-eraser-object, .notebook-object-shadow { transition: none; }
+}

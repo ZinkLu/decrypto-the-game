@@ -18,7 +18,7 @@ import { InstrumentBench, RosterBench, ScoreBench, WordBench, benchAmplitude, be
 import { guidePageFor } from './guide';
 import { useConsoleAudio, useDiskFont, useGuideArt, useKeyDisk, useReducedMotion } from './hooks';
 import { useDiskPull } from './useDiskPull';
-import { briefMode, detail, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, pinnedQuality, portable, preview, route, scoreBench, wordBench } from './options';
+import { briefMode, detail, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, notebookPreview, pinnedQuality, portable, preview, route, scoreBench, wordBench } from './options';
 import type { LocalState, KeyDiskState } from './model';
 import type { Target } from './paint';
 import type { QualityChoice, QualityLevel } from './quality';
@@ -234,6 +234,12 @@ export default function Console() {
         return () => { cancelled = true; instance?.dispose(); engine.current = null; };
     }, []);
     useLayoutEffect(() => { engine.current?.update(content, u); project(); }, [content, loaded]);
+    const notebookOpened = useRef(false);
+    useEffect(() => {
+        if (!notebookPreview || notebookOpened.current || (!loaded && !failure)) return;
+        notebookOpened.current = true;
+        act('archive-toggle');
+    }, [loaded, failure]);
     useLayoutEffect(() => { engine.current?.setKeyDisk(u.keyDisk); project(); }, [u.keyDisk]);
     useLayoutEffect(() => { engine.current?.setQuality(qualityProfiles[level]); }, [level]);
     useLayoutEffect(() => { if (wordBench) engine.current?.setDotFilter(bench.dotFilter); }, [loaded, bench.dotFilter]);
@@ -752,7 +758,7 @@ export default function Console() {
     {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{hint.startsWith('quality:')
         ? qualityHint(hint.slice(8) as QualityChoice, level, t) : content.targets.find(target => target.id === hint)?.label}</div>}
     <p className="mobile-hint">{t("横向滑动查看终端 · 下拉纸带查看密报记录")}</p>
-    <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${!!preview}`} open={archiveVisible && hardware.powered} locale={u.locale} state={displayState} onClose={closeArchive} onClosed={restoreArchiveFocus}/>
+    <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${s.myTeam}:${!!preview}`} notebook={notebookPreview} open={archiveVisible && hardware.powered} locale={u.locale} state={displayState} onClose={closeArchive} onClosed={restoreArchiveFocus}/>
     <div className="sr-only" role="status" aria-live="polite">{announcement}</div>
   </main>;
 }

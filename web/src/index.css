@@ -209,11 +209,11 @@ button,input { font: inherit; }
 .receipt-footer p { margin: 7px 0 0; color: #8b7d62; font-size: 9px; letter-spacing: .16em; }
 @keyframes receipt-rise {
   /* Move by the viewport height, independent of the length of the paper roll. */
-  from { transform: translate3d(0, 100dvh, 0); }
-  to { transform: translate3d(0, 0, 0); }
+  from { transform: translate3d(0, 100dvh, 0); opacity: 0; }
+  to { transform: translate3d(0, 0, 0); opacity: 1; }
 }
 @keyframes receipt-discard {
-  from { transform: var(--archive-exit-transform, translate3d(0, 0, 0)); opacity: 1; }
+  from { transform: var(--archive-exit-transform, translate3d(0, 0, 0)); opacity: var(--archive-exit-opacity, 1); }
   to { transform: var(--archive-exit-transform, translate3d(0, 0, 0)) translate3d(0, 35dvh, 0); opacity: 0; }
 }
 @media (max-width: 560px) {
@@ -251,7 +251,10 @@ button,input { font: inherit; }
 .archive-outcome { display: flex; gap: 8px; min-height: 20px; margin: 11px 0 0; }
 .archive-outcome span { padding: 2px 7px; border: 1px solid currentColor; color: #7d715b; font-size: 9px; letter-spacing: .08em; transform: rotate(-1deg); }
 .archive-outcome span[data-result="success"] { color: #49604f; }
-.archive-outcome span[data-result="failure"] { color: #98513d; text-decoration: line-through 1px; }
+.archive-outcome span[data-result="failure"] { color: #98513d; }
+.archive-outcome span[data-scoring="true"] { color: #f6ecd5; font-weight: 600; }
+.archive-outcome span[data-scoring="true"][data-result="success"] { border-color: #49604f; background: #49604f; }
+.archive-outcome span[data-scoring="true"][data-result="failure"] { border-color: #98513d; background: #98513d; }
 .archive-dismiss { position: fixed; top: max(14px, env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); min-height: 38px; padding: 7px 10px; border: 1px solid #e8ddc88c; background: #25322de6; color: #eadfc8; cursor: pointer; font-size: 11px; letter-spacing: .06em; }
 .archive-dismiss span { margin-left: 7px; font-size: 17px; vertical-align: -1px; }
 .archive-dismiss:hover { background: #314039; }
