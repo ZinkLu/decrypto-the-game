@@ -2,65 +2,33 @@ import { translate, localizeError, readLocale, saveLocale } from './i18n';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { ConsoleEngine } from './engine';
-import { ConsoleAudio, gameSound, type ConsoleSound } from './sound';
-import { ConsoleMusic, readMusicPreferences, saveMusicPreferences, type MusicPreferences, type MusicStatus } from './music';
-import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, syncDiskPower, initialLocal, previewState, roleState, rosterTeams, archiveRows, instrumentSteps, word, instrumentOptions, wordDisplayOptions, stepInstrumentValue, themeChoices, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, syncKeyDisk, advanceKeyDisk, actKeyDisk, keyDiskDurations, briefingKey, briefingDuration, roundCast, deadlineWarning, timeoutNotice, warningSeconds, paintedSeconds, readDraft, saveDraft, readName, saveName } from './model';
-import type { WordDisplay } from './dotMatrix';
-import { defaultDotFilter, dotFilterOptions, readDotFilter, readWordScale, type DotFilter } from './dotFiltering';
+import { gameSound } from './sound';
+import { readMusicPreferences, saveMusicPreferences, type MusicPreferences } from './music';
+import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, initialLocal, roleState, instrumentSteps, stepInstrumentValue, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, actKeyDisk, briefingKey, briefingDuration, roundCast, deadlineWarning, timeoutNotice, warningSeconds, paintedSeconds, readDraft, saveDraft, readName, saveName } from './model';
 import { paint, paintClock, knobLabel, guidePages } from './paint';
-import { qualityChoices, qualityProfiles, describeQuality, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
+import { qualityProfiles, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
+import { reachable } from './actions';
 import ArchiveSheet from './ArchiveSheet';
+import Controls, { isKnob, useHandleGrip } from './Controls';
 import MobileConsole from './MobileConsole';
 import GuideContent from './GuideContent';
-import { guideArtUrl, guidePageFor } from './guide';
+import Settings, { qualityHint, qualityLabels } from './Settings';
+import Transcript from './Transcript';
+import { InstrumentBench, RosterBench, ScoreBench, WordBench, benchAmplitude, benchState, useBench } from './Workbench';
+import { guidePageFor } from './guide';
+import { useConsoleAudio, useDiskFont, useGuideArt, useKeyDisk, useReducedMotion } from './hooks';
 import { useDiskPull } from './useDiskPull';
-import type { LocalState, InstrumentVariant, KeyDiskState } from './model';
+import { briefMode, detail, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, pinnedQuality, portable, preview, route, scoreBench, wordBench } from './options';
+import type { LocalState, KeyDiskState } from './model';
 import type { Target } from './paint';
-import type { PlayerInfo } from '../store/gameStore';
 import type { QualityChoice, QualityLevel } from './quality';
-import { consoleRoute, handleSurfaces, handlePull, handleCommit, type HandleSide } from './view';
-const route = consoleRoute(location.pathname, location.search, import.meta.env.DEV);
-const inspection = route.view === 'preview';
-const instrumentPreview = import.meta.env.DEV && new URLSearchParams(location.search).has('instruments');
-// DEV bench for the keyword windows' hardware: `/?words=led` or `crt`.
-const wordBench = import.meta.env.DEV && !instrumentPreview && new URLSearchParams(location.search).has('words');
-const initialWordDisplay = wordBench ? wordDisplayOptions.find(option => option.id === new URLSearchParams(location.search).get('words'))?.id || 'led' : initialLocal.wordDisplay;
-// Bench word sets cover every layout: one to five ideographs, doubled and tall sign type, two lines and a marquee.
-const benchWords = [
-    ['亚特兰蒂斯[atlantis]', '龙[dragon]', '巴黎圣母院[notre dame]', '莎士比亚[shakespeare]'],
-    ['潜水员[scuba diver]', '王牌[ace]', '听诊器[stethoscope]', '百万富翁[millionaire]'],
-];
-const preview = route.scenario;
-const detail = import.meta.env.DEV ? new URLSearchParams(location.search).get('detail') : null;
-const scoreBench = import.meta.env.DEV && new URLSearchParams(location.search).get('score') === 'flags';
-// Deterministic stills and benchmarks pin a level without touching the saved choice.
-const pinnedQuality = import.meta.env.DEV ? qualityChoices.find(choice => choice === new URLSearchParams(location.search).get('quality')) : undefined;
-const qualityLabels: Record<QualityChoice, string> = { auto: '自动', high: '高', medium: '中', low: '低' };
-const initialInstrument = instrumentPreview ? instrumentOptions.find(option => option.id === new URLSearchParams(location.search).get('instruments'))?.id || 'signal' : initialLocal.instrumentVariant;
-// DEV stills pin the round briefing: `?brief=hold` keeps it up, `?brief=off` skips it.
-const briefMode = import.meta.env.DEV ? new URLSearchParams(location.search).get('brief') : null;
-const scopeControls = ['scope-tune', 'scope-wave', 'scope-rate', 'scope-xy', 'meter-amplitude', 'meter-rate'];
-const isScopeControl = (id: string) => scopeControls.includes(id);
+import { handleSurfaces, type HandleSide } from './view';
 export default function Console() {
     const live = useGameStore();
     const [u, setU] = useState<LocalState>(() => { const music = readMusicPreferences(); return { ...initialLocal, name: readName(), musicOn: music.enabled, musicVolume: music.volume, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal', wordDisplay: initialWordDisplay,
-        meterAmplitude: initialInstrument === 'signal' ? 14 : initialInstrument === 'tuning' ? 4 : initialInstrument === 'status' ? 0 : 2 }; });
-    const [previewPeople, setPreviewPeople] = useState<PlayerInfo[]>([{ id: '0', nickname: '你', is_ai: false }]);
-    const previewSerial = useRef(1);
-    const [benchWordSet, setBenchWordSet] = useState(0);
-    const [reviewScores, setReviewScores] = useState({
-        A: { interceptions: 1, decrypt_failures: 0 }, B: { interceptions: 0, decrypt_failures: 1 },
-    });
-    const s = useMemo(() => {
-        if (preview !== 'roster-motion') {
-            const state = preview ? previewState(live, preview, u.locale) : live;
-            if (scoreBench) return { ...state, scoreA: reviewScores.A, scoreB: reviewScores.B };
-            return wordBench && benchWordSet && state.myWords.length ? { ...state, myWords: benchWords[benchWordSet - 1] } : state;
-        }
-        const state = previewState(live, 'room-partial', u.locale);
-        return { ...state, teamA: previewPeople, players: [...previewPeople, ...state.teamB],
-            canStart: previewPeople.length >= 2 };
-    }, [live, previewPeople, u.locale, benchWordSet, reviewScores]);
+        meterAmplitude: benchAmplitude(initialInstrument) }; });
+    const bench = useBench();
+    const s = useMemo(() => benchState(live, u.locale, bench), [live, bench.people, u.locale, bench.wordSet, bench.scores]);
     const hardware = consoleHardware(u, s);
     const heldState = useRef(s);
     const displayState = useMemo(() => terminalView(s, heldState.current, u), [s, hardware.online]);
@@ -70,22 +38,11 @@ export default function Console() {
     const hardwareRoom = useRef(s.roomCode);
     const archiveBlocking = u.archiveOpen && hardware.powered;
     const recovery = hardwareRecovery(u);
-    const [instrumentCloseup, setInstrumentCloseup] = useState(detail === 'meter');
-    const [wordZoom, setWordZoom] = useState(() => readWordScale(new URLSearchParams(location.search).get('zoom'), detail === 'words'));
-    const wordCloseup = wordZoom > 1;
-    const [dotFilter, setDotFilter] = useState<DotFilter>(() => wordBench ? readDotFilter(new URLSearchParams(location.search).get('filter')) : defaultDotFilter);
+    const wordCloseup = bench.wordZoom > 1;
     const [loaded, setLoaded] = useState(false);
-    const [diskFontReady, setDiskFontReady] = useState(false);
-    const [guideArt, setGuideArt] = useState<HTMLImageElement>();
-    useEffect(() => {
-        const image = new Image();
-        image.decoding = 'async';
-        let mounted = true;
-        image.onload = () => { if (mounted) setGuideArt(image); };
-        image.src = guideArtUrl;
-        return () => { mounted = false; image.onload = null; };
-    }, []);
-    const [reducedMotion, setReducedMotion] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+    const diskFontReady = useDiskFont();
+    const guideArt = useGuideArt();
+    const reducedMotion = useReducedMotion();
     const [failure, setFailure] = useState('');
     const [archiveVisible, setArchiveVisible] = useState(false);
     const [quality, setQuality] = useState<QualityChoice>(() => pinnedQuality ?? readQuality());
@@ -94,12 +51,9 @@ export default function Console() {
     const musicPreferences = useMemo(() => ({ enabled: u.musicOn, volume: u.musicVolume }), [u.musicOn, u.musicVolume]);
     const musicPreferencesRef = useRef(musicPreferences);
     musicPreferencesRef.current = musicPreferences;
-    const [musicStatus, setMusicStatus] = useState<MusicStatus>('off');
     const level = quality === 'auto' ? autoLevel : quality;
     const stage = useRef<HTMLDivElement>(null);
     const engine = useRef<ConsoleEngine | null>(null);
-    const audio = useRef<ConsoleAudio | null>(null);
-    const music = useRef<ConsoleMusic | null>(null);
     const previousSoundState = useRef(s);
     const controls = useRef(new Map<string, HTMLElement>());
     // Analog input updates targets and hardware, without repainting all the
@@ -115,18 +69,13 @@ export default function Console() {
             label: translate(u.locale, surface.includes('Rear') ? '点击把手连接处，回到正面' :
                 surface.includes('Left') ? '向右拖动左把手，翻到背面' : '向左拖动右把手，翻到背面'),
         }))].map(target =>
-        isScopeControl(target.id) ? { ...target, label: knobLabel(target.id, u) } : target) }),
+        isKnob(target.id) ? { ...target, label: knobLabel(target.id, u) } : target) }),
         [painted, clock, u.scopeFreq, u.scopeWave, u.scopeRate, u.scopeAxis, u.meterAmplitude, u.meterRate]);
     const current = useRef({ s, u, content, level });
     current.current = { s, u, content, level };
     const pending = useRef(false);
     const progressLast = useRef(0);
     const progressTrail = useRef<number | undefined>(undefined);
-    const tuningDrag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
-    const suppressTuningClick = useRef(false);
-    const pullDrag = useRef<{ y: number; moved: boolean } | null>(null);
-    const suppressPullClick = useRef(false);
-    const handleDrag = useRef<{ id: string; side: HandleSide; x: number; pointerId: number; progress: number } | null>(null);
     const handleFocusPending = useRef<string | null>(null);
     const archiveFocusPending = useRef(false);
     const [hint, setHint] = useState('');
@@ -140,6 +89,8 @@ export default function Console() {
         axis: () => engine.current?.diskPullAxis() ?? { x: 0, y: 1, pixels: 90 },
         onChange: changeDisk, onClick: () => act('disk-toggle') });
     const t = (message: string, values?: unknown[]) => translate(u.locale, message, values);
+    const grip = useHandleGrip({ machine: () => engine.current, stage, onTurn: side => turnConsole(true, side),
+        onRelease: deliberate => { if (deliberate) setAnnouncement(t('向内拖动把手，即可翻面')); project(); } });
     useEffect(() => { saveLocale(u.locale); document.documentElement.lang = u.locale === 'zh' ? 'zh-CN' : 'en'; document.title = (u.locale === 'zh' ? 'Encrypto - 密报终端' : 'Encrypto') + (inspection ? ' · Preview' : ''); setAnnouncement(translate(u.locale, '语言已切换'));  }, [u.locale]);
     useEffect(() => { saveTheme(u.theme); }, [u.theme]);
     function patch(values: Partial<LocalState>) { setU(old => ({ ...old, ...values })); }
@@ -148,10 +99,9 @@ export default function Console() {
         setU(old => old.keyDisk.id === disk.id ? { ...old, keyDisk: disk,
             diskOut: ['pulling', 'ejected', 'removed'].includes(disk.phase) || disk.phase === 'settling' && !!disk.pull?.target } : old);
     }
-    function playSound(cue: ConsoleSound, gesture = true) { void audio.current?.play(cue, gesture); }
     function facingRear() {
         // A resize can replace a rear-facing 3D machine with the portable terminal.
-        if (!inspection && !instrumentPreview && !wordBench && !detail && matchMedia('(max-width: 850px)').matches) return false;
+        if (!keepsMachine && portable()) return false;
         return engine.current?.facingRear() ?? current.current.u.backView;
     }
     function turnConsole(back: boolean, side: HandleSide = 'left') {
@@ -198,64 +148,17 @@ export default function Console() {
         if (Math.max(0, Math.min(1, local[field] + turn)) !== local[field]) playSound('knob');
         setU(old => ({ ...old, [field]: Math.max(0, Math.min(1, old[field] + turn)) }));
     }
-    function selectInstrument(variant: InstrumentVariant) {
-        patch({ instrumentVariant: variant, meterAmplitude: variant === 'signal' ? 14 : variant === 'tuning' ? 4 : variant === 'status' ? 0 : 2,
-            meterRate: 2, instrumentDemo: false });
-        const url = new URL(location.href);
-        url.searchParams.set('instruments', variant);
-        history.replaceState(null, '', url);
-        setHint('');
-        setAnnouncement(t("已试装{0}", [t(instrumentOptions.find(option => option.id === variant)?.label || '')]));
-    }
-    function selectWordDisplay(display: WordDisplay) {
-        patch({ wordDisplay: display });
-        const url = new URL(location.href);
-        url.searchParams.set('words', display);
-        history.replaceState(null, '', url);
-        setAnnouncement(t("已试装{0}", [t(wordDisplayOptions.find(option => option.id === display)?.label || '')]));
-    }
-    function inspectWords(closeup: boolean) {
-        zoomWords(closeup ? 2 : 1);
-    }
-    function zoomWords(scale: number) {
-        setWordZoom(scale);
-        const url = new URL(location.href);
-        url.searchParams.set('zoom', String(scale));
-        if (scale > 1) url.searchParams.set('detail', 'words'); else url.searchParams.delete('detail');
-        history.replaceState(null, '', url);
-    }
-    function selectDotFilter(filter: DotFilter) {
-        setDotFilter(filter);
-        const url = new URL(location.href);
-        url.searchParams.set('filter', filter);
-        history.replaceState(null, '', url);
-        setAnnouncement(t('LED 缩放：{0}', [t(dotFilterOptions.find(option => option.id === filter)!.label)]));
-    }
-    function inspectInstrument(closeup: boolean) {
-        setInstrumentCloseup(closeup);
-        engine.current?.inspectInstrument(closeup);
-        const url = new URL(location.href);
-        if (closeup) url.searchParams.set('detail', 'meter'); else url.searchParams.delete('detail');
-        history.replaceState(null, '', url);
-    }
-    function previewRoster(action: 'human' | 'ai' | 'remove' | 'replace') {
-        if (preview !== 'roster-motion') return;
-        const serial = previewSerial.current++;
-        const player = { id: `preview-${serial}`, nickname: action === 'human' ? `夜航员 ${serial}` : `AI · ${String(serial).padStart(2, '0')}`, is_ai: action !== 'human' };
-        setPreviewPeople(people => action === 'remove' ? people.slice(0, -1) :
-            action === 'replace' ? [...people.slice(0, -1), player] : [...people, player].slice(0, 4));
-    }
     function closeArchive() {
         archiveFocusPending.current = true;
         setAnnouncement(archiveVisible ? t("正在收起记录并撕下小票") : t("已取消打开记录"));
         setArchiveVisible(false);
         patch({ archiveOpen: false });
-        if (archiveVisible && (failure || !engine.current || matchMedia('(max-width: 850px)').matches)) playSound('paper-tear');
+        if (archiveVisible && (failure || !engine.current || portable())) playSound('paper-tear');
     }
     function restoreArchiveFocus() {
         if (!archiveFocusPending.current || current.current.u.archiveOpen || document.querySelector('.archive-dialog[open]')) return;
         archiveFocusPending.current = false;
-        if (matchMedia('(max-width: 850px)').matches) document.querySelector<HTMLButtonElement>('[data-mobile-archive]')?.focus();
+        if (portable()) document.querySelector<HTMLButtonElement>('[data-mobile-archive]')?.focus();
         else controls.current.get('paper:archive-toggle')?.focus();
     }
     useEffect(restoreArchiveFocus, [u.archiveOpen]);
@@ -265,7 +168,7 @@ export default function Console() {
             return;
         for (const target of current.current.content.targets) {
             const node = controls.current.get(target.surface + ':' + target.id);
-            if (handleDrag.current?.id === target.id) continue;
+            if (grip.held() === target.id) continue;
             const bounds = e.bounds(target);
             if (node && !failure) node.style.visibility = bounds ? 'visible' : 'hidden';
             if (node && bounds) {
@@ -289,50 +192,12 @@ export default function Console() {
         }
     }
     useEffect(() => {
-        let cancelled = false;
-        // Canvas textures must repaint once the bundled handwriting font arrives.
-        void document.fonts.load('700 52px "Disk Hand"').then(() => {
-            if (!cancelled) setDiskFontReady(true);
-        }).catch(() => { /* The local handwriting/cursive fallback remains usable. */ });
-        return () => { cancelled = true; };
-    }, []);
-    useEffect(() => {
         if (!preview)
             live.connect();
         return () => { if (!preview)
             useGameStore.getState().disconnect(); };
     }, []);
-    useEffect(() => {
-        const speaker = new ConsoleAudio();
-        const score = new ConsoleMusic(() => speaker.output(), setMusicStatus);
-        audio.current = speaker;
-        music.current = score;
-        speaker.onUnlock = () => { void score.refresh(); };
-        speaker.onSound = cue => score.duck(cue);
-        speaker.prepare();
-        speaker.setEnabled(current.current.u.soundOn);
-        score.configure({ ...musicPreferencesRef.current, powered: consoleHardware(current.current.u).powered });
-        score.transition(current.current.s, current.current.s);
-        const visibility = () => {
-            speaker.setVisible(!document.hidden);
-            score.configure({ visible: !document.hidden });
-        };
-        visibility();
-        // Unlock both independent channels on the first interaction, even when effects are off.
-        const unlock = () => { void speaker.unlock(); };
-        document.addEventListener('pointerdown', unlock, { capture: true });
-        document.addEventListener('keydown', unlock, { capture: true });
-        document.addEventListener('visibilitychange', visibility);
-        return () => {
-            document.removeEventListener('visibilitychange', visibility);
-            document.removeEventListener('pointerdown', unlock, true);
-            document.removeEventListener('keydown', unlock, true);
-            score.dispose();
-            speaker.dispose();
-            audio.current = null;
-            music.current = null;
-        };
-    }, []);
+    const { audio, music, musicStatus, play: playSound, refreshMusic } = useConsoleAudio(current, musicPreferencesRef);
     useEffect(() => {
         let cancelled = false;
         let instance: ConsoleEngine | undefined;
@@ -345,14 +210,14 @@ export default function Console() {
                     }
                 },
                 playSound: cue => {
-                    if (consoleHardware(current.current.u).powered && (inspection || !matchMedia('(max-width: 850px)').matches)) playSound(cue, false);
+                    if (consoleHardware(current.current.u).powered && (inspection || !portable())) playSound(cue, false);
                 },
                 setPaperFeed: moving => {
                     void audio.current?.setPaperFeed(moving && consoleHardware(current.current.u).powered &&
-                        (inspection || !matchMedia('(max-width: 850px)').matches));
+                        (inspection || !portable()));
                 },
                 // A tube still discharges after mains-off; the effects switch still gates it.
-                playCrt: event => { if (inspection || !matchMedia('(max-width: 850px)').matches) void audio.current?.crt(event); },
+                playCrt: event => { if (inspection || !portable()) void audio.current?.crt(event); },
             });
             instance.setQuality(qualityProfiles[current.current.level]);
             engine.current = instance;
@@ -371,41 +236,13 @@ export default function Console() {
     useLayoutEffect(() => { engine.current?.update(content, u); project(); }, [content, loaded]);
     useLayoutEffect(() => { engine.current?.setKeyDisk(u.keyDisk); project(); }, [u.keyDisk]);
     useLayoutEffect(() => { engine.current?.setQuality(qualityProfiles[level]); }, [level]);
-    useLayoutEffect(() => { if (wordBench) engine.current?.setDotFilter(dotFilter); }, [loaded, dotFilter]);
-    useLayoutEffect(() => { if (wordBench && loaded) engine.current?.inspectWordScale(wordZoom); }, [loaded, wordZoom]);
-    useEffect(() => {
-        const media = matchMedia('(prefers-reduced-motion: reduce)');
-        const change = () => setReducedMotion(media.matches);
-        media.addEventListener('change', change);
-        return () => media.removeEventListener('change', change);
-    }, []);
-    useLayoutEffect(() => {
-        setU(old => {
-            const disk = syncKeyDisk(old.keyDisk, diskId, performance.now(),
-                consoleHardware(old, s).online && (loaded || !!failure || matchMedia('(max-width: 850px)').matches), reducedMotion);
-            return disk === old.keyDisk ? old : { ...old, keyDisk: disk, diskOut: false };
-        });
-    }, [diskId, loaded, failure, hardware.online, reducedMotion]);
-    useLayoutEffect(() => {
-        setU(old => {
-            const keyDisk = syncDiskPower(old.keyDisk, consoleHardware(old).powered, performance.now());
-            return keyDisk === old.keyDisk ? old : { ...old, keyDisk };
-        });
-    }, [hardware.powered, u.keyDisk]);
-    useEffect(() => {
-        const disk = u.keyDisk, duration = keyDiskDurations[disk.phase];
-        if (duration === undefined || disk.pausedAt !== undefined || disk.phase === 'reading' && !hardware.powered) return;
-        const timer = window.setTimeout(() => setU(old => {
-            if (old.keyDisk !== disk) return old;
-            const next = advanceKeyDisk(disk, performance.now(), reducedMotion);
-            return next === disk ? old : { ...old, keyDisk: next, diskOut: ['ejected', 'removed'].includes(next.phase) };
-        }), reducedMotion ? 0 : Math.max(0, duration - (performance.now() - disk.startedAt)) + 1);
-        return () => clearTimeout(timer);
-    }, [u.keyDisk, reducedMotion, hardware.powered]);
-    useEffect(() => {
-        if (u.keyDisk.id) setAnnouncement(t(u.keyDisk.pausedAt !== undefined ? '读盘暂停 · 等待供电恢复' : keyDiskMessage(u.keyDisk)));
-        if (u.keyDisk.phase === 'inserting' && hardware.powered) playSound('disk-in', false);
-    }, [u.keyDisk.phase, u.keyDisk.startedAt, u.keyDisk.id]);
+    useLayoutEffect(() => { if (wordBench) engine.current?.setDotFilter(bench.dotFilter); }, [loaded, bench.dotFilter]);
+    useLayoutEffect(() => { if (wordBench && loaded) engine.current?.inspectWordScale(bench.wordZoom); }, [loaded, bench.wordZoom]);
+    useKeyDisk({ disk: u.keyDisk, id: diskId, state: s, loaded, failure, online: hardware.online, powered: hardware.powered,
+        reduced: reducedMotion, setLocal: setU, onPhase: () => {
+            if (u.keyDisk.id) setAnnouncement(t(u.keyDisk.pausedAt !== undefined ? '读盘暂停 · 等待供电恢复' : keyDiskMessage(u.keyDisk)));
+            if (u.keyDisk.phase === 'inserting' && hardware.powered) playSound('disk-in', false);
+        } });
     useEffect(() => {
         if (!loaded || quality !== 'auto') return;
         let cancelled = false;
@@ -515,13 +352,7 @@ export default function Console() {
                 return;
             }
             if (event.key === 'Escape') {
-                if (handleDrag.current) {
-                    handleDrag.current = null;
-                    engine.current?.releaseHandle();
-                    stage.current?.removeAttribute('data-handling');
-                    project();
-                }
-                else {
+                if (!grip.cancel()) {
                     if (current.current.u.manual || current.current.u.about)
                         handleFocusPending.current = current.current.u.about ? 'about' : 'manual';
                     else skipBriefing();
@@ -613,7 +444,7 @@ export default function Console() {
         musicPreferencesRef.current = next;
         patch({ musicOn: next.enabled, musicVolume: next.volume });
         music.current?.configure(next);
-        void audio.current?.unlock().then(() => music.current?.refresh());
+        refreshMusic();
     }
     function changeHardware(values: Partial<LocalState>, message?: string) {
         const old = current.current.u, next = { ...old, ...values };
@@ -631,7 +462,8 @@ export default function Console() {
     function act(id: string) {
         const { s: state, u: local } = current.current;
         const r = roleState(state, local);
-        const rear = facingRear();
+        if (!reachable(id, { powered: consoleHardware(local).powered, online: consoleHardware(local, state).online, rear: facingRear(),
+            batteryOpen: local.batteryOpen, pending: pending.current, briefing: !!local.brief && !failure && !portable() })) return;
         if (id in handleSurfaces) {
             turnConsole(!id.includes('Rear'), id.includes('Left') ? 'left' : 'right');
             return;
@@ -641,7 +473,6 @@ export default function Console() {
             return;
         }
         if (id === 'power-toggle' || id === 'restore-switch') {
-            if (rear && id === 'power-toggle') return;
             changeHardware({ powerOn: id === 'restore-switch' || !local.powerOn, manual: false, about: false, focus: 'power-toggle' });
             return;
         }
@@ -661,7 +492,6 @@ export default function Console() {
             setAnnouncement(on ? t('背景音乐已开启') : t('背景音乐已关闭'));
             return;
         }
-        if (!consoleHardware(local).powered && !rear && !['disk-toggle', 'disk-eject'].includes(id)) return;
         if (id === 'battery-toggle') {
             patch({ batteryOpen: !local.batteryOpen });
             setAnnouncement(local.batteryOpen ? t("电池仓已合上") : t("电池仓已打开，四节电池与金属触点可见。再次点击电池仓合上。"));
@@ -669,30 +499,26 @@ export default function Console() {
             return;
         }
         if (id.startsWith('battery-cell-')) {
-            if (!rear || !local.batteryOpen) return;
             const index = Number(id.slice(-1));
             const removedBatteries = local.removedBatteries ^ (1 << index);
             changeHardware({ removedBatteries }, t("第 {0} 节电池已{1}", [index + 1, removedBatteries & (1 << index) ? t("取出，再次点击装回") : t("装回")]));
             return;
         }
         if (id.startsWith('cable-plug-')) {
-            if (!rear) return;
             const index = Number(id.slice(-1));
             changeHardware({ unpluggedCables: local.unpluggedCables ^ (1 << index) },
                 t('{0}已{1}', [[t('网线'), t('串口线'), t('电源线')][index], local.unpluggedCables & (1 << index) ? t('插回') : t('拔出')]));
             return;
         }
         if (id === 'lamp-test') {
-            if (!consoleHardware(local).powered) return;
             engine.current?.testLamps();
             playSound('test');
             setAnnouncement(t("本机指示灯自检中，未改变对局或网络连接"));
             return;
         }
-        if (rear) return;
         // ACTION during a briefing only takes the operator to the working page. The
         // portable terminal has no briefing page, so there it always transmits.
-        if (id === 'transmit' && local.brief && !failure && !matchMedia('(max-width: 850px)').matches) {
+        if (id === 'transmit' && local.brief && !failure && !portable()) {
             skipBriefing();
             engine.current?.pulse(id);
             playSound('key');
@@ -745,7 +571,7 @@ export default function Console() {
             if (local.archiveOpen) return;
             patch({ archiveOpen: true });
             setAnnouncement(t("正在拉出纸带并展开密报记录"));
-            if (failure || !engine.current || matchMedia('(max-width: 850px)').matches) {
+            if (failure || !engine.current || portable()) {
                 playSound('paper-feed');
                 setArchiveVisible(true);
             } else void audio.current?.unlock();
@@ -767,14 +593,12 @@ export default function Console() {
             return;
         }
         if (id === 'leave-room') {
-            if (!consoleHardware(local, state).online) return;
             playSound('key');
             state.reset();
             state.connect();
             return;
         }
         if (id === 'copy-code') {
-            if (!consoleHardware(local, state).online) return;
             if (state.roomCode) playSound('key');
             engine.current?.pulse('copy-code');
             if (state.roomCode)
@@ -815,8 +639,6 @@ export default function Console() {
             playSound('key');
             return;
         }
-        if (!consoleHardware(local, state).online || pending.current)
-            return;
         if (preview) {
             if (id === 'transmit' && current.current.content.ready) {
                 engine.current?.pulse(id);
@@ -879,9 +701,6 @@ export default function Console() {
             state.removeAI(team, Number(index));
         }
     }
-    const qualityHint = (choice: QualityChoice) => choice === 'auto'
-        ? `${t('按本机实测的单帧耗时选择档位；再次点击重新检测')} · ${t('当前')} ${t(qualityLabels[level])}`
-        : `${t(qualityLabels[choice])} · ${describeQuality(qualityProfiles[choice], t)}`;
     const colors = themeColors(u.theme);
     // The first status line already names the supply when the terminal is healthy.
     const supplyLabel = hardware.supply === 'external' ? '外部供电' : hardware.supply === 'battery' ? '电池供电' : '无供电';
@@ -890,65 +709,12 @@ export default function Console() {
         data-backdrop-blur={qualityProfiles[level].backdropBlur ? undefined : 'off'}
         data-instruments={instrumentPreview || wordBench || undefined} data-instrument={instrumentPreview ? u.instrumentVariant : undefined}
         data-word-bench={wordBench || undefined}
-        data-detail={(instrumentPreview ? instrumentCloseup ? 'meter' : null : wordBench ? wordCloseup ? 'words' : null : detail) || undefined}>
-    <div className="station-settings" inert={archiveBlocking}>
-      <nav className="station-navigation" aria-label={t('页面导航')}>
-        <a href="/" aria-current={!inspection ? 'page' : undefined}>{t('游戏')}</a>
-        <a href="/preview" aria-current={inspection ? 'page' : undefined}>Preview</a>
-      </nav>
-      <details className="station-preferences"><summary>{t('设置')}</summary><div className="station-preferences-panel">
-      {!failure && <div className="station-quality" role="group" aria-label={t("画质")}>
-        <span aria-hidden="true">{t("画质")}</span>
-        {qualityChoices.map(choice => <button key={choice} aria-pressed={quality === choice} title={qualityHint(choice)}
-            onClick={() => chooseQuality(choice)} onMouseEnter={() => setHint('quality:' + choice)} onMouseLeave={() => setHint('')}
-            onFocus={() => setHint('quality:' + choice)} onBlur={() => setHint('')}>
-          {t(qualityLabels[choice])}{choice === 'auto' && quality === 'auto' && <small>{t(qualityLabels[level])}</small>}
-        </button>)}
-      </div>}
-      <fieldset className="station-themes"><legend>{t('主题')}</legend>
-        <div className="station-theme-options">
-          {themeChoices.map(theme => <button key={theme.id} type="button" aria-pressed={u.theme === theme.id}
-            onClick={event => {
-              patch({ theme: theme.id });
-              setAnnouncement(t('主题已切换为{0}', [t(theme.label)]));
-              // Reveal the physical exchange instead of covering it with Settings.
-              const settings = event.currentTarget.closest('details');
-              if (settings) { settings.open = false; settings.querySelector('summary')?.focus({ preventScroll: true }); }
-            }}>
-            <span className="station-theme-swatches" aria-hidden="true"><i style={{ background: theme.own.plate }}/><i style={{ background: theme.opponent.plate }}/><i style={{ background: theme.led.word }}/><i style={{ background: theme.led.legend }}/></span>
-            {t(theme.label)}
-          </button>)}
-        </div>
-      </fieldset>
-      <fieldset className="station-music"><legend>{t('声音')}</legend>
-        <div className="station-music-row">
-          <span>{t('音效')}</span>
-          <button type="button" role="switch" aria-checked={u.soundOn} aria-label={t('音效')}
-            onClick={() => act('sound-toggle')}>{t(u.soundOn ? '已开启' : '已关闭')}</button>
-        </div>
-        <div className="station-music-row">
-          <span>{t('背景音乐')}</span>
-          <button type="button" role="switch" aria-checked={musicPreferences.enabled} aria-label={t('背景音乐')}
-            onClick={() => act('music-toggle')}>{t(musicPreferences.enabled ? '已开启' : '已关闭')}</button>
-        </div>
-        <label className="station-music-volume"><span>{t('音乐音量')}</span>
-          <input type="range" min="0" max="100" step="1" value={Math.round(musicPreferences.volume * 100)}
-            aria-valuetext={`${Math.round(musicPreferences.volume * 100)}%`}
-            onChange={event => changeMusic({ volume: Number(event.target.value) / 100 })}/>
-          <output>{Math.round(musicPreferences.volume * 100)}%</output>
-        </label>
-        <p role="status">{!hardware.powered ? t('终端关机，音乐已暂停。') : !musicPreferences.enabled ? t('开启后随大厅、对局与结局播放。') :
-            musicStatus === 'error' ? t('音乐未能载入，可重试；游戏不受影响。') : musicStatus === 'loading' ? t('正在载入音乐…') :
-            musicStatus === 'playing' ? t('正在播放背景音乐') : t('音乐已就绪，结算后保持安静。')}</p>
-        {musicStatus === 'error' && <button type="button" onClick={() => { void audio.current?.unlock().then(() => music.current?.refresh()); }}>{t('重试音乐')}</button>}
-        <a href="/audio/CREDITS.md" target="_blank" rel="noreferrer">{t('音乐与音效来源')}</a>
-      </fieldset>
-      <div className="station-language" role="group" aria-label="Language / 语言">
-        <button lang="zh-CN" aria-pressed={u.locale === 'zh'} onClick={() => patch({ locale: 'zh' })}>中文</button>
-        <button lang="en" aria-pressed={u.locale === 'en'} onClick={() => patch({ locale: 'en' })}>EN</button>
-      </div>
-      </div></details>
-    </div>
+        data-detail={(instrumentPreview ? bench.instrumentCloseup ? 'meter' : null : wordBench ? wordCloseup ? 'words' : null : detail) || undefined}>
+    <Settings t={t} inspection={inspection} failed={!!failure} inert={archiveBlocking} quality={quality} level={level} theme={u.theme} locale={u.locale}
+        soundOn={u.soundOn} music={musicPreferences} musicStatus={musicStatus} powered={hardware.powered}
+        onQuality={chooseQuality} onHint={setHint} onAct={act} onLocale={locale => patch({ locale })}
+        onTheme={(theme, label) => { patch({ theme }); setAnnouncement(t('主题已切换为{0}', [t(label)])); }}
+        onVolume={volume => changeMusic({ volume })} onRetryMusic={refreshMusic}/>
     <h1 className="sr-only">{t("Encrypto · 密报终端")}</h1>
     <MobileConsole state={displayState} local={u} ready={content.ready} status={content.status} onAct={act} onChange={(id, value) => change({ id }, value)} onDiskChange={changeDisk} reducedMotion={reducedMotion} inert={archiveBlocking}/>
     <div className="station-viewport" inert={archiveBlocking}>
@@ -956,168 +722,20 @@ export default function Console() {
         {!loaded && !failure && <div className="station-loading"><strong>ENCRYPTO</strong><span>{t("正在启动密码终端…")}</span></div>}
         {failure && <div className="station-error" role="alert">{t(failure)}<button onClick={() => location.reload()}>{t("重新载入")}</button></div>}
         <div className="sr-only">{(u.manual || u.about) && <GuideContent locale={u.locale} about={u.about} transcript/>}</div>
-        <div className="station-controls" aria-label={t("密码通信终端控件")} style={{ visibility: loaded || failure ? 'visible' : 'hidden' }}>
-          {content.targets.map(target => {
-            const key = target.surface + ':' + target.id;
-            const common = {
-                ref: (el: HTMLElement | null) => { if (el)
-                    controls.current.set(key, el);
-                else
-                    controls.current.delete(key); },
-                'aria-label': target.label, 'data-control': target.id, 'data-surface': target.surface,
-                role: isScopeControl(target.id) ? 'slider' : ['power-toggle', 'receiver-sweep', 'sound-toggle', 'music-toggle'].includes(target.id) ? 'switch' : undefined,
-                'aria-valuemin': isScopeControl(target.id) ? 0 : undefined,
-                'aria-valuemax': isScopeControl(target.id) ? 100 : undefined,
-                'aria-valuenow': isScopeControl(target.id) ? Math.round((target.id === 'scope-tune' ? u.scopeFreq : target.id === 'scope-wave' ? u.scopeWave : target.id === 'scope-rate' ? u.scopeRate : target.id === 'scope-xy' ? u.scopeAxis : target.id === 'meter-amplitude' ? u.meterAmplitude / (instrumentSteps(u.instrumentVariant, 'amplitude') - 1) : u.meterRate / 4) * 1000) / 10 : undefined,
-                'aria-valuetext': isScopeControl(target.id) ? target.label : undefined,
-                'aria-checked': target.id === 'power-toggle' ? u.powerOn : target.id === 'receiver-sweep' ? u.instrumentDemo : target.id === 'sound-toggle' ? u.soundOn : target.id === 'music-toggle' ? u.musicOn : undefined,
-                disabled: target.disabled,
-                style: failure ? { visibility: 'visible' as const } : undefined,
-                title: target.label,
-                'aria-expanded': target.id === 'archive-toggle' ? u.archiveOpen : target.id === 'battery-toggle' ? u.batteryOpen : undefined,
-                'aria-haspopup': target.id === 'archive-toggle' ? 'dialog' as const : undefined,
-                'aria-pressed': target.id === 'disk-toggle' ? u.diskOut : target.id === 'manual' ? u.manual : target.id === 'about' ? u.about : undefined,
-                onMouseEnter: () => setHint(target.id),
-                onMouseLeave: () => setHint(''),
-                onFocus: () => { setHint(target.id); patch({ focus: target.id }); if (target.id.startsWith('clue-'))
-                    progress(u.clues, u.guess, Number(target.id.slice(5)), true); },
-                onBlur: () => { setHint(''); if (current.current.u.focus === target.id)
-                    patch({ focus: '' }); },
-            };
-            if (target.href) return <a key={key} {...common} href={target.href} target="_blank" rel="noopener noreferrer">{target.label}</a>;
-            if (target.id === 'disk-toggle') return <button key={key} {...common} {...diskPull} className="station-disk-grip" data-phase={u.keyDisk.phase}>
-                {/* Keyed by message: a new instruction plays its short reveal again. */}
-                {!target.disabled && <span key={u.keyDisk.phase === 'removed' ? 'insert' : 'pull'} className="disk-grip-hint" aria-hidden="true">{t(u.keyDisk.phase === 'removed' ? '点击插回' : '按住软盘向外拖')}</span>}
-            </button>;
-            if (target.id in handleSurfaces) return <button key={key} {...common} className="station-handle"
-                onClick={e => { if (target.id.includes('Rear') || e.detail === 0 || failure) act(target.id); }}
-                onPointerDown={e => {
-                    if (e.button !== 0 || target.id.includes('Rear')) return;
-                    const side = target.id.includes('Left') ? 'left' : 'right';
-                    if (!engine.current?.beginHandle(side)) return;
-                    e.preventDefault();
-                    handleDrag.current = { id: target.id, side, x: e.clientX, pointerId: e.pointerId, progress: 0 };
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                    stage.current?.setAttribute('data-handling', 'true');
-                }}
-                onPointerMove={e => {
-                    const drag = handleDrag.current;
-                    if (!drag || drag.pointerId !== e.pointerId) return;
-                    drag.progress = handlePull(drag.side, e.clientX - drag.x, stage.current?.clientWidth || 1);
-                    engine.current?.pullHandle(drag.progress);
-                }}
-                onPointerUp={e => {
-                    const drag = handleDrag.current;
-                    if (!drag || drag.pointerId !== e.pointerId) return;
-                    handleDrag.current = null;
-                    engine.current?.releaseHandle();
-                    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
-                    stage.current?.removeAttribute('data-handling');
-                    if (drag.progress >= handleCommit) turnConsole(true, drag.side);
-                    else { setAnnouncement(t('向内拖动把手，即可翻面')); project(); }
-                }}
-                onLostPointerCapture={() => {
-                    if (!handleDrag.current) return;
-                    handleDrag.current = null;
-                    engine.current?.releaseHandle();
-                    stage.current?.removeAttribute('data-handling');
-                    project();
-                }}
-                onPointerCancel={() => {
-                    handleDrag.current = null;
-                    engine.current?.releaseHandle();
-                    stage.current?.removeAttribute('data-handling');
-                    project();
-                }}>{target.label}</button>;
-            return target.kind === 'input' ? <input key={key} {...common} type="text" value={target.value || ''} maxLength={target.maxLength} placeholder={target.input?.placeholder || target.label} autoComplete={target.id === 'name' ? 'nickname' : 'off'} spellCheck={false} onChange={e => change(target, e.target.value)} onKeyDown={e => {
-                    if (e.key === 'Enter' && !e.nativeEvent.isComposing && target.id.startsWith('clue-')) {
-                        e.preventDefault();
-                        const i = Number(target.id.slice(5));
-                        controls.current.get(`screen:clue-${Math.min(i + 1, 2)}`)?.focus();
-                    }
-                }}/> : <button key={key} {...common} onClick={e => {
-                    if (isScopeControl(target.id) && suppressTuningClick.current && e.detail > 0) { suppressTuningClick.current = false; return; }
-                    if (target.surface === 'paper' && suppressPullClick.current && e.detail > 0) { suppressPullClick.current = false; return; }
-                    if (isScopeControl(target.id)) adjustKnob(target.id, 1, true); else act(target.id);
-                }} onPointerDown={isScopeControl(target.id) ? e => {
-                    if (e.button !== 0) return;
-                    suppressTuningClick.current = false;
-                    tuningDrag.current = { x: e.clientX, y: e.clientY, moved: false };
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                } : target.surface === 'paper' ? e => {
-                    if (e.button !== 0) return;
-                    suppressPullClick.current = false;
-                    pullDrag.current = { y: e.clientY, moved: false };
-                    e.currentTarget.setPointerCapture(e.pointerId);
-                } : undefined} onPointerMove={isScopeControl(target.id) ? e => {
-                    const drag = tuningDrag.current;
-                    if (!drag) return;
-                    const delta = e.clientX - drag.x - (e.clientY - drag.y);
-                    if (Math.abs(delta) > .2) {
-                        adjustKnob(target.id, delta / (e.shiftKey ? 1400 : 220));
-                        tuningDrag.current = { x: e.clientX, y: e.clientY, moved: true };
-                    }
-                } : target.surface === 'paper' ? e => {
-                    if (pullDrag.current && e.clientY - pullDrag.current.y > 16) pullDrag.current.moved = true;
-                } : undefined} onPointerUp={isScopeControl(target.id) ? () => {
-                    suppressTuningClick.current = !!tuningDrag.current?.moved;
-                    tuningDrag.current = null;
-                } : target.surface === 'paper' ? () => {
-                    suppressPullClick.current = !!pullDrag.current?.moved;
-                    if (pullDrag.current?.moved) act(target.id);
-                    pullDrag.current = null;
-                } : undefined} onPointerCancel={() => { tuningDrag.current = null; suppressTuningClick.current = false; pullDrag.current = null; suppressPullClick.current = false; }}
-                onKeyDown={isScopeControl(target.id) ? e => {
-                    if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); adjustKnob(target.id, e.key === 'Home' ? -40 : 40, true); }
-                    if (['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(e.key)) {
-                        e.preventDefault(); adjustKnob(target.id, (['ArrowDown', 'ArrowLeft'].includes(e.key) ? -1 : 1) * (e.shiftKey ? .1 : 1), true);
-                    }
-                } : undefined} onWheel={isScopeControl(target.id) ? e => {
-                    adjustKnob(target.id, Math.max(-.08, Math.min(.08, e.deltaY * (e.deltaMode ? .012 : .001))) * (e.shiftKey ? .1 : 1));
-                } : undefined}>
-                {target.label}
-              </button>;
-        })}
-        </div>
-        <section hidden={!hardware.powered} className={failure ? 'fallback-readout' : 'sr-only'} aria-label={t("当前通信文字记录")}><h2>{t(hardware.online ? '当前通信' : '已断开连接')}</h2><p>{content.status}</p>
-          {hardware.batteryPercent !== null && <p>{t('电池电量 {0}%', [hardware.batteryPercent])}</p>}
-          {!hardware.online && <p>CH 0000 · {t('离线')}</p>}
-          <p>{!hardware.online ? Array.from({ length: 4 }, (_, i) => `${i + 1} ${t('离线')}`).join(' · ') : u.hiddenWords ? t("秘密词已遮住") : displayState.myWords.map(value => word(value, u.locale)).join(' · ')}</p>
-          <p>{hardware.online ? displayState.clues.join(' / ') : t('输入已保留，不会自动提交。')}</p>
-          <p>{t('第 {0} 回合，加密者：{1}', [displayState.round, displayState.encryptor])} {diskReadable ? t("本轮私密密码：{0}", [displayState.secretDigits.join('、')]) : ''}</p>
-          {(['A', 'B'] as const).map(team => <p key={team}>{t('{0} 队     截获 {1} / 2     失误 {2} / 2', [team, (team === 'A' ? displayState.scoreA : displayState.scoreB).interceptions, (team === 'A' ? displayState.scoreA : displayState.scoreB).decrypt_failures])}</p>)}
-          {rosterTeams(displayState, u).map(team => <section key={team.team} aria-label={t("{0} 队名册", [team.team])}>
-            <h3>{t('{0} 队 · {1} 人', [team.team, team.count])}{team.own ? t(" · 我方") : ''} · {t(team.summary)}</h3>
-            <ul>{team.seats.map(seat => <li key={seat.code}>{seat.code} · {seat.player ? `${seat.player.nickname}${seat.self && seat.player.nickname !== '你' ? t(" · 你") : ''} · ${seat.player.is_ai ? 'AI' : t("真人")}${seat.owner ? t(" · 房主") : ''}` : t("空席")} · {t(seat.status)}{seat.progress ? t(" · 已完成 {0} / {1}", [seat.progress.step, seat.progress.total]) : ''}</li>)}</ul>
-          </section>)}
-          {displayState.gameOver && <p>{displayState.gameOver.winner ? t("{0} 队获胜", [displayState.gameOver.winner]) : t("双方平局")}</p>}
-          {archiveRows(displayState, 'all').map(row => <p key={row.round}>{t('第 {0} 回合 · {1} 队', [row.round, row.team])}: {row.clues.join(' / ')} · {t('公开密码')} {row.secret?.join(' · ') || t("未公开")}</p>)}
-        </section>
+        <Controls targets={content.targets} local={u} failed={!!failure} visible={loaded || !!failure} t={t} nodes={controls} diskPull={diskPull} grip={grip}
+            onHint={setHint} onAct={act} onChange={(target, value) => change(target, value)} onKnob={adjustKnob}
+            onFocus={target => { setHint(target.id); patch({ focus: target.id }); if (target.id.startsWith('clue-'))
+                progress(u.clues, u.guess, Number(target.id.slice(5)), true); }}
+            onBlur={target => { setHint(''); if (current.current.u.focus === target.id)
+                patch({ focus: '' }); }}/>
+        <Transcript state={displayState} local={u} hardware={hardware} status={content.status} diskReadable={diskReadable} failed={!!failure} t={t}/>
       </div>
     </div>
     {loaded && !failure && <div className="station-workbench" inert={archiveBlocking}>
       {!scoreBench && !hint && <span className="station-orbit-hint">{t(inspection ? '拖动机身旋转 · 滚轮缩放 · 拖动把手翻面' : u.backView ? '点击把手连接处，回到正面' : '向内拖动把手，即可翻面')}</span>}
       {inspection && <button className="station-reset-view" onClick={() => engine.current?.resetInspection()}>{t('重置视角')}</button>}
-      {scoreBench && !u.backView && <div className="station-roster-preview station-score-preview" aria-label={t('翻旗积分板试装')}>
-        <span>{t('翻旗试装')}</span>
-        {(['A', 'B'] as const).flatMap(team => (['interceptions', 'decrypt_failures'] as const).map(field =>
-          <button key={`${team}-${field}`} disabled={!hardware.powered}
-            aria-label={t('循环切换 {0} 队{1}计分', [team, t(field === 'interceptions' ? '截获' : '失误')])}
-            onClick={() => setReviewScores(scores => ({ ...scores,
-              [team]: { ...scores[team], [field]: (scores[team][field] + 1) % 3 } }))}>
-            {team} · {t(field === 'interceptions' ? '截获' : '失误')} {reviewScores[team][field]}/2
-          </button>))}
-        <button disabled={!hardware.powered} onClick={() => setReviewScores({
-          A: { interceptions: 0, decrypt_failures: 0 }, B: { interceptions: 0, decrypt_failures: 0 },
-        })}>{t('清零')}</button>
-      </div>}
-      {preview === 'roster-motion' && !u.backView && <div className="station-roster-preview" aria-label={t("名牌动画预览")}>
-        <span>{t("名牌演示")}</span>
-        <button disabled={previewPeople.length >= 4} onClick={() => previewRoster('human')}>{t("真人入席")}</button>
-        <button disabled={previewPeople.length >= 4} onClick={() => previewRoster('ai')}>{t("AI 入席")}</button>
-        <button disabled={!previewPeople.length} onClick={() => previewRoster('remove')}>{t("末席离开")}</button>
-        <button disabled={!previewPeople.length} onClick={() => previewRoster('replace')}>{t("替换末席")}</button>
-      </div>}
+      {scoreBench && !u.backView && <ScoreBench bench={bench} powered={hardware.powered} t={t}/>}
+      {preview === 'roster-motion' && !u.backView && <RosterBench bench={bench} t={t}/>}
     </div>}
     {(u.backView || !hardware.online || staleDraft) && <aside className="station-hardware-status" aria-label={t('终端状态')}>
       <p role="status">{t(statusMessage)}</p>
@@ -1127,60 +745,12 @@ export default function Console() {
       {u.backView && hardware.powered && !hardware.aux && hardwareRecovery(u) && <p>{t('AUX 已断开 · SIGNAL 无外部输入')}</p>}
       {staleDraft && <details><summary>{t('旧草稿 · 第 {0} 回合', [staleDraft.round])}</summary><p>{staleDraft.text}</p><small>{t('仅供查看，不会自动提交')}</small></details>}
     </aside>}
-    {instrumentPreview && loaded && !failure && <section className="instrument-comparison" aria-label={t("仪表造型对比")} inert={archiveBlocking}>
-      <div className="instrument-comparison-row">
-        <span className="instrument-comparison-title">{t("仪表试装")}</span>
-        <div className="instrument-options" role="group" aria-label={t("选择仪表方案")}>
-          {instrumentOptions.map(option => <button key={option.id} aria-pressed={u.instrumentVariant === option.id}
-              onClick={() => selectInstrument(option.id)}>{t(option.label)}</button>)}
-        </div>
-        <div className="instrument-view" role="group" aria-label={t("观察距离")}>
-          <button aria-pressed={!instrumentCloseup} onClick={() => inspectInstrument(false)}>{t("整机")}</button>
-          <button aria-pressed={instrumentCloseup} onClick={() => inspectInstrument(true)}>{t("看细节")}</button>
-        </div>
-        {u.instrumentVariant !== 'signal' && <button className="instrument-demo" disabled={!hardware.powered || u.instrumentVariant === 'original'}
-            aria-pressed={u.instrumentDemo} onClick={() => patch({ instrumentDemo: !u.instrumentDemo })}>
-          {u.instrumentDemo ? t("停止演示") : t("动态演示")}
-        </button>}
-      </div>
-      <div className="instrument-comparison-row instrument-description">
-        <p>{t(instrumentOptions.find(option => option.id === u.instrumentVariant)?.description || '')}</p>
-        <span>{t("旋钮可点击、拖动或滚轮调整 · 中键旋转机身")}</span>
-      </div>
-    </section>}
-    {wordBench && loaded && !failure && <section className="instrument-comparison" aria-label={t("词窗方案对比")} inert={archiveBlocking}>
-      <div className="instrument-comparison-row">
-        <span className="instrument-comparison-title">{t("词窗试装")}</span>
-        <div className="instrument-options" role="group" aria-label={t("选择词窗方案")}>
-          {wordDisplayOptions.map(option => <button key={option.id} aria-pressed={u.wordDisplay === option.id}
-              onClick={() => selectWordDisplay(option.id)}>{t(option.label)}</button>)}
-        </div>
-        <div className="instrument-view" role="group" aria-label={t("观察距离")}>
-          <button aria-pressed={!wordCloseup} onClick={() => inspectWords(false)}>{t("整机")}</button>
-          <button aria-pressed={wordCloseup} onClick={() => inspectWords(true)}>{t("看细节")}</button>
-          <label className="word-zoom">
-            <span>{t('缩放')}</span>
-            <input type="range" min="1" max="4" step="0.05" value={wordZoom} aria-label={t('密码板缩放')}
-                onChange={event => zoomWords(Number(event.target.value))}/>
-            <output>{wordZoom.toFixed(2)}×</output>
-          </label>
-        </div>
-        <button className="instrument-demo" disabled={!hardware.powered} onClick={() => setBenchWordSet(set => (set + 1) % (benchWords.length + 1))}>{t("换一组词")}</button>
-      </div>
-      <div className="instrument-comparison-row word-filter-row">
-        <span className="instrument-comparison-title">{t('LED 缩放')}</span>
-        <div className="instrument-options word-filter-options" role="group" aria-label={t('选择 LED 缩放算法')}>
-          {dotFilterOptions.map(option => <button key={option.id} aria-pressed={dotFilter === option.id}
-              disabled={u.wordDisplay !== 'led'} onClick={() => selectDotFilter(option.id)}>{t(option.label)}</button>)}
-        </div>
-      </div>
-      <div className="instrument-comparison-row instrument-description">
-        <p>{t((u.wordDisplay === 'led' ? dotFilterOptions.find(option => option.id === dotFilter) : wordDisplayOptions.find(option => option.id === u.wordDisplay))?.description || '')}</p>
-        <span>{t('切换算法保持词组、配色与距离')}</span>
-      </div>
-    </section>}
+    {instrumentPreview && loaded && !failure && <InstrumentBench bench={bench} local={u} powered={hardware.powered} inert={archiveBlocking} t={t}
+        onPatch={patch} announce={setAnnouncement} onHint={setHint} onInspect={closeup => engine.current?.inspectInstrument(closeup)}/>}
+    {wordBench && loaded && !failure && <WordBench bench={bench} local={u} powered={hardware.powered} inert={archiveBlocking} t={t}
+        onPatch={patch} announce={setAnnouncement}/>}
     {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{hint.startsWith('quality:')
-        ? qualityHint(hint.slice(8) as QualityChoice) : content.targets.find(target => target.id === hint)?.label}</div>}
+        ? qualityHint(hint.slice(8) as QualityChoice, level, t) : content.targets.find(target => target.id === hint)?.label}</div>}
     <p className="mobile-hint">{t("横向滑动查看终端 · 下拉纸带查看密报记录")}</p>
     <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${!!preview}`} open={archiveVisible && hardware.powered} locale={u.locale} state={displayState} onClose={closeArchive} onClosed={restoreArchiveFocus}/>
     <div className="sr-only" role="status" aria-live="polite">{announcement}</div>
