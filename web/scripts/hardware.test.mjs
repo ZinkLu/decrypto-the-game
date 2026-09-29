@@ -1,20 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import ts from 'typescript';
-import { readFile } from 'node:fs/promises';
+import { moduleUrl } from './load.mjs';
 
-const compile = source => ts.transpileModule(source, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
-}).outputText;
-const url = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const modelUrl = url(compile(await readFile(new URL('../src/console/model.ts', import.meta.url), 'utf8')));
-const mechanicsUrl = url(compile(await readFile(new URL('../src/console/mechanics.ts', import.meta.url), 'utf8')));
-const dotMatrixUrl = url(compile(await readFile(new URL('../src/console/dotMatrix.ts', import.meta.url), 'utf8')));
+const modelUrl = await moduleUrl('model');
 const { initialLocal, previewState, keyDiskIdentity, word, instrumentSteps, stepInstrumentValue, receiverSignal, ReceiverActivity } = await import(modelUrl);
-const i18nUrl = url(compile(await readFile(new URL('../src/console/i18n.ts', import.meta.url), 'utf8')));
-const paintSource = await readFile(new URL('../src/console/paint.ts', import.meta.url), 'utf8');
-const guideUrl = url(compile(await readFile(new URL('../src/console/guide.ts', import.meta.url), 'utf8')));
-const { paint } = await import(url(compile(paintSource).replace("'./i18n'", JSON.stringify(i18nUrl)).replace("'./model'", JSON.stringify(modelUrl)).replace("'./mechanics'", JSON.stringify(mechanicsUrl)).replace("'./dotMatrix'", JSON.stringify(dotMatrixUrl)).replace("'./guide'", JSON.stringify(guideUrl))));
+const { paint } = await import(await moduleUrl('paint'));
 
 // These tests validate control routing, not pixel output. Browser checks cover
 // the actual WebGL model, controls, text input, and the hinge animation.
