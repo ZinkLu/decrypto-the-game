@@ -221,6 +221,8 @@ export default function Console() {
             });
             instance.setQuality(qualityProfiles[current.current.level]);
             engine.current = instance;
+            // The performance probes in web/scripts/perf drive the engine through this handle.
+            if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__consoleEngine = instance;
             instance.load().then(() => { if (!cancelled) {
                 instance!.update(current.current.content, current.current.u);
                 setLoaded(true);
@@ -231,7 +233,12 @@ export default function Console() {
         catch {
             setFailure(t("此设备无法启动 3D 图形。你仍可使用文字控件完成游戏。"));
         }
-        return () => { cancelled = true; instance?.dispose(); engine.current = null; };
+        return () => {
+            cancelled = true;
+            instance?.dispose();
+            engine.current = null;
+            if (import.meta.env.DEV) delete (window as unknown as Record<string, unknown>).__consoleEngine;
+        };
     }, []);
     useLayoutEffect(() => { engine.current?.update(content, u); project(); }, [content, loaded]);
     const notebookOpened = useRef(false);

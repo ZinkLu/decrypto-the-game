@@ -9,6 +9,7 @@ export class Lamps {
     private colors = new Map<THREE.MeshStandardMaterial, THREE.Color>();
     private lit = new Map<THREE.MeshStandardMaterial, number>();
     private scope?: { material: THREE.MeshStandardMaterial; intensity: number };
+    private scopeMeshes: THREE.Mesh[] = [];
     private scopeGlow = 1;
     private testUntil = 0;
     private trafficUntil = 0;
@@ -38,6 +39,10 @@ export class Lamps {
                 if (object.material.name === 'Scope indicator glass') {
                     this.scope = { material: object.material, intensity: object.material.emissiveIntensity };
                     this.colors.set(object.material, object.material.color.clone());
+                    // `lock()` re-tunes the shared material on every drawn frame:
+                    // keep its meshes out of the static batch and list them as a region.
+                    chassis.claim(object);
+                    this.scopeMeshes.push(object);
                 }
             }
         });
@@ -102,5 +107,10 @@ export class Lamps {
         this.scopeGlow = reduced ? drive : THREE.MathUtils.damp(this.scopeGlow, drive, 5.5, dt);
         // A filament's light rises much faster than its drive, so beats read clearly.
         this.scope.material.emissiveIntensity = this.scope.intensity * (performance.now() < this.testUntil ? 1 : .03 + .97 * this.scopeGlow ** 3);
+    }
+
+    /** Every mesh the LOCK lamp's material lights: `lock()` re-tunes it on every drawn frame. */
+    ambientRegions(): THREE.Object3D[] {
+        return this.scopeMeshes;
     }
 }

@@ -106,7 +106,9 @@ export class ConsoleInstruments {
         const rotate = (name: string, axis: 'x' | 'z', target: number, response = 18) => {
             const part = this.parts.get(name);
             if (!part) return;
-            const next = reduced ? target : THREE.MathUtils.damp(part.rotation[axis], target, response, dt);
+            const damped = reduced ? target : THREE.MathUtils.damp(part.rotation[axis], target, response, dt);
+            // Land on the mark: below the gate a creeping pointer would still change pixels.
+            const next = Math.abs(damped - target) < .00001 ? target : damped;
             if (Math.abs(part.rotation[axis] - next) > .00001) {
                 if (/Needle$|Drum$/.test(name)) needle = true; else control = true;
             }
@@ -139,6 +141,21 @@ export class ConsoleInstruments {
             rotate('StatusSpeed', 'z', .85 - this.rate * .425);
         }
         return control ? 'control' : needle && 'needle';
+    }
+
+    /**
+     * What the perpetually swinging needle covers. The rectangle is the whole
+     * dial glass, never the needle itself: it must span both the pose the
+     * needle leaves and the one it reaches, or the old pose smears. The
+     * development bench meters take their whole assembly.
+     */
+    ambientRegions(): THREE.Object3D[] {
+        if (this.variant === 'signal') {
+            const glass = this.parts.get('SignalGlass');
+            return glass ? [glass] : [];
+        }
+        const group = this.variants.get(this.variant);
+        return group ? [group] : [];
     }
 
     /** The first VU meter, kept on the development bench for comparison. */

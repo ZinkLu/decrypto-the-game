@@ -12,6 +12,7 @@ import { consoleHardware, type HardwareState, type KeyDiskState } from './model'
 import { ConsoleInstruments } from './instruments';
 import type { ConsoleSound } from './sound';
 import { qualityProfiles, ambientRate, type QualityProfile } from './quality';
+import { mergeRects, partialFrame, rectFromNdc, stillAfterFullFrame, type Rect } from './partialFrame';
 import { handleSurfaces, type HandleSide } from './view';
 import { Chassis, Effect, type Surface } from './parts/chassis';
 import { DiskDrive } from './parts/diskDrive';
@@ -79,6 +80,22 @@ export class ConsoleEngine {
     private rendered = 0;
     private ambientOwed = false;
     private scopeDrawn = 0;
+    // Ambient frames redraw only their moving regions, over a copy of the last
+    // full frame. The copy and the regions live and die together; anything that
+    // can change the picture invalidates both.
+    private stillTexture?: THREE.FramebufferTexture;
+    private stillRects?: Rect[];
+    private stillSize = { width: 0, height: 0 };
+    private stillScene?: THREE.Scene;
+    private stillQuad?: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>;
+    private stillCamera = new THREE.OrthographicCamera();
+    private partialFailed = false;
+    private partialChecked = false;
+    private partialMismatch = 0;
+    private fullFrames = 0;
+    private partialFrames = 0;
+    private partialVerify = import.meta.env.DEV && new URLSearchParams(location.search).get('partial') === 'verify';
+    private partialOn = !(import.meta.env.DEV && new URLSearchParams(location.search).get('partial') === 'off');
     // Ambient frames slow down while nobody is at the console (`ambientRate`).
     private lastInput = performance.now();
     private focused = document.hasFocus();
@@ -129,6 +146,7 @@ export class ConsoleEngine {
         this.score = new ScoreRegister(play);
         this.observer = new ResizeObserver(() => this.resize());
         this.observer.observe(host);
+        if (this.partialVerify) this.renderer.domElement.dataset.partialMismatch = '0';
         this.applyQuality();
         this.wake();
     }
@@ -270,8 +288,19 @@ export class ConsoleEngine {
         this.quality = profile;
         this.applyQuality();
     }
+    /**
+     * Ambient frames redraw only their moving regions instead of the whole
+     * canvas. The runtime switch lets the power probe compare both settings on
+     * one page; turning it on starts over with a full frame and a fresh copy.
+     */
+    get partialRedraw() { return this.partialOn; }
+    set partialRedraw(on: boolean) {
+        if (on && !this.partialOn) this.invalidateStill();
+        this.partialOn = on;
+    }
     private applyQuality() {
         const quality = this.quality;
+        this.invalidateStill();
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.pixelRatio));
         this.studio.applyQuality(quality);
         this.displays.applyQuality(quality.screenGlass, quality.crtOptics === 'lite');
@@ -283,6 +312,7 @@ export class ConsoleEngine {
     /** Cost in ms of one frame at the current quality, measured once `warm` frames have settled the pipelines. */
     probe(warm = 8) {
         this.probing?.done(NaN);
+        this.invalidateStill();
         const cost = new Promise<number>(done => { this.probing = { warm, done }; });
         this.wake();
         return cost;
@@ -296,6 +326,7 @@ export class ConsoleEngine {
      * The pause follows the much longer stall of the first compiled frame.
      */
     private frameCost() {
+        this.invalidateStill();
         const gl = this.renderer.getContext(), pixel = new Uint8Array(4), costs: number[] = [];
         const deadline = performance.now() + 250;
         do {
@@ -332,6 +363,7 @@ export class ConsoleEngine {
 
     private resize() {
         const width = this.host.clientWidth, height = this.host.clientHeight;
+        this.invalidateStill();
         this.renderer.setSize(width, height, false);
         this.view.fit(width, height, this.chassis.surfaces);
         this.dirty = true;
@@ -390,6 +422,162 @@ export class ConsoleEngine {
         return !!(effect & Effect.redraw);
     }
 
+    /** The copy of the last full frame no longer matches what the machine would draw now. */
+    private invalidateStill() {
+        this.stillRects = undefined;
+    }
+
+    /**
+     * The canvas rectangles of everything the parts register as moving in
+     * ambient frames, from the camera of the frame just drawn. Camera, view and
+     * poses cannot drift while the copy is valid: any of those draws a full
+     * frame and drops the copy, so the rectangles are worked out once per copy.
+     */
+    private ambientRects() {
+        const objects = [
+            ...this.displays.ambientRegions(),
+            ...this.nixies.ambientRegions(),
+            ...this.lamps.ambientRegions(),
+            ...this.instruments?.ambientRegions() ?? [],
+        ];
+        const { camera, width, height } = this.view, corner = new THREE.Vector3();
+        const rects: Rect[] = [];
+        for (const object of objects) {
+            object.updateWorldMatrix(true, true);
+            const corners: [number, number, number][] = [];
+            object.traverse(mesh => {
+                if (!(mesh instanceof THREE.Mesh)) return;
+                mesh.geometry.computeBoundingBox();
+                const box = mesh.geometry.boundingBox!;
+                for (let i = 0; i < 8; i++) {
+                    corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z)
+                        .applyMatrix4(mesh.matrixWorld).project(camera);
+                    corners.push([corner.x, corner.y, corner.z]);
+                }
+            });
+            const rect = rectFromNdc(corners, width, height, 6);
+            if (rect) rects.push(rect);
+        }
+        return mergeRects(rects);
+    }
+
+    /**
+     * Copies the frame just drawn, for the partial frames that follow while the
+     * picture stands still. The copy must happen in the same task as the draw:
+     * the drawing buffer is not preserved once the frame is presented. If the
+     * copy fails (some browsers refuse RGB into RGBA), partial frames turn off
+     * for the page rather than risk a wrong picture.
+     */
+    private captureStill() {
+        const renderer = this.renderer, size = renderer.getDrawingBufferSize(new THREE.Vector2());
+        if (!this.stillScene) {
+            // The copy holds tone-mapped, sRGB-encoded bytes; a raw shader puts it back unchanged.
+            const material = new THREE.ShaderMaterial({
+                uniforms: { map: { value: null } }, depthTest: false, depthWrite: false,
+                vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+                fragmentShader: 'uniform sampler2D map; varying vec2 vUv; void main() { gl_FragColor = texture2D(map, vUv); }',
+            });
+            const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+            quad.frustumCulled = false;
+            this.stillQuad = quad;
+            this.stillScene = new THREE.Scene().add(quad);
+        }
+        if (!this.stillTexture || this.stillSize.width !== size.x || this.stillSize.height !== size.y) {
+            this.stillTexture?.dispose();
+            this.stillTexture = new THREE.FramebufferTexture(size.x, size.y);
+            this.stillSize = { width: size.x, height: size.y };
+            this.stillQuad!.material.uniforms.map.value = this.stillTexture;
+        }
+        renderer.copyFramebufferToTexture(this.stillTexture);
+        if (renderer.getContext().getError() !== 0) {
+            this.stillTexture.dispose();
+            this.stillTexture = undefined;
+            this.stillSize = { width: 0, height: 0 };
+            this.partialFailed = true;
+            if (import.meta.env.DEV) console.warn('Partial redraw disabled for this page: copying a full frame to a texture failed.');
+            return;
+        }
+        this.stillRects = this.ambientRects();
+    }
+
+    /**
+     * An ambient frame: the still goes back, then the scene renders once more,
+     * but only the registered regions survive the depth mask, so nothing else
+     * is shaded. Depth starts at 0 everywhere (nothing passes); inside each
+     * rectangle it is cleared back to 1, where the full scene draws as usual.
+     */
+    private drawPartial() {
+        const renderer = this.renderer, depth = renderer.state.buffers.depth;
+        renderer.autoClear = false;
+        renderer.setScissorTest(false);
+        depth.setClear(0); renderer.clear(true, true, true); depth.setClear(1);
+        renderer.render(this.stillScene!, this.stillCamera);
+        renderer.setScissorTest(true);
+        for (const [x0, y0, x1, y1] of this.stillRects!) {
+            renderer.setScissor(x0, y0, x1 - x0, y1 - y0);
+            renderer.clear(false, true, false);
+        }
+        renderer.setScissorTest(false);
+        // A colour background makes three clear before every render, whatever
+        // autoClear says; the flags keep the still and the depth mask intact.
+        renderer.autoClearColor = renderer.autoClearDepth = renderer.autoClearStencil = false;
+        renderer.render(this.scene, this.view.camera);
+        renderer.autoClearColor = renderer.autoClearDepth = renderer.autoClearStencil = true;
+        renderer.autoClear = true;
+    }
+
+    /**
+     * Reads the partial frame back and compares it with a full frame of the
+     * same state. Returns the differing pixel count and their bounding box.
+     */
+    private compareWithFullFrame() {
+        const renderer = this.renderer, gl = renderer.getContext(), { x: width, y: height } = renderer.getDrawingBufferSize(new THREE.Vector2());
+        const read = () => { const pixels = new Uint8Array(width * height * 4); gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels); return pixels; };
+        const partial = read();
+        renderer.render(this.scene, this.view.camera);
+        const full = read();
+        let count = 0, x0 = width, y0 = height, x1 = -1, y1 = -1;
+        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            if (partial[i] !== full[i] || partial[i + 1] !== full[i + 1] || partial[i + 2] !== full[i + 2]) {
+                count++;
+                if (x < x0) x0 = x;
+                if (x > x1) x1 = x;
+                if (y < y0) y0 = y;
+                if (y > y1) y1 = y;
+            }
+        }
+        return { count, box: [x0, y0, x1, y1] as const };
+    }
+
+    /** DEV `?partial=verify`: every partial frame must equal a full frame of the same state, pixel for pixel. */
+    private verifyPartial() {
+        const { count, box } = this.compareWithFullFrame();
+        if (count) {
+            this.partialMismatch += count;
+            this.renderer.domElement.dataset.partialMismatch = String(this.partialMismatch);
+            console.warn(`Partial frame mismatch: ${count} pixels differ from a full frame, inside (${box[0]}, ${box[1]})-(${box[2]}, ${box[3]}).`);
+        }
+    }
+
+    /**
+     * The first partial frame of a page proves the path on this browser: if a
+     * partial frame cannot be told from a full one there, partial frames turn
+     * off for the page rather than risk a wrong picture. Some browsers
+     * (Firefox) are not bit-stable between two renders of the same state, so
+     * they stay on full frames.
+     */
+    private selfCheckPartial() {
+        this.partialChecked = true;
+        const { count, box } = this.compareWithFullFrame();
+        if (count) {
+            this.partialFailed = true;
+            this.invalidateStill();
+            if (import.meta.env.DEV)
+                console.warn(`Partial redraw disabled for this page: a partial frame differed from a full frame at ${count} pixels, inside (${box[0]}, ${box[1]})-(${box[2]}, ${box[3]}).`);
+        }
+    }
+
     private tick = (now: number) => {
         this.raf = 0;
         if (this.disposed)
@@ -428,9 +616,10 @@ export class ConsoleEngine {
         this.ambientOwed ||= !!(effect & Effect.ambient);
         const visible = this.view.width > 0 && this.view.height > 0;
         const pace = ambientRate(this.quality, this.focused, now - this.lastInput);
-        const due = visible && (changed || this.dirty || !!probing ||
+        const dirty = this.dirty;
+        const due = visible && (changed || dirty || !!probing ||
             (live || this.ambientOwed) && now - this.rendered >= 1000 / pace - 2);
-        if (due && this.view.frontInView && (live || this.dirty)) {
+        if (due && this.view.frontInView && (live || dirty)) {
             // The beam runs for all the time since the phosphor was last shown.
             // Unpowered, the tube keeps its last trace while it collapses; dark glass shows no picture at all.
             const exposure = Math.min((now - this.scopeDrawn) / 1000, .1);
@@ -444,8 +633,30 @@ export class ConsoleEngine {
         if (due) {
             this.dirty = this.ambientOwed = false;
             this.rendered = now;
-            this.frames++;
-            this.renderer.render(this.scene, this.view.camera);
+            // The rear of the machine has no ambient motion: a frame that is due
+            // only by the ambient pace draws nothing while the back faces forward.
+            if (!changed && !dirty && !probing && !this.view.frontInView) {
+                // Owed to no one: the front's first frame back is a full one anyway.
+            } else if (partialFrame({ enabled: this.partialOn && !this.partialFailed, stillValid: !!this.stillRects,
+                changed, dirty, probing: !!probing,
+                // No shadow-casting light (the low level) means no shadow map is
+                // pending either: three leaves needsUpdate set when there is
+                // nothing to render, and it would force full frames forever.
+                shadowPending: this.renderer.shadowMap.needsUpdate && this.quality.shadows })) {
+                this.frames++;
+                this.partialFrames++;
+                this.drawPartial();
+                if (this.partialVerify) this.verifyPartial();
+                else if (!this.partialChecked) this.selfCheckPartial();
+            } else {
+                this.frames++;
+                this.fullFrames++;
+                this.renderer.render(this.scene, this.view.camera);
+                // Only a picture that is about to stand still is copied, once per
+                // stop; interaction frames never pay for the copy.
+                if (!this.partialFailed && this.partialOn && stillAfterFullFrame(changed, !!probing)) this.captureStill();
+                else this.invalidateStill();
+            }
             if (probing && probing.warm-- <= 0) {
                 this.probing = undefined;
                 probing.done(this.frameCost());
@@ -457,6 +668,8 @@ export class ConsoleEngine {
             this.renderer.domElement.dataset.triangles = String(this.renderer.info.render.triangles);
             this.renderer.domElement.dataset.face = this.view.rear ? 'rear' : 'front';
             this.renderer.domElement.dataset.ambientPace = String(pace);
+            this.renderer.domElement.dataset.fullFrames = String(this.fullFrames);
+            this.renderer.domElement.dataset.partialFrames = String(this.partialFrames);
             this.frames = 0;
             this.framesSince = now;
         }
@@ -495,6 +708,11 @@ export class ConsoleEngine {
         this.view.dispose();
         this.displays.dispose();
         this.disposeObject(this.scene);
+        this.stillTexture?.dispose();
+        if (this.stillQuad) {
+            this.stillQuad.geometry.dispose();
+            this.stillQuad.material.dispose();
+        }
         for (const texture of this.chassis.textures.values())
             texture.dispose();
         this.studio.dispose();

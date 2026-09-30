@@ -3,7 +3,7 @@ import { translate, type Locale } from '../i18n';
 import { initialLocal, scopeModes, scopeWaveBlend, scopeRatio, scopeSweepHz, scopeTimebase, scopeAxisAngle, scopeFigures, type HardwareState } from '../model';
 import { crtFinish } from '../paint';
 import { VectorMonitor, scopeResonance, scopeTuning } from '../scope';
-import { Effect, type Chassis } from './chassis';
+import { Effect, settle, type Chassis } from './chassis';
 
 const width = 420, height = 350;
 type Dial = 'freq' | 'wave' | 'rate' | 'axis';
@@ -72,7 +72,9 @@ export class Oscilloscope {
         let effect = Effect.none;
         for (const [dial] of dials) {
             if (Math.abs(this.angle[dial] - this.desired[dial]) > .0001) effect |= Effect.shadow;
-            this.angle[dial] = reduced ? this.desired[dial] : THREE.MathUtils.damp(this.angle[dial], this.desired[dial], 16, dt);
+            // settle lands on the mark: a knob left creeping below the effect
+            // gate would keep changing pixels no frame reports.
+            this.angle[dial] = settle(this.angle[dial], this.desired[dial], 16, dt, reduced, .0001);
             const knob = this.knobs[dial];
             if (knob) knob.rotation.z = this.angle[dial];
         }

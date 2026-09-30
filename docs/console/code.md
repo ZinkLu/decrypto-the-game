@@ -67,6 +67,7 @@ web/
 | `i18n.ts` | 中英文对照表、`translate`、语言偏好、服务器错误文案的本地化 |
 | `guide.ts` | 玩法说明的文字、示例词和原版桌游链接 |
 | `quality.ts` | 画质档位、每档的开关、自动档的降档规则、闲置时的帧率。见[画质与性能](quality.md) |
+| `partialFrame.ts` | 氛围帧画整帧还是局部帧的判定，以及动态区域矩形的外扩、裁剪与合并。见[画质与性能](quality.md) |
 | `mechanics.ts` | 纸带和软盘的尺寸、时长和姿态函数 |
 | `notebook.ts` | 玩家笔记的存储键和解析。目前只有测试引用，界面没有使用 |
 
@@ -139,12 +140,16 @@ web/
 
 | 标志 | 含义 |
 | --- | --- |
-| `ambient` | 只有自己在动的东西变了（指针、电子束），按画质档位的节奏画 |
+| `ambient` | 只有自己在动的东西变了（指针、电子束），按画质档位的节奏画；氛围帧里它只在登记过的区域内重画 |
 | `redraw` | 玩家改变了什么，立即画 |
 | `shadow` | 立即画，并重新投射阴影 |
 | `project` | 立即画，并让 DOM 控件跟上零件的新位置 |
 
 引擎把各部件的标志合并，每帧最多重投影一次、更新一次阴影。没有部件报告变化时，帧循环就睡到下一个氛围帧。
+
+只到节奏才画的氛围帧不重画整幅画面：引擎把上一整帧的拷贝铺回去，只在会动的区域里重新渲染（见[画质与性能](quality.md)的“氛围帧只重画在动的区域”）。会自己动的部件通过 `ambientRegions(): THREE.Object3D[]` 登记这些物体，引擎在拷贝整帧时把它们的包围盒投影成画布矩形。登记清单：显像管平面（`Displays`，LED 词窗只在跑马灯爬行时登记）、辉光管的光晕和余辉（`NixieBay`）、LOCK 灯的网格（`Lamps`）、接收机的整块表盘玻璃（`ConsoleInstruments`）。两种帧的判定和矩形的外扩、裁剪、合并在 `partialFrame.ts` 里，是不依赖 three.js 的纯函数，测试在 `scripts/partial-frame.test.mjs`。
+
+一个相关约定：往目标位置阻尼靠近的动作必须能精确落停（`settle()`，或到阈值直接取目标值）。报了 `Effect` 的门限之下如果还在缓慢漂移，漂移的像素没有任何帧会重画，局部帧的拷贝就会在那里失准。
 
 各部件的行为分别写在[显示器件](displays.md)、[机械与交互](mechanics.md)、[背面联动](rear-linkage.md)、[声音](audio.md)和[主题色](themes.md)里。
 
@@ -361,7 +366,7 @@ cd web && pnpm test
 2. 主屏上的控件在 `paintScreen.ts` 里画，其他表面在 `paintFaces.ts` 里画，并调用 `target(surface, id, label, x, y, w, h)`。主屏上的按钮用 `button()`，它同时完成这两件事。`label` 是无障碍标签，要经过 `t()`。
 3. 在 `Console.tsx` 的 `act()` 里处理这个 `id`。它受哪些条件限制由 `actions.ts` 的 `reachable()` 决定：没有登记的 `id` 按发往服务器的操作对待，需要电、网络和空闲的线路。不需要网络的本机操作要加进 `local` 名单。
 4. 背面的控件要把 `id` 加进 `paintFaces.ts` 里 `paintRear()` 的 `rearControls`，否则翻到背面时会被过滤掉。
-5. 零件要动的话，在 `parts/` 里找到它所属的部件（或新建一个），在 `install()` 里用 `chassis.moving(名字)` 取零件，在 `tick()` 里移动它并返回对应的 `Effect`。新部件要在 `engine.ts` 的构造函数、`load()`、`update()` 和 `tick()` 里各接一行。
+5. 零件要动的话，在 `parts/` 里找到它所属的部件（或新建一个），在 `install()` 里用 `chassis.moving(名字)` 取零件，在 `tick()` 里移动它并返回对应的 `Effect`。新部件要在 `engine.ts` 的构造函数、`load()`、`update()` 和 `tick()` 里各接一行。会自己动（报 `Effect.ambient`、或在不报 `Effect` 的帧里改变像素）的零件还要在所属部件的 `ambientRegions()` 里登记，否则它在局部帧里会冻住；`?partial=verify` 可以验证登记是否完整。
 6. 窄屏界面不会自动出现这个控件，需要时在 `MobileConsole.tsx` 里加对应的按钮，调用同一个 `onAct(id)`。
 7. 补测试。`hardware.test.mjs` 会检查正反面的目标互不重叠，`actions.test.mjs` 检查操作规则。
 

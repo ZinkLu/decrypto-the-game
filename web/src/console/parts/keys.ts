@@ -51,7 +51,7 @@ export class Keys {
         if (this.powerSwitch) this.powerSwitch.rotation.z = this.powerAngle;
         if (angle !== this.powerAngle) effect |= Effect.shadow;
         const depth = this.manualDepth;
-        this.manualDepth = settle(this.manualDepth, this.manual ? .035 : 0, 20, dt, reduced, 0);
+        this.manualDepth = settle(this.manualDepth, this.manual ? .035 : 0, 20, dt, reduced, .00001);
         if (this.manualKey) this.manualKey.position.z = .85 - this.manualDepth;
         if (Math.abs(this.manualDepth - depth) > .00001) effect |= Effect.project | Effect.shadow;
         if (this.pulses.size > 0) effect |= Effect.shadow;

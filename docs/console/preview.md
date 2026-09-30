@@ -96,6 +96,7 @@ cd web && pnpm dev     # http://localhost:3000
 | `words` | `led`、`crt` | 打开词窗试装台，在 LED 点阵和早期的滤光小显像管之间切换，可以换词组、看细节。和 `instruments` 同时出现时以 `instruments` 为准 |
 | `zoom` | 1 到 4 | 词窗试装台的放大倍数。带 `detail=words` 而不给 `zoom` 时为 2 |
 | `filter` | `baseline`、`area`、`lod`、`ssaa` | 词窗试装台里 LED 灯珠的缩放算法。默认 `area`，也是游戏里用的那一种 |
+| `partial` | `off`、`verify` | 局部帧的开关与校验：`off` 整页只画整帧；`verify` 把每个局部帧和同状态的整帧逐像素比较，不一致在控制台警告并累加到画布的 `data-partial-mismatch`。校验很慢，只用来检查。见[画质与性能](quality.md) |
 
 试装台上的选择会写回地址栏，当前的方案和观察距离可以直接复制给别人。
 
@@ -137,6 +138,6 @@ http://localhost:3000/?preview=game_over&quality=low
 | 位置 | 属性 |
 | --- | --- |
 | `.station-stage` | `data-crt-phase`、`data-crt-theme`、`data-crt-level`（主显像管）；`data-paper-phase`、`data-paper-length`、`data-paper-tear`（纸带）；`data-key-disk-phase`（软盘） |
-| 渲染画布 | `data-scope-fps`、`data-draw-calls`、`data-triangles`、`data-ambient-pace`、`data-face` |
+| 渲染画布 | `data-scope-fps`、`data-draw-calls`、`data-triangles`、`data-ambient-pace`、`data-face`、`data-full-frames`、`data-partial-frames`、`data-partial-mismatch`（仅 `?partial=verify`） |
 
 每个可操作的零件都是带 `data-control="<id>"` 的 DOM 元素，脚本可以直接点击或输入。各部件的行为见[显示器件](displays.md)和[机械与交互](mechanics.md)，代码结构见[代码组织](code.md)。

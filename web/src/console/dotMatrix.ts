@@ -161,8 +161,12 @@ export class DotDriver {
     /** Light per lit dot, 1 at rest. */
     get brightness() { return Math.max(0, (this.rail - dotTuning.forward) / (1 - dotTuning.forward)); }
     get lit() { return this.brightness > 0; }
+    /** A transition (power, self-test, loading a word) owes frames at once. */
+    get changing() { return !this.resting && (this.on || this.lit); }
+    /** A keyword wider than the module crawls as a marquee: ambient motion, paced by the quality level. */
+    get scrolling() { return this.on && this.strip > dotGrid.cols; }
     /** Frames are owed while the panel still changes what it shows. */
-    get moving() { return !this.resting && (this.on || this.lit) || this.on && this.strip > dotGrid.cols; }
+    get moving() { return this.changing || this.scrolling; }
     /** drive: supply, columns loaded, dim self-test, row banks enabled. panel: scroll, width, seed, 0. */
     pack(drive: Packed, panel: Packed) {
         drive.set(this.brightness, this.reveal, this.test * .14, this.on ? 1 : Math.min(1, this.brightness * 1.5));
@@ -216,5 +220,8 @@ export class DotBank<T extends { id: string }> {
         for (const driver of this.drivers) driver.step(dt);
         this.route(Math.max(0, dt));
     }
-    get moving() { return this.powered && this.current?.id !== this.desired?.id || this.drivers.some(driver => driver.moving); }
+    /** A transition owes frames at once; a marquee crawl is ambient motion. */
+    get changing() { return this.powered && this.current?.id !== this.desired?.id || this.drivers.some(driver => driver.changing); }
+    get scrolling() { return this.drivers.some(driver => driver.scrolling); }
+    get moving() { return this.changing || this.scrolling; }
 }

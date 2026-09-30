@@ -10,6 +10,8 @@ interface Corona {
     texture: THREE.CanvasTexture;
     material: THREE.MeshBasicMaterial;
     spill: THREE.MeshBasicMaterial;
+    glow: THREE.Mesh;
+    pool: THREE.Mesh;
     paths: string[];
     code: string;
 }
@@ -65,7 +67,7 @@ export class NixieBay {
                 transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, opacity: 0 }));
             spill.position.set(glow.position.x, channel.y - .04, channel.z - .19); spill.renderOrder = 3;
             chassis.root.add(spill);
-            this.coronas.push({ canvas, texture, material, spill: spill.material, paths, code: '?' });
+            this.coronas.push({ canvas, texture, material, spill: spill.material, glow, pool: spill, paths, code: '?' });
         }
     }
 
@@ -117,5 +119,10 @@ export class NixieBay {
             tube.material.opacity = .85 * breath;
             if (tube.spill.opacity > 0) tube.spill.opacity = .24 * breath;
         });
+    }
+
+    /** The glows and their pools of spill: `breathe()` changes their opacity every frame. */
+    ambientRegions(): THREE.Object3D[] {
+        return this.coronas.flatMap(tube => [tube.glow, tube.pool]);
     }
 }

@@ -45,6 +45,23 @@ export class Displays {
     get interactive() { return this.screen.interactive; }
     has(name: string) { return this.tubes.has(name); }
 
+    /**
+     * What moves in an ambient frame: every tube (the time uniform never rests
+     * while powered, and the scope swaps its texture), plus an LED word window
+     * only while its marquee crawls — a resting dot matrix shows nothing new.
+     * Each plane's runtime glass is its child, so the regions cover it as well.
+     */
+    ambientRegions(): THREE.Object3D[] {
+        const regions: THREE.Object3D[] = [];
+        for (const name of this.tubes.keys()) {
+            const plane = this.chassis.planes.get(name);
+            if (!plane) continue;
+            if (name.startsWith('word') && this.wordDisplay !== 'crt' && !this.dotModules.get(name)?.driver.scrolling) continue;
+            regions.push(plane);
+        }
+        return regions;
+    }
+
     /** Fits every curved surface with its tube, and the keyword windows with their modules as well. */
     install() {
         for (const [name, plane] of this.chassis.planes) {
@@ -254,7 +271,10 @@ export class Displays {
             tube.motion.advance(dt, reduced);
         }
         if (this.wordDisplay !== 'crt') {
-            if (!reduced && this.dotBank.moving) effect |= Effect.redraw;
+            // A transition owes frames at once; a marquee crawl is ambient motion,
+            // drawn at the quality level's pace inside the window's region.
+            if (!reduced && this.dotBank.changing) effect |= Effect.redraw;
+            else if (!reduced && this.dotBank.scrolling) effect |= Effect.ambient;
             this.dotBank.advance(dt, reduced);
         }
         this.sync(reduced);
