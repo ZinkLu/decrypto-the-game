@@ -2,8 +2,9 @@
  * Ambient frames redraw only the few regions that move — the tube rasters, the
  * scope, the Nixie glow, the LOCK lamp, the receiver dial — over a copy of the
  * last full frame. This module holds the pure decisions: when a frame may be
- * partial, when a full frame is worth copying, and the rectangle arithmetic.
- * It must not import three.js or touch the DOM, so the tests can run in Node.
+ * partial, when a full frame is worth copying, and the rectangle arithmetic;
+ * `partialRedraw.ts` does the drawing. It must not import three.js or touch
+ * the DOM, so the tests can run in Node.
  */
 
 /** Everything a due frame needs to choose between a partial and a full frame. */

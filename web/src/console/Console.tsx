@@ -18,7 +18,7 @@ import { InstrumentBench, RosterBench, ScoreBench, WordBench, benchAmplitude, be
 import { guidePageFor } from './guide';
 import { useConsoleAudio, useDiskFont, useGuideArt, useKeyDisk, useReducedMotion } from './hooks';
 import { useDiskPull } from './useDiskPull';
-import { briefMode, detail, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, notebookPreview, pinnedQuality, portable, preview, route, scoreBench, wordBench } from './options';
+import { briefMode, detail, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, notebookPreview, partialMode, pinnedQuality, portable, preview, route, scoreBench, wordBench } from './options';
 import type { LocalState, KeyDiskState } from './model';
 import type { Target } from './paint';
 import type { QualityChoice, QualityLevel } from './quality';
@@ -202,7 +202,7 @@ export default function Console() {
         let cancelled = false;
         let instance: ConsoleEngine | undefined;
         try {
-            instance = new ConsoleEngine(stage.current!, { project, fail: setFailure, inspection, instrumentPreview,
+            instance = new ConsoleEngine(stage.current!, { project, fail: setFailure, inspection, instrumentPreview, partial: partialMode,
                 onPaperPull: () => {
                     if (!cancelled && current.current.u.archiveOpen) {
                         setArchiveVisible(true);

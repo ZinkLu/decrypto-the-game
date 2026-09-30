@@ -30,6 +30,7 @@ web/
     store/gameStore.ts    对局状态与发往服务器的动作（Zustand）
     services/websocket.ts WebSocket 连接与自动重连
   scripts/*.test.mjs      测试
+  scripts/perf/           渲染功耗的测量脚本，在无头 Chrome 里驱动开发服务器上的引擎（见画质与性能）
   public/
     models/               decrypto-console.glb、console-surfaces.json，及开发对比用的两个仪表模型
     audio/                音效库 console-foley-v3.wav、music/ 下四段音乐、CREDITS.md
@@ -95,6 +96,7 @@ web/
 | `crtMotion.ts` | 显像管开关机的电路模拟（`CrtTube`）和换画面的时序（`CrtMotion`） |
 | `scope.ts` | 示波器：两个振荡器、一束电子、会衰减的荧光粉 |
 | `instruments.ts` | SIGNAL 接收机的指针和旋钮，以及开发对比用的另外几种仪表 |
+| `partialRedraw.ts` | `PartialRedraw`：氛围帧的局部重画。持有上一整帧的副本和动态区域的矩形，画局部帧，并在开发时逐像素校验。判定和矩形运算在 `partialFrame.ts` |
 
 ### 机械
 
@@ -147,7 +149,7 @@ web/
 
 引擎把各部件的标志合并，每帧最多重投影一次、更新一次阴影。没有部件报告变化时，帧循环就睡到下一个氛围帧。
 
-只到节奏才画的氛围帧不重画整幅画面：引擎把上一整帧的拷贝铺回去，只在会动的区域里重新渲染（见[画质与性能](quality.md)的“氛围帧只重画在动的区域”）。会自己动的部件通过 `ambientRegions(): THREE.Object3D[]` 登记这些物体，引擎在拷贝整帧时把它们的包围盒投影成画布矩形。登记清单：显像管平面（`Displays`，LED 词窗只在跑马灯爬行时登记）、辉光管的光晕和余辉（`NixieBay`）、LOCK 灯的网格（`Lamps`）、接收机的整块表盘玻璃（`ConsoleInstruments`）。两种帧的判定和矩形的外扩、裁剪、合并在 `partialFrame.ts` 里，是不依赖 three.js 的纯函数，测试在 `scripts/partial-frame.test.mjs`。
+只到节奏才画的氛围帧不重画整幅画面：引擎把上一整帧的拷贝铺回去，只在会动的区域里重新渲染（见[画质与性能](quality.md)的“氛围帧只重画在动的区域”）。会自己动的部件通过 `ambientRegions(): THREE.Object3D[]` 登记这些物体，引擎把它们汇总交给 `PartialRedraw`，后者在拷贝整帧时把包围盒投影成画布矩形。登记清单：显像管平面（`Displays`，LED 词窗只在跑马灯爬行时登记）、辉光管的光晕和余辉（`NixieBay`）、LOCK 灯的网格（`Lamps`）、接收机的整块表盘玻璃（`ConsoleInstruments`）。两种帧的判定和矩形的外扩、裁剪、合并在 `partialFrame.ts` 里，是不依赖 three.js 的纯函数，测试在 `scripts/partial-frame.test.mjs`。
 
 一个相关约定：往目标位置阻尼靠近的动作必须能精确落停（`settle()`，或到阈值直接取目标值）。报了 `Effect` 的门限之下如果还在缓慢漂移，漂移的像素没有任何帧会重画，局部帧的拷贝就会在那里失准。
 

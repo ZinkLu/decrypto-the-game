@@ -24,6 +24,8 @@ export const scoreBench = dev && params.get('score') === 'flags';
 export const pinnedQuality = dev ? qualityChoices.find(choice => choice === params.get('quality')) : undefined;
 // DEV stills pin the round briefing: `?brief=hold` keeps it up, `?brief=off` skips it.
 export const briefMode = dev ? params.get('brief') : null;
+// DEV partial redraw of ambient frames: `?partial=off` draws only full frames, `?partial=verify` checks each against one.
+export const partialMode = dev ? (['off', 'verify'] as const).find(mode => mode === params.get('partial')) ?? null : null;
 /** A bench or a close-up keeps the 3D machine, however narrow the window. */
 export const keepsMachine = inspection || instrumentPreview || wordBench || !!detail;
 
