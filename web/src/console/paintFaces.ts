@@ -271,10 +271,10 @@ export function paintPaper(p: Painter) {
 export function paintFront(p: Painter) {
     const { s, u, h, r, t, signal, ownsDisk, diskCurrent, guidePage, frames, frame, target } = p;
     frame('disk', 400, 200);
-    target('disk', 'disk-toggle', u.keyDisk.phase === 'ejected' ? t('按住露出的软盘继续拖出，或点击插回') : u.diskOut ? t("插入软盘，或按住向内推回") : t("按住向外拖出软盘，或点击弹出"), 0, 0, 400, 200,
+    if (ownsDisk) target('disk', 'disk-toggle', u.keyDisk.phase === 'ejected' ? t('按住露出的软盘继续拖出，或点击插回') : u.diskOut ? t("插入软盘，或按住向内推回") : t("按住向外拖出软盘，或点击弹出"), 0, 0, 400, 200,
         { disabled: !diskCurrent || !['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase) });
     frame('diskEjectControl', 100, 100);
-    target('diskEjectControl', 'disk-eject', t('弹出软盘'), 0, 0, 100, 100, { disabled: !diskCurrent || !['ready', 'reading'].includes(u.keyDisk.phase) });
+    if (ownsDisk) target('diskEjectControl', 'disk-eject', t('弹出软盘'), 0, 0, 100, 100, { disabled: !diskCurrent || !['ready', 'reading'].includes(u.keyDisk.phase) });
     frame('scopeKnob', 100, 100);
     target('scopeKnob', 'scope-tune', knobLabel('scope-tune', u), 0, 0, 100, 100);
     frame('scopeWaveKnob', 100, 100);

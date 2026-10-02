@@ -11,7 +11,7 @@ const motionRate = import.meta.env.DEV && new URLSearchParams(location.search).g
 const enterDuration = paperFeedDuration / motionRate;
 const exitDuration = paperTearDuration / motionRate;
 
-interface Props { locale: 'zh' | 'en'; open: boolean; state: StationState; notebook?: boolean; onClose: () => void; onClosed: () => void }
+interface Props { locale: 'zh' | 'en'; open: boolean; state: StationState; onClose: () => void; onClosed: () => void; onVisibilityChange: (shown: boolean) => void }
 
 function sequence(values?: number[], late = '') {
     return values?.some(Boolean) ? values.join(' — ') : late || '— — —';
@@ -21,15 +21,11 @@ function matches(actual?: number[], guess?: number[]) {
     return !!actual?.length && actual.length === guess?.length && actual.every((value, index) => value === guess?.[index]);
 }
 
-export default function ArchiveSheet({ open, state, onClose, onClosed, locale, notebook = false }: Props) {
+export default function ArchiveSheet({ open, state, onClose, onClosed, onVisibilityChange, locale }: Props) {
     const t = (message: string, values?: unknown[]) => translate(locale, message, values);
     const dialog = useRef<HTMLDialogElement>(null);
     // A printer roll reads from the oldest impression at the top to the newest at the tear.
     const rows = archiveRows(state, 'all').slice().reverse();
-    // The players' note sheet: every revealed clue under the number it stood for, rivals first.
-    const teams = state.myTeam === 'A' ? ['B', 'A'] : state.myTeam === 'B' ? ['A', 'B'] : ['A', 'B'];
-    const byNumber = (team: string) => [1, 2, 3, 4].map(n => rows.filter(row => row.team === team && row.secret?.length === 3)
-        .flatMap(row => row.secret!.flatMap((digit, i) => digit === n && row.clues[i] ? [row.clues[i]] : [])));
 
     function requestClose() {
         if (!open) return;
@@ -56,6 +52,7 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, locale, n
             const previous = document.body.style.overflow;
             document.body.style.overflow = 'hidden';
             if (!el.open) el.showModal();
+            onVisibilityChange(true);
             el.scrollTop = 0;
             el.querySelector<HTMLButtonElement>('.archive-dismiss')?.focus({ preventScroll: true });
             return () => { document.body.style.overflow = previous; };
@@ -64,14 +61,15 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, locale, n
         const timer = window.setTimeout(() => el.close(), window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : exitDuration);
         return () => clearTimeout(timer);
     }, [open]);
+    useLayoutEffect(() => () => onVisibilityChange(false), [onVisibilityChange]);
 
-    return <dialog ref={dialog} className={`archive-dialog${notebook ? ' archive-study' : ''}`} data-open={open} aria-labelledby="archive-title"
+    return <dialog ref={dialog} className="archive-dialog archive-study" data-open={open} aria-labelledby="archive-title"
         style={{ '--archive-enter-duration': `${enterDuration}ms`, '--archive-exit-duration': `${exitDuration}ms` } as CSSProperties}
-        onClose={onClosed}
+        onClose={() => { onVisibilityChange(false); onClosed(); }}
         onCancel={event => { event.preventDefault(); requestClose(); }}
         onClick={event => { if (event.target === event.currentTarget) requestClose(); }}>
         <div className="archive-paper-track" onClick={event => { if (event.target === event.currentTarget) requestClose(); }}>
-        {notebook && <FieldNotebook state={state} locale={locale}/>}
+        <FieldNotebook state={state} locale={locale}/>
         <div id="archive-receipt" className="archive-receipt-track" onClick={event => { if (event.target === event.currentTarget) requestClose(); }}>
         <article className="archive-sheet">
             <header className="archive-header">
@@ -82,13 +80,6 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, locale, n
                 </div>
             </header>
             <div className="archive-body">
-                {!notebook && rows.length > 0 && <section className="archive-notes" aria-label={t('按编号归档')}>
-                    <p className="archive-ledger-head"><span>{t('按编号归档')}</span><span>{t('揭晓过的线索')}</span></p>
-                    {teams.map(team => <div key={team} className="archive-note">
-                        <h3>{t('{0} 队', [team])} · {team === state.myTeam ? t('我方') : state.myTeam ? t('对方') : t('公开')}</h3>
-                        <ol>{byNumber(team).map((clues, i) => <li key={i}><b>{i + 1}</b>{clues.length ? clues.join(' · ') : '—'}</li>)}</ol>
-                    </div>)}
-                </section>}
                 <section className="archive-records" aria-label={t("公开回合记录")}>
                     <p className="archive-ledger-head"><span>{String(rows.length).padStart(2, '0')} {t("条记录")}</span><span>{t("按时间顺序")}</span></p>
                     {!rows.length ? <div className="archive-empty"><span aria-hidden="true">— 00 —</span><h3>{t("等待第一份密报")}</h3>
@@ -106,7 +97,7 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, locale, n
                             <p className="archive-clue-line">{row.clues.map((clue, index) => <span key={index}><small>{String(index + 1).padStart(2, '0')}</small>{clue}</span>)}</p>
                             <dl className="archive-sequences">
                                 <div><dt>{interceptOwner} · {t('截获')}</dt><dd>{sequence(row.intercept, row.timeouts?.includes('intercept') ? t('超时未提交') : '')}</dd></div>
-                                <div><dt>{decryptOwner} · {t('解码')}</dt><dd>{sequence(row.decrypt, row.timeouts?.includes('decrypt') ? t('超时未提交') : '')}</dd></div>
+                                <div><dt>{decryptOwner} · {t('解码')}</dt><dd>{sequence(row.decrypt, row.timeouts?.includes('decrypt') ? t('超时未提交') : !row.decrypt && interceptSuccess ? t('已被截获，不解码') : '')}</dd></div>
                                 <div className="archive-secret"><dt>{t("公开密码")}</dt><dd>{sequence(row.secret)}</dd></div>
                             </dl>
                             <p className="archive-outcome">
@@ -123,6 +114,6 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, locale, n
         </div>
         </div>
         <button className="archive-dismiss" onClick={requestClose} aria-label={t("收起密报记录")}>{t("收起记录")}<span aria-hidden="true">×</span></button>
-        {notebook && <ArchiveViews locale={locale}/>}
+        <ArchiveViews locale={locale}/>
     </dialog>;
 }

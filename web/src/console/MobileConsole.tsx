@@ -2,7 +2,7 @@ import { useEffect, useRef, type CSSProperties } from 'react';
 import GuideContent from './GuideContent';
 import type { StationState, LocalState, KeyDiskState } from './model';
 import { useDiskPull } from './useDiskPull';
-import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word, isBeat, roundCast, transmission, seatDuty, deadlineWarning, timeoutNotice, resultView, gameOverView } from './model';
+import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word, isBeat, roundCast, transmission, seatDuty, deadlineWarning, timeoutNotice, resultView, resultSummary, handoverLine, gameOverView } from './model';
 import { translate, localizeError } from './i18n';
 
 type Props = { state: StationState; local: LocalState; ready: boolean; status: string; inert: boolean;
@@ -46,9 +46,11 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
     const title = t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase]);
     const acting = (r.encrypt || r.guess) && r.active;
     const beat = isBeat(s.phase);
+    const submitted = beat && (u.submitted || s.submitted);
+    const workingArea = beat && (r.encrypt || r.guess);
     const action = home ? u.mode === 'create' ? '建立频道' : '加入频道' : lobby ? '开始行动' : s.phase === 'game_over' ? '回到房间' :
-        u.submitted || s.submitted ? '已发送' : acting ? '发报 · 确认' : '等待中';
-    const duty = seatDuty(s), warning = deadlineWarning(s, u, u.seconds), settled = timeoutNotice(s);
+        s.submitted ? '已提交' : u.submitted ? '正在发送…' : acting ? '发报 · 确认' : '等待中';
+    const duty = seatDuty(s), handover = handoverLine(s), warning = deadlineWarning(s, u, u.seconds), settled = timeoutNotice(s);
     // When this seat's turn starts, bring its controls up from below the fold.
     const actionArea = useRef<HTMLDivElement>(null);
     useEffect(() => {
@@ -56,7 +58,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
     }, [acting, s.phase, s.round]);
     const seated = new Set([...s.teamA, ...s.teamB].map(p => p.id));
     const unseated = s.players.filter(p => !p.is_ai && !seated.has(p.id));
-    const revealed = [...s.history].reverse().find(row => row.round === s.round && row.secret?.length === 3);
+    const revealed = ['round_result', 'game_over'].includes(s.phase) ? [...s.history].reverse().find(row => row.round === s.round && row.secret?.length === 3) : undefined;
     const battery = h.batteryPercent !== null && <span className="mobile-battery" role="img" aria-label={t('电池电量 {0}%', [h.batteryPercent])}>
         <span className="mobile-battery-cells" aria-hidden="true">{Array.from({ length: 4 }, (_, i) => <i key={i} data-filled={i < h.batteryPercent! / 25}/>)}</span>
         <span aria-hidden="true">{h.batteryPercent}%</span>
@@ -109,24 +111,33 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
     const guessRows = r.guess && <>
         <ol className="mobile-guess" aria-label={t('选择编号')}>{[0, 1, 2].map(i => <li key={i}><button aria-pressed={u.slot === i} disabled={!r.active || disabled} onClick={() => onAct(`slot-${i}`)}
             aria-label={t('选择第 {0} 位密码', [i + 1])}><b>{String(i + 1).padStart(2, '0')}</b><span>{s.clues[i] || t('等待线索…')}</span><em>{u.guess[i] || '—'}</em></button></li>)}</ol>
-        <div className="mobile-keypad">{[1, 2, 3, 4].map(n => <button key={n} disabled={!r.active || disabled} onClick={() => onAct(`key-${n - 1}`)}>{n}</button>)}<button disabled={!r.active || disabled} onClick={() => onAct('key-4')}>{t('退格')}</button></div>
+        {!submitted && <div className="mobile-keypad">{[1, 2, 3, 4].map(n => <button key={n} disabled={!r.active || disabled} onClick={() => onAct(`key-${n - 1}`)}>{n}</button>)}<button disabled={!r.active || disabled} onClick={() => onAct('key-4')}>{t('退格')}</button></div>}
     </>;
     const watch = watching ? <ol className="mobile-slots" aria-label={t('实时进度')}>{watching.slots.map((slot, i) => {
         const text = s.phase === 'encrypting' ? t(slot.active ? slot.done ? '正在修改这一条…' : '正在写这一条…' : slot.done ? '已写好' : '等待') : s.clues[i] || t('等待线索…');
         const mark = s.phase === 'encrypting' ? slot.done && !slot.active ? '✓' : '' : slot.active ? t('推敲中') : slot.digit ?
             `${slot.digit}${slot.match === undefined ? '' : ` · ${t(s.phase === 'intercept' ? slot.match ? '猜中' : '未中' : slot.match ? '译对' : '译错')}`}` : slot.done ? t('已选定') : '—';
         return <li key={i} data-state={slot.active ? 'active' : slot.done ? 'done' : 'idle'}><b>{String(i + 1).padStart(2, '0')}</b><span>{text}</span>{mark && <em>{mark}</em>}</li>;
-    })}</ol> : !r.guess && !r.encrypt && s.clues.length > 0 && <ol className="mobile-clues">{s.clues.map((v, i) => <li key={i}>{v}</li>)}</ol>;
+    })}</ol> : beat && !r.guess && !r.encrypt && s.clues.length > 0 && <ol className="mobile-clues">{s.clues.map((v, i) => <li key={i}>{v}</li>)}</ol>;
+    const verdicts = <div className="mobile-verdicts" aria-label={t('本轮判定')}>{resultSummary(s).map((item, i) =>
+        <p key={i} style={{ color: item.tone === 'good' ? '#2e6949' : item.tone === 'bad' ? '#a44235' : undefined, fontWeight: item.scoring ? 600 : undefined }}>{t(...item.label)}</p>)}</div>;
     const result = s.phase === 'round_result' && (() => {
         const view = resultView(s);
         return <section className="mobile-outcome" aria-label={t('本轮回执')}>
-            <h3>{t(...view.title)}</h3>{view.sub && <p>{t(...view.sub)}</p>}
-            {revealed ? <>
-                <p>{t('本轮密码')} <strong>{revealed.secret!.join(' · ')}</strong></p>
-                <ol className="mobile-clues">{revealed.clues.map((clue, i) => <li key={i}>{clue} → {revealed.secret![i]}</li>)}</ol>
-                {[['拦截 {0}', revealed.intercept], ['解码 {0}', revealed.decrypt]].filter(([, g]) => (g as number[] | undefined)?.every(n => n > 0) && (g as number[]).length === 3)
-                    .map(([label, g]) => <p key={label as string}>{t(label as string, [`${(g as number[]).join('·')} ${(g as number[]).join() === revealed.secret!.join() ? '✓' : '✗'}`])}</p>)}
-            </> : <p>{t('本轮结束后揭晓密码。')}</p>}
+            <h3>{t(...view.title)}</h3>{verdicts}
+            <ol className="mobile-slots">{[0, 1, 2].map(i => <li key={i}>
+                <b>{String(i + 1).padStart(2, '0')}</b>
+                <span>{(revealed?.clues ?? s.clues)[i] || t('等待公开线索。')}
+                    {revealed && <small style={{ display: 'block', marginBlock: '6px' }}>{[
+                        ['截获', revealed.intercept], ['解码', revealed.decrypt],
+                    ].map(([label, guess]) => {
+                        const digit = (guess as number[] | undefined)?.[i];
+                        return `${t(label as string)} ${digit ? `${digit} ${digit === revealed.secret![i] ? '✓' : '✗'}` : '—'}`;
+                    }).join(' · ')}</small>}
+                </span>
+                {revealed && <em aria-label={t('本轮密码')}>{revealed.secret![i]}</em>}
+            </li>)}</ol>
+            {!revealed && <p>{view.sub ? t(...view.sub) : t('本轮结束后揭晓密码。')}</p>}
         </section>;
     })();
     const over = s.phase === 'game_over' && (() => {
@@ -134,6 +145,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
         return <section className="mobile-outcome" aria-label={t('行动结束')}>
             <h3 className="mobile-result">{t(...view.title)}</h3>
             <p>{[view.mine && t(view.mine), t(...view.reason)].filter(Boolean).join(' · ')}</p>
+            {verdicts}
             {(['A', 'B'] as const).map(team => {
                 const list = (team === 'A' ? s.gameOver?.wordsA : s.gameOver?.wordsB) ?? (team === s.myTeam ? s.myWords : []);
                 return list.length > 0 && <p key={team}><strong>{t('{0} 队', [team])}{team === s.myTeam ? t(' · 我方') : ''}</strong> {list.map((v, i) => `${i + 1} ${word(v, u.locale)}`).join(' · ')}</p>;
@@ -169,21 +181,22 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
             {!owner && <p>{t('等待房主开始行动')}</p>}
         </>}
         {!home && !lobby && <>
-            {beat && (duty || warning || settled) && <div className="mobile-duty" role="status">
-                {duty && <p>▶ {t(...duty)}</p>}
+            {beat && (submitted || duty || warning || settled) && <div className="mobile-duty" role="status">
+                {submitted ? <><p>{t(s.submitted ? '已提交' : '正在发送…')}</p><p>{t(s.submitted ? '已提交，等待结算。' : '等待服务器确认。')}</p></> : duty && <p>▶ {t(...duty)}</p>}
+                {!submitted && handover && <p>{t(...handover)}</p>}
                 {(warning || settled) && <p className="mobile-warning">{t(...(warning || settled)!)}</p>}
             </div>}
-            {acting ? <div ref={actionArea} className="mobile-action-area">
+            {workingArea ? <div ref={actionArea} className="mobile-action-area">
                 {r.encrypt ? <>{disk}{clueInputs}</> : <>{words}{guessRows}</>}
             </div> : null}
             {round}
-            {!acting && words}
-            {s.phase !== 'game_over' && !acting && context ? <p>{context}</p> : null}
-            {!acting && disk}
-            {!acting && watch}
+            {!workingArea && words}
+            {s.phase !== 'game_over' && !workingArea && context ? <p>{context}</p> : null}
+            {!workingArea && disk}
+            {!workingArea && watch}
             {result}
             {over}
-            {!acting && beat && <p role="status">{watchStatus}</p>}
+            {!workingArea && !submitted && beat && <p role="status">{watchStatus}</p>}
         </>}
         <p className="mobile-status" role={s.error ? 'alert' : 'status'}>{s.error ? localizeError(u.locale, s.error) : status}</p>
         <div className="mobile-audio" role="group" aria-label={t('声音')}>

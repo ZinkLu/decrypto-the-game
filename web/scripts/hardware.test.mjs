@@ -174,16 +174,24 @@ test('paint carries player identity for occupied-seat exchanges and null for emp
 });
 
 test('power off blocks front input and transmission, and restores the prepared game on power on', () => {
-  for (const phase of ['home', 'room', 'encrypting', 'decrypt', 'intercept']) {
+  for (const phase of ['home', 'room', 'encrypting', 'waiting', 'decrypt', 'intercept']) {
     const state = previewState({}, phase);
-    const local = { ...initialLocal, name: '测试员', clues: ['花园', '航行', '羽毛'], guess: [3, 1, 4] };
+    const diskId = keyDiskIdentity(state);
+    const local = { ...initialLocal, name: '测试员', clues: ['花园', '航行', '羽毛'], guess: [3, 1, 4],
+      keyDisk: diskId ? { id: diskId, phase: 'ready', startedAt: 0 } : initialLocal.keyDisk };
     const before = JSON.stringify({ state, local });
     const on = paint(state, local);
     const off = paint(state, { ...local, powerOn: false });
     assert.equal(off.ready, false);
     assert.equal(off.activity, 0);
     assert.deepEqual(off.scoreFlags, on.scoreFlags, 'bistable score flags retain the tally without power');
-    assert.deepEqual(off.targets.map(t => t.id), ['disk-toggle', 'disk-eject', 'power-toggle']);
+    assert.deepEqual(off.targets.map(t => t.id), diskId ? ['disk-toggle', 'disk-eject', 'power-toggle'] : ['power-toggle']);
+    if (diskId) {
+      assert.equal(off.keyDiskId, diskId, 'the current encryptor keeps their physical disk without power');
+      assert.ok(off.targets.filter(t => ['disk-toggle', 'disk-eject'].includes(t.id)).every(t => !t.disabled), 'spring ejection and handling do not require electricity');
+    } else {
+      assert.equal(off.keyDiskId, '', 'nonowners do not gain a disk or phantom controls while the machine is off');
+    }
     assert.equal(off.targets.find(t => t.id === 'power-toggle').surface, 'powerControl');
     assert.equal(off.targets.find(t => t.id === 'power-toggle').label, '开启终端电源');
     assert.match(off.status, /输入已保留/);

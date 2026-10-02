@@ -8,7 +8,7 @@ import type { Content, Target } from './paint';
 import type { CrtSoundEvent } from './crtSound';
 import type { DotFilter } from './dotFiltering';
 import { crtProfile, crtHeight, crtDisplayUv } from './crt';
-import { consoleHardware, type HardwareState, type KeyDiskState } from './model';
+import { consoleHardware, emptyKeyDisk, type HardwareState, type KeyDiskState } from './model';
 import { ConsoleInstruments } from './instruments';
 import type { ConsoleSound } from './sound';
 import { qualityProfiles, ambientRate, type QualityProfile } from './quality';
@@ -26,6 +26,7 @@ import { Printer } from './parts/printer';
 import { RearPanel } from './parts/rearPanel';
 import { RosterRack } from './parts/roster';
 import { ScoreRegister } from './parts/scoreRegister';
+import { ScorePulse, scoreColors } from './scoreFeedback';
 import { Studio } from './parts/studio';
 import { Viewpoint } from './parts/viewpoint';
 
@@ -67,6 +68,7 @@ export class ConsoleEngine {
     private disk: DiskDrive;
     private roster: RosterRack;
     private score: ScoreRegister;
+    private scorePulse = new ScorePulse();
     private instruments?: ConsoleInstruments;
     private content?: Content;
     private local?: HardwareState;
@@ -217,7 +219,8 @@ export class ConsoleEngine {
     update(content: Content, local: HardwareState) {
         this.dirty = true;
         this.wake();
-        this.chassis.hash(Object.values(content.frames).map(frame => frame.canvas));
+        // Main-screen edits must reach the GPU even when their thumbnail looks unchanged.
+        this.chassis.hash(Object.entries(content.frames).filter(([name]) => name !== 'screen').map(([, frame]) => frame.canvas));
         const powered = consoleHardware(local).powered, reduced = this.reduced.matches;
         const previous = this.content;
         const resuming = content.connected && !previous?.connected;
@@ -247,6 +250,9 @@ export class ConsoleEngine {
         this.printer.thread(this.chassis.textures.get('paper'));
         this.lamps.sync(performance.now());
         this.score.update(content.scoreFlags, powered, resuming);
+        this.scorePulse.observe(content.scoreSignal, Date.now(), powered && !reduced && !document.hidden && !local.backView && !local.archiveOpen);
+        this.displays.scorePulse(this.scorePulse.level, this.scorePulse.sweep, scoreColors[this.scorePulse.tone]);
+        this.studio.scorePulse(this.scorePulse.level, scoreColors[this.scorePulse.tone]);
         this.hooks.project();
     }
 
@@ -265,10 +271,14 @@ export class ConsoleEngine {
         this.wake();
     }
     setKeyDisk(disk: KeyDiskState) {
+        // Role and round updates revoke the model in this frame, even while a
+        // previous delivery or pull is still waiting for React's local cleanup.
+        if (!disk.id || disk.id !== this.content?.keyDiskId) disk = emptyKeyDisk;
         if (this.local) this.local = { ...this.local, keyDisk: disk };
         this.disk.set(disk);
         // Whoever moved the disk places its grip as well.
-        if (this.apply(this.disk.tick(performance.now(), this.reduced.matches) & ~Effect.projects)) this.dirty = true;
+        if (this.apply(this.disk.tick(performance.now(), this.reduced.matches,
+            this.view.camera, this.view.width, this.view.height) & ~Effect.projects)) this.dirty = true;
         this.wake();
     }
     setQuality(profile: QualityProfile) {
@@ -425,6 +435,12 @@ export class ConsoleEngine {
         if (this.disposed)
             return;
         if (document.hidden || now - this.last < 16) {
+            if (document.hidden) {
+                this.scorePulse.clear();
+                this.displays.scorePulse(0, 0, scoreColors.neutral);
+                this.studio.scorePulse(0, scoreColors.neutral);
+                this.dirty = true;
+            }
             this.raf = requestAnimationFrame(this.tick);
             return;
         }
@@ -443,8 +459,16 @@ export class ConsoleEngine {
         effect |= this.rear.tick(dt, reduced);
         effect |= this.roster.tick(paced, reduced);
         effect |= this.score.tick(paced, reduced);
+        if (this.scorePulse.advance(dt, Date.now(), this.powered && !!this.content?.scoreSignal.online && !reduced)) {
+            this.displays.scorePulse(this.scorePulse.level, this.scorePulse.sweep, scoreColors[this.scorePulse.tone]);
+            this.studio.scorePulse(this.scorePulse.level, scoreColors[this.scorePulse.tone]);
+            // The wall is outside the ambient regions. Draw every pulse frame in full,
+            // including its exact return to zero before capturing a new still frame.
+            effect |= Effect.redraw;
+        }
+        if (import.meta.env.DEV) this.host.dataset.scorePulse = this.scorePulse.level.toFixed(4);
         if (this.lamps.sync(now)) effect |= Effect.redraw;
-        effect |= this.disk.tick(now, reduced);
+        effect |= this.disk.tick(now, reduced, this.view.camera, this.view.width, this.view.height);
         effect |= this.scope.tick(dt, reduced);
         const changed = this.apply(effect);
         const live = this.powered && !reduced;

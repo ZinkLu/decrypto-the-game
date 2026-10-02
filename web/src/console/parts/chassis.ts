@@ -90,9 +90,9 @@ export class Chassis {
     readonly textures = new Map<string, THREE.Texture>();
     private assemblies: Assembly[] = [];
     private frameHashes = new Map<string, number>();
-    // paint() always returns fresh canvases; a downsampled hash skips the GPU
-    // upload whenever a surface's pixels are unchanged (the 840x2630 paper
-    // texture is by far the most expensive upload).
+    // A downsampled hash avoids redundant uploads of print, especially the long
+    // paper. The interactive main screen bypasses this approximate comparison:
+    // a small edit (such as one digit) may disappear during downsampling.
     private canvasHashes = new WeakMap<HTMLCanvasElement, number>();
 
     /** `invalidate` asks for a frame: a texture changed while nothing moves. */
@@ -163,7 +163,7 @@ export class Chassis {
     /**
      * Every readback waits for the GPU, so a repaint's canvases are reduced into
      * one atlas and read once (26 ms for 61 surfaces one by one, 6 ms together).
-     * Mipmapped reduction averages each whole cell, so a small glyph still counts.
+     * This comparison is approximate; never use it to suppress main-screen edits.
      */
     hash(canvases: HTMLCanvasElement[]) {
         const fresh = [...new Set(canvases)].filter(canvas => !this.canvasHashes.has(canvas));
@@ -187,13 +187,18 @@ export class Chassis {
         });
     }
 
-    /** Puts a painted frame on its surface. Returns whether the surface's pixels changed. */
+    /** Puts a painted frame on its surface. Returns whether a new texture image was uploaded. */
     print(name: string, frame: Frame) {
         const plane = this.planes.get(name);
         if (!plane) return false;
-        this.hash([frame.canvas]);
-        const hash = this.canvasHashes.get(frame.canvas)!;
         let texture = this.textures.get(name);
+        if (texture?.image === frame.canvas) return false;
+        let hash: number | undefined;
+        if (name !== 'screen') {
+            this.hash([frame.canvas]);
+            hash = this.canvasHashes.get(frame.canvas)!;
+            if (texture && this.frameHashes.get(name) === hash) return false;
+        }
         if (!texture) {
             texture = new THREE.CanvasTexture(frame.canvas);
             texture.colorSpace = THREE.SRGBColorSpace;
@@ -202,7 +207,6 @@ export class Chassis {
             plane.material.map = texture;
             plane.material.needsUpdate = true;
         } else {
-            if (this.frameHashes.get(name) === hash) return false;
             // GPU storage is allocated once per texture: a canvas of another size
             // (a marquee strip, a differently fitted keyword module) needs a fresh one.
             const before = texture.image as HTMLCanvasElement;
@@ -210,7 +214,7 @@ export class Chassis {
             texture.image = frame.canvas;
             texture.needsUpdate = true;
         }
-        this.frameHashes.set(name, hash);
+        if (hash !== undefined) this.frameHashes.set(name, hash);
         this.invalidate();
         return true;
     }

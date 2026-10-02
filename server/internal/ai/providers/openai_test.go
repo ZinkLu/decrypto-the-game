@@ -1,10 +1,13 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -68,5 +71,33 @@ func TestReasoningSettingsReachTheRequest(t *testing.T) {
 	}
 	if sent["reasoning_effort"] != "low" || sent["max_tokens"] != float64(1024) || sent["chat_template_kwargs"] == nil || sent["model"] != "test" {
 		t.Fatalf("settings missing from request: %v", sent)
+	}
+}
+
+func TestDebugLogsReasoningAndAnswer(t *testing.T) {
+	for _, tc := range []struct {
+		debug, body string
+		logged      bool
+	}{
+		{"1", `{"choices":[{"finish_reason":"stop","message":{"content":"3","reasoning_content":"clue fits word three"}}]}`, true},
+		{"1", `{"choices":[{"finish_reason":"stop","message":{"content":"3","reasoning":"clue fits word three"}}]}`, true},
+		{"0", `{"choices":[{"finish_reason":"stop","message":{"content":"3","reasoning_content":"clue fits word three"}}]}`, false},
+	} {
+		t.Setenv("DECRYPTO_AI_DEBUG", tc.debug)
+		var out bytes.Buffer
+		log.SetOutput(&out)
+		p := NewOpenAIProvider("k", "http://model.invalid/v1", "test")
+		p.Client = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
+		})}
+		_, err := p.Complete(context.Background(), nil)
+		log.SetOutput(os.Stderr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := strings.Contains(out.String(), "clue fits word three") && strings.Contains(out.String(), `answer: "3"`)
+		if got != tc.logged {
+			t.Fatalf("debug=%s logged=%v, log:\n%s", tc.debug, got, out.String())
+		}
 	}
 }

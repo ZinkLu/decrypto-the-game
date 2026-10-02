@@ -50,7 +50,7 @@ test('reading an old paper record stays anchored when a new round is archived', 
 });
 
 test('an intercepted sender gets a failure cue while the intercepting player gets a success cue', () => {
-  const s = { ...previewState({}, 'round_result'), roundResult: { intercept_success: true } };
+  const s = previewState({}, 'intercept-hit');
   assert.equal(resultTint({ ...s, myRole: 'encryptor' }), '#ed9781');
   assert.equal(resultTint({ ...s, myRole: 'opponent' }), '#8bc995');
   const final = previewState({}, 'game_over');

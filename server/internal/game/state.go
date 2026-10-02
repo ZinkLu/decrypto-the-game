@@ -323,5 +323,14 @@ func (b *Bridge) historyRow(r *core.Round) ws.RoundHistoryRow {
 	secret := r.GetSecretDigits()
 	intercept := r.GetInterceptSecret()
 	decrypt := r.GetDecryptSecret()
-	return ws.RoundHistoryRow{Round: int(r.GetNumberOfRounds()), Team: b.teamLabel(r.GetCurrentTeam()), Clues: clues[:], Secret: secret[:], Intercept: intercept[:], Decrypt: decrypt[:], Timeouts: b.timeouts[int(r.GetNumberOfRounds())]}
+	return ws.RoundHistoryRow{Round: int(r.GetNumberOfRounds()), Team: b.teamLabel(r.GetCurrentTeam()), Clues: clues[:], Secret: secret[:], Intercept: intercept[:], Decrypt: publicDecrypt(r, decrypt), Timeouts: b.timeouts[int(r.GetNumberOfRounds())]}
+}
+
+// publicDecrypt is the team's decoding as history shows it: absent when an
+// interception ended the round before the team decoded.
+func publicDecrypt(r *core.Round, decrypt [3]int) []int {
+	if r.IsDecryptSkipped() {
+		return nil
+	}
+	return decrypt[:]
 }

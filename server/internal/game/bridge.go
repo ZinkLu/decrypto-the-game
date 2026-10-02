@@ -281,16 +281,10 @@ func interceptSuccessHandler(ctx context.Context, r *core.Round, opponent *core.
 		return false
 	}
 
-	log.Printf("[RESULT] Round %d | INTERCEPT SUCCESS by team %s", r.GetNumberOfRounds(), b.teamLabel(opponent))
+	log.Printf("[RESULT] Round %d | INTERCEPT SUCCESS by team %s, decoding skipped", r.GetNumberOfRounds(), b.teamLabel(opponent))
+	// The round ends here; the receipt that follows stays up between rounds.
 	b.broadcastRoundResult(r, boolPtr(true), nil)
-
-	// Show the interception before the team decodes all the same.
-	select {
-	case <-time.After(b.Timing.AfterIntercept):
-	case <-ctx.Done():
-		return true
-	}
-	return false
+	return ctx.Err() != nil
 }
 
 func interceptFailHandler(ctx context.Context, r *core.Round, opponent *core.Team, ts core.TeamState) bool {
@@ -445,7 +439,7 @@ func (b *Bridge) buildHistory(currentRound *core.Round) []ws.RoundHistoryRow {
 			Clues:     clues[:],
 			Secret:    secret[:],
 			Intercept: intercept[:],
-			Decrypt:   decrypt[:],
+			Decrypt:   publicDecrypt(r, decrypt),
 		}
 		rows = append(rows, row)
 	}

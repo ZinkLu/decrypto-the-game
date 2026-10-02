@@ -298,7 +298,8 @@ func TestGameSurvivesARestart(t *testing.T) {
 	ann.send("start_game", nil)
 
 	// Round 1: Ann encrypts, Alf decodes. Round 2: Bob encrypts, Bea decodes
-	// wrongly. Round 3: Alf encrypts and Bob intercepts.
+	// wrongly. Round 3: Alf encrypts and Bob misses the interception, so team A
+	// still decodes.
 	for _, c := range everyone {
 		c.inPhase(1, "encrypting")
 	}
@@ -317,11 +318,12 @@ func TestGameSurvivesARestart(t *testing.T) {
 	secret = alf.Phase.SecretDigits
 	alf.send("submit_clues", map[string]any{"round": 3, "clues": []string{"un", "deux", "trois"}})
 	bob.inPhase(3, "intercept")
-	bob.send("submit_intercept", map[string]any{"round": 3, "guess": secret})
+	missed := []int{secret[1], secret[0], secret[2]}
+	bob.send("submit_intercept", map[string]any{"round": 3, "guess": missed})
 	for _, c := range everyone {
 		c.inPhase(3, "decrypt")
 	}
-	if ann.Result.InterceptSuccess == nil || !*ann.Result.InterceptSuccess || ann.Result.ScoreB != (ws.ScoreInfo{Interceptions: 1, DecryptFailures: 1}) {
+	if ann.Result.InterceptSuccess == nil || *ann.Result.InterceptSuccess || ann.Result.ScoreB != (ws.ScoreInfo{DecryptFailures: 1}) {
 		t.Fatalf("round 3 before the restart: %+v", ann.Result)
 	}
 
@@ -355,11 +357,11 @@ func TestGameSurvivesARestart(t *testing.T) {
 			!reflect.DeepEqual(g.SecretDigits, old.Phase.SecretDigits) || !reflect.DeepEqual(g.History, old.Phase.History) {
 			t.Errorf("%s lost part of the game: %+v, had %+v", c.name, g, old.Phase)
 		}
-		if g.ScoreA != (ws.ScoreInfo{}) || g.ScoreB != (ws.ScoreInfo{Interceptions: 1, DecryptFailures: 1}) || len(g.History) != 2 {
+		if g.ScoreA != (ws.ScoreInfo{}) || g.ScoreB != (ws.ScoreInfo{DecryptFailures: 1}) || len(g.History) != 2 {
 			t.Errorf("%s sees the score %+v / %+v after %d rounds", c.name, g.ScoreA, g.ScoreB, len(g.History))
 		}
-		if g.RoundResult == nil || g.RoundResult.InterceptSuccess == nil || !*g.RoundResult.InterceptSuccess {
-			t.Errorf("%s no longer sees the interception: %+v", c.name, g.RoundResult)
+		if g.RoundResult == nil || g.RoundResult.InterceptSuccess == nil || *g.RoundResult.InterceptSuccess {
+			t.Errorf("%s no longer sees the missed interception: %+v", c.name, g.RoundResult)
 		}
 		if left := time.Until(time.UnixMilli(g.Deadline)); left < 50*time.Second || left > 61*time.Second {
 			t.Errorf("%s has %v left to decode, want the full minute", c.name, left)
@@ -386,11 +388,11 @@ func TestGameSurvivesARestart(t *testing.T) {
 		if c.Phase.Encryptor != "Bea" || len(c.Phase.History) != 3 {
 			t.Fatalf("%s: round 4 is encrypted by %s after %d rounds", c.name, c.Phase.Encryptor, len(c.Phase.History))
 		}
-		if row := c.Phase.History[2]; !reflect.DeepEqual(row.Secret, secret) || !reflect.DeepEqual(row.Intercept, secret) || !reflect.DeepEqual(row.Decrypt, secret) {
+		if row := c.Phase.History[2]; !reflect.DeepEqual(row.Secret, secret) || !reflect.DeepEqual(row.Intercept, missed) || !reflect.DeepEqual(row.Decrypt, secret) {
 			t.Fatalf("%s: round 3 settled as %+v", c.name, row)
 		}
 	}
-	if ann.Result.ScoreA != (ws.ScoreInfo{}) || ann.Result.ScoreB != (ws.ScoreInfo{Interceptions: 1, DecryptFailures: 1}) {
+	if ann.Result.ScoreA != (ws.ScoreInfo{}) || ann.Result.ScoreB != (ws.ScoreInfo{DecryptFailures: 1}) {
 		t.Fatalf("the score after round 3: %+v", ann.Result)
 	}
 	if len(bea.Phase.SecretDigits) != 3 {

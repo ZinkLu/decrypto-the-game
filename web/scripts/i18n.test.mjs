@@ -8,7 +8,7 @@ const { paint } = await import(await moduleUrl('paint'));
 globalThis.document = { createElement: () => {
   const ink = [], draws = [];
   const canvas = { ink, draws, getContext: () => context };
-  const context = new Proxy({ canvas, fillText: value => { ink.push(value); draws.push({ value, color: context.fillStyle, size: parseFloat(context.font.match(/([\d.]+)px/)[1]) }); },
+  const context = new Proxy({ canvas, fillText: (value, x, y) => { ink.push(value); draws.push({ value, x, y, color: context.fillStyle, size: parseFloat(context.font.match(/([\d.]+)px/)[1]) }); },
     fillRect: (x, y, w, h) => { if (canvas.background === undefined && x === 0 && y === 0 && w === canvas.width && h === canvas.height) canvas.background = context.fillStyle; },
     measureText: value => ({ width: [...value].reduce((sum, ch) => sum + (/[^\u0000-\u00ff]/.test(ch) ? 1 : .52), 0) * parseFloat(context.font.match(/([\d.]+)px/)?.[1] || '20') }),
     createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }),
@@ -180,6 +180,30 @@ test('private code targets never reach the display until read, or after eject an
   assert.notEqual(ejected.screenPrivacyKey, paint(s, local).screenPrivacyKey, 'CRT outgoing image is revoked');
 });
 
+test('only the current encryptor authorizes a disk model and its physical controls', () => {
+  const s = fixture('encrypting'), id = keyDiskIdentity(s);
+  const local = { ...initialLocal, keyDisk: { id, phase: 'ready', startedAt: 0 } };
+  const owned = paint(s, local);
+  assert.equal(owned.keyDiskId, id);
+  assert.ok(owned.targets.some(target => target.id === 'disk-toggle' && !target.disabled));
+  assert.ok(owned.targets.some(target => target.id === 'disk-eject' && !target.disabled));
+  for (const myRole of ['teammate', 'opponent', 'observer', '']) {
+    for (const phase of ['encrypting', 'intercept', 'decrypt']) {
+      // Simulate the first render after a role change, before local cleanup:
+      // both the previous disk and private digits may still exist in memory.
+      const revoked = paint({ ...s, myRole, phase }, local);
+      assert.equal(revoked.keyDiskId, '', `${phase}/${myRole}: no model authorization`);
+      assert.ok(!revoked.targets.some(target => ['disk-toggle', 'disk-eject'].includes(target.id)), `${phase}/${myRole}: no phantom control`);
+    }
+  }
+  for (const phase of ['home', 'room', 'round_result', 'game_over']) {
+    assert.equal(paint({ ...s, phase }, local).keyDiskId, '', `${phase}: old disk is revoked`);
+  }
+  const nextRound = paint({ ...s, round: s.round + 1 }, local);
+  assert.notEqual(nextRound.keyDiskId, id, 'the previous round cannot keep its disk model');
+  assert.ok(nextRound.targets.filter(target => ['disk-toggle', 'disk-eject'].includes(target.id)).every(target => target.disabled));
+});
+
 
 test('CRT palettes reach word textures and white enamel uses dark lettering on either player side', async () => {
   const { themeChoices, teamPalette, wordDisplayOptions } = await import(modelUrl);
@@ -242,10 +266,10 @@ test('results reveal only the current public history code, never private encrypt
   const s = fixture('round_result');
   s.secretDigits = [4, 3, 2];
   s.history = [{ round: s.round - 1, team: 'A', clues: ['Past'], secret: [2, 4, 3] }];
-  assert.ok(!paint(s, initialLocal).frames.screen.canvas.ink.includes('本轮密码'));
+  assert.ok(!paint(s, initialLocal).frames.screen.canvas.ink.includes('密码'));
   s.history.push({ round: s.round, team: 'A', clues: ['One', 'Two', 'Three'], secret: [3, 1, 4] });
   const output = paint(s, initialLocal).frames.screen.canvas.ink;
-  assert.ok(output.includes('本轮密码'));
+  assert.ok(output.includes('密码'));
   assert.deepEqual(output.filter(text => /^[1-4]$/.test(text)), ['3', '1', '4']);
 });
 
@@ -271,7 +295,7 @@ test('illustrated guide turns through four pages and keeps every worked example'
   }
 });
 
-test('a briefing takes the glass before each beat, then hands over to the working page', async () => {
+test('the opening briefing hands over to the working page and later beats keep the glass free', async () => {
   const { briefingKey } = await import(modelUrl);
   const s = previewState({}, 'encrypting');
   const brief = briefingKey(s);
@@ -288,8 +312,9 @@ test('a briefing takes the glass before each beat, then hands over to the workin
   for (const text of ['加密', '拦截', '解码', '进行中', '稍后', 'B 队']) assert.ok(ink.includes(text), text);
   assert.ok(ink.some(value => value.startsWith('你来加密')), 'the encryptor learns their task');
   assert.deepEqual(briefed.screenBlink.map(cell => cell.kind), ['cursor'], 'the station in progress blinks');
-  const early = paint({ ...previewState({}, 'decrypt'), round: 2 }, { ...initialLocal, brief: briefingKey({ ...s, round: 2, phase: 'decrypt' }) }).frames.screen.canvas.ink;
-  assert.ok(early.includes('本轮跳过') && early.some(value => value.startsWith('前两次发报不拦截')), 'early rounds say why nobody intercepts');
+  const early = paint({ ...previewState({}, 'decrypt'), round: 2 }, { ...initialLocal, brief: briefingKey({ ...s, round: 2, phase: 'decrypt' }) });
+  assert.ok(!early.targets.some(target => target.id === 'brief-skip'), 'decoding has no blocking briefing');
+  assert.ok(early.targets.some(target => target.id === 'slot-0'), 'the decoder can choose a digit immediately');
 });
 
 test('watching screens blink the slot being worked on and keep the round in the header', () => {
@@ -311,11 +336,73 @@ test('watching screens blink the slot being worked on and keep the round in the 
   assert.ok(intercepting.includes('推敲中') && intercepting.includes('2') && intercepting.includes('1'), 'the encryptor watches the rivals pick');
 });
 
+test('the last intercept or decode digit updates without moving its selected slot', () => {
+  for (const phase of ['intercept', 'decrypt']) for (const locale of ['zh', 'en']) {
+    const s = fixture(phase);
+    for (const digit of [0, 1, 4, 0]) {
+      const out = paint(s, { ...initialLocal, locale, guess: [2, 3, digit], slot: 2 });
+      const label = `${phase}/${locale}: third digit ${digit || 'empty'}`;
+      const digits = out.frames.screen.canvas.draws.filter(draw => draw.x === 875 && [266, 358, 450].includes(draw.y));
+      assert.deepEqual(digits.map(draw => draw.value), ['2', '3', digit ? String(digit) : '—'], label);
+      assert.equal(out.ready, digit !== 0, `${label}: ACTION readiness follows the visible code`);
+      assert.deepEqual(out.screenBlink.filter(cell => cell.kind === 'cursor'), digit ? [] : [
+        { x: 866, y: 426, w: 52, h: 48, kind: 'cursor' },
+      ], `${label}: only an empty selected slot blinks`);
+    }
+  }
+});
+
 test('results show both answers beside the revealed code', () => {
   const s = fixture('round_result');
   s.history = [...s.history, { round: s.round, team: 'A', clues: ['One', 'Two', 'Three'], secret: [3, 1, 4], intercept: [2, 1, 4], decrypt: [3, 1, 4] }];
-  assert.ok(paint(s, initialLocal).frames.screen.canvas.ink.some(value => value.includes('拦截 2·1·4 ✗') && value.includes('解码 3·1·4 ✓')));
-  assert.ok(paint(s, { ...initialLocal, locale: 'en' }).frames.screen.canvas.ink.some(value => value.includes('Intercept 2·1·4 ✗')));
+  for (const locale of ['zh', 'en']) {
+    const { draws } = paint(s, { ...initialLocal, locale }).frames.screen.canvas;
+    assert.ok(draws.some(d => d.value === '2 ✗' && d.x === 635 && d.y === 266));
+    assert.ok(draws.some(d => d.value === '3 ✓' && d.x === 750 && d.y === 266));
+    assert.ok(draws.some(d => d.value === '3' && d.x === 875 && d.y === 266));
+    assert.deepEqual(draws.filter(d => ['One', 'Two', 'Three'].includes(d.value)).map(d => d.y), [266, 358, 450]);
+  }
+});
+
+test('public clues keep their positions through editing, sending, watching and the receipt', () => {
+  const s = fixture('intercept');
+  const variants = [
+    paint(s, initialLocal),
+    paint(s, { ...initialLocal, submitted: true }),
+    paint({ ...s, submitted: true }, initialLocal),
+    paint({ ...s, myRole: 'teammate' }, initialLocal),
+    paint({ ...s, phase: 'round_result', roundResult: { intercept_success: true }, history: [] }, initialLocal),
+  ];
+  for (const output of variants) {
+    assert.deepEqual(output.frames.screen.canvas.draws.filter(d => s.clues.includes(d.value)).map(d => [d.value, d.y]), [['Harbor', 266], ['Time', 358], ['Snow', 450]]);
+  }
+  assert.ok(variants[1].frames.screen.canvas.ink.includes('正在发送…'));
+  assert.ok(variants[2].frames.screen.canvas.ink.includes('已提交'));
+  assert.ok(!variants[4].frames.screen.canvas.ink.includes('密码'), 'a successful interception still keeps the answer private');
+});
+
+test('long clues wrap at readable sizes and expand above the rows without covering the number slot', async () => {
+  const { textLines } = await import(await moduleUrl('paintKit'));
+  const value = '线'.repeat(79) + '尾';
+  const s = fixture('intercept'); s.clues[0] = value;
+  const normal = paint(s, initialLocal), expanded = paint(s, { ...initialLocal, readingClue: 0 });
+  const target = normal.targets.find(t => t.id === 'read-clue-0');
+  assert.ok(target && target.x + target.w < 875);
+  assert.ok(normal.frames.screen.canvas.ink.includes('展开'));
+  assert.ok(expanded.frames.screen.canvas.ink.includes('收起'));
+  assert.ok(paint(s, { ...initialLocal, focus: 'read-clue-0' }).frames.screen.canvas.ink.includes('展开'), 'focusing the reading button does not open or close the clue');
+  assert.ok(paint(s, { ...initialLocal, readingClue: 0, focus: 'slot-1' }).frames.screen.canvas.ink.includes('收起'), 'keyboard focus may move while the full clue stays open');
+  const fullText = expanded.frames.screen.canvas.draws.filter(d => d.y > 138 && d.y < 218).map(d => d.value).join('');
+  assert.equal(fullText, value);
+  assert.ok(normal.frames.screen.canvas.draws.filter(d => d.value.includes('线') && d.y > 230).every(d => d.size >= 22));
+  const context = normal.frames.screen.canvas.getContext();
+  const latin = textLines(context, 'An extraordinarily long unbroken_identifier_that_still_needs_to_wrap', 250, 32, 22, 2);
+  assert.equal(latin.size, 22);
+  assert.ok(latin.truncated && latin.lines[1].endsWith('…'));
+  assert.ok(latin.lines.every(line => context.measureText(line).width <= 250));
+  const read = textLines(context, value, 890, 25, 22, 3);
+  assert.equal(read.lines.join(''), value);
+  assert.equal(read.truncated, false);
 });
 
 test('briefings, watching screens and every guide page are fully localized', async () => {

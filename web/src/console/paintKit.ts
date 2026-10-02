@@ -60,6 +60,43 @@ export function fitLabel(c: CanvasRenderingContext2D, value: string, x: number, 
     const fitted = Math.min(size, size * max / Math.max(1, c.measureText(value).width));
     text(c, value, x, y, fitted, color, weight);
 }
+/** Readable canvas copy: wrap words first, then reduce only to the stated floor. */
+export function textLines(c: CanvasRenderingContext2D, value: string, width: number, size: number, minimum = 22, maxLines = 2, weight = 400) {
+    const tokens = value.match(/\n|[^\S\n]+|[\p{Script=Latin}\d][\p{Script=Latin}\d’'.,;:!?/-]*|./gu) || [];
+    const atSize = (fontSize: number) => {
+        c.font = `${weight} ${fontSize}px ${FONT}`;
+        const lines: string[] = [];
+        let row = '';
+        for (const token of tokens) {
+            if (token === '\n') { lines.push(row.trimEnd()); row = ''; continue; }
+            if (row && c.measureText(row + token).width > width) { lines.push(row.trimEnd()); row = ''; }
+            if (!row && !token.trim()) continue;
+            // An unbroken word or URL still has to stay inside the glass.
+            for (const character of token) {
+                if (row && c.measureText(row + character).width > width) { lines.push(row.trimEnd()); row = ''; }
+                row += character;
+            }
+        }
+        if (row) lines.push(row.trimEnd());
+        return lines;
+    };
+    let fitted = Math.max(minimum, size), lines = atSize(fitted);
+    while (lines.length > maxLines && fitted > minimum) lines = atSize(--fitted);
+    const truncated = lines.length > maxLines;
+    if (truncated) {
+        lines = lines.slice(0, maxLines);
+        const last = Array.from(lines[maxLines - 1]);
+        while (last.length && c.measureText(last.join('') + '…').width > width) last.pop();
+        lines[maxLines - 1] = last.join('').trimEnd() + '…';
+    }
+    return { lines, size: fitted, truncated };
+}
+/** The middle coordinate is stable whether this copy takes one line or two. */
+export function readableText(c: CanvasRenderingContext2D, value: string, x: number, middle: number, width: number, size: number, color: string, weight = 400, minimum = 22, maxLines = 2) {
+    const layout = textLines(c, value, width, size, minimum, maxLines, weight);
+    layout.lines.forEach((value, i) => text(c, value, x, middle + (i - (layout.lines.length - 1) / 2) * layout.size * 1.18, layout.size, color, weight));
+    return layout;
+}
 export function keyword(c: CanvasRenderingContext2D, value: string, x: number, y: number, width: number, color: string) {
     // Both languages start at 60 px. Long phrases wrap at word boundaries;
     // only content that does not fit shrinks, and secret words are never elided.

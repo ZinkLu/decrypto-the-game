@@ -28,6 +28,8 @@ export interface TerminalUniforms {
     write: { value: THREE.Vector2 };
     blank: { value: THREE.Color };
     page: { value: number };
+    score: { value: THREE.Vector2 };
+    scoreColor: { value: THREE.Color };
 }
 export const terminalRows = 20;
 export const terminalUniforms = (background: string, aspect: number): TerminalUniforms => ({
@@ -37,6 +39,8 @@ export const terminalUniforms = (background: string, aspect: number): TerminalUn
     write: { value: new THREE.Vector2(terminalRows, terminalRows) },
     blank: { value: new THREE.Color(background) },
     page: { value: aspect },
+    score: { value: new THREE.Vector2() },
+    scoreColor: { value: new THREE.Color('#b9c5c7') },
 });
 /** One shared semantic palette bus serves all four LED modules. */
 // The warning channel reuses the legend die: the modules have only two colours.
@@ -109,6 +113,7 @@ export function shadeCrt(material: THREE.Material, options: Options) {
         if (options.terminal) Object.assign(shader.uniforms, {
             crtBlink: options.terminal.blink, crtBlinkKind: options.terminal.blinkKind, crtWrite: options.terminal.write,
             crtBlank: options.terminal.blank, crtPage: options.terminal.page,
+            crtScore: options.terminal.score, crtScoreColor: options.terminal.scoreColor,
         });
         const display = options.display?.() ?? 'crt';
         if (display !== 'crt' && options.dots) {
@@ -179,6 +184,8 @@ const crtTerminalShader = `
     uniform vec2 crtWrite;
     uniform vec3 crtBlank;
     uniform float crtPage;
+    uniform vec2 crtScore;
+    uniform vec3 crtScoreColor;
     // The page's static falloff (crtFinish), so a cleared cell matches its neighbours.
     vec3 crtPaper(vec2 uv) {
         float reach = clamp((length((uv - .5) * vec2(1.0, crtPage)) - .10) / .58, 0.0, 1.0);
@@ -287,6 +294,10 @@ const crtPictureShader = `
     sampledDiffuseColor.rgb += crtHalo * .36;
     #ifdef CRT_TERMINAL
     sampledDiffuseColor.rgb = mix(crtPaper(crtUv), sampledDiffuseColor.rgb, crtAttribute(crtUv));
+    // A soft phosphor sweep brightens ink without moving or hiding a single character.
+    float scoreBand = exp(-pow((1.0 - crtUv.y - crtScore.y) / .13, 2.0));
+    sampledDiffuseColor.rgb *= 1.0 + crtScore.x * (.12 + .22 * scoreBand);
+    sampledDiffuseColor.rgb += crtScoreColor * crtScore.x * (.009 + .018 * scoreBand);
     #endif
     sampledDiffuseColor.rgb *= 1.12 * crtBar;
     // A dark inner border separates the emitting coating

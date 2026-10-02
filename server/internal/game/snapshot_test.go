@@ -154,9 +154,9 @@ func TestRestoredGameContinuesFromEverySavedState(t *testing.T) {
 	}
 
 	states := stored.saved()
-	// Before the first round, four states in each round without interception,
-	// six in each later round, and the end.
-	if len(states) != 1+2*4+3*6+1 {
+	// Before the first round, four states in each of the first two rounds and
+	// in each intercepted round (3 and 5, not decoded), six in round 4, and the end.
+	if len(states) != 1+2*4+2*4+6+1 {
 		t.Fatalf("%d states saved", len(states))
 	}
 	for i, state := range states {

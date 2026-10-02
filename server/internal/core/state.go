@@ -17,7 +17,7 @@ type TeamState uint
 
 2. 加密者给出 3 个描述;									 ENCRYPTING
 
-3. 对方进行破解（第一轮掉过该阶段），破解成功，本小轮结束	   INTERCEPT
+3. 对方进行破解（前两轮跳过该阶段），破解成功，本小轮结束	   INTERCEPT
 
 4. 我方进行解密											DECRYPT
 

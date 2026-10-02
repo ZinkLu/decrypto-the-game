@@ -44,7 +44,7 @@
 .archive-study .archive-sequences dt { letter-spacing: 0; }
 .field-notebook {
   position: sticky; top: 84px; width: min(100%, 470px); min-width: 0; color: #423e32;
-  animation: notebook-arrive var(--archive-enter-duration, 420ms) cubic-bezier(.22,1,.36,1) both;
+  animation: notebook-arrive var(--archive-enter-duration, 260ms) cubic-bezier(.22,1,.36,1) both;
   will-change: transform, opacity;
 }
 .archive-study[data-open="false"] .field-notebook {

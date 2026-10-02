@@ -174,7 +174,7 @@
 | `clues` | 三条线索 |
 | `secret` | 该回合的密码 |
 | `intercept` | 对手的拦截猜测；没有拦截阶段或未给出时为 `[0,0,0]` |
-| `decrypt` | 本队的解码猜测；未给出时为 `[0,0,0]` |
+| `decrypt` | 本队的解码猜测；未给出时为 `[0,0,0]`。对手截获成功、本队没有解码时不带这个字段 |
 | `timeouts` | 该回合中时间用尽的行动：`"encrypt"`、`"intercept"`、`"decrypt"`。只出现在刚结束的那一回合的行上（回合结束的 `round_result` 与 `game_over`）；此后 `phase_change` 里的同一行不再带它 |
 
 `phase_change` 里的 `history` 只含已经结束的回合，所以密码公开时该回合已经结算完毕。

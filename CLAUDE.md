@@ -81,5 +81,5 @@ When behaviour changes, update the document that describes it.
 
 - Two teams with 2+ players each
 - Max 16 rounds (8 per team as encryptor)
-- Win conditions: 2 successful interceptions OR opponent makes 2 decryption errors; both in one round, or 16 rounds played, is decided by interceptions minus errors
-- Round flow: Encryptor gets secret indices [1-4], provides clues, opponent intercepts (rounds 3+), team decrypts; an interception does not skip the decryption
+- Win conditions: 2 successful interceptions OR opponent makes 2 decryption errors; 16 rounds played without a winner are decided by interceptions minus errors
+- Round flow: Encryptor gets secret indices [1-4], provides clues, opponent intercepts (rounds 3+), team decrypts unless the opponent intercepted, which ends the round

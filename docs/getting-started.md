@@ -67,6 +67,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | `OPENAI_REASONING_EFFORT` | 无 | 推理模型的思考强度：`low`、`medium`、`high` |
 | `OPENAI_EXTRA_BODY` | 无 | 并入每次请求的 JSON 对象，例如 `{"chat_template_kwargs":{"enable_thinking":false}}` |
 | `ANTHROPIC_BASE_URL` | Anthropic 官方地址 | 替换 Claude 的完整请求地址 |
+| `DECRYPTO_AI_DEBUG` | 无 | 设为 `1` 时，服务端日志打印模型每次的思考过程（`reasoning_content` 或 `reasoning`，Claude 为 thinking）和原始回答，以 `[AI-DEBUG]` 开头。`0`、`false` 或不设置为关闭 |
 
 AI 的每一次请求限时 30 秒。推理模型想得太久会超时，可以用 `OPENAI_REASONING_EFFORT` 和 `OPENAI_MAX_TOKENS` 缩短。模型两次都没有给出可用的回答时，AI 交出备用答案（线索为「线索暂缺」），对局继续。
 

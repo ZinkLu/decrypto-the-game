@@ -11,6 +11,7 @@ import { reachable } from './actions';
 import ArchiveSheet from './ArchiveSheet';
 import Controls, { isKnob, useHandleGrip } from './Controls';
 import MobileConsole from './MobileConsole';
+import EncryptorIntro from './EncryptorIntro';
 import GuideContent from './GuideContent';
 import Settings, { qualityHint, qualityLabels } from './Settings';
 import Transcript from './Transcript';
@@ -28,7 +29,7 @@ export default function Console() {
     const [u, setU] = useState<LocalState>(() => { const music = readMusicPreferences(); return { ...initialLocal, name: readName(), musicOn: music.enabled, musicVolume: music.volume, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal', wordDisplay: initialWordDisplay,
         meterAmplitude: benchAmplitude(initialInstrument) }; });
     const bench = useBench();
-    const s = useMemo(() => benchState(live, u.locale, bench), [live, bench.people, u.locale, bench.wordSet, bench.scores]);
+    const s = useMemo(() => benchState(live, u.locale, bench), [live, bench.people, u.locale, bench.wordSet, bench.scores, bench.scoreChange]);
     const hardware = consoleHardware(u, s);
     const heldState = useRef(s);
     const displayState = useMemo(() => terminalView(s, heldState.current, u), [s, hardware.online]);
@@ -45,6 +46,7 @@ export default function Console() {
     const reducedMotion = useReducedMotion();
     const [failure, setFailure] = useState('');
     const [archiveVisible, setArchiveVisible] = useState(false);
+    const [archiveShown, setArchiveShown] = useState(false);
     const [quality, setQuality] = useState<QualityChoice>(() => pinnedQuality ?? readQuality());
     const [autoLevel, setAutoLevel] = useState<QualityLevel>(() => pinnedQuality ? 'high' : readAutoQuality());
     const [probeRun, setProbeRun] = useState(0);
@@ -80,6 +82,7 @@ export default function Console() {
     const archiveFocusPending = useRef(false);
     const [hint, setHint] = useState('');
     const [announcement, setAnnouncement] = useState('');
+    const announcedScore = useRef(s.scoreChange?.id);
     const viewKey = draftIdentity(s);
     const diskId = keyDiskIdentity(s);
     const diskReadable = hardware.online && keyDiskReadable(displayState, u);
@@ -252,6 +255,7 @@ export default function Console() {
     useLayoutEffect(() => { if (wordBench) engine.current?.setDotFilter(bench.dotFilter); }, [loaded, bench.dotFilter]);
     useLayoutEffect(() => { if (wordBench && loaded) engine.current?.inspectWordScale(bench.wordZoom); }, [loaded, bench.wordZoom]);
     useKeyDisk({ disk: u.keyDisk, id: diskId, state: s, loaded, failure, online: hardware.online, powered: hardware.powered,
+        obscured: archiveBlocking || archiveShown,
         reduced: reducedMotion, setLocal: setU, onPhase: () => {
             if (u.keyDisk.id) setAnnouncement(t(u.keyDisk.pausedAt !== undefined ? '读盘暂停 · 等待供电恢复' : keyDiskMessage(u.keyDisk)));
             if (u.keyDisk.phase === 'inserting' && hardware.powered) playSound('disk-in', false);
@@ -283,11 +287,11 @@ export default function Console() {
             if (text) setStaleDraft({ round: previous.round, text });
         }
         pending.current = false;
-        // Every beat opens with its briefing on the main CRT, even for a seat that only watches.
-        const brief = briefMode === 'off' ? '' : briefingKey(s);
+        // The encryptor gets the disk's role reveal; other seats get the round briefing.
+        const brief = briefMode === 'off' || s.myRole === 'encryptor' && s.phase === 'encrypting' && briefMode !== 'hold' ? '' : briefingKey(s);
         // A reload returns to the draft this seat had written in this very beat.
         const draft = preview ? null : readDraft(viewKey);
-        setU(old => ({ ...old, clues: draft?.clues ?? ['', '', ''], guess: draft?.guess ?? [0, 0, 0], slot: draft?.slot ?? 0, submitted: false, focus: '', note: '', manual: false, about: false,
+        setU(old => ({ ...old, clues: draft?.clues ?? ['', '', ''], guess: draft?.guess ?? [0, 0, 0], slot: draft?.slot ?? 0, submitted: false, focus: '', readingClue: null, note: '', manual: false, about: false,
             seconds: preview ? 45 : s.phase === 'encrypting' ? 90 : 60, brief }));
         const cast = roundCast(s);
         const acting = s.phase === 'intercept' ? cast.receiving : cast.sending;
@@ -321,6 +325,12 @@ export default function Console() {
         else if (u.seconds <= 5) playSound('key', false);
     }, [u.seconds]);
     const settled = timeoutNotice(s);
+    useEffect(() => {
+        const event = s.scoreChange, before = announcedScore.current;
+        announcedScore.current = event?.id;
+        if (!event || event.id === before || !hardware.online || s.recovering || Date.now() - event.at > 1500) return;
+        setAnnouncement(event.changes.map(change => t(change.kind === 'intercept' ? '{0} 队截获 +1 · 累计 {1} / 2' : '{0} 队失误 +1 · 累计 {1} / 2', [change.team, change.total])).join('；'));
+    }, [s.scoreChange, hardware.online]);
     useEffect(() => { if (settled) setAnnouncement(t(...settled)); }, [settled?.[0], s.timeout?.round]);
     useEffect(() => { if (!preview) saveDraft(viewKey, { clues: u.clues, guess: u.guess, slot: u.slot }); }, [u.clues, u.guess, u.slot]);
     useEffect(() => { saveName(u.name); }, [u.name]);
@@ -479,6 +489,12 @@ export default function Console() {
             batteryOpen: local.batteryOpen, pending: pending.current, briefing: !!local.brief && !failure && !portable() })) return;
         if (id in handleSurfaces) {
             turnConsole(!id.includes('Rear'), id.includes('Left') ? 'left' : 'right');
+            return;
+        }
+        if (id.startsWith('read-clue-')) {
+            const clue = Number(id.slice(-1));
+            patch({ readingClue: local.readingClue === clue ? null : clue });
+            playSound('key');
             return;
         }
         if (id === 'restore-power' || id === 'restore-link') {
@@ -729,6 +745,8 @@ export default function Console() {
         onTheme={(theme, label) => { patch({ theme }); setAnnouncement(t('主题已切换为{0}', [t(label)])); }}
         onVolume={volume => changeMusic({ volume })} onRetryMusic={refreshMusic}/>
     <h1 className="sr-only">{t("Encrypto · 密报终端")}</h1>
+    {hardware.online && diskId && u.keyDisk.id === diskId && u.keyDisk.phase === 'announcing' &&
+        <EncryptorIntro key={diskId} disk={u.keyDisk} round={s.round} locale={u.locale} reduced={reducedMotion}/>}
     <MobileConsole state={displayState} local={u} ready={content.ready} status={content.status} onAct={act} onChange={(id, value) => change({ id }, value)} onDiskChange={changeDisk} reducedMotion={reducedMotion} inert={archiveBlocking}/>
     <div className="station-viewport" inert={archiveBlocking}>
       <div className="station-stage" ref={stage}>
@@ -765,7 +783,7 @@ export default function Console() {
     {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{hint.startsWith('quality:')
         ? qualityHint(hint.slice(8) as QualityChoice, level, t) : content.targets.find(target => target.id === hint)?.label}</div>}
     <p className="mobile-hint">{t("横向滑动查看终端 · 下拉纸带查看密报记录")}</p>
-    <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${s.myTeam}:${!!preview}`} notebook={notebookPreview} open={archiveVisible && hardware.powered} locale={u.locale} state={displayState} onClose={closeArchive} onClosed={restoreArchiveFocus}/>
+    <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${s.myTeam}:${!!preview}`} open={archiveVisible && hardware.powered} locale={u.locale} state={displayState} onClose={closeArchive} onClosed={restoreArchiveFocus} onVisibilityChange={setArchiveShown}/>
     <div className="sr-only" role="status" aria-live="polite">{announcement}</div>
   </main>;
 }

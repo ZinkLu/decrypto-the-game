@@ -13,6 +13,15 @@ export interface ScoreInfo {
   decrypt_failures: number;
 }
 
+/** A fresh wire result, never reconstructed from a restored score. */
+export interface ScoreChange {
+  id: number;
+  at: number;
+  round: number;
+  changes: { team: "A" | "B"; kind: "intercept" | "failure"; total: number }[];
+}
+let scoreSerial = 0;
+
 export interface RoundHistoryRow {
   round: number;
   team: string;
@@ -88,6 +97,7 @@ interface GameStore {
   waiting: boolean;
   scoreA: ScoreInfo;
   scoreB: ScoreInfo;
+  scoreChange: ScoreChange | null;
   roundResult: {
     intercept_success?: boolean;
     decrypt_success?: boolean;
@@ -174,6 +184,7 @@ const initialState = {
   waiting: false,
   scoreA: { interceptions: 0, decrypt_failures: 0 } as ScoreInfo,
   scoreB: { interceptions: 0, decrypt_failures: 0 } as ScoreInfo,
+  scoreChange: null as ScoreChange | null,
   roundResult: null as {
     intercept_success?: boolean;
     decrypt_success?: boolean;
@@ -238,7 +249,7 @@ const gameFields = {
   deadline: 0, submitted: false, aiNotice: "", round: 0, myRole: "" as PlayerRole, myTeam: "", myWords: [] as string[],
   secretDigits: [] as number[], secretWords: [] as string[], clues: [] as string[], encryptor: "", history: [] as RoundHistoryRow[],
   waiting: false, scoreA: { interceptions: 0, decrypt_failures: 0 }, scoreB: { interceptions: 0, decrypt_failures: 0 },
-  roundResult: null, gameOver: null, timeout: null, aiStatus: null, playerProgress: null,
+  roundResult: null, gameOver: null, timeout: null, aiStatus: null, playerProgress: null, scoreChange: null,
 };
 
 function gameOverInfo(d: Record<string, unknown>): GameOverInfo {
@@ -290,6 +301,7 @@ function handleServerMessage(
       break;
 
     case "_disconnected":
+      set({ scoreChange: null });
       if (get().resumeToken) {
         set({ connected: false, recovering: true, error: "连接已中断，正在恢复原座位…" });
       } else if (get().roomCode) {
@@ -386,7 +398,21 @@ function handleServerMessage(
       });
       break;
 
-    case "round_result":
+    case "round_result": {
+      const before = get();
+      const scoreA = (d.score_a as ScoreInfo) ?? before.scoreA;
+      const scoreB = (d.score_b as ScoreInfo) ?? before.scoreB;
+      const changes: ScoreChange["changes"] = [];
+      if (before.connected && !before.recovering && before.roomCode) {
+        for (const team of ["A", "B"] as const) {
+          const old = team === "A" ? before.scoreA : before.scoreB;
+          const next = team === "A" ? scoreA : scoreB;
+          if (d.intercept_success === true && next.interceptions > old.interceptions)
+            changes.push({ team, kind: "intercept", total: next.interceptions });
+          if (d.decrypt_success === false && next.decrypt_failures > old.decrypt_failures)
+            changes.push({ team, kind: "failure", total: next.decrypt_failures });
+        }
+      }
       set({
         aiNotice: String(d.notice || get().aiNotice),
         deadline: 0,
@@ -400,11 +426,13 @@ function handleServerMessage(
             ? { decrypt_success: d.decrypt_success }
             : {}),
         },
-        scoreA: (d.score_a as ScoreInfo) ?? get().scoreA,
-        scoreB: (d.score_b as ScoreInfo) ?? get().scoreB,
+        scoreA, scoreB,
+        // Keep the event through the complete history and immediate game_over packets.
+        scoreChange: changes.length ? { id: ++scoreSerial, at: Date.now(), round: before.round, changes } : before.scoreChange,
         phase: "round_result",
       });
       break;
+    }
 
     case "game_over":
       set({
@@ -420,7 +448,7 @@ function handleServerMessage(
       break;
 
     case "full_sync": {
-      set({ recovering: false, error: null });
+      set({ recovering: false, error: null, scoreChange: null });
       const roomData = d.room as Record<string, unknown> | undefined;
       const gameData = d.game as Record<string, unknown> | undefined;
 

@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
 import { guideArtUrl } from './guide';
-import { advanceKeyDisk, consoleHardware, keyDiskDurations, syncDiskPower, syncKeyDisk, type KeyDiskState, type LocalState, type StationState } from './model';
+import { advanceKeyDisk, consoleHardware, keyDiskDurations, syncDiskPower, syncDiskPresentation, syncKeyDisk, type KeyDiskState, type LocalState, type StationState } from './model';
 import { ConsoleMusic, type MusicPreferences, type MusicStatus } from './music';
-import { portable } from './options';
+import { diskIntroPreview, portable } from './options';
 import { ConsoleAudio, type ConsoleSound } from './sound';
 
 export function useReducedMotion() {
@@ -98,34 +98,48 @@ interface DiskOptions {
     online: boolean;
     powered: boolean;
     reduced: boolean;
+    /** A foreground dialog, including its exit, covers the role introduction. */
+    obscured: boolean;
     setLocal: Dispatch<SetStateAction<LocalState>>;
     /** The disk entered another phase. */
     onPhase: () => void;
 }
 /** The key disk's state machine: delivered once the machine is there, advanced by its timers, paused without power. */
-export function useKeyDisk({ disk, id, state, loaded, failure, online, powered, reduced, setLocal, onPhase }: DiskOptions) {
+export function useKeyDisk({ disk, id, state, loaded, failure, online, powered, reduced, obscured, setLocal, onPhase }: DiskOptions) {
+    const [visible, setVisible] = useState(() => !document.hidden);
+    useEffect(() => {
+        const change = () => setVisible(!document.hidden);
+        document.addEventListener('visibilitychange', change);
+        change();
+        return () => document.removeEventListener('visibilitychange', change);
+    }, []);
     useLayoutEffect(() => {
         setLocal(old => {
             const next = syncKeyDisk(old.keyDisk, id, performance.now(),
-                consoleHardware(old, state).online && (loaded || !!failure || portable()), reduced);
+                !document.hidden && !obscured && consoleHardware(old, state).online && (loaded || !!failure || portable()), reduced, state.phase === 'encrypting');
             return next === old.keyDisk ? old : { ...old, keyDisk: next, diskOut: false };
         });
-    }, [id, loaded, failure, online, reduced]);
+    }, [id, state.phase, loaded, failure, online, reduced, visible, obscured]);
     useLayoutEffect(() => {
         setLocal(old => {
-            const keyDisk = syncDiskPower(old.keyDisk, consoleHardware(old).powered, performance.now());
+            const now = performance.now();
+            const supplied = syncDiskPower(old.keyDisk, consoleHardware(old).powered, now);
+            const keyDisk = syncDiskPresentation(supplied, !document.hidden && !obscured && online, now);
             return keyDisk === old.keyDisk ? old : { ...old, keyDisk };
         });
-    }, [powered, disk]);
+    }, [powered, disk, visible, obscured, online]);
     useEffect(() => {
         const duration = keyDiskDurations[disk.phase];
+        if (disk.phase === 'announcing' && diskIntroPreview) return;
         if (duration === undefined || disk.pausedAt !== undefined || disk.phase === 'reading' && !powered) return;
         const timer = window.setTimeout(() => setLocal(old => {
             if (old.keyDisk !== disk) return old;
-            const next = advanceKeyDisk(disk, performance.now(), reduced);
+            const now = performance.now();
+            const presented = syncDiskPresentation(disk, !document.hidden && !obscured && online, now);
+            const next = advanceKeyDisk(presented, now, reduced);
             return next === disk ? old : { ...old, keyDisk: next, diskOut: ['ejected', 'removed'].includes(next.phase) };
-        }), reduced ? 0 : Math.max(0, duration - (performance.now() - disk.startedAt)) + 1);
+        }), reduced && disk.phase !== 'announcing' ? 0 : Math.max(0, duration - (performance.now() - disk.startedAt)) + 1);
         return () => clearTimeout(timer);
-    }, [disk, reduced, powered]);
+    }, [disk, reduced, powered, obscured, online]);
     useEffect(onPhase, [disk.phase, disk.startedAt, disk.id]);
 }

@@ -18,7 +18,8 @@ type TeamSnapshot struct {
 
 // RoundSnapshot is one round, finished or interrupted. Phase is the phase the
 // round was in. Intercepted and Decrypted tell whether that guess was scored:
-// a guess that ran out of time is all zeros, like one not given yet.
+// a guess that ran out of time is all zeros, like one not given yet. A round
+// whose code was intercepted finishes without decoding.
 type RoundSnapshot struct {
 	Number      uint8     `json:"number"`
 	Phase       TeamState `json:"phase"`
@@ -133,7 +134,7 @@ func (rs RoundSnapshot) validate(index, teamSize int, last bool) error {
 		return fmt.Errorf("decoding scored in phase %d", rs.Phase)
 	case rs.Phase >= DECRYPT && intercepts && !rs.Intercepted:
 		return fmt.Errorf("interception skipped")
-	case rs.Phase == DONE && !rs.Decrypted:
+	case rs.Phase == DONE && !rs.Decrypted && !(rs.Intercepted && rs.Intercept == rs.Secret):
 		return fmt.Errorf("finished without decoding")
 	}
 	return nil

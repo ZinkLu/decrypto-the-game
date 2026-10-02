@@ -1,4 +1,4 @@
-import { archiveRows, consoleHardware, rosterTeams, word, type LocalState, type StationState } from './model';
+import { archiveRows, consoleHardware, resultSummary, rosterTeams, word, type LocalState, type StationState } from './model';
 
 interface Props {
     state: StationState;
@@ -27,6 +27,7 @@ export default function Transcript({ state: s, local: u, hardware, status, diskR
         <ul>{team.seats.map(seat => <li key={seat.code}>{seat.code} · {seat.player ? `${seat.player.nickname}${seat.self && seat.player.nickname !== '你' ? t(" · 你") : ''} · ${seat.player.is_ai ? 'AI' : t("真人")}${seat.owner ? t(" · 房主") : ''}` : t("空席")} · {t(seat.status)}{seat.progress ? t(" · 已完成 {0} / {1}", [seat.progress.step, seat.progress.total]) : ''}</li>)}</ul>
       </section>)}
       {s.gameOver && <p>{s.gameOver.winner ? t("{0} 队获胜", [s.gameOver.winner]) : t("双方平局")}</p>}
+      {['round_result', 'game_over'].includes(s.phase) && resultSummary(s).map((result, i) => <p key={i}>{t(...result.label)}</p>)}
       {archiveRows(s, 'all').map(row => <p key={row.round}>{t('第 {0} 回合 · {1} 队', [row.round, row.team])}: {row.clues.join(' / ')} · {t('公开密码')} {row.secret?.join(' · ') || t("未公开")}</p>)}
     </section>;
 }

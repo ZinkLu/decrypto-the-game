@@ -21,7 +21,7 @@ const free = (id: string) => id in handleSurfaces ||
     has(id, 'restore-power', 'restore-link', 'power-toggle', 'restore-switch', 'sound-toggle', 'music-toggle');
 // What the terminal does by itself: pages, dials, the drive, the printer, the keypad.
 const local = (id: string) => has(id, 'receiver-sweep', 'meter-', 'brief-skip', 'manual', 'about', 'screen-close', 'guide-done',
-    'guide-prev', 'guide-next', 'guide-page-', 'words', 'mode-', 'archive-toggle', 'disk-toggle', 'disk-eject', 'scope-', 'slot-', 'key-');
+    'guide-prev', 'guide-next', 'guide-page-', 'read-clue-', 'words', 'mode-', 'archive-toggle', 'disk-toggle', 'disk-eject', 'scope-', 'slot-', 'key-');
 
 /**
  * Whether a control does anything in this state of the machine. What it does then,

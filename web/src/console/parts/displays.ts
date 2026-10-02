@@ -43,6 +43,12 @@ export class Displays {
 
     /** Native inputs may sit on the main screen only while its picture stands still. */
     get interactive() { return this.screen.interactive; }
+    scorePulse(level: number, sweep: number, color: string) {
+        this.terminal.score.value.set(level, sweep);
+        this.terminal.scoreColor.value.set(color);
+        // A scoring receipt must be readable when the mechanical flag strikes.
+        if (level > 0) this.writeStarted = -Infinity;
+    }
     has(name: string) { return this.tubes.has(name); }
 
     /**

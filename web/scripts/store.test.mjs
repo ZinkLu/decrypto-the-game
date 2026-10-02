@@ -156,6 +156,64 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     assert.equal(store.getState().gameOver, null);
     assert.equal(store.getState().history.length, 0, 'the reopened room starts a fresh game');
 
+    // Only live score changes earn a pulse; snapshots merely restore the machine.
+    store.getState().reset(); store.getState().connect();
+    const scoring = sockets.at(-1); scoring.onopen();
+    scoring.receive('room_created', { room_code: '2468', my_player_id: 'me', resume_token: 'score-session' });
+    const startingA = { interceptions: 0, decrypt_failures: 1 };
+    const startingB = { interceptions: 1, decrypt_failures: 0 };
+    scoring.receive('full_sync', { game: { phase: 'intercept', round: 4, score_a: startingA, score_b: startingB } });
+    assert.equal(store.getState().scoreChange, null, 'loading already scored flags is silent');
+    scoring.receive('round_result', { intercept_success: false, decrypt_success: true, score_a: startingA, score_b: startingB });
+    assert.equal(store.getState().scoreChange, null, 'an ordinary result without a score increase has no pulse');
+
+    scoring.receive('phase_change', { phase: 'new_round', round: 5, your_role: 'teammate' });
+    scoring.receive('phase_change', { phase: 'intercept', round: 5, your_role: 'teammate', waiting: true });
+    const interception = { intercept_success: true, score_a: startingA, score_b: { ...startingB, interceptions: 2 } };
+    const scoredAt = Date.now();
+    scoring.receive('round_result', interception);
+    const firstScore = store.getState().scoreChange;
+    assert.equal(firstScore.round, 5);
+    assert.ok(firstScore.at >= scoredAt && firstScore.at <= Date.now(), 'the pulse is dated when the live result arrives');
+    assert.deepEqual(firstScore.changes, [{ team: 'B', kind: 'intercept', total: 2 }]);
+    scoring.receive('round_result', interception);
+    assert.equal(store.getState().scoreChange, firstScore, 'a repeated result cannot retrigger the pulse');
+
+    scoring.receive('phase_change', { phase: 'decrypt', round: 5, your_role: 'teammate' });
+    assert.equal(store.getState().scoreChange, firstScore, 'the handover retains the current pulse');
+    const failure = { decrypt_success: false, score_a: { ...startingA, decrypt_failures: 2 }, score_b: interception.score_b };
+    scoring.receive('round_result', failure);
+    const secondScore = store.getState().scoreChange;
+    assert.ok(secondScore.id > firstScore.id, 'the second scored action in the same round has its own pulse');
+    assert.equal(secondScore.round, 5);
+    assert.deepEqual(secondScore.changes, [{ team: 'A', kind: 'failure', total: 2 }]);
+    assert.deepEqual(store.getState().roundResult, { intercept_success: true, decrypt_success: false });
+    scoring.receive('round_result', { ...failure, history: [{ round: 5, team: 'A', secret: [2, 4, 1] }] });
+    assert.equal(store.getState().scoreChange, secondScore, 'completing the public history does not replay a score');
+    scoring.receive('game_over', { winner: 'B', reason: 'interceptions', score_a: failure.score_a, score_b: failure.score_b });
+    assert.equal(store.getState().scoreChange, secondScore, 'an immediate terminal packet preserves the final pulse');
+    assert.deepEqual(store.getState().roundResult, { intercept_success: true, decrypt_success: false }, 'the ending retains both final judgements');
+
+    const finalSnapshot = { game: { phase: 'game_over', round: 5, score_a: failure.score_a, score_b: failure.score_b,
+      round_result: { intercept_success: true, decrypt_success: false }, game_over: { winner: 'B' } } };
+    scoring.receive('full_sync', finalSnapshot);
+    assert.equal(store.getState().scoreChange, null, 'a full sync clears the transient event even when its scores match');
+    scoring.receive('round_result', { ...interception, ...failure });
+    assert.equal(store.getState().scoreChange, null, 'a repeated result after a snapshot does not manufacture a new pulse');
+
+    scoring.receive('full_sync', { game: { phase: 'intercept', round: 5, score_a: startingA, score_b: startingB } });
+    scoring.receive('round_result', interception);
+    assert.ok(store.getState().scoreChange);
+    scoring.close();
+    assert.equal(store.getState().scoreChange, null, 'losing the link clears the live event before recovery');
+    store.getState().wsService.connect();
+    const resumedScore = sockets.at(-1); resumedScore.onopen();
+    assert.equal(store.getState().recovering, true);
+    resumedScore.receive('round_result', failure);
+    assert.equal(store.getState().scoreChange, null, 'score packets arriving before recovery completes remain silent');
+    resumedScore.receive('full_sync', finalSnapshot);
+    assert.equal(store.getState().scoreChange, null, 'reconnecting to an ending restores scores without a pulse');
+
   } finally {
     store?.getState().disconnect();
     globalThis.window = previousWindow;

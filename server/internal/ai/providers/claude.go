@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 
@@ -119,15 +118,16 @@ func (p *ClaudeProvider) Complete(ctx context.Context, messages []ai.Message) (s
 		return "", fmt.Errorf("claude: empty content in response")
 	}
 
-	var textResult string
+	var textResult, thinking string
 	for _, block := range claudeResp.Content {
 		switch block.Type {
 		case "thinking":
-			log.Printf("[AI] Claude thinking:\n%s", block.Thinking)
+			thinking += block.Thinking
 		case "text":
 			textResult = block.Text
 		}
 	}
+	logExchange("claude", thinking, textResult)
 
 	return textResult, nil
 }

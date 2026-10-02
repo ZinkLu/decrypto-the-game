@@ -49,7 +49,9 @@ web/
 | `Settings.tsx` | 页面右上角的导航和设置：画质、主题、声音、语言 |
 | `Transcript.tsx` | 机器上全部内容的文字记录，给读屏软件用；3D 无法启动时直接显示 |
 | `MobileConsole.tsx` | 窄屏的紧凑终端。只接收状态和回调，不持有自己的草稿 |
-| `ArchiveSheet.tsx` | 纸带拉出后的阅读器（`<dialog>`）：按编号归档的线索和逐回合记录 |
+| `ArchiveSheet.tsx` | 纸带拉出后的阅读器（`<dialog>`）：并列放置记录板与逐回合打印的纸条，处理打开和收起 |
+| `FieldNotebook.tsx` | 按词号归纳双方公开线索的记录板；翻页、密词推测、文字和手写笔迹，编辑内容保存在页面内存中 |
+| `ArchiveViews.tsx` | 「记录板」「纸条」显示切换，至少保留一件可见，并驱动居中与淡入淡出 |
 | `GuideContent.tsx` | 玩法说明和原版桌游介绍的 DOM 版本，供窄屏和读屏软件使用 |
 | `hooks.ts` | 从 `Console.tsx` 分出来的几组 effect：扬声器和音乐的生命周期、软盘状态机的定时器、减弱动效、字体和插图的载入 |
 | `useDiskPull.ts` | 拖拽软盘的指针手势，桌面和窄屏共用 |
@@ -123,7 +125,7 @@ web/
 
 | 文件 | 职责 |
 | --- | --- |
-| `chassis.ts` | `Chassis`：载入后的机身。按名字查零件，为每个表面建平面，上传贴图（带哈希去重），登记会动的组件并合批其余网格。`Effect` 和 `settle()` 也在这里 |
+| `chassis.ts` | `Chassis`：载入后的机身。按名字查零件，为每个表面建平面，上传贴图（主屏按 canvas 身份更新，其他表面用近似哈希去重），登记会动的组件并合批其余网格。`Effect` 和 `settle()` 也在这里 |
 | `viewpoint.ts` | `Viewpoint`：相机、取景和特写、沿把手翻面、预览页的旋转与缩放 |
 | `studio.ts` | `Studio`：环境光、主光、面光源、背景墙 |
 | `glass.ts` | 显像管玻璃、辉光管亚克力罩和接收机表蒙的材质 |
@@ -195,7 +197,7 @@ web/
    - `targets`：可操作的目标，每个带有 `id`、所在表面、在该表面 canvas 上的矩形和无障碍标签
    - 其余字段告诉引擎发生了什么：`scoreFlags`、`seats`、`roomCode`、`paperRecords`、各种 key（`displayKey`、`screenPage`、`wordPrivacyKey` …）
 4. `roleState(s, u)` 在 `paint()` 和 `act()` 里判断这个座位现在能不能行动、输入是否完整。
-5. `engine.update(content, u)` 比较每张 canvas 的哈希，只上传变了的贴图；把硬件状态交给各个动画；最后调用 `project()`。
+5. `engine.update(content, u)` 上传新的主屏 canvas；其他表面比较 32×32 缩略图的近似哈希，相同就跳过上传。同一张主屏 canvas 不重复上传，也不参与缩略图哈希，避免单个数字或横杠的变化被漏掉。随后把硬件状态交给各个动画，最后调用 `project()`。
 6. `project()` 对每个目标调用 `engine.bounds(target)`，得到它在屏幕上的矩形，写进对应 DOM 控件的样式。背对相机或侧得太厉害的表面返回 `null`，控件随之隐藏。显像管上的输入框要先按当前相机把折射和桶形畸变反算回去，这样光标才落在画出来的字上。
 
 ### 为什么转旋钮不重画

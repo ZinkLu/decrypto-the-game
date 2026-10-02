@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import type { PlayerInfo } from '../store/gameStore';
+import { useRef, useState, type SetStateAction } from 'react';
+import type { PlayerInfo, ScoreChange } from '../store/gameStore';
 import { defaultDotFilter, dotFilterOptions, readDotFilter, readWordScale, type DotFilter } from './dotFiltering';
 import type { WordDisplay } from './dotMatrix';
 import { instrumentOptions, previewState, wordDisplayOptions, type InstrumentVariant, type LocalState, type StationState } from './model';
@@ -24,9 +24,22 @@ export function useBench() {
     const [people, setPeople] = useState<PlayerInfo[]>([{ id: '0', nickname: '你', is_ai: false }]);
     const serial = useRef(1);
     const [wordSet, setWordSet] = useState(0);
-    const [scores, setScores] = useState<Scores>({
-        A: { interceptions: 1, decrypt_failures: 0 }, B: { interceptions: 0, decrypt_failures: 1 },
+    const [scoreState, setScoreState] = useState<{ scores: Scores; scoreChange: ScoreChange | null; serial: number }>({
+        scores: { A: { interceptions: 1, decrypt_failures: 0 }, B: { interceptions: 0, decrypt_failures: 1 } }, scoreChange: null, serial: 0,
     });
+    const { scores, scoreChange } = scoreState;
+    function setScores(value: SetStateAction<Scores>) {
+        const at = Date.now();
+        setScoreState(previous => {
+            const next = typeof value === 'function' ? value(previous.scores) : value;
+            const changes: ScoreChange['changes'] = [];
+            for (const team of ['A', 'B'] as const) for (const field of ['interceptions', 'decrypt_failures'] as const)
+                if (next[team][field] > previous.scores[team][field]) changes.push({ team,
+                    kind: field === 'interceptions' ? 'intercept' : 'failure', total: next[team][field] });
+            const serial = previous.serial + 1;
+            return { scores: next, serial, scoreChange: changes.length ? { id: serial, at, round: 5, changes } : null };
+        });
+    }
     const [instrumentCloseup, setInstrumentCloseup] = useState(detail === 'meter');
     const [wordZoom, setWordZoom] = useState(() => readWordScale(new URLSearchParams(location.search).get('zoom'), detail === 'words'));
     const [dotFilter, setDotFilter] = useState<DotFilter>(() => wordBench ? readDotFilter(new URLSearchParams(location.search).get('filter')) : defaultDotFilter);
@@ -37,15 +50,15 @@ export function useBench() {
         setPeople(people => action === 'remove' ? people.slice(0, -1) :
             action === 'replace' ? [...people.slice(0, -1), player] : [...people, player].slice(0, 4));
     }
-    return { people, seat, wordSet, setWordSet, scores, setScores, instrumentCloseup, setInstrumentCloseup, wordZoom, setWordZoom, dotFilter, setDotFilter };
+    return { people, seat, wordSet, setWordSet, scores, scoreChange, setScores, instrumentCloseup, setInstrumentCloseup, wordZoom, setWordZoom, dotFilter, setDotFilter };
 }
 export type Bench = ReturnType<typeof useBench>;
 
 /** The game the machine shows: the live one, a fixture, or a fixture as the bench changed it. */
-export function benchState(live: StationState, locale: LocalState['locale'], bench: Pick<Bench, 'people' | 'wordSet' | 'scores'>): StationState {
+export function benchState(live: StationState, locale: LocalState['locale'], bench: Pick<Bench, 'people' | 'wordSet' | 'scores' | 'scoreChange'>): StationState {
     if (preview !== 'roster-motion') {
         const state = preview ? previewState(live, preview, locale) : live;
-        if (scoreBench) return { ...state, scoreA: bench.scores.A, scoreB: bench.scores.B };
+        if (scoreBench) return { ...state, scoreA: bench.scores.A, scoreB: bench.scores.B, scoreChange: bench.scoreChange };
         return wordBench && bench.wordSet && state.myWords.length ? { ...state, myWords: benchWords[bench.wordSet - 1] } : state;
     }
     const state = previewState(live, 'room-partial', locale);

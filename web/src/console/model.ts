@@ -1,7 +1,7 @@
 import type { useGameStore } from '../store/gameStore';
 import type { WordDisplay } from './dotMatrix';
 export type StationState = ReturnType<typeof useGameStore.getState>;
-export type KeyDiskPhase = 'absent' | 'queued' | 'arriving' | 'inserting' | 'reading' | 'ready' | 'ejecting' | 'ejected' | 'removed' | 'returning' | 'pulling' | 'settling';
+export type KeyDiskPhase = 'absent' | 'queued' | 'announcing' | 'arriving' | 'inserting' | 'reading' | 'ready' | 'ejecting' | 'ejected' | 'removed' | 'returning' | 'pulling' | 'settling';
 export interface KeyDiskState {
     id: string; phase: KeyDiskPhase; startedAt: number;
     pausedAt?: number;
@@ -9,7 +9,7 @@ export interface KeyDiskState {
     pull?: { amount: number; origin: 'ready' | 'reading' | 'ejected' | 'removed'; target?: 0 | 1 | 2 };
 }
 export const emptyKeyDisk: KeyDiskState = { id: '', phase: 'absent', startedAt: 0 };
-export const keyDiskDurations: Partial<Record<KeyDiskPhase, number>> = { arriving: 1050, returning: 320, inserting: 1195, reading: 420, ejecting: 620, settling: 220 };
+export const keyDiskDurations: Partial<Record<KeyDiskPhase, number>> = { announcing: 2400, arriving: 1050, returning: 320, inserting: 1195, reading: 420, ejecting: 620, settling: 220 };
 export const diskInscriptions = ['top secret', 'credential', 'classified', 'eyes only', 'confidential',
     'restricted', 'black file', 'cipher key', 'no copies', 'burn after use'] as const;
 /** Seeded variation keeps the same handwriting through repaints, locale changes and reinsertion. */
@@ -27,15 +27,18 @@ export function keyDiskIdentity(s: StationState) {
         s.secretDigits.length === 3 && new Set(s.secretDigits).size === 3 && s.secretDigits.every(n => n >= 1 && n <= 4)
         ? JSON.stringify([s.roomCode, s.myPlayerID, s.myTeam, s.round, s.secretDigits]) : '';
 }
-export function syncKeyDisk(disk: KeyDiskState, id: string, now: number, available: boolean, reduced: boolean): KeyDiskState {
+export function syncKeyDisk(disk: KeyDiskState, id: string, now: number, available: boolean, reduced: boolean, announce = false): KeyDiskState {
     if (!id) return disk.phase === 'absent' ? disk : emptyKeyDisk;
     if (disk.id !== id) disk = { id, phase: 'queued', startedAt: now };
-    if (disk.phase === 'queued' && available) return { id, phase: reduced ? 'ready' : 'arriving', startedAt: now };
+    if (disk.phase === 'queued' && available) return { id, phase: announce ? 'announcing' : reduced ? 'ready' : 'arriving', startedAt: now };
     return disk;
 }
 export function advanceKeyDisk(disk: KeyDiskState, now: number, reduced = false): KeyDiskState {
     if (disk.pausedAt !== undefined) return disk;
     const duration = keyDiskDurations[disk.phase];
+    // Reduced motion removes the movement, not the time to read the role notice.
+    if (disk.phase === 'announcing') return now - disk.startedAt < duration! ? disk :
+        { ...disk, phase: reduced ? 'ready' : 'arriving', startedAt: now };
     if (duration === undefined || !reduced && now - disk.startedAt < duration) return disk;
     if (disk.phase === 'settling') return { id: disk.id, phase: disk.pull?.target === 2 ? 'removed' : disk.pull?.target === 1 ? 'ejected' : 'reading', startedAt: now };
     const phase = disk.phase === 'ejecting' ? 'ejected' : reduced || disk.phase === 'reading' ? 'ready' :
@@ -71,8 +74,18 @@ export function actKeyDisk(disk: KeyDiskState, eject: boolean, now: number, redu
 export function keyDiskReadable(s: StationState, u: LocalState) {
     return consoleHardware(u).powered && !u.diskOut && u.keyDisk.phase === 'ready' && !!u.keyDisk.id && u.keyDisk.id === keyDiskIdentity(s);
 }
+/** The role notice only spends its reading time while the player can see it. */
+export function syncDiskPresentation(disk: KeyDiskState, visible: boolean, now: number): KeyDiskState {
+    if (disk.phase !== 'announcing') return disk;
+    if (!visible) return disk.pausedAt === undefined ? { ...disk, pausedAt: now } : disk;
+    if (disk.pausedAt === undefined) return disk;
+    const { pausedAt, ...presented } = disk;
+    return { ...presented, startedAt: disk.startedAt + now - pausedAt };
+}
 /** Only the read head needs electricity; handling and spring ejection remain mechanical. */
 export function syncDiskPower(disk: KeyDiskState, powered: boolean, now: number): KeyDiskState {
+    // Presentation owns this pause; power changes must not consume the notice.
+    if (disk.phase === 'announcing') return disk;
     if (!powered && disk.phase === 'ready') return { ...disk, phase: 'reading', startedAt: now, pausedAt: now };
     if (disk.phase !== 'reading') {
         if (disk.pausedAt === undefined) return disk;
@@ -85,7 +98,7 @@ export function syncDiskPower(disk: KeyDiskState, powered: boolean, now: number)
     return { ...reading, startedAt: disk.startedAt + now - pausedAt };
 }
 export function keyDiskMessage(disk: KeyDiskState) {
-    return ({ absent: '密钥待分配', queued: '等待接收本轮密钥', arriving: '你的密钥软盘已送达',
+    return ({ absent: '密钥待分配', queued: '等待接收本轮密钥', announcing: '你是加密者', arriving: '你的密钥软盘已送达',
         inserting: '正在插入密钥软盘…', reading: '正在读取本轮密钥…', ready: '密钥已读取 · 仅你可见',
         ejecting: '密码已隐藏 · 正在弹出', ejected: '密码已隐藏 · 按住软盘继续向外拖',
         removed: '软盘已取出 · 插回后恢复密码', returning: '正在对齐盘槽…',
@@ -162,6 +175,8 @@ export interface LocalState {
     slot: number;
     submitted: boolean;
     focus: string;
+    /** The public clue opened for reading, independent of keyboard focus. */
+    readingClue: number | null;
     note: string;
     archiveTeam: string;
     archivePage: number;
@@ -197,7 +212,7 @@ export const initialLocal: LocalState = {
     // FREQ rests on the engraved 2:1 mark: two locked cycles per sweep.
     locale: 'zh', theme: 'classic', scopeFreq: 3 / 7,
     mode: 'create', name: '', code: '', clues: ['', '', ''], guess: [0, 0, 0],
-    slot: 0, submitted: false, focus: '', note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
+    slot: 0, submitted: false, focus: '', readingClue: null, note: '', archiveTeam: 'all', archivePage: 0, archiveAnchor: null,
     archiveOpen: false, manual: false, about: false, hiddenWords: false, seconds: 0, diskOut: false, keyDisk: emptyKeyDisk,
     scopeWave: .5, scopeRate: .9, scopeAxis: 0,
     backView: false, batteryOpen: false, soundOn: true, musicOn: true, musicVolume: .6, powerOn: true,
@@ -435,22 +450,61 @@ export function timeoutNotice(s: StationState): Line | null {
     if (d.action === 'intercept') return [d.outcome === 'guess' ? '{0} 队拦截超时，已发出选好的号码。' : '{0} 队拦截超时，本轮视为未拦截。', [d.team]];
     return [d.outcome === 'guess' ? '{0} 队解码超时，已发出选好的号码。' : '{0} 队解码超时，记一次解码失误。', [d.team]];
 }
-/** A round result told from this seat: which team did what, and whether it helps us. */
-export function resultView(s: StationState): { title: Line; sub: Line | null; tone: 'good' | 'bad' | 'neutral' } {
-    const cast = roundCast(s), result = s.roundResult;
-    const score = (team: string) => team === 'A' ? s.scoreA : s.scoreB;
-    const side = (team: string) => !s.myTeam || !team ? 0 : s.myTeam === team ? 1 : -1;
-    const sending = cast.sending || '—', receiving = cast.receiving || '—';
-    if (result?.decrypt_success !== undefined) {
-        const tone = side(cast.sending) * (result.decrypt_success ? 1 : -1);
-        return { title: [result.decrypt_success ? '{0} 队解码成功' : '{0} 队解码失误', [sending]],
-            sub: result.decrypt_success ? null : ['{0} 队失误 {1} / 2', [sending, score(cast.sending).decrypt_failures]],
-            tone: tone > 0 ? 'good' : tone < 0 ? 'bad' : 'neutral' };
+type ResultTone = 'good' | 'bad' | 'neutral';
+/** Only a public, completed history row can reconstruct a result after reconnecting. */
+function roundVerdict(s: StationState) {
+    const row = [...s.history].reverse().find(row => row.round === s.round && row.secret?.length === 3);
+    const cast = roundCast(s), sending = row?.team || cast.sending, receiving = sending === 'A' ? 'B' : sending === 'B' ? 'A' : '';
+    const matches = (guess?: number[]) => !!guess && guess.length === 3 && guess.every((digit, i) => digit === row?.secret?.[i]);
+    // A terminal restored at game-over need not have received either live result event.
+    const result = s.phase === 'game_over' ? null : s.roundResult;
+    const intercept = s.round > 2 ? result?.intercept_success ?? (row ? matches(row.intercept) : undefined) : undefined;
+    // An interception ends the round: the team never decodes it.
+    const decrypt = result?.decrypt_success ?? (row && (row.decrypt || !intercept) ? matches(row.decrypt) : undefined);
+    const skipped = intercept === true && decrypt === undefined && !!row;
+    return { sending, receiving, intercept, decrypt, skipped, complete: decrypt !== undefined || skipped };
+}
+function scoringTone(s: StationState, team: string, error = false): ResultTone {
+    if (!s.myTeam || !team) return 'neutral';
+    return (s.myTeam === team) !== error ? 'good' : 'bad';
+}
+/** Every verdict of the round stays visible; only an interception or a decoding error changes the score. */
+export function resultSummary(s: StationState): { label: Line; tone: ResultTone; scoring: boolean }[] {
+    const { sending, receiving, intercept, decrypt, skipped } = roundVerdict(s);
+    const rows: ReturnType<typeof resultSummary> = [];
+    if (s.round <= 2) rows.push({ label: ['前两次发报不拦截', []], tone: 'neutral', scoring: false });
+    else if (intercept !== undefined) rows.push({
+        label: [intercept ? '{0} 队截获成功 · 截获 +1' : '{0} 队拦截未成功 · 截获不变', [receiving || '—']],
+        tone: intercept ? scoringTone(s, receiving) : 'neutral', scoring: intercept,
+    });
+    if (skipped) rows.push({ label: ['{0} 队被截获 · 本轮不解码', [sending || '—']], tone: 'neutral', scoring: false });
+    else if (decrypt !== undefined) rows.push({
+        label: [decrypt ? '{0} 队解码成功 · 失误不变' : '{0} 队解码失误 · 失误 +1', [sending || '—']],
+        tone: decrypt ? 'neutral' : scoringTone(s, sending, true), scoring: !decrypt,
+    });
+    return rows;
+}
+/** The receipt describes the whole round; an interception ends it without a decode. */
+export function resultView(s: StationState): { title: Line; sub: Line | null; tone: ResultTone } {
+    const result = roundVerdict(s), sending = result.sending || '—', receiving = result.receiving || '—';
+    const tone = resultSummary(s).find(row => row.scoring)?.tone ?? 'neutral';
+    if (result.complete) {
+        const sub: Line = result.intercept && result.decrypt === false ? ['{0} 队截获 +1 · {1} 队失误 +1', [receiving, sending]] :
+            result.intercept ? ['{0} 队截获 +1', [receiving]] : !result.decrypt ? ['{0} 队失误 +1', [sending]] : ['本轮没有新增截获或失误', []];
+        return { title: ['本轮回执', []], sub, tone };
     }
-    const tone = side(cast.receiving) * (result?.intercept_success ? 1 : -1);
-    return { title: [result?.intercept_success ? '{0} 队截获成功' : '{0} 队拦截未成功', [receiving]],
-        sub: result?.intercept_success ? ['{0} 队截获 {1} / 2 · {2} 队仍要解码', [receiving, score(cast.receiving).interceptions, sending]] : ['轮到 {0} 队解码', [sending]],
-        tone: tone > 0 ? 'good' : tone < 0 ? 'bad' : 'neutral' };
+    if (result.intercept === undefined) return { title: ['本轮回执', []], sub: null, tone: 'neutral' };
+    const score = result.receiving === 'A' ? s.scoreA : s.scoreB;
+    return { title: [result.intercept ? '{0} 队截获成功' : '{0} 队拦截未成功', [receiving]],
+        sub: result.intercept ? ['{0} 队截获 {1} / 2 · 本轮不再解码', [receiving, score.interceptions]] : ['轮到 {0} 队解码', [sending]], tone };
+}
+/** The working page carries the handover without covering the clues or using a separate timer. */
+export function handoverLine(s: StationState): Line | null {
+    const cast = roundCast(s), sending = cast.sending || '—', receiving = cast.receiving || '—';
+    if (s.phase === 'intercept') return ['{0} 队线索已公开 · 轮到 {1} 队拦截', [sending, receiving]];
+    if (s.phase !== 'decrypt') return null;
+    if (!cast.intercepted) return ['前两次发报不拦截 · 轮到 {0} 队解码', [sending]];
+    return s.roundResult?.intercept_success === false ? ['{0} 队未截获 · 轮到 {1} 队解码', [receiving, sending]] : ['轮到 {0} 队解码', [sending]];
 }
 /** Why the game ended, and what it means for this seat. */
 export function gameOverView(s: StationState): { title: Line; reason: Line; mine: string | null } {
@@ -460,12 +514,12 @@ export function gameOverView(s: StationState): { title: Line; reason: Line; mine
     return { title: winner ? ['{0} 队获胜', [winner]] : ['双方平局', []], reason,
         mine: !winner || !s.myTeam ? null : winner === s.myTeam ? '你方获胜' : '你方落败' };
 }
-/** Every beat opens with a briefing: the round's cast before the first, the handover before the others. */
+/** Only the start of a round opens with a briefing; later handovers stay on the working page. */
 export function briefingKey(s: Pick<StationState, 'phase' | 'round' | 'roomCode'>) {
-    return isBeat(s.phase) && s.round > 0 ? `${s.roomCode ?? ''}:${s.round}:${s.phase}` : '';
+    return s.phase === 'encrypting' && s.round > 0 ? `${s.roomCode ?? ''}:${s.round}:${s.phase}` : '';
 }
-export const briefingTime = { round: 3800, handover: 2600 };
-export const briefingDuration = (key: string) => key.endsWith(':encrypting') ? briefingTime.round : briefingTime.handover;
+export const briefingTime = { round: 3800 };
+export const briefingDuration = (key: string) => key.endsWith(':encrypting') ? briefingTime.round : 0;
 export interface SlotSignal { active: boolean; done: boolean; digit: number; match?: boolean }
 /**
  * The acting seat's three slots as the other terminals receive them: which one is being
@@ -540,6 +594,33 @@ export function archiveStart(s: StationState, u: LocalState) {
 }
 export function previewState(base: StationState, name: string, locale: 'zh' | 'en' = 'zh'): StationState {
     const sample = (...entries: string[]) => entries.map(value => word(value, locale));
+    if (name === 'round-long') {
+        const s = previewState(base, 'round-scored', locale);
+        const clues = (locale === 'en' ? [
+            'Follow the light above the harbor when the evening fog hides the coastline and the ships return home. ',
+            'The flower from the garden still carries the scent of spring after its petals have fallen to the ground. ',
+            'Each autumn they cross the ocean together, returning to the same shore when the weather turns warm. ',
+        ] : [
+            '夜雾慢慢笼罩海岸的时候，远处依然有一道光守着港口，带着出海的人找到回家的方向。',
+            '花园里的春天已经过去，留在书页之间的花瓣依然带着淡淡的香气，让人想起那次未能说出口的告白。',
+            '秋天它们结伴越过海洋，等到春风重新吹过故乡的屋檐，又沿着记忆中的路线飞回最初停留的地方。',
+        ]).map(text => text.repeat(3).slice(0, 80));
+        return { ...s, clues, history: s.history.map(row => row.round === s.round ? { ...row, clues } : row) };
+    }
+    if (['intercept-hit', 'round-scored', 'round-failure', 'game-over-failure'].includes(name)) {
+        const s = previewState(base, 'encrypting', locale);
+        const final = name === 'game-over-failure', failure = name === 'round-failure' || final, partial = name === 'intercept-hit';
+        const secret = [3, 1, 4], wrong = [1, 3, 4];
+        return { ...s, phase: final ? 'game_over' : 'round_result', deadline: 0, submitted: false,
+            scoreA: { ...s.scoreA, decrypt_failures: final ? 2 : failure ? 1 : 0 },
+            scoreB: { ...s.scoreB, interceptions: failure ? 0 : 1 },
+            // An interception ends the round, so only a missed one is followed by a decode.
+            roundResult: final ? null : failure ? { intercept_success: false, decrypt_success: false } : { intercept_success: true },
+            history: partial ? s.history : [...s.history.map(row => final && row.round === 3 ? { ...row, decrypt: [1, 4, 3] } : row),
+                { round: s.round, team: 'A', clues: s.clues, secret, intercept: failure ? wrong : secret, ...failure ? { decrypt: wrong } : {} }],
+            gameOver: final ? { winner: 'B', reason: 'errors', wordsA: s.myWords, wordsB: ['时钟[Clock]', '雪山[Mountain]', '蜂蜜[Honey]', '火车[Train]'] } : null,
+        };
+    }
     if (name === 'late-game') {
         const hints = {
             A: [
@@ -594,20 +675,26 @@ export function previewState(base: StationState, name: string, locale: 'zh' | 'e
     return { ...base, phase, connected: true, roomCode: phase === 'home' ? null : '5821',
         myPlayerID: '0', ownerID: '0', myTeam: teamA.length ? 'A' : '', players: phase === 'home' ? [] : name === 'room-empty' ? people.slice(0, 1) : name === 'room-partial' ? [...teamA, ...teamB, people[1]] : people,
         teamA, teamB, canStart: teamA.length >= 2 && teamB.length >= 2,
-        round: playing ? 5 : 0, myRole: !playing ? '' : name === 'waiting' ? 'teammate' : name === 'listening' ? 'opponent' : watching ? 'encryptor' :
-            phase === 'intercept' ? 'opponent' : phase === 'decrypt' ? 'teammate' : 'encryptor',
+        round: !playing ? 0 : phase === 'game_over' ? 6 : 5, myRole: !playing ? '' : name === 'waiting' ? 'teammate' : name === 'listening' ? 'opponent' : watching ? 'encryptor' :
+            phase === 'intercept' || phase === 'game_over' ? 'opponent' : phase === 'decrypt' ? 'teammate' : 'encryptor',
         myWords: phase === 'home' || phase === 'room' ? [] : ['灯塔[lighthouse]', '海岸[coast]', '玫瑰[rose]', '候鸟[migratory bird]'],
         secretDigits: playing ? [3, 1, 4] : [], secretWords: playing ? sample('玫瑰[Rose]', '灯塔[Lighthouse]', '候鸟[Migratory bird]') : [], clues: playing ? sample('花园[Garden]', '航行[Sailing]', '羽毛[Feather]') : [],
-        encryptor: !playing ? '' : watching ? you : phase === 'intercept' || name === 'listening' ? 'John' : name === 'waiting' || phase === 'decrypt' ? 'Alice' : you,
+        encryptor: !playing ? '' : watching ? you : phase === 'intercept' || phase === 'game_over' || name === 'listening' ? 'John' : name === 'waiting' || phase === 'decrypt' ? 'Alice' : you,
         waiting: name === 'waiting' || name === 'listening' || !!watching,
         scoreA: { interceptions: !playing ? 0 : phase === 'game_over' ? 2 : 1, decrypt_failures: 0 }, scoreB: { interceptions: 0, decrypt_failures: playing ? 1 : 0 },
         history: phase === 'home' || phase === 'room' ? [] : [
             { round: 1, team: 'A', clues: sample('微光[Glimmer]', '沙滩[Beach]', '春天[Spring]'), secret: [1, 2, 3], decrypt: [1, 2, 3] },
             { round: 2, team: 'B', clues: sample('花园[Garden]', '航行[Sailing]', '羽毛[Feather]'), secret: [3, 1, 4], decrypt: [3, 1, 4] },
             { round: 3, team: 'A', clues: sample('刺[Thorn]', '迁徙[Migration]', '港口[Port]'), secret: [3, 4, 1], intercept: [2, 4, 1], decrypt: [3, 4, 1] },
-            { round: 4, team: 'B', clues: sample('远行[Journey]', '潮汐[Tide]', '花束[Bouquet]'), secret: [4, 2, 3], intercept: [4, 2, 3] },
+            { round: 4, team: 'B', clues: sample('远行[Journey]', '潮汐[Tide]', '花束[Bouquet]'), secret: [4, 2, 3], intercept: [4, 2, 3], decrypt: [2, 4, 3] },
+            ...phase === 'round_result' || phase === 'game_over' ? [
+                { round: 5, team: 'A', clues: sample('花园[Garden]', '航行[Sailing]', '羽毛[Feather]'), secret: [3, 1, 4], intercept: [1, 3, 4], decrypt: [3, 1, 4] },
+            ] : [],
+            ...phase === 'game_over' ? [
+                { round: 6, team: 'B', clues: sample('刻度[Markings]', '雪线[Snowline]', '汽笛[Whistle]'), secret: [1, 2, 4], intercept: [1, 2, 4], decrypt: [1, 2, 4] },
+            ] : [],
         ], roundResult: phase === 'round_result' ? { intercept_success: false, decrypt_success: true } : null,
-        gameOver: phase === 'game_over' ? { winner: 'A' } : null, error: null,
+        gameOver: phase === 'game_over' ? { winner: 'A', reason: 'interceptions', wordsA: ['灯塔[lighthouse]', '海岸[coast]', '玫瑰[rose]', '候鸟[migratory bird]'], wordsB: ['时钟[Clock]', '雪山[Mountain]', '蜂蜜[Honey]', '火车[Train]'] } : null, error: null,
         playerProgress: progress[name] ?? null,
     };
 }

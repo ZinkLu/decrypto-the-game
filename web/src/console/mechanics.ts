@@ -1,5 +1,5 @@
 import type { KeyDiskState } from './model';
-export const paperFeedDuration = 420;
+export const paperFeedDuration = 260;
 export const paperCutDuration = 280;
 export const paperDiscardDuration = 520;
 export const paperTearDuration = paperCutDuration + paperDiscardDuration;
@@ -91,7 +91,7 @@ function diskPullPose(amount: number) {
 /** Delivery presents the label, then lays the disk flat before either insertion push. */
 export function keyDiskPose(disk: KeyDiskState, now: number, reduced = false) {
     const elapsed = Math.max(0, now - disk.startedAt);
-    const pose = { visible: !['absent', 'queued'].includes(disk.phase), x: 0, y: 0, z: 0, tilt: 0,
+    const pose = { visible: !!disk.id && !['absent', 'queued'].includes(disk.phase), x: 0, y: 0, z: 0, tilt: 0,
         travel: diskSeatTravel, button: 0 };
     if (disk.pull && (disk.phase === 'pulling' || disk.phase === 'settling')) {
         const target = disk.pull.target ?? 0;

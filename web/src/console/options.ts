@@ -11,7 +11,9 @@ export const route = consoleRoute(location.pathname, location.search, dev);
 export const inspection = route.view === 'preview';
 /** The fixture shown instead of a live game, if any. */
 export const preview = route.scenario;
-/** DOM notebook study, restricted to fixture data on the development server. */
+/** Hold the encryptor's introductory close-up for visual review. Development fixtures only. */
+export const diskIntroPreview = dev && !!preview && params.get('disk-intro') === 'hold';
+/** Automatically open the split archive in a development fixture. Live games use the same archive. */
 export const notebookPreview = dev && !!preview && params.has('notebook');
 export const instrumentPreview = dev && params.has('instruments');
 // DEV bench for the keyword windows' hardware: `/?words=led` or `crt`.

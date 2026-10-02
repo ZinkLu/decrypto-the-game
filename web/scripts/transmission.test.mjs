@@ -28,15 +28,14 @@ test('the round cast names who sends, intercepts and decodes, for players and sp
     assert.equal(roundCast({ ...s, round: 2 }).intercepted, false, 'the first two transmissions are never intercepted');
 });
 
-test('every beat opens with its own briefing, the round start with a longer one', () => {
+test('only the round start opens a briefing; handovers go straight to the working page', () => {
     const s = previewState({}, 'encrypting');
     assert.equal(briefingKey(s), '5821:5:encrypting');
-    assert.equal(briefingKey({ ...s, phase: 'intercept' }), '5821:5:intercept');
+    assert.equal(briefingKey({ ...s, phase: 'intercept' }), '');
     assert.equal(briefingKey({ ...s, phase: 'round_result' }), '');
     assert.equal(briefingKey({ ...s, phase: 'room', round: 0 }), '');
     assert.equal(briefingDuration(briefingKey(s)), briefingTime.round);
-    assert.equal(briefingDuration(briefingKey({ ...s, phase: 'decrypt' })), briefingTime.handover);
-    assert.ok(briefingTime.round > briefingTime.handover);
+    assert.equal(briefingDuration(briefingKey({ ...s, phase: 'decrypt' })), 0);
 });
 
 test('watching seats learn which slot is being worked on, never the clue text', () => {
@@ -105,9 +104,10 @@ test('a timeout is explained to everyone for the rest of its round only', () => 
 
 test('round results name the team and read as good or bad news for this seat', () => {
     // Team A sends in the preview; Team B's error is good news for Team A.
-    const base = { ...previewState({}, 'round_result'), encryptor: 'John', myRole: 'opponent' };
+    const base = { ...previewState({}, 'intercept-hit'), encryptor: 'John', myRole: 'opponent' };
     const theirError = { ...base, roundResult: { intercept_success: false, decrypt_success: false } };
-    assert.deepEqual(resultView(theirError).title, ['{0} 队解码失误', ['B']]);
+    assert.deepEqual(resultView(theirError).title, ['本轮回执', []]);
+    assert.deepEqual(resultView(theirError).sub, ['{0} 队失误 +1', ['B']]);
     assert.equal(resultView(theirError).tone, 'good');
     assert.equal(resultTint(theirError), '#8bc995');
     const intercepted = { ...base, roundResult: { intercept_success: true } };

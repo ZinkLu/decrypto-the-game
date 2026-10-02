@@ -91,7 +91,8 @@ func throughJSON(t *testing.T, snap SessionSnapshot) SessionSnapshot {
 }
 
 func TestRestoreResumesTheInterruptedPhase(t *testing.T) {
-	// Round 3 is intercepted, and round 4 decoded wrongly: one point each for team B.
+	// Round 3 is intercepted, so team A does not decode it, and round 4 is
+	// decoded wrongly: one point each for team B.
 	tests := []struct {
 		round uint8
 		point string
@@ -100,12 +101,10 @@ func TestRestoreResumesTheInterruptedPhase(t *testing.T) {
 		// Team B's score in the restored session, before it resumes.
 		interceptions, errors uint8
 	}{
-		{3, "init", 1, 1, 1, 0, 0},
-		{3, "encrypt", 1, 1, 1, 0, 0},
-		{3, "intercept", 0, 1, 1, 0, 0},
-		{3, "intercepted", 0, 0, 1, 1, 0},
-		{3, "decrypt", 0, 0, 1, 1, 0},
-		{3, "decrypted", 0, 0, 0, 1, 0},
+		{3, "init", 1, 1, 0, 0, 0},
+		{3, "encrypt", 1, 1, 0, 0, 0},
+		{3, "intercept", 0, 1, 0, 0, 0},
+		{3, "intercepted", 0, 0, 0, 1, 0},
 		{3, "done", 0, 0, 0, 1, 0},
 		{4, "decrypt", 0, 0, 1, 1, 0},
 		{4, "decrypted", 0, 0, 0, 1, 1},
@@ -162,6 +161,9 @@ func TestRestoreResumesTheInterruptedPhase(t *testing.T) {
 			}
 			if got, want := final.Rounds[tt.round-1], saved.Rounds[tt.round-1]; got.Secret != want.Secret || got.Encryptor != want.Encryptor {
 				t.Errorf("the interrupted round drew a new code or encryptor: %+v, was %+v", got, want)
+			}
+			if r := final.Rounds[2]; r.Decrypted || r.Decrypt != [3]int{} {
+				t.Errorf("the intercepted round was decoded: %+v", r)
 			}
 			if b := s.teams[1]; b.InterceptedCounts != 1 || b.DecryptWrongCounts != 1 || s.teams[0].Score() != 0 {
 				t.Errorf("final score: team B %d interceptions, %d errors", b.InterceptedCounts, b.DecryptWrongCounts)

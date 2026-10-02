@@ -2,6 +2,7 @@ import { translate } from './i18n';
 import { guideSteps } from './guide';
 import { consoleHardware, hardwareMessage, roleState, keyDiskReadable, keyDiskIdentity, phaseSignal, teamPalette, themeColors, rosterTeams, resultTint, roundCast } from './model';
 import type { LocalState, StationState } from './model';
+import type { ScoreSignal } from './scoreFeedback';
 import { CREAM, DARK, crtFinish, round, text, type Painter } from './paintKit';
 import { paintFront, paintPaper, paintRear, paintRoster, paintScore, paintWords } from './paintFaces';
 import { paintScreen } from './paintScreen';
@@ -49,6 +50,7 @@ export interface Content {
     waiting: boolean;
     ready: boolean;
     scoreFlags: Record<string, boolean>;
+    scoreSignal: ScoreSignal;
     seats: Record<string, string | null>;
     activity: number;
     roomCode: string;
@@ -61,6 +63,8 @@ export interface Content {
     wordInks: { word: string; legend: string; warning: string };
     wordPrivacyKey: string;
     screenPrivacyKey: string;
+    /** The only disk this seat may render; revoked before local animation effects catch up. */
+    keyDiskId: string;
     screenBlink: Blink[];
     /** Changes when the terminal starts a new page, which it then writes out line by line. */
     screenPage: string;
@@ -76,8 +80,9 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     const targets: Target[] = [];
     const r = roleState(s, u);
     const diskReadable = keyDiskReadable(s, u);
-    const ownsDisk = !!keyDiskIdentity(s);
-    const diskCurrent = ownsDisk && u.keyDisk.id === keyDiskIdentity(s);
+    const keyDiskId = keyDiskIdentity(s);
+    const ownsDisk = !!keyDiskId;
+    const diskCurrent = ownsDisk && u.keyDisk.id === keyDiskId;
     const signal = phaseSignal(s, u.theme);
     const teams = rosterTeams(s, u);
     const hasGame = !['home', 'room'].includes(s.phase);
@@ -122,7 +127,7 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
     const p: Painter = { s, u, h, r, t, colors, tint, signal, teams, cast: roundCast(s), hasGame, diskReadable, ownsDisk, diskCurrent, guidePage,
         frames, targets, blink, frame, target, button };
     // Frames and targets keep the order they are painted in: the controls' tab order follows it.
-    const screen = paintScreen(p, guideArt), { status, briefing, sent, observing } = screen;
+    const screen = paintScreen(p, guideArt), { status, briefing } = screen;
     const dotWords = paintWords(p);
     paintRoster(p);
     const scoreFlags = paintScore(p);
@@ -152,8 +157,10 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
         }
     }
     const screenPage = !h.powered ? 'off' : !h.online ? 'offline' : u.manual ? `guide:${guidePage}` : u.about ? 'about' :
-        briefing ? `brief:${u.brief}` : `${s.phase}:${s.round}:${sent ? 'sent' : observing ? 'watch' : 'act'}`;
-    return { frames, screenBlink: h.online ? blink : [], screenPage, screenSignal: briefing && h.online ? u.brief : '',
+        briefing ? `brief:${u.brief}` : ['encrypting', 'intercept', 'decrypt', 'round_result'].includes(s.phase)
+            ? `round:${s.round}` : s.phase;
+    return { frames, keyDiskId, screenBlink: h.online ? blink : [], screenPage, screenSignal: briefing && h.online ? u.brief : '',
+        scoreSignal: { event: s.scoreChange, room: s.roomCode || '', team: s.myRole === 'observer' ? '' : s.myTeam, online: h.online && !s.recovering },
         screenPrivacyKey: `${h.online}:${keyDiskIdentity(s)}:${diskReadable}`, teamPlates: { A: teamPalette('A', s.myTeam, u.theme).plate, B: teamPalette('B', s.myTeam, u.theme).plate }, wordTube: colors.crt, displayKey: u.theme, wordInks: { ...colors.led, warning: colors.led.legend }, wordPrivacyKey: `${h.online}:${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}:${s.myWords.join("|")}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: h.online, trafficKey: JSON.stringify([s.phase, s.round, s.submitted, s.aiStatus, s.playerProgress, s.history.length, s.players]), targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
             (h.powered || rearControls.has(t.id) || ['power-toggle', 'disk-toggle', 'disk-eject'].includes(t.id)) &&
             (h.online || t.surface !== 'screen' || t.id === 'restore-link')),

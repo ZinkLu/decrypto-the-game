@@ -189,9 +189,9 @@ button,input { font: inherit; }
 .archive-dialog[open] { display: block; }
 /* This untransformed track fixes the scroll extent while its paper moves. */
 .archive-paper-track { display: flow-root; min-height: 100%; padding: 64px 16px; overflow: clip; }
-.archive-dialog::backdrop { background: #14201b66; animation: archive-dim var(--archive-enter-duration, 420ms) both; backdrop-filter: blur(2px); }
+.archive-dialog::backdrop { background: #14201b66; animation: archive-dim var(--archive-enter-duration, 260ms) both; backdrop-filter: blur(2px); }
 .archive-dialog[data-open="false"]::backdrop { animation: archive-dim-out var(--archive-exit-duration, 800ms) both; }
-.archive-sheet { width: min(520px, 100%); min-height: 0; max-height: none; margin-inline: auto; border: 0; box-shadow: 0 18px 55px #08130b45; transform: translate3d(0, 0, 0); will-change: transform, opacity; animation: receipt-rise var(--archive-enter-duration, 420ms) cubic-bezier(.22,1,.36,1) both; }
+.archive-sheet { width: min(520px, 100%); min-height: 0; max-height: none; margin-inline: auto; border: 0; box-shadow: 0 18px 55px #08130b45; transform: translate3d(0, 0, 0); will-change: transform, opacity; animation: receipt-rise var(--archive-enter-duration, 260ms) cubic-bezier(.22,1,.36,1) both; }
 .archive-sheet::before { display: block; }
 .archive-sheet::after { content: ''; position: absolute; bottom: -8px; left: 0; right: 0; height: 9px; background: linear-gradient(45deg, transparent 6px, #f0e5ca 0) 0 0 / 12px 12px, linear-gradient(-45deg, transparent 6px, #f0e5ca 0) 0 0 / 12px 12px; }
 .archive-dialog[data-open="false"] { overflow-y: hidden; }
@@ -365,7 +365,7 @@ button,input { font: inherit; }
 .mobile-key-disk[data-phase="settling"] .mobile-floppy { animation: disk-settle .22s cubic-bezier(.33, 1, .68, 1) both; }
 .mobile-console .mobile-disk-grip { position: absolute; z-index: 2; inset: 0 calc(50% - 78px); width: 156px; border: 0; padding: 0; background: transparent; touch-action: none; cursor: grab; user-select: none; }
 .mobile-console .mobile-disk-grip[data-pulling] { cursor: grabbing; }
-.mobile-key-disk[data-phase="queued"] .mobile-floppy { visibility: hidden; }
+.mobile-key-disk:is([data-phase="queued"], [data-phase="announcing"]) .mobile-floppy { visibility: hidden; }
 .mobile-disk-status { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
 .mobile-disk-status p { flex: 1; margin: 0; }
 .mobile-disk-status button { flex: 0 0 auto; max-width: 45%; }

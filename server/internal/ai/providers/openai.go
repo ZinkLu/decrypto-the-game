@@ -74,6 +74,7 @@ type openaiChoice struct {
 	Message      struct {
 		Content          string `json:"content"`
 		ReasoningContent string `json:"reasoning_content,omitempty"`
+		Reasoning        string `json:"reasoning,omitempty"` // OpenRouter and newer vLLM
 	} `json:"message"`
 }
 
@@ -156,6 +157,11 @@ func (p *OpenAIProvider) Complete(ctx context.Context, messages []ai.Message) (s
 
 	choice := openaiResp.Choices[0]
 	log.Printf("[AI] completion finish=%s prompt_tokens=%d completion_tokens=%d", choice.FinishReason, openaiResp.Usage.PromptTokens, openaiResp.Usage.CompletionTokens)
+	reasoning := choice.Message.ReasoningContent
+	if reasoning == "" {
+		reasoning = choice.Message.Reasoning
+	}
+	logExchange("openai", reasoning, choice.Message.Content)
 	if strings.TrimSpace(choice.Message.Content) == "" || choice.FinishReason == "length" {
 		return "", fmt.Errorf("openai: empty or incomplete answer (finish_reason=%s)", choice.FinishReason)
 	}

@@ -2,6 +2,7 @@ package game
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
@@ -266,4 +267,32 @@ func TestTimeoutSendsDraftAndTellsEveryone(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("timeout never settled")
+}
+
+func TestInterceptionEndsTheRound(t *testing.T) {
+	b, ids := newTestBridge(t)
+	b.Timing = patientTimings
+	stored := &disk{}
+	b.OnSave = stored.save
+	b.Start()
+	// Team B intercepts rounds 3 and 5; team A never decodes them.
+	end := play(t, b, ids, shortGame, nil)
+	for _, state := range stored.saved() {
+		var snap Snapshot
+		if err := json.Unmarshal(state, &snap); err != nil {
+			t.Fatal(err)
+		}
+		if (snap.Round == 3 || snap.Round == 5) && snap.Phase == "decrypt" {
+			t.Fatalf("round %d was decoded after its interception", snap.Round)
+		}
+	}
+	if end.ScoreA != (ws.ScoreInfo{}) || end.ScoreB != (ws.ScoreInfo{Interceptions: 2, DecryptFailures: 1}) {
+		t.Fatalf("score %+v / %+v", end.ScoreA, end.ScoreB)
+	}
+	for _, row := range end.History {
+		intercepted := row.Round == 3 || row.Round == 5
+		if intercepted != (row.Decrypt == nil) {
+			t.Errorf("round %d settled as %+v", row.Round, row)
+		}
+	}
 }

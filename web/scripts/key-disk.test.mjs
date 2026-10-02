@@ -7,7 +7,7 @@ const load = async name => {
     const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
     return import(`data:text/javascript;base64,${Buffer.from(js).toString('base64')}`);
 };
-const { initialLocal, previewState, emptyKeyDisk, keyDiskIdentity, keyDiskReadable, syncKeyDisk, advanceKeyDisk, actKeyDisk, pullKeyDisk, releaseKeyDisk, keyDiskDurations } = await load('model');
+const { initialLocal, previewState, emptyKeyDisk, keyDiskIdentity, keyDiskReadable, syncKeyDisk, syncDiskPresentation, syncDiskPower, advanceKeyDisk, actKeyDisk, pullKeyDisk, releaseKeyDisk, keyDiskDurations } = await load('model');
 const { keyDiskPose, diskSeatTravel, diskEjectedTravel, diskRemovedTravel } = await load('mechanics');
 const state = previewState({}, 'encrypting');
 const id = keyDiskIdentity(state);
@@ -41,6 +41,92 @@ test('delivery waits for a surface, then shows no secret until both pushes and t
     assert.equal(readable(disk), true);
     assert.equal(readable(disk, state, { powerOn: false }), false);
     assert.equal(readable(disk, state, { diskOut: true }), false);
+});
+
+test('the encryptor introduction waits for a surface and finishes before ordinary delivery', () => {
+    let disk = syncKeyDisk(emptyKeyDisk, id, 0, false, false, true);
+    assert.equal(disk.phase, 'queued');
+    disk = syncKeyDisk(disk, id, 100, true, false, true);
+    assert.equal(disk.phase, 'announcing');
+    assert.equal(readable(disk), false, 'the close-up must not reveal the password');
+    assert.equal(keyDiskDurations.announcing, 2400);
+    assert.equal(advanceKeyDisk(disk, 2499), disk);
+    const arriving = advanceKeyDisk(disk, 2500);
+    assert.equal(arriving.phase, 'arriving');
+    assert.equal(arriving.startedAt, 2500);
+    assert.equal(readable(arriving), false);
+    assert.equal(advanceKeyDisk(arriving, 2500 + keyDiskDurations.arriving).phase, 'inserting');
+});
+
+test('reduced motion keeps the role introduction readable for the full duration', () => {
+    const disk = syncKeyDisk(emptyKeyDisk, id, 100, true, true, true);
+    assert.equal(disk.phase, 'announcing');
+    assert.equal(readable(disk), false);
+    assert.equal(advanceKeyDisk(disk, 100, true), disk);
+    assert.equal(advanceKeyDisk(disk, 2499, true), disk);
+    const ready = advanceKeyDisk(disk, 2500, true);
+    assert.equal(ready.phase, 'ready');
+    assert.equal(readable(ready), true);
+});
+
+test('background, obscured and offline role introductions preserve their remaining reading time', () => {
+    for (const reduced of [false, true]) {
+        const intro = syncKeyDisk(emptyKeyDisk, id, 100, true, reduced, true);
+        const paused = syncDiskPresentation(intro, false, 700);
+        assert.equal(paused.pausedAt, 700);
+        assert.equal(paused.phase, 'announcing');
+        assert.equal(readable(paused), false);
+        assert.equal(syncDiskPresentation(paused, false, 60000), paused, 'repeated hidden updates preserve the pause start');
+        assert.equal(syncDiskPower(paused, false, 60000), paused, 'power loss cannot clear a presentation pause');
+        assert.equal(syncDiskPower(paused, true, 60000), paused, 'power restoration cannot consume a presentation pause');
+        assert.equal(advanceKeyDisk(paused, 60000, reduced), paused);
+        const resumed = syncDiskPresentation(paused, true, 10000);
+        assert.equal(resumed.pausedAt, undefined);
+        assert.equal(10000 - resumed.startedAt, 600, 'only the visible 600 ms count');
+        assert.equal(advanceKeyDisk(resumed, 11799, reduced), resumed);
+        assert.equal(advanceKeyDisk(resumed, 11800, reduced).phase, reduced ? 'ready' : 'arriving');
+        assert.equal(syncKeyDisk(paused, '', 9000, false, reduced, true), emptyKeyDisk, 'ownership revocation still removes a paused introduction');
+    }
+});
+
+test('a role received behind a dialog starts its full introduction when it becomes visible', () => {
+    for (const reduced of [false, true]) {
+        const queued = syncKeyDisk(emptyKeyDisk, id, 100, false, reduced, true);
+        assert.equal(queued.phase, 'queued');
+        assert.equal(advanceKeyDisk(queued, 60000, reduced), queued);
+        const intro = syncKeyDisk(queued, id, 60000, true, reduced, true);
+        assert.equal(intro.phase, 'announcing');
+        assert.equal(intro.startedAt, 60000);
+        assert.equal(advanceKeyDisk(intro, 62399, reduced), intro);
+        assert.equal(readable(intro), false);
+        assert.equal(advanceKeyDisk(intro, 62400, reduced).phase, reduced ? 'ready' : 'arriving');
+    }
+});
+
+test('a role introduction does not restart on updates or reinsertion and is revoked with its identity', () => {
+    const intro = syncKeyDisk(emptyKeyDisk, id, 100, true, false, true);
+    assert.equal(syncKeyDisk(intro, id, 200, true, false, true), intro);
+    assert.equal(syncKeyDisk(intro, '', 200, true, false, true), emptyKeyDisk);
+    const nextID = keyDiskIdentity({ ...state, round: state.round + 1 });
+    const nextIntro = syncKeyDisk(intro, nextID, 200, true, false, true);
+    assert.equal(nextIntro.id, nextID);
+    assert.equal(nextIntro.phase, 'announcing');
+    assert.equal(nextIntro.startedAt, 200);
+    for (const phase of ['arriving', 'inserting', 'reading', 'ready', 'ejected', 'removed', 'returning']) {
+        const delivered = { id, phase, startedAt: 100 };
+        assert.equal(syncKeyDisk(delivered, id, 200, true, false, true), delivered);
+    }
+    for (const phase of ['intercept', 'decrypt']) {
+        const resumedID = keyDiskIdentity({ ...state, phase });
+        assert.equal(syncKeyDisk(emptyKeyDisk, resumedID, 100, true, false, false).phase, 'arriving');
+    }
+});
+
+test('a disk without an authorized identity stays invisible in every mechanical phase', () => {
+    for (const phase of ['absent', 'queued', 'announcing', 'arriving', 'inserting', 'reading', 'ready', 'ejecting', 'ejected', 'removed', 'returning', 'pulling', 'settling']) {
+        assert.equal(keyDiskPose({ id: '', phase, startedAt: 0 }, 500).visible, false, phase);
+        assert.equal(keyDiskPose({ id: '', phase, startedAt: 0 }, 500, true).visible, false, `${phase}, reduced motion`);
+    }
 });
 
 test('eject conceals immediately; refreshes, translations and phase changes do not auto-reinsert', () => {
@@ -140,7 +226,7 @@ test('manual travel has end stops, cannot interrupt insertion, and respects redu
     assert.equal(pullKeyDisk(ready, -2, 1).pull.amount, 0);
     assert.equal(pullKeyDisk(ready, 3, 1).pull.amount, 2);
     assert.equal(pullKeyDisk(ready, NaN, 1), ready);
-    for (const phase of ['absent', 'queued', 'arriving', 'returning', 'inserting', 'ejecting', 'settling']) {
+    for (const phase of ['absent', 'queued', 'announcing', 'arriving', 'returning', 'inserting', 'ejecting', 'settling']) {
         const busy = { ...ready, phase };
         assert.equal(pullKeyDisk(busy, .8, 100), busy);
     }

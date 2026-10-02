@@ -10,6 +10,8 @@ export class Studio {
     private areaLights: THREE.RectAreaLight[];
     private key: THREE.DirectionalLight;
     private backdrop: THREE.Mesh;
+    private backdropColor = new THREE.Color('#bcb5a5');
+    private pulseColor = new THREE.Color();
 
     constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
         scene.background = new THREE.Color('#d3cfc4');
@@ -68,6 +70,12 @@ export class Studio {
         for (const light of this.areaLights) light.visible = quality.areaLights;
         for (const { light, intensity } of this.lights) light.intensity = intensity * (quality.areaLights ? 1 : 1.26);
         this.key.castShadow = quality.shadows;
+    }
+
+    /** The wall catches a little result colour; the machine's materials keep their identity. */
+    scorePulse(level: number, color: string) {
+        const material = this.backdrop.material as THREE.MeshStandardMaterial;
+        material.color.copy(this.backdropColor).lerp(this.pulseColor.set(color), level * .15);
     }
 
     /**
