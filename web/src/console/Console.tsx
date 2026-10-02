@@ -4,7 +4,7 @@ import { useGameStore } from '../store/gameStore';
 import { ConsoleEngine } from './engine';
 import { gameSound } from './sound';
 import { readMusicPreferences, saveMusicPreferences, type MusicPreferences } from './music';
-import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, initialLocal, roleState, instrumentSteps, stepInstrumentValue, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, actKeyDisk, briefingKey, briefingDuration, roundCast, deadlineWarning, timeoutNotice, warningSeconds, paintedSeconds, readDraft, saveDraft, readName, saveName } from './model';
+import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draftIdentity, initialLocal, roleState, instrumentSteps, stepInstrumentValue, themeColors, readTheme, saveTheme, keyDiskIdentity, keyDiskReadable, keyDiskMessage, actKeyDisk, briefingKey, briefingDuration, roundCast, seatAction, phaseTitle, deadlineWarning, timeoutNotice, warningSeconds, paintedSeconds, readDraft, saveDraft, readName, saveName } from './model';
 import { paint, paintClock, knobLabel, guidePages } from './paint';
 import { qualityProfiles, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import { reachable } from './actions';
@@ -294,9 +294,8 @@ export default function Console() {
         setU(old => ({ ...old, clues: draft?.clues ?? ['', '', ''], guess: draft?.guess ?? [0, 0, 0], slot: draft?.slot ?? 0, submitted: false, focus: '', readingClue: null, note: '', manual: false, about: false,
             seconds: preview ? 45 : s.phase === 'encrypting' ? 90 : 60, brief }));
         const cast = roundCast(s);
-        const acting = s.phase === 'intercept' ? cast.receiving : cast.sending;
-        setAnnouncement(s.phase === 'home' ? t("通信终端已就绪") : t("第 {0} 回合，{1}", [s.round, s.phase === 'encrypting' ? t("加密") : s.phase === 'intercept' ? t("拦截") : s.phase === 'decrypt' ? t("解码") : s.phase === 'room' ? t("队伍准备") : t("阶段更新")]) +
-            (brief && acting ? ` · ${t(s.phase === 'encrypting' ? '{0} 队发报' : s.phase === 'intercept' ? '{0} 队拦截' : '{0} 队解码', [acting])}${s.phase === 'encrypting' && s.encryptor ? ` · ${t('加密者 {0}', [s.encryptor])}` : ''}` : ''));
+        setAnnouncement(s.phase === 'home' ? t("通信终端已就绪") : t("第 {0} 回合，{1}", [s.round, s.phase === 'encrypting' || s.phase === 'guess' ? t(phaseTitle(s)) : s.phase === 'room' ? t("队伍准备") : t("阶段更新")]) +
+            (brief && cast.sending ? ` · ${t('{0} 队发报', [cast.sending])}${s.encryptor ? ` · ${t('加密者 {0}', [s.encryptor])}` : ''}` : ''));
     }, [viewKey]);
     useEffect(() => {
         if (!u.brief || briefMode === 'hold') return;
@@ -331,7 +330,7 @@ export default function Console() {
         if (!event || event.id === before || !hardware.online || s.recovering || Date.now() - event.at > 1500) return;
         setAnnouncement(event.changes.map(change => t(change.kind === 'intercept' ? '{0} 队截获 +1 · 累计 {1} / 2' : '{0} 队失误 +1 · 累计 {1} / 2', [change.team, change.total])).join('；'));
     }, [s.scoreChange, hardware.online]);
-    useEffect(() => { if (settled) setAnnouncement(t(...settled)); }, [settled?.[0], s.timeout?.round]);
+    useEffect(() => { if (settled) setAnnouncement(t(...settled)); }, [settled?.[0], s.timeouts.length]);
     useEffect(() => { if (!preview) saveDraft(viewKey, { clues: u.clues, guess: u.guess, slot: u.slot }); }, [u.clues, u.guess, u.slot]);
     useEffect(() => { saveName(u.name); }, [u.name]);
     useEffect(() => {
@@ -427,12 +426,12 @@ export default function Console() {
         patch({ guidePage: next });
         playSound('key');
     }
-    function progress(clues: string[], guess: number[], slot: number, force = false) {
+    function progress(clues: string[], guess: number[], slot: number, force = false, focusing = false) {
         const now = performance.now();
         clearTimeout(progressTrail.current);
         if (!force && now - progressLast.current < 180) {
             // The last change inside the window still goes out once it closes.
-            progressTrail.current = window.setTimeout(() => progress(clues, guess, slot, true), 180 - (now - progressLast.current));
+            progressTrail.current = window.setTimeout(() => progress(clues, guess, slot, true, focusing), 180 - (now - progressLast.current));
             return;
         }
         progressLast.current = now;
@@ -445,7 +444,7 @@ export default function Console() {
         // server alone, which sends it if time runs out.
         const chosen = r.guess && guess.every(Boolean);
         state.sendProgress(r.action, r.encrypt ? clues.filter(c => c.trim()).length : guess.filter(Boolean).length,
-            { state: 'editing', focus: chosen ? 0 : slot + 1, ...(r.guess ? { guesses: guess } : { filled: clues.map(c => !!c.trim()), clues }) });
+            { state: 'editing', focus: chosen && !focusing ? 0 : slot + 1, ...(r.guess ? { guesses: guess } : { filled: clues.map(c => !!c.trim()), clues }) });
     }
     function change(target: Pick<Target, 'id'>, value: string) {
         const local = current.current.u;
@@ -572,7 +571,7 @@ export default function Console() {
             if (id === 'screen-close' || id === 'guide-done') handleFocusPending.current = local.about ? 'about' : 'manual';
             // The guide opens on the page for what the table is doing right now.
             patch({ manual: id === 'manual' && !local.manual, about: id === 'about' && !local.about, focus: '',
-                ...(id === 'manual' && !local.manual ? { guidePage: guidePageFor(state.phase) } : {}) });
+                ...(id === 'manual' && !local.manual ? { guidePage: guidePageFor(state.phase, seatAction(state)) } : {}) });
             playSound('key');
             return;
         }
@@ -637,7 +636,7 @@ export default function Console() {
         if (id.startsWith('slot-')) {
             if (r.active) {
                 patch({ slot: Number(id.slice(5)) });
-                progress(local.clues, local.guess, Number(id.slice(5)), true);
+                progress(local.clues, local.guess, Number(id.slice(5)), true, true);
             }
             return;
         }
@@ -704,7 +703,7 @@ export default function Console() {
                         string,
                         string
                     ]);
-                else if (state.phase === 'intercept')
+                else if (r.action === 'intercept')
                     state.submitIntercept(local.guess as [
                         number,
                         number,

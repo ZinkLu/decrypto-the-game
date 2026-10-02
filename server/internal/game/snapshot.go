@@ -9,7 +9,8 @@ import (
 )
 
 // SnapshotVersion is raised when a stored Snapshot can no longer be read as written.
-const SnapshotVersion = 1
+// Version 2: both teams guess in one phase, "guess".
+const SnapshotVersion = 2
 
 // Snapshot is a game as its players last saw it: the core session, and what
 // the bridge showed each seat.
@@ -21,7 +22,8 @@ type Snapshot struct {
 	Views       map[string]ws.GameSyncData `json:"views"`
 	Timeouts    map[int][]string           `json:"timeouts,omitempty"`
 	RoundNotice string                     `json:"round_notice,omitempty"`
-	Timeout     *ws.TimeoutData            `json:"timeout,omitempty"`
+	// The timeouts of the current round, as its seats were told.
+	RoundTimeouts []ws.TimeoutData `json:"round_timeouts,omitempty"`
 }
 
 // saveLocked hands the game to OnSave. The caller changed the views and still
@@ -36,7 +38,7 @@ func (b *Bridge) saveLocked() {
 
 func (b *Bridge) snapshotLocked() Snapshot {
 	s := Snapshot{Version: SnapshotVersion, Session: b.Session.Snapshot()}
-	s.Phase, s.Round, s.RoundNotice, s.Timeout = b.phase, b.round, b.roundNotice, b.timeout
+	s.Phase, s.Round, s.RoundNotice, s.RoundTimeouts = b.phase, b.round, b.roundNotice, b.roundTimeouts
 	s.Views = make(map[string]ws.GameSyncData, len(b.views))
 	for id, v := range b.views {
 		s.Views[id] = v
@@ -76,11 +78,19 @@ func Restore(r *room.Room, hub *ws.Hub, snap Snapshot) (*Bridge, error) {
 	}
 
 	b := newBridge(r, hub, session, roster)
-	b.phase, b.round, b.roundNotice, b.timeout = snap.Phase, snap.Round, snap.RoundNotice, snap.Timeout
-	// No input is taken before the phase begins again.
-	b.accepted = true
+	b.phase, b.round, b.roundNotice, b.roundTimeouts = snap.Phase, snap.Round, snap.RoundNotice, snap.RoundTimeouts
+	// No input is taken before the phase begins again: there are no actions
+	// until then, and no deadline to show.
 	for id, v := range snap.Views {
 		v.Deadline = 0
+		if v.Actions != nil {
+			paused := make(map[string]ws.ActionInfo, len(v.Actions))
+			for name, a := range v.Actions {
+				a.Deadline = 0
+				paused[name] = a
+			}
+			v.Actions = paused
+		}
 		b.views[id] = v
 	}
 	for round, actions := range snap.Timeouts {

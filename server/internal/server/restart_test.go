@@ -24,7 +24,6 @@ import (
 func TestMain(m *testing.M) {
 	game.RegisterHandlers()
 	game.DefaultTimings.BetweenRounds = 10 * time.Millisecond
-	game.DefaultTimings.AfterIntercept = 10 * time.Millisecond
 	os.Exit(m.Run())
 }
 
@@ -107,6 +106,8 @@ type client struct {
 	Phase           ws.PhaseChangeData
 	Clues           []string
 	Result          ws.RoundResultData
+	Answered        []ws.ActionSubmittedData
+	Progress        []ws.PlayerProgressData
 	Over            *ws.GameOverData
 	Sync            *ws.FullSyncData
 	Refused         *ws.ErrorData
@@ -172,6 +173,14 @@ func (c *client) until(what string, holds func() bool) {
 		case "round_result":
 			c.Result = ws.RoundResultData{}
 			into(&c.Result)
+		case "action_submitted":
+			var d ws.ActionSubmittedData
+			into(&d)
+			c.Answered = append(c.Answered, d)
+		case "player_progress":
+			var d ws.PlayerProgressData
+			into(&d)
+			c.Progress = append(c.Progress, d)
 		case "game_over":
 			c.Over = &ws.GameOverData{}
 			into(c.Over)
@@ -188,6 +197,26 @@ func (c *client) until(what string, holds func() bool) {
 func (c *client) inPhase(round int, phase string) {
 	c.t.Helper()
 	c.until(phase, func() bool { return c.Phase.Round == round && c.Phase.Phase == phase })
+}
+
+// answered reports whether the client was told that a team gave its answer.
+func (c *client) answered(round int, action string) bool {
+	for _, d := range c.Answered {
+		if d.Round == round && d.Action == action {
+			return true
+		}
+	}
+	return false
+}
+
+// lastProgress is a seat's latest progress in a particular round and action.
+func (c *client) lastProgress(round int, action, playerID string) *ws.PlayerProgressData {
+	for i := len(c.Progress) - 1; i >= 0; i-- {
+		if p := c.Progress[i]; p.Round == round && p.Action == action && p.PlayerID == playerID {
+			return &c.Progress[i]
+		}
+	}
+	return nil
 }
 
 // resume opens a new connection for the seat this client held.
@@ -298,33 +327,47 @@ func TestGameSurvivesARestart(t *testing.T) {
 	ann.send("start_game", nil)
 
 	// Round 1: Ann encrypts, Alf decodes. Round 2: Bob encrypts, Bea decodes
-	// wrongly. Round 3: Alf encrypts and Bob misses the interception, so team A
-	// still decodes.
+	// wrongly. Round 3: Alf encrypts; Bob intercepts at once while Ann is still
+	// decoding.
 	for _, c := range everyone {
 		c.inPhase(1, "encrypting")
 	}
 	secret := ann.Phase.SecretDigits
 	ann.send("submit_clues", map[string]any{"round": 1, "clues": []string{"one", "two", "three"}})
-	alf.inPhase(1, "decrypt")
+	alf.inPhase(1, "guess")
 	alf.send("submit_decrypt", map[string]any{"round": 1, "guess": secret})
 
 	bob.inPhase(2, "encrypting")
 	secret = bob.Phase.SecretDigits
 	bob.send("submit_clues", map[string]any{"round": 2, "clues": []string{"uno", "dos", "tres"}})
-	bea.inPhase(2, "decrypt")
+	bea.inPhase(2, "guess")
 	bea.send("submit_decrypt", map[string]any{"round": 2, "guess": []int{secret[1], secret[0], secret[2]}})
 
 	alf.inPhase(3, "encrypting")
 	secret = alf.Phase.SecretDigits
 	alf.send("submit_clues", map[string]any{"round": 3, "clues": []string{"un", "deux", "trois"}})
-	bob.inPhase(3, "intercept")
-	missed := []int{secret[1], secret[0], secret[2]}
-	bob.send("submit_intercept", map[string]any{"round": 3, "guess": missed})
 	for _, c := range everyone {
-		c.inPhase(3, "decrypt")
+		c.inPhase(3, "guess")
 	}
-	if ann.Result.InterceptSuccess == nil || *ann.Result.InterceptSuccess || ann.Result.ScoreB != (ws.ScoreInfo{DecryptFailures: 1}) {
-		t.Fatalf("round 3 before the restart: %+v", ann.Result)
+	// Ann's picks reach her team, and Alf, who sees the code; team B learns
+	// only that she is working on the third slot.
+	picks := []int{secret[0], secret[1], 0}
+	ann.send("progress", map[string]any{"round": 3, "action": "decrypt", "state": "editing", "step": 2, "focus": 3, "guesses": picks, "total": 3})
+	alf.until("Ann's picks", func() bool { return alf.lastProgress(3, "decrypt", ann.ID) != nil })
+	bob.until("Ann's progress", func() bool { return bob.lastProgress(3, "decrypt", ann.ID) != nil })
+	if got := alf.lastProgress(3, "decrypt", ann.ID); !reflect.DeepEqual(got.Guesses, picks) || got.Player != "Ann" {
+		t.Fatalf("Alf received %+v", got)
+	}
+	if got := bob.lastProgress(3, "decrypt", ann.ID); got.Guesses != nil || !reflect.DeepEqual(got.Filled, []bool{true, true, false}) || got.Focus != 3 || got.Step != 2 {
+		t.Fatalf("Bob received %+v", got)
+	}
+	bob.send("submit_intercept", map[string]any{"round": 3, "guess": secret})
+	for _, c := range everyone {
+		c.until("Bob's answer", func() bool { return c.answered(3, "intercept") })
+	}
+	// Nothing is revealed before team A has answered too.
+	if ann.Result.Round != 2 {
+		t.Fatalf("round 3 was settled with one answer: %+v", ann.Result)
 	}
 
 	// The server dies while team A decodes.
@@ -350,8 +393,12 @@ func TestGameSurvivesARestart(t *testing.T) {
 			t.Fatalf("%s came back to a room without its game", c.name)
 		}
 		g := *c.Sync.Game
-		if g.Round != 3 || g.Phase != "decrypt" || g.YourRole != old.Phase.YourRole || g.YourTeam != old.Team || g.Encryptor != "Alf" {
+		if g.Round != 3 || g.Phase != "guess" || g.YourRole != old.Phase.YourRole || g.YourTeam != old.Team || g.Encryptor != "Alf" {
 			t.Errorf("%s came back to %+v", c.name, g)
+		}
+		// Team B's interception is kept; only team A still has to answer.
+		if !g.Actions["intercept"].Submitted || g.Actions["decrypt"].Submitted || g.Submitted != (old.Team == "B") || g.Waiting != (old != ann) {
+			t.Errorf("%s came back to the actions %+v, submitted=%v waiting=%v", c.name, g.Actions, g.Submitted, g.Waiting)
 		}
 		if !reflect.DeepEqual(g.Words, old.Words) || !reflect.DeepEqual(g.Clues, []string{"un", "deux", "trois"}) ||
 			!reflect.DeepEqual(g.SecretDigits, old.Phase.SecretDigits) || !reflect.DeepEqual(g.History, old.Phase.History) {
@@ -360,8 +407,8 @@ func TestGameSurvivesARestart(t *testing.T) {
 		if g.ScoreA != (ws.ScoreInfo{}) || g.ScoreB != (ws.ScoreInfo{DecryptFailures: 1}) || len(g.History) != 2 {
 			t.Errorf("%s sees the score %+v / %+v after %d rounds", c.name, g.ScoreA, g.ScoreB, len(g.History))
 		}
-		if g.RoundResult == nil || g.RoundResult.InterceptSuccess == nil || *g.RoundResult.InterceptSuccess {
-			t.Errorf("%s no longer sees the missed interception: %+v", c.name, g.RoundResult)
+		if g.RoundResult != nil {
+			t.Errorf("%s sees a result before team A answered: %+v", c.name, g.RoundResult)
 		}
 		if left := time.Until(time.UnixMilli(g.Deadline)); left < 50*time.Second || left > 61*time.Second {
 			t.Errorf("%s has %v left to decode, want the full minute", c.name, left)
@@ -379,7 +426,8 @@ func TestGameSurvivesARestart(t *testing.T) {
 	}
 
 	// The interception is not asked for again, and the game goes on: Ann
-	// decodes, then Bea, next in her team, encrypts round 4.
+	// decodes, the code is revealed with both answers, then Bea, next in her
+	// team, encrypts round 4.
 	bob.send("submit_intercept", map[string]any{"round": 3, "guess": secret})
 	bob.until("a refusal", func() bool { return bob.Refused != nil })
 	ann.send("submit_decrypt", map[string]any{"round": 3, "guess": secret})
@@ -388,12 +436,13 @@ func TestGameSurvivesARestart(t *testing.T) {
 		if c.Phase.Encryptor != "Bea" || len(c.Phase.History) != 3 {
 			t.Fatalf("%s: round 4 is encrypted by %s after %d rounds", c.name, c.Phase.Encryptor, len(c.Phase.History))
 		}
-		if row := c.Phase.History[2]; !reflect.DeepEqual(row.Secret, secret) || !reflect.DeepEqual(row.Intercept, missed) || !reflect.DeepEqual(row.Decrypt, secret) {
+		if row := c.Phase.History[2]; !reflect.DeepEqual(row.Secret, secret) || !reflect.DeepEqual(row.Intercept, secret) || !reflect.DeepEqual(row.Decrypt, secret) {
 			t.Fatalf("%s: round 3 settled as %+v", c.name, row)
 		}
 	}
-	if ann.Result.ScoreA != (ws.ScoreInfo{}) || ann.Result.ScoreB != (ws.ScoreInfo{DecryptFailures: 1}) {
-		t.Fatalf("the score after round 3: %+v", ann.Result)
+	if r := ann.Result; r.Round != 3 || r.InterceptSuccess == nil || !*r.InterceptSuccess || r.DecryptSuccess == nil || !*r.DecryptSuccess ||
+		r.ScoreA != (ws.ScoreInfo{}) || r.ScoreB != (ws.ScoreInfo{Interceptions: 1, DecryptFailures: 1}) {
+		t.Fatalf("round 3 settled as %+v", r)
 	}
 	if len(bea.Phase.SecretDigits) != 3 {
 		t.Fatal("Bea has no code to encrypt")

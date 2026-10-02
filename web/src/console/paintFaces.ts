@@ -269,7 +269,7 @@ export function paintPaper(p: Painter) {
 
 /** The drive, the dials, the keypad, the phase panel and ACTION. Returns whether ACTION would send something. */
 export function paintFront(p: Painter) {
-    const { s, u, h, r, t, signal, ownsDisk, diskCurrent, guidePage, frames, frame, target } = p;
+    const { s, u, h, r, t, cast, ownsDisk, diskCurrent, guidePage, frames, frame, target } = p;
     frame('disk', 400, 200);
     if (ownsDisk) target('disk', 'disk-toggle', u.keyDisk.phase === 'ejected' ? t('按住露出的软盘继续拖出，或点击插回') : u.diskOut ? t("插入软盘，或按住向内推回") : t("按住向外拖出软盘，或点击弹出"), 0, 0, 400, 200,
         { disabled: !diskCurrent || !['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase) });
@@ -293,17 +293,22 @@ export function paintFront(p: Painter) {
         target('key' + i, 'key-' + i, guide ? i === 4 ? t('上一页') : t('翻到第 {0} 页', [i + 1]) : i === 4 ? t("删除上一位") : t("输入数字 {0}", [i + 1]),
             0, 0, 180, 200, { disabled: !enabled });
     }
-    // Three steps at a 132 px pitch; the modeled dividers sit at 129 and 261.
+    // Three steps at a 132 px pitch; the modeled dividers sit at 129 and 261. While both
+    // teams guess, interception and decoding light together, each in its team's colour,
+    // and a lamp goes out once its team has answered.
     const ph = frame('phase', 411, 214);
     [t("加密"), t("拦截"), t("解码")].forEach((label, i) => {
-        const active = h.online && s.phase === ['encrypting', 'intercept', 'decrypt'][i];
+        const action = (['encrypt', 'intercept', 'decrypt'] as const)[i];
+        const active = h.online && (i === 0 ? s.phase === 'encrypting' :
+            s.phase === 'guess' && (i === 2 || cast.intercepted) && !s.actions[action]?.submitted);
+        const color = teamPalette(i === 1 ? cast.receiving : cast.sending, s.myTeam, u.theme).light;
         const x = 17 + i * 132;
         text(ph, `0${i + 1}`, x, 28, 18, h.powered ? '#a9a497' : '#4d4a43', 500);
-        fitLabel(ph, label, x, 79, 23, active ? signal.color : h.powered ? '#a9a497' : '#4d4a43', 400, 88);
-        ph.fillStyle = active ? signal.color : '#2b2824';
+        fitLabel(ph, label, x, 79, 23, active ? color : h.powered ? '#a9a497' : '#4d4a43', 400, 88);
+        ph.fillStyle = active ? color : '#2b2824';
         round(ph, x + 2, 129, 78, 17, 8);
         ph.fill();
-        if (i < 2) text(ph, '›', 114 + i * 132, 78, 28, h.powered ? '#857f75' : '#403c36');
+        if (i < 2) text(ph, i === 0 ? '›' : '+', 114 + i * 132, 78, i === 0 ? 28 : 24, h.powered ? '#857f75' : '#403c36');
     });
     text(ph, s.phase === 'home' || s.phase === 'room' ? t("等待行动开始") : t("第 {0} / 16 回合", [s.round]), 18, 190, 21, h.powered ? '#c1bcad' : '#4d4a43');
     const tr = frame('transmitLabel', 600, 164);

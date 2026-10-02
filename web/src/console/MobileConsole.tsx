@@ -1,8 +1,8 @@
 import { useEffect, useRef, type CSSProperties } from 'react';
 import GuideContent from './GuideContent';
-import type { StationState, LocalState, KeyDiskState } from './model';
+import type { StationState, LocalState, KeyDiskState, Action } from './model';
 import { useDiskPull } from './useDiskPull';
-import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskDurations, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word, isBeat, roundCast, transmission, seatDuty, deadlineWarning, timeoutNotice, resultView, resultSummary, handoverLine, gameOverView } from './model';
+import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskDurations, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, phaseTitle, teamPalette, word, isBeat, roundCast, transmission, teammateChoices, teammateStatus, seatDuty, deadlineWarning, timeoutNotice, resultView, resultSummary, handoverLine, gameOverView } from './model';
 import { translate, localizeError } from './i18n';
 
 type Props = { state: StationState; local: LocalState; ready: boolean; status: string; inert: boolean;
@@ -33,24 +33,34 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
     const cast = roundCast(s);
     // The same round context and live slots as the CRT, without its briefing page.
     const context = !isBeat(s.phase) ? '' : [
-        s.phase === 'intercept' ? cast.receiving && t('{0} 队拦截', [cast.receiving]) : s.phase === 'decrypt' ? cast.sending && t('{0} 队解码', [cast.sending]) : cast.sending && t('{0} 队发报', [cast.sending]),
+        ...s.phase === 'encrypting' ? [cast.sending && t('{0} 队发报', [cast.sending])] :
+            [cast.sending && t('{0} 队解码', [cast.sending]), cast.intercepted && cast.receiving ? t('{0} 队拦截', [cast.receiving]) : ''],
         s.encryptor && t('加密者 {0}', [s.myRole === 'encryptor' ? t('你') : s.encryptor]),
     ].filter(Boolean).join(' · ');
-    const watching = isBeat(s.phase) && !r.encrypt && !r.guess && !u.submitted && !s.submitted ? transmission(s, keyDiskReadable(s, u) && s.myRole === 'encryptor') : null;
-    const crew = s.phase === 'intercept' ? cast.receiving : cast.sending;
-    const who = watching?.player || (crew ? t('{0} 队', [crew]) : t('对手'));
-    const working = watching ? watching.slots.findIndex(slot => slot.active) : -1;
-    const watchStatus = !watching ? s.aiStatus && ['thinking', 'retrying'].includes(s.aiStatus.state || '') ? t('AI 正在推理第 {0} 条 · 已完成 {1}/3', [s.aiStatus.step, s.aiStatus.completed || 0]) : t('链路已接通 · 等待信号') :
-        !watching.started ? t('链路已接通 · 等待 {0} 开始', [s.phase === 'encrypting' ? s.encryptor || t('加密者') : who]) :
-        watching.ai && working >= 0 ? t(watching.retrying ? '{0} 正在重试第 {1} 条' : '{0} 正在推理第 {1} 条', [who, working + 1]) :
-        t(s.phase === 'encrypting' ? '{0} · 已写好 {1} / 3' : '{0} · 已选 {1} / 3', [who, watching.count]);
+    // A seat that only watches follows every action on the air: both teams while they guess.
+    const watchedActions: Action[] = !isBeat(s.phase) || r.encrypt || r.guess || u.submitted || s.submitted ? [] :
+        s.phase === 'encrypting' ? ['encrypt'] : cast.intercepted ? ['intercept', 'decrypt'] : ['decrypt'];
+    const readable = keyDiskReadable(s, u) && s.myRole === 'encryptor';
+    const watching = watchedActions.map(action => ({ action, team: action === 'intercept' ? cast.receiving : cast.sending, tx: transmission(s, readable, action)! }));
+    const watchStatus = watching.map(({ action, team, tx }) => {
+        const crew = team ? t('{0} 队', [team]) : t('对手');
+        const who = tx.player || crew;
+        const working = tx.slots.findIndex(slot => slot.active);
+        if (action === 'encrypt') return !tx.started ? t('链路已接通 · 等待 {0} 开始', [s.encryptor || t('加密者')]) :
+            tx.ai && working >= 0 ? t(tx.retrying ? '{0} 正在重试第 {1} 条' : '{0} 正在推理第 {1} 条', [who, working + 1]) : t('{0} · 已写好 {1} / 3', [who, tx.count]);
+        return tx.submitted ? t('{0} 已提交', [crew]) : !tx.started ? t('{0} 尚未开始', [crew]) :
+            tx.ai && working >= 0 ? t(tx.retrying ? '{0} 正在重试第 {1} 条' : '{0} 正在推理第 {1} 条', [who, working + 1]) : t('{0} · 已选 {1} / 3', [who, tx.count]);
+    }).join(' · ');
     const lobby = s.phase === 'room', home = s.phase === 'home';
     const owner = s.ownerID === s.myPlayerID;
     const disabled = !h.online;
-    const title = t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase]);
+    const title = t(phaseTitle(s));
     const acting = (r.encrypt || r.guess) && r.active;
     const beat = isBeat(s.phase);
     const submitted = beat && (u.submitted || s.submitted);
+    const peers = submitted ? [] : teammateChoices(s);
+    const accepted = s.playerProgress[r.action];
+    const shownGuess = s.submitted && accepted?.state === 'submitted' && accepted.guesses?.length === 3 ? accepted.guesses : u.guess;
     const workingArea = beat && (r.encrypt || r.guess);
     const action = home ? u.mode === 'create' ? '建立频道' : '加入频道' : lobby ? '开始行动' : s.phase === 'game_over' ? '回到房间' :
         s.submitted ? '已提交' : u.submitted ? '正在发送…' : acting ? '发报 · 确认' : '等待中';
@@ -113,16 +123,32 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
         <span className="mobile-clue-target">{diskReadable ? `${s.secretDigits[i]} · ${word(s.myWords[s.secretDigits[i] - 1] || s.secretWords[i], u.locale)}` : t('已隐藏')}</span><input value={value} maxLength={80} disabled={!r.active || disabled} onChange={e => onChange(`clue-${i}`, e.target.value)}/></label>);
     // Each public clue sits beside the digit chosen for it; tapping a row picks the slot.
     const guessRows = r.guess && <>
+        {peers.length > 0 && <ul className="mobile-peer-status" aria-label={t('队友状态')}>{peers.map(peer => <li key={peer.id} data-unavailable={peer.state === 'unavailable' || undefined}>
+            <span>{peer.ai && !peer.player.startsWith('AI') ? t('AI · {0}', [peer.player]) : peer.player}</span>
+            <small>{t(...teammateStatus(peer))}</small>
+        </li>)}</ul>}
         <ol className="mobile-guess" aria-label={t('选择编号')}>{[0, 1, 2].map(i => <li key={i}><button aria-pressed={u.slot === i} disabled={!r.active || disabled} onClick={() => onAct(`slot-${i}`)}
-            aria-label={t('选择第 {0} 位密码', [i + 1])}><b>{String(i + 1).padStart(2, '0')}</b><span>{s.clues[i] || t('等待线索…')}</span><em>{u.guess[i] || '—'}</em></button></li>)}</ol>
+            aria-label={t('选择第 {0} 位密码', [i + 1])}><b>{String(i + 1).padStart(2, '0')}</b><span>{s.clues[i] || t('等待线索…')}</span><em>{shownGuess[i] || '—'}</em></button>
+            {peers.length > 0 && <ul className="mobile-peer-choices" aria-label={t('第 {0} 条线索的队友建议', [i + 1])}>{peers.map(peer => {
+                const active = peer.focus === i + 1 && !peer.disconnected;
+                return <li key={peer.id} data-active={active || undefined}>
+                    <span>{peer.ai && !peer.player.startsWith('AI') ? t('AI · {0}', [peer.player]) : peer.player}</span><strong>{peer.guesses[i] || '—'}</strong>
+                    {active && <small className="sr-only">{t('推敲中')}</small>}
+                </li>;
+            })}</ul>}
+        </li>)}</ol>
+        {peers.length > 0 && <p className="mobile-peer-note">{t('队友建议 · ACTION 提交你选的三位')}</p>}
         {!submitted && <div className="mobile-keypad">{[1, 2, 3, 4].map(n => <button key={n} disabled={!r.active || disabled} onClick={() => onAct(`key-${n - 1}`)}>{n}</button>)}<button disabled={!r.active || disabled} onClick={() => onAct('key-4')}>{t('退格')}</button></div>}
     </>;
-    const watch = watching ? <ol className="mobile-slots" aria-label={t('实时进度')}>{watching.slots.map((slot, i) => {
-        const text = s.phase === 'encrypting' ? t(slot.active ? slot.done ? '正在修改这一条…' : '正在写这一条…' : slot.done ? '已写好' : '等待') : s.clues[i] || t('等待线索…');
-        const mark = s.phase === 'encrypting' ? slot.done && !slot.active ? '✓' : '' : slot.active ? t('推敲中') : slot.digit ?
-            `${slot.digit}${slot.match === undefined ? '' : ` · ${t(s.phase === 'intercept' ? slot.match ? '猜中' : '未中' : slot.match ? '译对' : '译错')}`}` : slot.done ? t('已选定') : '—';
-        return <li key={i} data-state={slot.active ? 'active' : slot.done ? 'done' : 'idle'}><b>{String(i + 1).padStart(2, '0')}</b><span>{text}</span>{mark && <em>{mark}</em>}</li>;
-    })}</ol> : beat && !r.guess && !r.encrypt && s.clues.length > 0 && <ol className="mobile-clues">{s.clues.map((v, i) => <li key={i}>{v}</li>)}</ol>;
+    const watch = watching.length ? <>{watching.map(({ action, team, tx }) => <section key={action} aria-label={action === 'encrypt' ? t('实时进度') : t(action === 'intercept' ? '{0} 队拦截' : '{0} 队解码', [team || '—'])}>
+        {action !== 'encrypt' && <h3 style={{ color: teamPalette(team, s.myTeam, u.theme).ink }}>{t(action === 'intercept' ? '{0} 队拦截' : '{0} 队解码', [team || '—'])}{tx.submitted ? ` · ${t('已提交')}` : ''}</h3>}
+        <ol className="mobile-slots" aria-label={t('实时进度')}>{tx.slots.map((slot, i) => {
+            const text = action === 'encrypt' ? t(slot.active ? slot.done ? '正在修改这一条…' : '正在写这一条…' : slot.done ? '已写好' : '等待') : s.clues[i] || t('等待线索…');
+            const mark = action === 'encrypt' ? slot.done && !slot.active ? '✓' : '' : slot.active ? t('推敲中') : slot.digit ?
+                `${slot.digit}${slot.match === undefined ? '' : ` · ${t(action === 'intercept' ? slot.match ? '猜中' : '未中' : slot.match ? '译对' : '译错')}`}` : slot.done ? t('已选定') : '—';
+            return <li key={i} data-state={slot.active ? 'active' : slot.done ? 'done' : 'idle'}><b>{String(i + 1).padStart(2, '0')}</b><span>{text}</span>{mark && <em>{mark}</em>}</li>;
+        })}</ol>
+    </section>)}</> : beat && !r.guess && !r.encrypt && s.clues.length > 0 && <ol className="mobile-clues">{s.clues.map((v, i) => <li key={i}>{v}</li>)}</ol>;
     const verdicts = <div className="mobile-verdicts" aria-label={t('本轮判定')}>{resultSummary(s).map((item, i) =>
         <p key={i} style={{ color: item.tone === 'good' ? '#2e6949' : item.tone === 'bad' ? '#a44235' : undefined, fontWeight: item.scoring ? 600 : undefined }}>{t(...item.label)}</p>)}</div>;
     const result = s.phase === 'round_result' && (() => {
@@ -186,7 +212,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
         </>}
         {!home && !lobby && <>
             {beat && (submitted || duty || warning || settled) && <div className="mobile-duty" role="status">
-                {submitted ? <><p>{t(s.submitted ? '已提交' : '正在发送…')}</p><p>{t(s.submitted ? '已提交，等待结算。' : '等待服务器确认。')}</p></> : duty && <p>▶ {t(...duty)}</p>}
+                {submitted ? <><p>{t(s.submitted ? '已提交' : '正在发送…')}</p><p>{s.submitted ? handover ? t(...handover) : t('已提交，等待结算。') : t('等待服务器确认。')}</p></> : duty && <p>▶ {t(...duty)}</p>}
                 {!submitted && handover && <p>{t(...handover)}</p>}
                 {(warning || settled) && <p className="mobile-warning">{t(...(warning || settled)!)}</p>}
             </div>}

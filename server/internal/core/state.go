@@ -17,11 +17,9 @@ type TeamState uint
 
 2. 加密者给出 3 个描述;									 ENCRYPTING
 
-3. 对方进行破解（前两轮跳过该阶段），破解成功，本小轮结束	   INTERCEPT
+3. 两队同时猜：我方解密，对方拦截（前两轮没有拦截）			 GUESSING
 
-4. 我方进行解密											DECRYPT
-
-5. 统计本轮分数											DONE
+4. 揭晓密码，同时结算拦截与解密								DONE
 
 因此有 8(4*2) 个阶段
 */
@@ -29,9 +27,8 @@ const (
 	NEW        TeamState = iota // 新对局
 	INIT                        // 准备状态
 	ENCRYPTING                  // 给描述（加密）
-	INTERCEPT                   // 对方破解
-	DECRYPT                     // 我方破解
-	DONE                        // 只有两个队伍都结束了，才会进入该状态
+	GUESSING                    // 我方解密、对方拦截，同时进行
+	DONE                        // 两份猜测都已给出，本轮已结算
 )
 
 // --------------------------- 本轮开始时的一些操作  ---------------------------
@@ -51,76 +48,26 @@ func RegisterEncryptHandler(f func(context.Context, *Round, *Team, *Player, Team
 	encryptHandler = f
 }
 
-// --------------------------- 对方拦截 ---------------------------
-// 参数为(本轮游戏, 当前加密队伍的**对手**, 当前状态-INTERCEPT)
-// 返回解密的三个数字
-var interceptHandler func(context.Context, *Round, *Team, TeamState) ([3]int, bool)
-
-func RegisterInterceptHandler(f func(context.Context, *Round, *Team, TeamState) ([3]int, bool)) {
-	interceptHandler = f
-}
-
-// 这个方法将会在对方拦截成功后执行，可以不设置
+// --------------------------- 两队同时猜  ---------------------------
+// 参数为(本轮游戏, 当前状态-GUESSING)
 //
-// (拦截成功后会自动为队伍添加添加成功标记)
+// 本轮还缺哪一份猜测，见 Round.NeedsDecrypt 与 Round.NeedsIntercept。每收到一份，
+// 就用 Round.SetDecryptedSecret 或 Round.SetInterceptSecret 记下；两份都在之前，
+// 任何一方都不会被结算。返回时仍未给出的猜测按 0,0,0 处理。
 //
-// 参数为(本轮游戏, 当前加密队伍的**对手**, 当前状态-INTERCEPT)
-var interceptSuccessHandler func(context.Context, *Round, *Team, TeamState) bool
+// 返回 true 表示取消对局
+var guessHandler func(context.Context, *Round, TeamState) bool
 
-func RegisterInterceptSuccessHandler(f func(context.Context, *Round, *Team, TeamState) bool) {
-	interceptSuccessHandler = f
-}
-
-// 这个方法将会在对方拦截失败后执行，可以不设置
-//
-// 参数为(本轮游戏, 当前加密队伍的**对手**, 当前状态-INTERCEPT)
-var interceptFailHandler func(context.Context, *Round, *Team, TeamState) bool
-
-func RegisterInterceptFailHandler(f func(context.Context, *Round, *Team, TeamState) bool) {
-	interceptFailHandler = f
-}
-
-// --------------------------- 己方解密  ---------------------------
-
-// 参数为(本轮游戏, 加密队伍, 加密者, 当前状态-DECRYPT)
-//
-// 如果对方拦截成功则会跳过
-//
-// 返回解密的三个数字
-var decryptHandler func(context.Context, *Round, *Team, TeamState) ([3]int, bool)
-
-func RegisterDecryptHandler(f func(context.Context, *Round, *Team, TeamState) ([3]int, bool)) {
-	decryptHandler = f
-}
-
-// 这个方法将会在解密成功后执行，可以不设置
-//
-// 参数为(本轮游戏, 加密队伍, 加密者, 当前状态-DECRYPT)
-//
-// 如果对方拦截成功则会跳过
-var decryptSuccessHandler func(context.Context, *Round, *Team, TeamState) bool
-
-func RegisterDecryptSuccessHandler(f func(context.Context, *Round, *Team, TeamState) bool) {
-	decryptSuccessHandler = f
-}
-
-// 这个方法将会在解密失败后执行，可以不设置
-//
-// (拦截成功后会自动为队伍添加添加失败标记)
-//
-// 参数为(本轮游戏, 加密队伍, 加密者, 当前状态-DECRYPT)
-//
-// 如果对方拦截成功则会跳过
-var decryptFailHandler func(context.Context, *Round, *Team, TeamState) bool
-
-func RegisterDecryptFailHandler(f func(context.Context, *Round, *Team, TeamState) bool) {
-	decryptFailHandler = f
+func RegisterGuessHandler(f func(context.Context, *Round, TeamState) bool) {
+	guessHandler = f
 }
 
 // --------------------------- 本轮结束时的一些操作  ---------------------------
 var doneHandler func(context.Context, *Round, TeamState) bool
 
 // 参数为(本轮游戏, 当前状态-DONE)
+//
+// 此时密码已揭晓，拦截与解密都已结算
 func RegisterDoneHandler(f func(context.Context, *Round, TeamState) bool) {
 	doneHandler = f
 }

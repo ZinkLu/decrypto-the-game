@@ -35,6 +35,9 @@ const (
 	MsgPlayerProgress = "player_progress"
 	MsgTimeout        = "timeout"
 	MsgError          = "error"
+	// MsgActionSubmitted tells the room that one team has answered while the
+	// phase goes on for the other.
+	MsgActionSubmitted = "action_submitted"
 )
 
 // ClientMessage is a message sent from client to server.
@@ -151,19 +154,42 @@ type RoundHistoryRow struct {
 	Timeouts []string `json:"timeouts,omitempty"`
 }
 
-// PhaseChangeData is the data payload for MsgPhaseChange.
+// PhaseChangeData is the data payload for MsgPhaseChange. Phase is "new_round",
+// "encrypting" or "guess". Deadline and Submitted are this seat's: its own
+// action's, or, for a seat that only watches, the latest deadline of the phase.
 type PhaseChangeData struct {
-	Notice       string            `json:"notice,omitempty"`
-	Deadline     int64             `json:"deadline"`
-	Phase        string            `json:"phase"`
-	Round        int               `json:"round"`
-	YourRole     string            `json:"your_role"`
-	Encryptor    string            `json:"encryptor"`
-	SecretDigits []int             `json:"secret_digits,omitempty"`
-	SecretWords  []string          `json:"secret_words,omitempty"`
-	Clues        []string          `json:"clues,omitempty"`
-	History      []RoundHistoryRow `json:"history,omitempty"`
-	Waiting      bool              `json:"waiting,omitempty"`
+	Notice           string                         `json:"notice,omitempty"`
+	Deadline         int64                          `json:"deadline"`
+	Phase            string                         `json:"phase"`
+	Round            int                            `json:"round"`
+	YourRole         string                         `json:"your_role"`
+	Encryptor        string                         `json:"encryptor"`
+	EncryptorID      string                         `json:"encryptor_id"`
+	SecretDigits     []int                          `json:"secret_digits,omitempty"`
+	SecretWords      []string                       `json:"secret_words,omitempty"`
+	Clues            []string                       `json:"clues,omitempty"`
+	History          []RoundHistoryRow              `json:"history,omitempty"`
+	Waiting          bool                           `json:"waiting,omitempty"`
+	Submitted        bool                           `json:"submitted,omitempty"`
+	Actions          map[string]ActionInfo          `json:"actions,omitempty"`
+	TeammateProgress map[string]*PlayerProgressData `json:"teammate_progress,omitempty"`
+}
+
+// ActionInfo is one action of the current phase as every seat may see it:
+// "encrypt" while encrypting; "decrypt" and, from round 3, "intercept" while
+// guessing. It tells which team acts, until when, and whether it has answered,
+// never what it chose.
+type ActionInfo struct {
+	Team      string `json:"team"`
+	Deadline  int64  `json:"deadline"`
+	Submitted bool   `json:"submitted,omitempty"`
+}
+
+// ActionSubmittedData is the data payload for MsgActionSubmitted.
+type ActionSubmittedData struct {
+	Round  int    `json:"round"`
+	Action string `json:"action"` // "intercept", "decrypt"
+	Team   string `json:"team"`
 }
 
 // ScoreInfo holds scoring information for a team.
@@ -172,7 +198,9 @@ type ScoreInfo struct {
 	DecryptFailures int `json:"decrypt_failures"`
 }
 
-// RoundResultData is the data payload for MsgRoundResult.
+// RoundResultData is the data payload for MsgRoundResult, sent once a round,
+// when both guesses are in and the code is revealed. InterceptSuccess is absent
+// in the first two rounds, which nobody intercepts.
 type RoundResultData struct {
 	Notice           string            `json:"notice,omitempty"`
 	Round            int               `json:"round"`
@@ -210,28 +238,34 @@ type TimeoutData struct {
 	Outcome string `json:"outcome"`
 }
 
-// GameSyncData holds the in-game state for a full sync.
+// GameSyncData holds the in-game state for a full sync. Deadline, Waiting and
+// Submitted are this seat's, as in PhaseChangeData. AIStatus holds the latest
+// status of each AI action of the phase, and Timeouts the actions of this round
+// that ran out of time.
 type GameSyncData struct {
-	RoundResult  *RoundResultData  `json:"round_result,omitempty"`
-	Deadline     int64             `json:"deadline"`
-	Encryptor    string            `json:"encryptor"`
-	Waiting      bool              `json:"waiting"`
-	Submitted    bool              `json:"submitted"`
-	GameOver     *GameOverData     `json:"game_over,omitempty"`
-	AIStatus     *AIStatusData     `json:"ai_status,omitempty"`
-	Timeout      *TimeoutData      `json:"timeout,omitempty"`
-	Notice       string            `json:"notice,omitempty"`
-	Phase        string            `json:"phase"`
-	Round        int               `json:"round"`
-	YourRole     string            `json:"your_role"`
-	YourTeam     string            `json:"your_team"`
-	Words        []string          `json:"words"`
-	Clues        []string          `json:"clues,omitempty"`
-	SecretDigits []int             `json:"secret_digits,omitempty"`
-	SecretWords  []string          `json:"secret_words,omitempty"`
-	History      []RoundHistoryRow `json:"history,omitempty"`
-	ScoreA       ScoreInfo         `json:"score_a"`
-	ScoreB       ScoreInfo         `json:"score_b"`
+	RoundResult      *RoundResultData               `json:"round_result,omitempty"`
+	Deadline         int64                          `json:"deadline"`
+	Encryptor        string                         `json:"encryptor"`
+	EncryptorID      string                         `json:"encryptor_id"`
+	Waiting          bool                           `json:"waiting"`
+	Submitted        bool                           `json:"submitted"`
+	GameOver         *GameOverData                  `json:"game_over,omitempty"`
+	AIStatus         map[string]*AIStatusData       `json:"ai_status,omitempty"`
+	TeammateProgress map[string]*PlayerProgressData `json:"teammate_progress,omitempty"`
+	Timeouts         []TimeoutData                  `json:"timeouts,omitempty"`
+	Notice           string                         `json:"notice,omitempty"`
+	Phase            string                         `json:"phase"`
+	Round            int                            `json:"round"`
+	YourRole         string                         `json:"your_role"`
+	YourTeam         string                         `json:"your_team"`
+	Words            []string                       `json:"words"`
+	Clues            []string                       `json:"clues,omitempty"`
+	SecretDigits     []int                          `json:"secret_digits,omitempty"`
+	SecretWords      []string                       `json:"secret_words,omitempty"`
+	History          []RoundHistoryRow              `json:"history,omitempty"`
+	Actions          map[string]ActionInfo          `json:"actions,omitempty"`
+	ScoreA           ScoreInfo                      `json:"score_a"`
+	ScoreB           ScoreInfo                      `json:"score_b"`
 }
 
 // FullSyncData is the data payload for MsgFullSync.
@@ -273,16 +307,23 @@ type ProgressData struct {
 	Clues []string `json:"clues,omitempty"`
 }
 
-// PlayerProgressData is the server broadcast payload for MsgPlayerProgress.
+// PlayerProgressData is the server payload for MsgPlayerProgress. Guesses reach
+// only the guessing team and the round's encryptor; other seats get Filled
+// instead, which slots are chosen, and never a digit.
 type PlayerProgressData struct {
-	Action  string `json:"action"` // "encrypt", "intercept", "decrypt"
-	Player  string `json:"player"` // player nickname
-	State   string `json:"state,omitempty"`
-	Step    int    `json:"step"`
-	Focus   int    `json:"focus,omitempty"`
-	Guesses []int  `json:"guesses,omitempty"`
-	Filled  []bool `json:"filled,omitempty"`
-	Total   int    `json:"total"`
+	Round      int    `json:"round"`
+	Action     string `json:"action"` // "encrypt", "intercept", "decrypt"
+	Player     string `json:"player"` // player nickname
+	PlayerID   string `json:"player_id"`
+	IsAI       bool   `json:"is_ai"`
+	CanSubmit  bool   `json:"can_submit"` // seat authority; the action must also still be open
+	Suggestion bool   `json:"suggestion"` // an advisory AI guess; never submits the team's answer
+	State      string `json:"state,omitempty"`
+	Step       int    `json:"step"`
+	Focus      int    `json:"focus,omitempty"`
+	Guesses    []int  `json:"guesses,omitempty"`
+	Filled     []bool `json:"filled,omitempty"`
+	Total      int    `json:"total"`
 }
 
 // ErrorData is the data payload for MsgError.

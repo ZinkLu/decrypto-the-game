@@ -25,30 +25,14 @@ func i() {
 	RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, ts TeamState) ([3]string, bool) {
 		return [3]string{}, false
 	})
-	RegisterInterceptHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) ([3]int, bool) {
-		result := getRandomSecrets()
-		fmt.Printf("给出的拦截密码为 %v \n", result)
-		return result, false
-	})
-	RegisterInterceptSuccessHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) bool {
-		fmt.Println("拦截成功")
-		return false
-	})
-	RegisterInterceptFailHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) bool {
-		fmt.Println("拦截失败")
-		return false
-	})
-	RegisterDecryptHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) ([3]int, bool) {
-		result := r.secret
-		fmt.Printf("给出的解密密码为 %v \n", result)
-		return result, false
-	})
-	RegisterDecryptSuccessHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) bool {
-		fmt.Println("解密成功")
-		return false
-	})
-	RegisterDecryptFailHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) bool {
-		fmt.Println("解密失败")
+	RegisterGuessHandler(func(ctx context.Context, r *Round, ts TeamState) bool {
+		if r.NeedsIntercept() {
+			result := getRandomSecrets()
+			fmt.Printf("给出的拦截密码为 %v \n", result)
+			r.SetInterceptSecret(result)
+		}
+		fmt.Printf("给出的解密密码为 %v \n", r.secret)
+		r.SetDecryptedSecret(r.secret)
 		return false
 	})
 	RegisterDoneHandler(func(ctx context.Context, r *Round, ts TeamState) bool {

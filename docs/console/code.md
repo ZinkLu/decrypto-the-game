@@ -65,7 +65,7 @@ web/
 | 文件 | 职责 |
 | --- | --- |
 | `actions.ts` | `reachable()`：一个控件在机器当前状态下是否起作用（有没有电、哪一面朝前、连没连上、有没有请求在途） |
-| `model.ts` | `LocalState` 及其初始值；硬件状态推导（`consoleHardware`、`terminalView`）；行动资格（`roleState`）；软盘状态机；回合角色（`roundCast`、`transmission`）；名册、纸带记录、主题色；浏览器存储的读写；预览夹具 `previewState` |
+| `model.ts` | `LocalState` 及其初始值；硬件状态推导（`consoleHardware`、`terminalView`）；行动资格（`seatAction`、`roleState`）；软盘状态机；回合角色（`roundCast`，以及按行动取进度的 `transmission`）；名册、纸带记录、主题色；浏览器存储的读写；预览夹具 `previewState` |
 | `view.ts` | 路由（`consoleRoute`）、正面取景（`gameFraming`）、把手拖拽与滚轮缩放的换算、把手的投影表面 |
 | `i18n.ts` | 中英文对照表、`translate`、语言偏好、服务器错误文案的本地化 |
 | `guide.ts` | 玩法说明的文字、示例词和原版桌游链接 |
@@ -337,8 +337,8 @@ cd web && pnpm test
 | 文件 | 覆盖 |
 | --- | --- |
 | `console.test.mjs` | 行动资格、纸带记录的可见范围、名册状态、阶段灯、主题色及其对比度、对局音效的选择 |
-| `transmission.test.mjs` | 回合角色、简报、旁观席看到的进度、倒计时警告与超时说明 |
-| `store.test.mjs` | store 对协议消息的处理、设备令牌、断线与恢复 |
+| `transmission.test.mjs` | 回合角色、简报、旁观席看到的进度（两队各自的数字给谁看）、各席位在猜测阶段的提示、倒计时警告与超时说明 |
+| `store.test.mjs` | store 对协议消息的处理（包括两队同时猜时一队先交）、设备令牌、断线与恢复 |
 | `hardware.test.mjs` | 正反面目标互不重叠、断电和拔网线后哪些控件还在、接收机信号、背面的声音开关 |
 | `actions.test.mjs` | 哪些控件不需要电、哪些不需要网络、背对时哪些够不着；所有控件在所有机器状态下的穷举 |
 | `parts.test.mjs` | 引擎按名字取用的零件都在导出的模型里；会动的组件互不嵌套 |

@@ -314,20 +314,19 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 		case ws.MsgSubmitIntercept, ws.MsgSubmitDecrypt:
 			var d ws.SubmitGuessData
 			err = json.Unmarshal(msg.Data, &d)
-			phase := "decrypt"
+			action := "decrypt"
 			if msg.Type == ws.MsgSubmitIntercept {
-				phase = "intercept"
+				action = "intercept"
 			}
 			if err == nil {
-				err = b.SubmitGuess(identity.PlayerID, phase, d)
+				err = b.SubmitGuess(identity.PlayerID, action, d)
 			}
 		case ws.MsgProgress:
 			var d ws.ProgressData
-			if json.Unmarshal(msg.Data, &d) != nil || b.ValidateProgress(identity.PlayerID, d) != nil {
+			if json.Unmarshal(msg.Data, &d) != nil {
 				return
 			}
-			b.RecordDraft(d)
-			h.Hub.BroadcastToRoom(r.Code, ws.ServerMessage{Type: ws.MsgPlayerProgress, Data: ws.PlayerProgressData{Action: d.Action, Player: identity.Nickname, State: d.State, Step: d.Step, Focus: d.Focus, Guesses: d.Guesses, Filled: d.Filled, Total: 3}})
+			b.RelayProgress(identity.PlayerID, identity.Nickname, d)
 		}
 		if err != nil {
 			client.SendError(err.Error())

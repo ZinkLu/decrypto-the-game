@@ -1,6 +1,6 @@
 import { translate } from './i18n';
 import { guideSteps } from './guide';
-import { consoleHardware, hardwareMessage, roleState, keyDiskReadable, keyDiskIdentity, phaseSignal, teamPalette, themeColors, rosterTeams, resultTint, roundCast } from './model';
+import { consoleHardware, hardwareMessage, roleState, keyDiskReadable, keyDiskIdentity, phaseSignal, phaseTitle, teamPalette, themeColors, rosterTeams, resultTint, roundCast } from './model';
 import type { LocalState, StationState } from './model';
 import type { ScoreSignal } from './scoreFeedback';
 import { CREAM, DARK, crtFinish, round, text, type Painter } from './paintKit';
@@ -157,14 +157,14 @@ export function paint(s: StationState, u: LocalState, inspection = false, guideA
         }
     }
     const screenPage = !h.powered ? 'off' : !h.online ? 'offline' : u.manual ? `guide:${guidePage}` : u.about ? 'about' :
-        briefing ? `brief:${u.brief}` : ['encrypting', 'intercept', 'decrypt', 'round_result'].includes(s.phase)
+        briefing ? `brief:${u.brief}` : ['encrypting', 'guess', 'round_result'].includes(s.phase)
             ? `round:${s.round}` : s.phase;
     return { frames, keyDiskId, screenBlink: h.online ? blink : [], screenPage, screenSignal: briefing && h.online ? u.brief : '',
         scoreSignal: { event: s.scoreChange, room: s.roomCode || '', team: s.myRole === 'observer' ? '' : s.myTeam, online: h.online && !s.recovering },
-        screenPrivacyKey: `${h.online}:${keyDiskIdentity(s)}:${diskReadable}`, teamPlates: { A: teamPalette('A', s.myTeam, u.theme).plate, B: teamPalette('B', s.myTeam, u.theme).plate }, wordTube: colors.crt, displayKey: u.theme, wordInks: { ...colors.led, warning: colors.led.legend }, wordPrivacyKey: `${h.online}:${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}:${s.myWords.join("|")}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: h.online, trafficKey: JSON.stringify([s.phase, s.round, s.submitted, s.aiStatus, s.playerProgress, s.history.length, s.players]), targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
+        screenPrivacyKey: `${h.online}:${keyDiskIdentity(s)}:${diskReadable}`, teamPlates: { A: teamPalette('A', s.myTeam, u.theme).plate, B: teamPalette('B', s.myTeam, u.theme).plate }, wordTube: colors.crt, displayKey: u.theme, wordInks: { ...colors.led, warning: colors.led.legend }, wordPrivacyKey: `${h.online}:${s.roomCode}:${s.myTeam}:${hasGame}:${u.hiddenWords}:${s.myWords.join("|")}`, paletteKey: `${u.theme}:${s.myTeam || 'unassigned'}`, connected: h.online, trafficKey: JSON.stringify([s.phase, s.round, s.submitted, s.actions, s.aiStatus, s.playerProgress, s.history.length, s.players]), targets: targets.filter(t => (inspection || rearControls.has(t.id) === u.backView) &&
             (h.powered || rearControls.has(t.id) || ['power-toggle', 'disk-toggle', 'disk-eject'].includes(t.id)) &&
             (h.online || t.surface !== 'screen' || t.id === 'restore-link')),
-        status: !h.online ? t(hardwareMessage(u, s)) : status || `${t(({ home: '通信局', room: '队伍准备', encrypting: '加密', intercept: '拦截', decrypt: '解码', round_result: '本轮回执', game_over: '行动结束' })[s.phase])} · ${s.connected ? t("已连接") : t("连接中")}`,
+        status: !h.online ? t(hardwareMessage(u, s)) : status || `${t(phaseTitle(s))} · ${s.connected ? t("已连接") : t("连接中")}`,
         tint, waiting, ready: ready && h.online, scoreFlags, seats, roomCode: h.powered ? h.online ? s.roomCode || '' : '0000' : '',
         paperRecords: records, activity: h.powered ? activity : 0 };
 }

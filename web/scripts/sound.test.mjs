@@ -1,14 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import ts from 'typescript';
+import { moduleUrl } from './load.mjs';
 
-const source = await readFile(new URL('../src/console/sound.ts', import.meta.url), 'utf8');
-const compile = source => ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText;
-const dataURL = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const bankURL = dataURL(compile(await readFile(new URL('../src/console/soundBank.ts', import.meta.url), 'utf8')));
-const { soundBank } = await import(bankURL);
-const { ConsoleAudio, consoleSounds, gameSound } = await import(dataURL(compile(source).replace("'./soundBank'", JSON.stringify(bankURL))));
+const { soundBank } = await import(await moduleUrl('soundBank'));
+const { ConsoleAudio, consoleSounds, gameSound } = await import(await moduleUrl('sound'));
 
 function speaker(state = 'running') {
     const voices = [], gains = [];
@@ -271,12 +267,15 @@ test('CRT requests waiting for decode are invalidated by a reversal or picture s
 const state = { connected: true, recovering: false, roomCode: '1234', phase: 'encrypting', round: 3,
     myRole: 'teammate', myTeam: 'A', waiting: false, submitted: false, deadline: 0 };
 test('only fresh turns for the local actor and settled results notify', () => {
-    for (const [phase, myRole] of [['encrypting', 'encryptor'], ['intercept', 'opponent'], ['decrypt', 'teammate']]) {
+    // While both teams guess, the decoders and the interceptors hear their turn together.
+    for (const [phase, myRole] of [['encrypting', 'encryptor'], ['guess', 'opponent'], ['guess', 'teammate']]) {
         const next = { ...state, phase, myRole, round: 4 };
         assert.equal(gameSound(state, next), 'turn');
         for (const patch of [{ myRole: 'observer' }, { waiting: true }, { submitted: true }, { deadline: 1 }])
             assert.equal(gameSound(state, { ...next, ...patch }), undefined);
     }
+    assert.equal(gameSound(state, { ...state, phase: 'guess', myRole: 'encryptor', round: 4 }), undefined, 'the encryptor only watches');
+    assert.equal(gameSound({ ...state, round: 1 }, { ...state, phase: 'guess', myRole: 'opponent', round: 2 }), undefined, 'nobody intercepts round 2');
     assert.equal(gameSound(state, { ...state, phase: 'round_result' }), 'receive');
     assert.equal(gameSound(state, { ...state, phase: 'game_over', gameOver: { winner: 'A' } }), 'success');
     assert.equal(gameSound(state, { ...state, phase: 'game_over', gameOver: { winner: 'B' } }), 'error');
@@ -288,7 +287,7 @@ test('only fresh turns for the local actor and settled results notify', () => {
 
 test('connection recovery, duplicate snapshots, new rooms and progress edits stay silent', () => {
     assert.equal(gameSound(state, { ...state, clues: ['editing'] }), undefined);
-    const next = { ...state, phase: 'decrypt' };
+    const next = { ...state, phase: 'guess' };
     for (const patch of [{ connected: false }, { recovering: true }, { roomCode: '4321' }]) {
         assert.equal(gameSound({ ...state, ...patch }, next), undefined);
         assert.equal(gameSound(state, { ...next, ...patch }), undefined);

@@ -56,8 +56,8 @@
 | `remove_ai` | `team`，`index` | 仅房主；`index` 是该席位在队内的位置（从 0 起），该位置必须是 AI |
 | `start_game` | 无 | 仅房主；两队各至少 2 人且已落座的真人都在线 |
 | `submit_clues` | `round`，`clues`：三条线索 | 仅本回合加密者，加密阶段 |
-| `submit_intercept` | `round`，`guess`：三位数字 | 仅对手队伍，拦截阶段 |
-| `submit_decrypt` | `round`，`guess`：三位数字 | 仅加密者的队友，解码阶段 |
+| `submit_intercept` | `round`，`guess`：三位数字 | 仅对手队伍，第 3 回合起的猜测阶段 |
+| `submit_decrypt` | `round`，`guess`：三位数字 | 仅加密者的队友，猜测阶段 |
 | `progress` | 见下 | 行动中的玩家上报输入进度 |
 | `request_sync` | 无 | 请求一次 `full_sync` |
 | `reopen_room` | 无 | 对局结束后让房间回到大厅；任何玩家都可以发 |
@@ -80,12 +80,14 @@
 | `clues` | 加密：线索草稿的文字 |
 | `total` | 总格数；服务端转发时固定为 3 |
 
-只有当前有权行动的玩家、在正确的回合与阶段、截止之前发来的进度才被接受。不合格的进度被直接丢弃，不回错误。
+只有当前有权行动的玩家、在正确的回合与阶段、本队尚未提交、本队截止之前发来的进度才被接受。不合格的进度被直接丢弃，不回错误。
 
 被接受的进度做两件事：
 
-- 服务端记下草稿：`clues`（加密），或长度为 3 的 `guesses`（拦截、解码）。时间用尽时据此代为提交。
-- 向房间广播 `player_progress`。转发的字段是 `action`、`state`、`step`、`focus`、`guesses`、`filled`，加上发送者的昵称；`clues` 不在其中。
+- 服务端记下本队的草稿：`clues`（加密），或长度为 3 的 `guesses`（拦截、解码）。时间用尽时据此代为提交。
+- 按玩家 ID 保存并转发 `player_progress`，带本回合号、服务端确认的玩家 ID 和昵称；`clues` 不在其中。猜测的 `guesses` 只发给猜测的一队和本回合的加密者，其他人收到的是 `filled`（哪几格已选），不带数字。不同玩家的选择独立保存，后来的队友输入不会抹掉前一人的选择。
+
+客户端猜测进度中的 `state: "submitted"` 只说明它准备发送答案，转发时归为 `editing`。只有服务端接受第一份有效的 `submit_decrypt` / `submit_intercept` 后，才为真正提交者发出 `state: "submitted"` 的完整三位选择，随后全队不能继续提交。这样断线重连也能区分个人草稿和实际采用的答案。
 
 ## 服务端 → 页面
 
@@ -97,10 +99,11 @@
 | `game_start` | 每个人，各不相同 | 第 1 回合开始 |
 | `phase_change` | 每个人，各不相同 | 进入新阶段 |
 | `clues_submitted` | 房间 | 真人加密者的线索已发出（含超时代发） |
-| `round_result` | 房间 | 拦截结算、解码结算、回合结束，各一次 |
+| `action_submitted` | 房间 | 猜测阶段里有一队的猜测被收下 |
+| `round_result` | 房间 | 两队都交了，揭晓本回合，一回合一次 |
 | `game_over` | 房间 | 对局结束 |
 | `full_sync` | 本人 | 恢复之后，或应 `request_sync` |
-| `player_progress` | 房间 | 行动者的输入进度 |
+| `player_progress` | 每个人，各不相同 | 行动者的输入进度；猜测的数字只给能看的人 |
 | `ai_thinking` / `ai_acted` | 房间 | AI 作答的每一步 |
 | `timeout` | 房间 | 某个行动时间用尽，以及如何结算 |
 | `error` | 本人 | 请求被拒绝 |
@@ -149,21 +152,32 @@
 
 ### `phase_change`
 
-`phase` 取 `"new_round"`、`"encrypting"`、`"intercept"`、`"decrypt"`。`new_round` 在第 2 回合起的每个回合开头发出，紧接着就是同一回合的 `encrypting`；页面把两者都当作加密阶段。
+`phase` 取 `"new_round"`、`"encrypting"`、`"guess"`。`new_round` 在第 2 回合起的每个回合开头发出，紧接着就是同一回合的 `encrypting`；页面把两者都当作加密阶段。`guess` 是两队同时猜的阶段：加密者的队友解码，第 3 回合起对手同时拦截。
 
 | 字段 | 谁能收到 | 含义 |
 | --- | --- | --- |
 | `phase`，`round` | 所有人 | 阶段与回合号 |
 | `your_role` | 所有人，各不相同 | 收件人在本回合的角色 |
-| `encryptor` | 所有人 | 加密者的昵称 |
-| `waiting` | 所有人，各不相同 | 收件人在本阶段无需行动时为 `true` |
-| `deadline` | 所有人 | 本阶段的截止时间（服务端时钟，Unix 毫秒）；`new_round` 为 0 |
+| `encryptor`，`encryptor_id` | 所有人 | 加密者的昵称和稳定玩家 ID；角色判断使用 ID，不以昵称区分 |
+| `waiting` | 所有人，各不相同 | 收件人在本阶段无需行动，或本队已经提交时为 `true` |
+| `submitted` | 所有人，各不相同 | 收件人一方在本阶段的提交已被收下，例如服务重启前就已提交 |
+| `deadline` | 所有人，各不相同 | 收件人一方本次行动的截止时间（服务端时钟，Unix 毫秒）；只旁观的座位取本阶段最晚的截止时间；`new_round` 为 0 |
+| `actions` | 所有人 | 本阶段的行动，见下 |
 | `secret_digits`，`secret_words` | 仅加密者 | 本回合的密码及其对应的三个关键词。整个回合的每个阶段都带，供加密者对照他人的猜测 |
-| `clues` | 所有人 | 本回合的三条线索；仅 `intercept` 与 `decrypt` 阶段 |
+| `clues` | 所有人 | 本回合的三条线索；仅 `guess` 阶段 |
 | `history` | 所有人 | 此前各回合的记录 |
 | `notice` | 所有人 | 本回合的通知，例如 AI 使用了备用答案 |
+| `teammate_progress` | 所有人，各不相同 | 本阶段所有合资格行动者的独立状态，结构和可见范围同 `full_sync.game.teammate_progress`。阶段开始即含真人的 `idle` 和 AI 的 `thinking`；恢复猜测阶段时保留已提交队伍的个人状态和被采用的答案 |
 
-由 AI 完成的阶段，`deadline` 是整个阶段的时限（默认 120 秒）。
+`actions` 以行动名为键：加密阶段只有 `encrypt`；猜测阶段有 `decrypt`，第 3 回合起还有 `intercept`。每一项都只说明谁在做、做完没有，不带任何内容：
+
+| 字段 | 含义 |
+| --- | --- |
+| `team` | 行动的队伍 |
+| `deadline` | 这项行动的截止时间 |
+| `submitted` | 这一队已经提交 |
+
+两队的行动各自计时。由 AI 完成的行动，截止时间是整个行动的时限（默认 120 秒），所以两队同时猜时，两项的截止时间可以不同。
 
 ### 历史记录的一行
 
@@ -173,8 +187,8 @@
 | `team` | 该回合的加密方 |
 | `clues` | 三条线索 |
 | `secret` | 该回合的密码 |
-| `intercept` | 对手的拦截猜测；没有拦截阶段或未给出时为 `[0,0,0]` |
-| `decrypt` | 本队的解码猜测；未给出时为 `[0,0,0]`。对手截获成功、本队没有解码时不带这个字段 |
+| `intercept` | 对手的拦截猜测；前两个回合没有拦截，未给出时也是 `[0,0,0]` |
+| `decrypt` | 本队的解码猜测；未给出时为 `[0,0,0]` |
 | `timeouts` | 该回合中时间用尽的行动：`"encrypt"`、`"intercept"`、`"decrypt"`。只出现在刚结束的那一回合的行上（回合结束的 `round_result` 与 `game_over`）；此后 `phase_change` 里的同一行不再带它 |
 
 `phase_change` 里的 `history` 只含已经结束的回合，所以密码公开时该回合已经结算完毕。
@@ -190,17 +204,32 @@
 
 载荷沿用 `phase_change` 的结构，其余字段为空值。AI 加密时不发这条消息，线索随下一个 `phase_change` 到达。
 
+### `action_submitted`
+
+猜测阶段里，每一队的猜测被收下时发一次，包括超时代交和 AI 的回答；让本回合揭晓的那一份之后紧接着就是 `round_result`。只说明哪一队交了，不带猜测，也不透露对错。
+
+| 字段 | 含义 |
+| --- | --- |
+| `round` | 回合号 |
+| `action` | `"decrypt"` 或 `"intercept"` |
+| `team` | 提交的队伍 |
+
+收件人如果属于这一队，此后就算已经提交，不能再交。
+
 ### `round_result`
 
-一个回合里最多发三次：
+两队都交了（或时间用尽、由服务端代交）之后发一次，同时揭晓两项判定：
 
-| 时机 | 带有的字段 |
+| 字段 | 含义 |
 | --- | --- |
-| 拦截结算后 | `intercept_success` |
-| 解码结算后 | `decrypt_success` |
-| 回合结束 | `complete: true`，以及包含本回合在内的 `history` |
+| `intercept_success` | 对手是否截获；前两个回合没有拦截，不带这个字段 |
+| `decrypt_success` | 本队是否解码正确 |
+| `complete` | 固定为 `true` |
+| `history` | 包含本回合在内的记录 |
+| `round`，`score_a`，`score_b` | 回合号与揭晓后的比分 |
+| `notice` | 本回合的通知，有时才带 |
 
-每次都带 `round`、`score_a`、`score_b`，有通知时带 `notice`。比分是 `{ interceptions, decrypt_failures }`：该队拦截成功的次数与该队解码失败的次数。
+比分是 `{ interceptions, decrypt_failures }`：该队拦截成功的次数与该队解码失败的次数。同一回合可以既加截获又加失误。
 
 ### `game_over`
 
@@ -225,15 +254,15 @@
 
 | 字段 | 含义 |
 | --- | --- |
-| `phase` | `"encrypting"`、`"intercept"`、`"decrypt"`、`"round_result"` 或 `"game_over"` |
-| `round`，`your_role`，`your_team`，`encryptor`，`waiting`，`deadline`，`notice` | 同 `phase_change` |
+| `phase` | `"encrypting"`、`"guess"`、`"round_result"` 或 `"game_over"` |
+| `round`，`your_role`，`your_team`，`encryptor`，`encryptor_id`，`waiting`，`submitted`，`deadline`，`actions`，`notice` | 同 `phase_change` |
 | `words` | 收件人所在队伍的关键词 |
 | `clues`，`secret_digits`，`secret_words`，`history` | 同 `phase_change`，可见范围相同 |
-| `submitted` | 收件人一方在本阶段的提交已被接受 |
-| `score_a`，`score_b` | 当前比分 |
-| `round_result` | 本回合已公布的结算结果 |
-| `timeout` | 本回合最近一次超时 |
-| `ai_status` | 最近一次 AI 状态 |
+| `score_a`，`score_b` | 当前比分；猜测阶段里先交的一队还没有计分 |
+| `round_result` | 本回合揭晓的结果 |
+| `timeouts` | 本回合的超时，按发生的顺序，每项同 `timeout` |
+| `ai_status` | 本阶段每项 AI 行动最近一次的状态，以行动名为键，每项同 `ai_thinking` |
+| `teammate_progress` | 本阶段每位行动者最近一次的输入，以 `player_id` 为键，每项同 `player_progress`。真人、每位 AI 建议者以及 AI 加密者各有一项。每位收件人的数字可见范围与实时消息一致；新阶段重新建立。同阶段断线重连保留个人选择，服务器重启后已提交队伍保留个人状态及被采用的答案，未提交队伍重新开始推理 |
 | `game_over` | 对局结束后的 `game_over` 载荷 |
 
 只有 `room` 而没有 `game`，说明房间在大厅里。
@@ -242,11 +271,23 @@
 
 | 字段 | 含义 |
 | --- | --- |
+| `round` | 回合号；页面忽略过期回合或不属于当前阶段的行动 |
 | `action` | `"encrypt"`、`"intercept"` 或 `"decrypt"` |
 | `player` | 行动者的昵称 |
-| `state`，`step`，`focus`，`guesses`，`filled`，`total` | 同 `progress` |
+| `player_id` | 服务端确认的玩家 ID；同名队员也分别保存 |
+| `is_ai` | 是否为 AI 席位 |
+| `can_submit` | 本席位是否拥有此行动的提交资格；实际提交还要求回合、阶段和截止时间正确，且本队尚未提交。真人行动者为 `true`；混合队伍的 AI 全为 `false`；全 AI 猜测队伍仅指定的一位 AI 为 `true`；AI 加密者为 `true` |
+| `suggestion` | 是否为只提供建议的 AI 猜测者；为 `true` 时不能提交本队答案，与是否有真人队友无关 |
+| `state` | 真人使用 `idle`、`editing`；AI 分别使用 `thinking`、`retrying`、`ready`、`unavailable`。猜测的 `submitted` 仅由已接受的正式提交产生，不代表全队其他人的个人选择也已提交 |
+| `step`，`focus`，`guesses`，`filled`，`total` | 同 `progress` |
 
-AI 猜测时服务端也发这条消息，`player` 是该 AI 席位的代号，`guesses` 是它已经选定的数字。
+猜测的 `guesses` 只发给猜测的一队和本回合的加密者。发给其他人的同一条消息不带 `guesses`，改带 `filled`：每一格是否已经选了数字。
+
+每位合资格 AI 都会独立、并发开始猜测；每位 AI 内部按三条线索依次推理，但不同 AI 不互相等待。`player` 与 `player_id` 对应实际 AI 席位，`guesses` 是它自己选定的数字，收件范围相同。处理时 `state` 为 `thinking` 或 `retrying`，`focus` 指向当前格；完成时为 `ready`、`step: 3`、`focus: 0`；建议失败时为 `unavailable`，保留此前完成的格，不编造备用建议。某一位的重试或失败不会覆盖另一位的状态。
+
+有真人能猜测时，所有 AI 都是 `suggestion: true`、`can_submit: false`。全部猜测者为 AI 时，按座次选第一位作为可提交者，其余仍只给建议；可提交者完成后，服务端再次核对座位、权限、行动实例、回合和阶段，接受后才广播该玩家的 `submitted`。其他 AI 的个人状态保持原样。建议永远不会覆盖真人输入、本队超时草稿或通过消息伪造提交权限；本队提交、超时或阶段结束时，共同取消这一行动下全部未完成的 AI 请求，并拒绝迟到结果。
+
+AI 加密者也使用同一份逐玩家状态，携带自己的 ID、回合、已完成数量、当前格与 `filled`。线索完成前不带草稿文字，也不把密码放入 `guesses`。
 
 ### `ai_thinking` / `ai_acted`
 
@@ -259,6 +300,8 @@ AI 猜测时服务端也发这条消息，`player` 是该 AI 席位的代号，`
 | `completed` | 已完成的步数 |
 | `total` | 固定为 3 |
 | `notice` | 重试或使用备用答案时的说明 |
+
+这两种按行动汇总的消息继续供旧观察界面使用，仅由 AI 加密者和全 AI 队伍的指定提交者更新；所有 AI 的独立状态以 `player_progress` 和 `teammate_progress` 为准。
 
 ### `timeout`
 
@@ -326,20 +369,16 @@ select_team / leave_team / add_ai / remove_ai  →  room_state（房间）
                 ai_thinking / ai_acted …        AI 加密者逐条作答
                 [真人] clues_submitted
 
-拦截（N ≥ 3）   phase_change(intercept)         所有人收到线索，对手行动
-                player_progress … / ai_thinking / ai_acted …
-                round_result(intercept_success)
-                停顿 4 秒
+猜测            phase_change(guess)             所有人收到线索；加密者的队友解码，
+                                                N ≥ 3 时对手同时拦截
+                player_progress … / ai_thinking / ai_acted …   两队交错出现
+                action_submitted                每一队交上来时各一次，先后不定
 
-解码            phase_change(decrypt)           所有人收到线索，加密者的队友行动
-                player_progress … / ai_thinking / ai_acted …
-                round_result(decrypt_success)
-
-结束            round_result(complete, history)
+揭晓            round_result(intercept_success, decrypt_success, complete, history)
                 对局结束时紧接着：game_over
 ```
 
-任何阶段时间用尽：`timeout`，然后照常进入该阶段后面的消息。
+某项行动时间用尽：`timeout`，服务端按草稿代交，然后照常继续。一队超时不影响另一队。
 
 ### 再来一局
 
@@ -372,7 +411,7 @@ resume_room  →  room_resumed（本人）
 
 - 断线的座位保留 20 秒；房间在没有任何真人在线 10 分钟后关闭。详见[后端架构](architecture.md)的"房间"一节。
 - 服务端只保存恢复令牌与设备令牌的 SHA-256。数据库里的内容不能用来冒充某位玩家或某个浏览器。
-- 服务重启后，页面照常重连并发 `resume_room`。恢复令牌仍然有效。被打断的对局在第一位真人回来时从原阶段重新开始：所有在线的人收到带有新截止时间的 `phase_change`，已结算的拦截与解码不会重来。
+- 服务重启后，页面照常重连并发 `resume_room`。恢复令牌仍然有效。被打断的对局在第一位真人回来时从原阶段重新开始：所有在线的人收到带有新截止时间的 `phase_change`。已经交上的猜测不会重来：先交的一队恢复后仍是已提交，只有另一队重新计时。
 - 尚未提交的草稿不随重启保留在服务端；页面自己留着已写的线索。
 
 ## 协议守住的隐私
@@ -380,7 +419,6 @@ resume_room  →  room_resumed（本人）
 - **密码**只发给本回合的加密者。其他人要到回合结束、这一行进入 `history` 时才看到。
 - **关键词**只发给本队。对方的关键词直到 `game_over` 才公开。
 - **线索的文字**在发出之前不离开服务端：`progress` 里的草稿只用于超时代发，`player_progress` 里只有"哪几行已有字"。
+- **猜测**在揭晓之前只给本队和本回合的加密者。另一队和没有座位的成员只知道哪几格已选、交了没有；先交的一队猜得对不对，也要等 `round_result` 才公布，在那之前比分不变。
 - **恢复令牌**只发给本人，**设备令牌**只由页面发给服务端；两者都不出现在发给他人的任何消息里。
 - **没有座位的成员**收不到任何一队的关键词。
-
-`player_progress` 里的 `guesses` 是向整个房间广播的，包括拦截阶段对手正在选的数字。不让尚未解码的一队看到这些数字，是页面在显示时做的取舍，协议本身并不隐藏。

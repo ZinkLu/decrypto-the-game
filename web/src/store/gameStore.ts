@@ -36,11 +36,54 @@ export interface RoundHistoryRow {
 /** An action whose time ran out, and how the server settled it. */
 export interface TimeoutInfo {
   round: number;
-  action: "encrypt" | "intercept" | "decrypt";
+  action: GameAction;
   team: string;
   player?: string;
   /** "draft" | "blank" for clues, "guess" | "none" for guesses. */
   outcome: string;
+}
+
+/** What a team does in a phase: the clues while encrypting; the decoding and,
+ *  from round 3, the interception while both teams guess at once. */
+export type GameAction = "encrypt" | "decrypt" | "intercept";
+
+/** One action of the current phase, as every seat may see it: never what was chosen. */
+export interface ActionInfo {
+  team: string;
+  /** In this device's clock. */
+  deadline: number;
+  submitted: boolean;
+}
+
+export interface AIStatus {
+  action: string;
+  player: string;
+  state?: string;
+  completed?: number;
+  step: number;
+  total: number;
+}
+
+export type PlayerProgressState = "idle" | "editing" | "thinking" | "retrying" | "ready" | "unavailable" | "submitted";
+
+export interface PlayerProgress {
+  round?: number;
+  action: string;
+  player: string;
+  player_id?: string;
+  is_ai?: boolean;
+  /** An advisory AI choice, never an accepted team answer. */
+  suggestion?: boolean;
+  /** Whether this seat may provide the team's final answer. */
+  can_submit?: boolean;
+  state?: PlayerProgressState;
+  step: number;
+  focus?: number;
+  /** Reaches only the guessing team and the round's encryptor. */
+  guesses?: number[];
+  /** Encryption only: which clue lines hold text, so out-of-order drafts read correctly. */
+  filled?: boolean[];
+  total: number;
 }
 
 export interface GameOverInfo {
@@ -55,8 +98,7 @@ export type GamePhase =
   | "home"
   | "room"
   | "encrypting"
-  | "intercept"
-  | "decrypt"
+  | "guess"
   | "round_result"
   | "game_over";
 
@@ -93,6 +135,7 @@ interface GameStore {
   secretWords: string[];
   clues: string[];
   encryptor: string;
+  encryptorID: string;
   history: RoundHistoryRow[];
   waiting: boolean;
   scoreA: ScoreInfo;
@@ -103,28 +146,18 @@ interface GameStore {
     decrypt_success?: boolean;
   } | null;
   gameOver: GameOverInfo | null;
-  timeout: TimeoutInfo | null;
+  /** This round's timeouts, in the order they happened. */
+  timeouts: TimeoutInfo[];
   /** Set while this player asks to go back to the reopened lobby after a game. */
   pendingLobby: boolean;
-  aiStatus: {
-    action: string;
-    player: string;
-    state?: string;
-    completed?: number;
-    step: number;
-    total: number;
-  } | null;
-  playerProgress: {
-    action: string;
-    player: string;
-    state?: "idle" | "editing" | "submitted";
-    step: number;
-    focus?: number;
-    guesses?: number[];
-    /** Encryption only: which clue lines hold text, so out-of-order drafts read correctly. */
-    filled?: boolean[];
-    total: number;
-  } | null;
+  /** The actions of the current phase by name; both teams may be acting at once. */
+  actions: Partial<Record<GameAction, ActionInfo>>;
+  /** The latest status of each AI action of the phase. */
+  aiStatus: Partial<Record<string, AIStatus>>;
+  /** The latest progress of each action of the phase. */
+  playerProgress: Partial<Record<string, PlayerProgress>>;
+  /** Each seat's own draft in this phase, keyed by stable player ID. */
+  teammateProgress: Record<string, PlayerProgress>;
 
   // Actions
   connect: () => void;
@@ -180,6 +213,7 @@ const initialState = {
   secretWords: [] as string[],
   clues: [] as string[],
   encryptor: "",
+  encryptorID: "",
   history: [] as RoundHistoryRow[],
   waiting: false,
   scoreA: { interceptions: 0, decrypt_failures: 0 } as ScoreInfo,
@@ -190,27 +224,12 @@ const initialState = {
     decrypt_success?: boolean;
   } | null,
   gameOver: null as GameOverInfo | null,
-  timeout: null as TimeoutInfo | null,
+  timeouts: [] as TimeoutInfo[],
   pendingLobby: false,
-  aiStatus: null as {
-    action: string;
-    player: string;
-    state?: string;
-    completed?: number;
-    step: number;
-    total: number;
-  } | null,
-  playerProgress: null as {
-    action: string;
-    player: string;
-    state?: "idle" | "editing" | "submitted";
-    step: number;
-    focus?: number;
-    guesses?: number[];
-    /** Encryption only: which clue lines hold text, so out-of-order drafts read correctly. */
-    filled?: boolean[];
-    total: number;
-  } | null,
+  actions: {} as GameStore["actions"],
+  aiStatus: {} as GameStore["aiStatus"],
+  playerProgress: {} as GameStore["playerProgress"],
+  teammateProgress: {} as GameStore["teammateProgress"],
 };
 
 type SetFn = (
@@ -247,10 +266,83 @@ export function resetClock() { clockSamples = []; }
 /** Everything that belongs to one game, cleared when the room reopens. */
 const gameFields = {
   deadline: 0, submitted: false, aiNotice: "", round: 0, myRole: "" as PlayerRole, myTeam: "", myWords: [] as string[],
-  secretDigits: [] as number[], secretWords: [] as string[], clues: [] as string[], encryptor: "", history: [] as RoundHistoryRow[],
+  secretDigits: [] as number[], secretWords: [] as string[], clues: [] as string[], encryptor: "", encryptorID: "", history: [] as RoundHistoryRow[],
   waiting: false, scoreA: { interceptions: 0, decrypt_failures: 0 }, scoreB: { interceptions: 0, decrypt_failures: 0 },
-  roundResult: null, gameOver: null, timeout: null, aiStatus: null, playerProgress: null, scoreChange: null,
+  roundResult: null, gameOver: null, timeouts: [] as TimeoutInfo[], actions: {}, aiStatus: {}, playerProgress: {}, teammateProgress: {}, scoreChange: null,
 };
+
+/** The action a seat takes in a phase, or "" for a seat that only watches. */
+export function seatAction(phase: string, role: string, round: number): GameAction | "" {
+  if (phase === "encrypting" && role === "encryptor") return "encrypt";
+  if (phase === "guess" && role === "teammate") return "decrypt";
+  if (phase === "guess" && role === "opponent" && round > 2) return "intercept";
+  return "";
+}
+
+function actionsFrom(data: unknown): GameStore["actions"] {
+  const actions: GameStore["actions"] = {};
+  for (const [name, value] of Object.entries((data as Record<string, Record<string, unknown>> | undefined) ?? {})) {
+    if (name !== "encrypt" && name !== "decrypt" && name !== "intercept") continue;
+    actions[name] = { team: String(value.team ?? ""), deadline: localDeadline(value.deadline), submitted: !!value.submitted };
+  }
+  return actions;
+}
+
+function aiStatusFrom(d: Record<string, unknown>): AIStatus {
+  return { action: String(d.action), player: String(d.player), state: String(d.state || "thinking"),
+    step: Number(d.step) || 1, completed: Number(d.completed) || 0, total: Number(d.total) || 3 };
+}
+
+function playerProgressFrom(d: Record<string, unknown>): PlayerProgress {
+  const guesses = Array.isArray(d.guesses) ? d.guesses : undefined;
+  const states: PlayerProgressState[] = ["idle", "editing", "thinking", "retrying", "ready", "unavailable", "submitted"];
+  return {
+    round: typeof d.round === "number" ? d.round : undefined,
+    action: String(d.action ?? ""), player: String(d.player ?? ""),
+    player_id: typeof d.player_id === "string" ? d.player_id : undefined,
+    is_ai: !!d.is_ai, suggestion: !!d.suggestion,
+    can_submit: typeof d.can_submit === "boolean" ? d.can_submit : !d.is_ai,
+    state: states.includes(d.state as PlayerProgressState) ? d.state as PlayerProgressState : "idle",
+    step: Math.max(0, Math.min(3, Number(d.step) || 0)),
+    focus: [1, 2, 3].includes(Number(d.focus)) ? Number(d.focus) : 0,
+    guesses: guesses ? Array.from({ length: 3 }, (_, index) => {
+      const digit = guesses[index];
+      return typeof digit === "number" && Number.isInteger(digit) && digit >= 1 && digit <= 4 ? digit : 0;
+    }) : undefined,
+    filled: Array.isArray(d.filled) ? d.filled.slice(0, 3).map(Boolean) : undefined,
+    total: 3,
+  };
+}
+
+function currentProgress(progress: PlayerProgress, phase: string, round: number) {
+  return (progress.round === undefined || progress.round === round) &&
+    (phase === "encrypting" ? progress.action === "encrypt" : phase === "guess" &&
+      (progress.action === "decrypt" || progress.action === "intercept" && round > 2));
+}
+
+function teammateProgressFrom(data: unknown, phase: string, round: number): GameStore["teammateProgress"] {
+  const result: GameStore["teammateProgress"] = {};
+  if (!data || typeof data !== "object") return result;
+  for (const [id, value] of Object.entries(data)) {
+    if (!value || typeof value !== "object") continue;
+    const progress = playerProgressFrom(value as Record<string, unknown>);
+    if (progress.player_id === id && currentProgress(progress, phase, round)) result[id] = progress;
+  }
+  return result;
+}
+
+function aggregateProgress(progress: GameStore["teammateProgress"]): GameStore["playerProgress"] {
+  const result: GameStore["playerProgress"] = {};
+  // Snapshot maps carry no event order. The accepted answer always wins, then
+  // the most advanced draft; an idle or advisory seat cannot erase submission.
+  const rank = (value: PlayerProgress) => value.state === "submitted" && !value.suggestion ? 100 :
+    value.step * 3 + (value.state === "thinking" || value.state === "retrying" ? 2 : value.state === "idle" ? 0 : 1);
+  for (const value of Object.values(progress)) {
+    const previous = result[value.action];
+    if (!previous || rank(value) > rank(previous)) result[value.action] = value;
+  }
+  return result;
+}
 
 function gameOverInfo(d: Record<string, unknown>): GameOverInfo {
   return { winner: (d.winner as string | null) ?? null, reason: d.reason as string | undefined,
@@ -343,6 +435,7 @@ function handleServerMessage(
 
     case "game_start":
       set({
+        playerProgress: {}, teammateProgress: {}, encryptorID: "",
         round: (d.round as number) ?? 0,
         myRole: (d.your_role as PlayerRole) ?? "",
         myTeam: (d.your_team as string) ?? "",
@@ -351,9 +444,12 @@ function handleServerMessage(
       break;
 
     case "phase_change": {
-      set({ deadline: localDeadline(d.deadline), submitted: false, aiNotice: String(d.notice || ""), recovering: false });
-      if (get().timeout && get().timeout!.round !== ((d.round as number) ?? get().round)) set({ timeout: null });
       const newPhase = d.phase as string;
+      const progress = teammateProgressFrom(d.teammate_progress, newPhase === "new_round" ? "encrypting" : newPhase,
+        (d.round as number) ?? get().round);
+      set({ deadline: localDeadline(d.deadline), submitted: !!d.submitted, aiNotice: String(d.notice || ""), recovering: false,
+        actions: actionsFrom(d.actions) });
+      if (get().timeouts.some(timeout => timeout.round !== ((d.round as number) ?? get().round))) set({ timeouts: [] });
       if (newPhase === "new_round") {
         // Map new_round to the correct GamePhase based on role
         const role = (d.your_role as PlayerRole) ?? get().myRole;
@@ -363,14 +459,16 @@ function handleServerMessage(
           round: (d.round as number) ?? get().round,
           myRole: role,
           encryptor: (d.encryptor as string) ?? "",
+          encryptorID: (d.encryptor_id as string) ?? "",
           secretDigits: (d.secret_digits as number[]) ?? [],
           secretWords: (d.secret_words as string[]) ?? [],
           clues: (d.clues as string[]) ?? [],
           history: (d.history as RoundHistoryRow[]) ?? get().history,
           waiting: (d.waiting as boolean) ?? false,
           roundResult: null,
-          aiStatus: null,
-          playerProgress: null,
+          aiStatus: {},
+          playerProgress: aggregateProgress(progress),
+          teammateProgress: progress,
         });
       } else {
         set({
@@ -378,16 +476,29 @@ function handleServerMessage(
           round: (d.round as number) ?? get().round,
           myRole: (d.your_role as PlayerRole) ?? get().myRole,
           encryptor: (d.encryptor as string) ?? "",
+          encryptorID: (d.encryptor_id as string) ?? "",
           secretDigits: (d.secret_digits as number[]) ?? [],
           secretWords: (d.secret_words as string[]) ?? [],
           clues: (d.clues as string[]) ?? (newPhase === "encrypting" ? [] : get().clues),
           history: (d.history as RoundHistoryRow[]) ?? get().history,
           waiting: (d.waiting as boolean) ?? false,
-          roundResult: newPhase === "decrypt" ? get().roundResult : null,
-          aiStatus: null,
-          playerProgress: null,
+          roundResult: null,
+          aiStatus: {},
+          playerProgress: aggregateProgress(progress),
+          teammateProgress: progress,
         });
       }
+      break;
+    }
+
+    case "action_submitted": {
+      // A team answered while the phase goes on for the other.
+      const name = d.action as GameAction, round = Number(d.round), state = get();
+      const known = state.actions[name];
+      if (round !== state.round || state.phase !== "guess" || !known) break;
+      const mine = seatAction(state.phase, state.myRole, state.round) === name;
+      set({ actions: { ...state.actions, [name]: { ...known, submitted: true } },
+        ...(mine ? { submitted: true, waiting: true } : {}) });
       break;
     }
 
@@ -417,8 +528,8 @@ function handleServerMessage(
         aiNotice: String(d.notice || get().aiNotice),
         deadline: 0,
         history: (d.history as RoundHistoryRow[]) ?? get().history,
+        // One message reveals the round: both verdicts arrive together.
         roundResult: {
-          ...get().roundResult,
           ...(typeof d.intercept_success === "boolean"
             ? { intercept_success: d.intercept_success }
             : {}),
@@ -426,6 +537,10 @@ function handleServerMessage(
             ? { decrypt_success: d.decrypt_success }
             : {}),
         },
+        actions: {},
+        playerProgress: {}, teammateProgress: {},
+        submitted: false,
+        waiting: true,
         scoreA, scoreB,
         // Keep the event through the complete history and immediate game_over packets.
         scoreChange: changes.length ? { id: ++scoreSerial, at: Date.now(), round: before.round, changes } : before.scoreChange,
@@ -444,6 +559,7 @@ function handleServerMessage(
         scoreA: (d.score_a as ScoreInfo) ?? get().scoreA,
         scoreB: (d.score_b as ScoreInfo) ?? get().scoreB,
         phase: "game_over",
+        playerProgress: {}, teammateProgress: {},
       });
       break;
 
@@ -465,15 +581,24 @@ function handleServerMessage(
       }
 
       if (gameData) {
+        const phase = ({ new: "encrypting", init: "encrypting", done: "round_result" } as Record<string, GamePhase>)[String(gameData.phase)] ?? (gameData.phase as GamePhase) ?? get().phase;
+        const round = (gameData.round as number) ?? get().round;
+        const teammateProgress = teammateProgressFrom(gameData.teammate_progress, phase, round);
         set({
           deadline: localDeadline(gameData.deadline),
-          timeout: (gameData.timeout as TimeoutInfo) ?? null,
+          timeouts: (gameData.timeouts as TimeoutInfo[]) ?? [],
           submitted: !!gameData.submitted,
+          actions: actionsFrom(gameData.actions),
           roundResult: (gameData.round_result as GameStore["roundResult"]) ?? null,
-          aiStatus: (gameData.ai_status as GameStore["aiStatus"]) ?? null,
+          aiStatus: Object.fromEntries(Object.entries((gameData.ai_status as Record<string, Record<string, unknown>>) ?? {})
+            .map(([name, status]) => [name, aiStatusFrom(status)])),
+          teammateProgress,
+          // A full snapshot replaces any pre-disconnect progress. Retain the
+          // aggregate signal for existing watcher screens as well.
+          playerProgress: aggregateProgress(teammateProgress),
           aiNotice: String(gameData.notice || ""),
           gameOver: gameData.game_over ? gameOverInfo(gameData.game_over as Record<string, unknown>) : null,
-          round: (gameData.round as number) ?? get().round,
+          round,
           myRole: (gameData.your_role as PlayerRole) ?? get().myRole,
           myTeam: (gameData.your_team as string) ?? get().myTeam,
           myWords: (gameData.words as string[]) ?? get().myWords,
@@ -481,11 +606,12 @@ function handleServerMessage(
           secretWords: (gameData.secret_words as string[]) ?? [],
           clues: (gameData.clues as string[]) ?? [],
           encryptor: (gameData.encryptor as string) ?? "",
+          encryptorID: (gameData.encryptor_id as string) ?? "",
           history: (gameData.history as RoundHistoryRow[]) ?? [],
           waiting: (gameData.waiting as boolean) ?? false,
           scoreA: (gameData.score_a as ScoreInfo) ?? get().scoreA,
           scoreB: (gameData.score_b as ScoreInfo) ?? get().scoreB,
-          phase: ({ new: "encrypting", init: "encrypting", done: "round_result" } as Record<string, GamePhase>)[String(gameData.phase)] ?? (gameData.phase as GamePhase) ?? get().phase,
+          phase,
         });
       } else if (roomData) {
         set({ ...gameFields, phase: "room", pendingLobby: false });
@@ -501,32 +627,33 @@ function handleServerMessage(
     }
 
     case "ai_thinking":
-    case "ai_acted":
+    case "ai_acted": {
+      const status = aiStatusFrom(d);
       set({
-        aiStatus: { action: String(d.action), player: String(d.player), state: String(d.state || 'thinking'),
-          step: Number(d.step) || 1, completed: Number(d.completed) || 0, total: Number(d.total) || 3 },
+        aiStatus: { ...get().aiStatus, [status.action]: status },
         aiNotice: get().aiNotice.startsWith('AI 未能') ? get().aiNotice : String(d.notice || ''),
       });
       break;
+    }
 
-    case "timeout":
-      set({ timeout: d as unknown as TimeoutInfo });
+    case "timeout": {
+      // Both teams may run out of time in one phase: keep each action's notice.
+      const timeout = d as unknown as TimeoutInfo;
+      const kept = get().timeouts.filter(item => item.round === timeout.round && item.action !== timeout.action);
+      set({ timeouts: [...kept, timeout] });
       break;
+    }
 
-    case "player_progress":
+    case "player_progress": {
+      const state = get(), progress = playerProgressFrom(d), action = progress.action as GameAction;
+      if (!currentProgress(progress, state.phase, state.round) ||
+          state.actions[action]?.submitted && progress.state !== "submitted") break;
       set({
-        playerProgress: {
-          action: d.action as string,
-          player: d.player as string,
-          state: d.state as "idle" | "editing" | "submitted" | undefined,
-          step: (d.step as number) ?? 0,
-          focus: (d.focus as number) ?? 0,
-          guesses: (d.guesses as number[]) ?? undefined,
-          filled: Array.isArray(d.filled) ? (d.filled as unknown[]).slice(0, 3).map(Boolean) : undefined,
-          total: (d.total as number) ?? 3,
-        },
+        playerProgress: { ...state.playerProgress, [action]: progress },
+        ...(progress.player_id ? { teammateProgress: { ...state.teammateProgress, [progress.player_id]: progress } } : {}),
       });
       break;
+    }
 
     case "error":
       if (d.code === "resume_expired") {

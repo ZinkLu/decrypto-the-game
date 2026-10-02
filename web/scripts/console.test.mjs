@@ -24,6 +24,9 @@ test('only the current actor can transmit a complete, valid message', () => {
     assert.equal(roleState(s, { ...initialLocal, guess: [3, 5, 4] }).ready, false);
     assert.equal(roleState({ ...s, myRole: 'encryptor' }, { ...initialLocal, guess: [3, 1, 4] }).ready, false);
   }
+  // Nobody intercepts the first two transmissions.
+  assert.equal(roleState({ ...previewState({}, 'intercept'), round: 2 }, { ...initialLocal, guess: [3, 1, 4] }).ready, false);
+  assert.equal(roleState({ ...previewState({}, 'decrypt'), round: 2 }, { ...initialLocal, guess: [3, 1, 4] }).ready, true);
 });
 
 test('paper archive excludes current/future rounds, filters teams and never synthesizes secrets', () => {
@@ -50,9 +53,9 @@ test('reading an old paper record stays anchored when a new round is archived', 
 });
 
 test('an intercepted sender gets a failure cue while the intercepting player gets a success cue', () => {
-  const s = previewState({}, 'intercept-hit');
+  const s = previewState({}, 'round-scored');
   assert.equal(resultTint({ ...s, myRole: 'encryptor' }), '#ed9781');
-  assert.equal(resultTint({ ...s, myRole: 'opponent' }), '#8bc995');
+  assert.equal(resultTint({ ...s, myTeam: 'B', myRole: 'opponent' }), '#8bc995');
   const final = previewState({}, 'game_over');
   assert.equal(resultTint(final), '#8bc995');
   assert.equal(resultTint({ ...final, myTeam: 'B' }), '#ed9781');
@@ -64,14 +67,21 @@ test('roster follows public phase progress and does not attribute stale or ambig
   assert.equal(team.seats[1].status, '加密中');
   assert.equal(team.seats[1].progress.step, 2);
   assert.equal(team.seats[0].progress, null);
-  const stale = rosterTeams({ ...s, phase: 'decrypt' }, initialLocal)[0];
+  const stale = rosterTeams({ ...s, phase: 'guess' }, initialLocal)[0];
   assert.equal(stale.seats[1].acting, false, 'encryptor cannot decrypt');
   assert.equal(stale.seats[1].progress, null, 'previous phase progress is hidden');
   const duplicate = { ...s, teamB: s.teamB.map((p, i) => i ? p : { ...p, nickname: s.encryptor }) };
   assert.ok(rosterTeams(duplicate, initialLocal).flatMap(t => t.seats).every(p => !p.progress));
-  const intercept = rosterTeams(previewState({}, 'intercept'), initialLocal);
-  assert.ok(intercept[0].seats.every(p => p.acting), 'opponents act during interception');
-  assert.ok(intercept[1].seats.every(p => !p.acting));
+  // Both teams are on the air while they guess: the opponents intercept, the
+  // encryptor's teammates decode, and the encryptor only watches.
+  const guessing = rosterTeams(previewState({}, 'intercept'), initialLocal);
+  assert.ok(guessing[0].seats.every(p => p.acting), 'opponents act during interception');
+  assert.deepEqual(guessing[1].seats.filter(p => p.acting).map(p => p.player.nickname), ['Lisa', 'AI · 02', 'AI · 03']);
+  assert.deepEqual(guessing.map(team => team.summary), ['正在拦截', '正在解码']);
+  const answered = rosterTeams({ ...previewState({}, 'decrypt-sent') }, initialLocal);
+  assert.deepEqual(answered.map(team => team.summary), ['已提交', '正在拦截']);
+  assert.equal(answered[0].seats[0].status, '已提交', 'the accepted submitter owns the answer');
+  assert.ok(answered[0].seats.filter(p => p.acting && !p.self).every(p => p.status === '队伍已提交'), 'other seats know the action closed without appearing to have submitted');
 });
 
 test('roster distinguishes vacant seats, owner, self, AI and local completion', () => {
@@ -84,7 +94,7 @@ test('roster distinguishes vacant seats, owner, self, AI and local completion', 
   const local = { ...initialLocal, clues: ['玫瑰', ' ', '飞鸟'], submitted: true };
   const active = rosterTeams(previewState({}, 'encrypting'), local)[0];
   assert.deepEqual(active.seats[0].progress, { step: 2, total: 3 });
-  assert.equal(active.seats[0].status, '已提交');
+  assert.equal(active.seats[0].status, '正在提交', 'sending waits for authoritative server acceptance');
   assert.equal(active.seats[3].player.is_ai, true);
 });
 
@@ -101,26 +111,30 @@ test('settled final round is archived and recovered submissions cannot act twice
 });
 
 
-test('phase lights identify the acting team for both sides of alternating rounds', () => {
+test('phase lights identify the acting teams for both sides of alternating rounds', () => {
   for (const myTeam of ['A', 'B']) for (const myRole of ['encryptor', 'teammate', 'opponent']) {
     const sendingTeam = myRole === 'opponent' ? myTeam === 'A' ? 'B' : 'A' : myTeam;
-    for (const phase of ['encrypting', 'intercept', 'decrypt']) {
-      const state = { ...previewState({}, phase), myTeam, myRole };
-      const expected = phase === 'intercept' ? sendingTeam === 'A' ? 'B' : 'A' : sendingTeam;
+    const receivingTeam = sendingTeam === 'A' ? 'B' : 'A';
+    for (const phase of ['encrypting', 'guess']) {
+      const state = { ...previewState({}, phase === 'guess' ? 'decrypt' : phase), myTeam, myRole };
+      // While both teams guess, a seat's colour is its own action's; the encryptor follows its team.
+      const expected = phase === 'guess' && myRole === 'opponent' ? receivingTeam : sendingTeam;
       const signal = phaseSignal(state);
       assert.equal(signal.actingTeam, expected);
+      assert.deepEqual(signal.actingTeams, phase === 'guess' ? [sendingTeam, receivingTeam] : [sendingTeam]);
       assert.equal(signal.color, expected === myTeam ? '#e9dfc7' : '#afc2cc');
       // Waiting, submitting early or timing out never changes whose team is acting.
       assert.deepEqual(phaseSignal({ ...state, waiting: true, submitted: true, deadline: 1 }), signal);
-      assert.equal(rosterTeams(state, initialLocal).find(t => t.team === expected).summary,
-        phase === 'encrypting' ? '正在加密' : phase === 'intercept' ? '正在拦截' : '正在解码');
+      const roster = rosterTeams(state, initialLocal);
+      if (phase === 'encrypting') assert.equal(roster.find(t => t.team === sendingTeam).summary, '正在加密');
+      else assert.deepEqual([sendingTeam, receivingTeam].map(team => roster.find(t => t.team === team).summary), ['正在解码', '正在拦截']);
     }
   }
   for (const phase of ['home', 'room', 'round_result', 'game_over']) {
     assert.equal(phaseSignal(previewState({}, phase)).actingTeam, '');
   }
-  assert.equal(phaseSignal({ phase: 'intercept', myTeam: '', myRole: '' }).color, '#a2a492');
-  assert.equal(phaseSignal({ phase: 'decrypt', myTeam: 'A', myRole: 'observer' }).actingTeam, '');
+  assert.equal(phaseSignal({ phase: 'guess', round: 5, myTeam: '', myRole: '' }).color, '#a2a492');
+  assert.equal(phaseSignal({ phase: 'guess', round: 5, myTeam: 'A', myRole: 'observer' }).actingTeam, '');
 });
 
 
@@ -133,8 +147,9 @@ test('every theme keeps relative team colors consistent as sides and actions swi
     assert.equal(teamPalette(other, myTeam, theme.id), theme.opponent);
     const state = { ...previewState({}, 'encrypting'), myTeam, myRole: 'teammate' };
     assert.equal(phaseSignal(state, theme.id).color, theme.own.light);
-    assert.equal(phaseSignal({ ...state, phase: 'intercept' }, theme.id).color, theme.opponent.light);
-    assert.equal(phaseSignal({ ...state, phase: 'decrypt' }, theme.id).color, theme.own.light);
+    assert.equal(phaseSignal({ ...state, myRole: 'opponent' }, theme.id).color, theme.opponent.light, 'the rivals encrypt');
+    assert.equal(phaseSignal({ ...state, phase: 'guess' }, theme.id).color, theme.own.light);
+    assert.equal(phaseSignal({ ...state, phase: 'guess', myRole: 'opponent' }, theme.id).color, theme.own.light, 'intercepting is our own action');
     assert.equal(teamPalette('A', '', theme.id), theme.own, 'A stays colored before joining');
     assert.equal(teamPalette('B', '', theme.id), theme.opponent, 'B stays colored before joining');
     assert.deepEqual(teamPalette('', '', theme.id), { light: '#a2a492', ink: '#596457', plate: '#596457', onPlate: '#f2e8d3' }, 'idle stage has no acting team');

@@ -47,18 +47,25 @@ func (sc *script) register() {
 		clue := fmt.Sprintf("clue-%d", r.roundN)
 		return [3]string{clue, clue, clue}, sc.reached(r, "encrypt")
 	})
-	RegisterInterceptHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) ([3]int, bool) {
-		return sc.guess(r, sc.rightIntercept[r.roundN]), sc.reached(r, "intercept")
+	// The opponents answer first here; the guesses are scored together either way.
+	RegisterGuessHandler(func(ctx context.Context, r *Round, ts TeamState) bool {
+		if sc.reached(r, "guess") {
+			return true
+		}
+		if r.NeedsIntercept() {
+			r.SetInterceptSecret(sc.guess(r, sc.rightIntercept[r.roundN]))
+			if sc.reached(r, "intercepted") {
+				return true
+			}
+		}
+		if r.NeedsDecrypt() {
+			r.SetDecryptedSecret(sc.guess(r, !sc.wrongDecrypt[r.roundN]))
+			if sc.reached(r, "decrypted") {
+				return true
+			}
+		}
+		return false
 	})
-	intercepted := func(ctx context.Context, r *Round, t *Team, ts TeamState) bool { return sc.reached(r, "intercepted") }
-	RegisterInterceptSuccessHandler(intercepted)
-	RegisterInterceptFailHandler(intercepted)
-	RegisterDecryptHandler(func(ctx context.Context, r *Round, t *Team, ts TeamState) ([3]int, bool) {
-		return sc.guess(r, !sc.wrongDecrypt[r.roundN]), sc.reached(r, "decrypt")
-	})
-	decrypted := func(ctx context.Context, r *Round, t *Team, ts TeamState) bool { return sc.reached(r, "decrypted") }
-	RegisterDecryptSuccessHandler(decrypted)
-	RegisterDecryptFailHandler(decrypted)
 	RegisterDoneHandler(func(ctx context.Context, r *Round, ts TeamState) bool { return sc.reached(r, "done") })
 	RegisterGameOverHandler(func(ctx context.Context, s *Session, winner *Team) bool {
 		sc.over, sc.winner = true, winner
@@ -91,25 +98,29 @@ func throughJSON(t *testing.T, snap SessionSnapshot) SessionSnapshot {
 }
 
 func TestRestoreResumesTheInterruptedPhase(t *testing.T) {
-	// Round 3 is intercepted, so team A does not decode it, and round 4 is
-	// decoded wrongly: one point each for team B.
+	// Round 3 is intercepted, and round 4 decoded wrongly: one point each for
+	// team B. A guess given before the restart is kept but not yet scored: the
+	// code is revealed only once both guesses are in.
 	tests := []struct {
 		round uint8
 		point string
-		// After the restart: how often each step of the interrupted round runs.
-		encrypt, intercept, decrypt int
+		// After the restart: how often the interrupted round asks for its clues,
+		// enters its guessing, and is given each guess.
+		encrypt, guess, intercept, decrypt int
 		// Team B's score in the restored session, before it resumes.
 		interceptions, errors uint8
 	}{
-		{3, "init", 1, 1, 0, 0, 0},
-		{3, "encrypt", 1, 1, 0, 0, 0},
-		{3, "intercept", 0, 1, 0, 0, 0},
-		{3, "intercepted", 0, 0, 0, 1, 0},
-		{3, "done", 0, 0, 0, 1, 0},
-		{4, "decrypt", 0, 0, 1, 1, 0},
-		{4, "decrypted", 0, 0, 0, 1, 1},
-		{1, "encrypt", 1, 0, 1, 0, 0},
-		{16, "done", 0, 0, 0, 1, 1},
+		{3, "init", 1, 1, 1, 1, 0, 0},
+		{3, "encrypt", 1, 1, 1, 1, 0, 0},
+		{3, "guess", 0, 1, 1, 1, 0, 0},
+		{3, "intercepted", 0, 1, 0, 1, 0, 0},
+		{3, "decrypted", 0, 0, 0, 0, 0, 0},
+		{3, "done", 0, 0, 0, 0, 1, 0},
+		{4, "guess", 0, 1, 1, 1, 1, 0},
+		{4, "decrypted", 0, 0, 0, 0, 1, 0},
+		{4, "done", 0, 0, 0, 0, 1, 1},
+		{1, "encrypt", 1, 1, 0, 1, 0, 0},
+		{16, "done", 0, 0, 0, 0, 1, 1},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%d-%s", tt.round, tt.point), func(t *testing.T) {
@@ -136,7 +147,7 @@ func TestRestoreResumesTheInterruptedPhase(t *testing.T) {
 			second.register()
 			s.Resume(context.Background())
 
-			for step, want := range map[string]int{"encrypt": tt.encrypt, "intercept": tt.intercept, "decrypt": tt.decrypt} {
+			for step, want := range map[string]int{"encrypt": tt.encrypt, "guess": tt.guess, "intercepted": tt.intercept, "decrypted": tt.decrypt} {
 				if got := second.calls[fmt.Sprintf("%d:%s", tt.round, step)]; got != want {
 					t.Errorf("round %d %s asked %d times after the restart, want %d", tt.round, step, got, want)
 				}
@@ -162,8 +173,8 @@ func TestRestoreResumesTheInterruptedPhase(t *testing.T) {
 			if got, want := final.Rounds[tt.round-1], saved.Rounds[tt.round-1]; got.Secret != want.Secret || got.Encryptor != want.Encryptor {
 				t.Errorf("the interrupted round drew a new code or encryptor: %+v, was %+v", got, want)
 			}
-			if r := final.Rounds[2]; r.Decrypted || r.Decrypt != [3]int{} {
-				t.Errorf("the intercepted round was decoded: %+v", r)
+			if r := final.Rounds[2]; !r.Intercepted || r.Intercept != r.Secret || !r.Decrypted || r.Decrypt != r.Secret {
+				t.Errorf("the intercepted round was not decoded as well: %+v", r)
 			}
 			if b := s.teams[1]; b.InterceptedCounts != 1 || b.DecryptWrongCounts != 1 || s.teams[0].Score() != 0 {
 				t.Errorf("final score: team B %d interceptions, %d errors", b.InterceptedCounts, b.DecryptWrongCounts)
@@ -210,7 +221,7 @@ func TestRestoreKeepsAFinishedGameFinished(t *testing.T) {
 }
 
 func TestRestoreRefusesImpossibleSnapshots(t *testing.T) {
-	sc := &script{stopRound: 4, stopPoint: "decrypt"}
+	sc := &script{stopRound: 4, stopPoint: "decrypted"}
 	sc.register()
 	testSession().AutoForward(context.Background())
 	valid := throughJSON(t, *sc.snap)
@@ -231,11 +242,16 @@ func TestRestoreRefusesImpossibleSnapshots(t *testing.T) {
 		"code repeats":            func(s *SessionSnapshot) { s.Rounds[3].Secret = [3]int{1, 2, 2} },
 		"no code":                 func(s *SessionSnapshot) { s.Rounds[3].Secret = [3]int{} },
 		"first round intercepted": func(s *SessionSnapshot) { s.Rounds[0].Intercepted = true },
-		"interception skipped":    func(s *SessionSnapshot) { s.Rounds[3].Intercepted = false },
+		"finished without the interception": func(s *SessionSnapshot) {
+			s.Rounds[3].Phase, s.Rounds[3].Intercepted = DONE, false
+		},
+		"finished without decoding": func(s *SessionSnapshot) { s.Rounds[3].Phase, s.Rounds[3].Decrypted = DONE, false },
 		"decoded while encrypting": func(s *SessionSnapshot) {
 			s.Rounds[3].Phase, s.Rounds[3].Intercepted, s.Rounds[3].Decrypted = ENCRYPTING, false, true
 		},
-		"finished without decoding": func(s *SessionSnapshot) { s.Rounds[3].Phase = DONE },
+		"intercepted while encrypting": func(s *SessionSnapshot) {
+			s.Rounds[3].Phase, s.Rounds[3].Intercepted, s.Rounds[3].Decrypted = ENCRYPTING, true, false
+		},
 	}
 	for name, breakIt := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -245,5 +261,33 @@ func TestRestoreRefusesImpossibleSnapshots(t *testing.T) {
 				t.Fatalf("accepted: %+v", s.Snapshot())
 			}
 		})
+	}
+}
+
+func TestOneRoundScoresBothGuesses(t *testing.T) {
+	// In round 3 team B intercepts and team A decodes wrongly: both count.
+	sc := &script{stopRound: 3, stopPoint: "done", rightIntercept: map[uint8]bool{3: true}, wrongDecrypt: map[uint8]bool{3: true}}
+	sc.register()
+	s := testSession()
+	s.AutoForward(context.Background())
+	if sc.snap == nil {
+		t.Fatal("the game never reached round 3")
+	}
+	if a, b := s.teams[0], s.teams[1]; b.InterceptedCounts != 1 || a.DecryptWrongCounts != 1 || a.InterceptedCounts != 0 || b.DecryptWrongCounts != 0 {
+		t.Fatalf("team A %+v, team B %+v", *a, *b)
+	}
+}
+
+func TestGuessesWaitForTheReveal(t *testing.T) {
+	// Team B's right interception is given, team A's decoding is not yet.
+	sc := &script{stopRound: 3, stopPoint: "intercepted", rightIntercept: map[uint8]bool{3: true}}
+	sc.register()
+	s := testSession()
+	s.AutoForward(context.Background())
+	if r := s.currentRound; r.state != GUESSING || !r.intercepted || r.decrypted || !r.NeedsDecrypt() || r.NeedsIntercept() {
+		t.Fatalf("round 3 stopped as %+v", *r)
+	}
+	if b := s.teams[1]; b.InterceptedCounts != 0 {
+		t.Fatal("an interception was scored before the code was revealed")
 	}
 }

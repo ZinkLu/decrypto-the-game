@@ -5,26 +5,39 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/server/internal/core"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
 
+// aiStatus tells every seat how an AI action is going. Both teams' AI players
+// may be guessing at once, so each action keeps its own status.
 func (b *Bridge) aiStatus(action, player, state string, step, completed int, notice string) {
-	d := &ws.AIStatusData{Action: action, Player: player, State: state, Step: step, Completed: completed, Total: 3, Notice: notice}
 	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.aiStatusLocked(action, player, state, step, completed, notice)
+}
+
+func (b *Bridge) aiStatusLocked(action, player, state string, step, completed int, notice string) {
+	d := &ws.AIStatusData{Action: action, Player: player, State: state, Step: step, Completed: completed, Total: 3, Notice: notice}
 	if state == "fallback" {
 		b.roundNotice = notice
 	}
 	for id, v := range b.views {
-		v.AIStatus = d
+		// The views share these maps: replace, never change.
+		statuses := make(map[string]*ws.AIStatusData, len(v.AIStatus)+1)
+		for name, status := range v.AIStatus {
+			statuses[name] = status
+		}
+		statuses[action] = d
+		v.AIStatus = statuses
 		v.Notice = notice
 		if b.roundNotice != "" {
 			v.Notice = b.roundNotice
 		}
 		b.views[id] = v
 	}
-	b.mu.Unlock()
 	typ := ws.MsgAIThinking
 	if state == "completed" || state == "fallback" {
 		typ = ws.MsgAIActed
@@ -34,6 +47,12 @@ func (b *Bridge) aiStatus(action, player, state string, step, completed int, not
 
 // One retry per step, bounded both by request and whole-action deadlines.
 func aiStep[T any](ctx context.Context, b *Bridge, action, player string, step int, call func(context.Context) (T, error), fallback T) T {
+	return aiStepWithStatus(ctx, b, action, step, call, fallback, func(state string, completed int, notice string) {
+		b.aiStatus(action, player, state, step, completed, notice)
+	})
+}
+
+func aiStepWithStatus[T any](ctx context.Context, b *Bridge, action string, step int, call func(context.Context) (T, error), fallback T, report func(string, int, string)) T {
 	for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
 		state := "thinking"
 		notice := ""
@@ -41,7 +60,7 @@ func aiStep[T any](ctx context.Context, b *Bridge, action, player string, step i
 			state = "retrying"
 			notice = "AI 回答无效或超时，正在重试。"
 		}
-		b.aiStatus(action, player, state, step, step-1, notice)
+		report(state, step-1, notice)
 		requestCtx, cancel := context.WithTimeout(ctx, b.Timing.Request)
 		value, err := call(requestCtx)
 		if err == nil {
@@ -49,18 +68,21 @@ func aiStep[T any](ctx context.Context, b *Bridge, action, player string, step i
 		}
 		cancel()
 		if err == nil {
-			b.aiStatus(action, player, "completed", step, step, "")
+			report("completed", step, "")
 			return value
 		}
 		log.Printf("[AI] %s step=%d attempt=%d failed: %v", action, step, attempt+1, err)
 	}
-	b.aiStatus(action, player, "fallback", step, step, "AI 未能完成回答，已使用备用线索或合法猜测继续。")
+	report("fallback", step, "AI 未能完成回答，已使用备用线索或合法猜测继续。")
 	return fallback
 }
 
 func handleAIEncrypt(parent context.Context, b *Bridge, r *core.Round) [3]string {
-	ctx, cancel := context.WithDeadline(parent, b.phaseDeadline())
+	ctx, cancel := context.WithDeadline(parent, b.actionDeadline("encrypt"))
 	defer cancel()
+	b.mu.Lock()
+	actionState := b.actions["encrypt"]
+	b.mu.Unlock()
 	digits := r.GetSecretDigits()
 	words := r.GetCurrentTeam().GetWords()
 	history := formatHistoryForAI(b, r)
@@ -69,45 +91,181 @@ func handleAIEncrypt(parent context.Context, b *Bridge, r *core.Round) [3]string
 		if parent.Err() != nil {
 			break
 		}
-		result[i] = aiStep(ctx, b, "encrypt", r.EncryptPlayer().NickName, i+1, func(ctx context.Context) (string, error) {
+		result[i] = aiStepWithStatus(ctx, b, "encrypt", i+1, func(ctx context.Context) (string, error) {
 			if b.AIPlayer == nil {
 				return "", fmt.Errorf("AI provider unavailable")
 			}
 			return b.AIPlayer.GenerateSingleClue(ctx, digits[i], words, history, result[:i])
-		}, "线索暂缺")
+		}, "线索暂缺", func(state string, completed int, notice string) {
+			if parent.Err() == nil {
+				b.aiEncryptStatus(int(r.GetNumberOfRounds()), r.EncryptPlayer().UID, r.EncryptPlayer().NickName, actionState, state, i+1, completed, notice)
+			}
+		})
 		log.Printf("[AI-ENCRYPT] Round %d step %d/3 → %q", r.GetNumberOfRounds(), i+1, result[i])
 	}
 	return result
 }
 
-func handleAIGuess(parent context.Context, b *Bridge, r *core.Round, intercept bool) [3]int {
-	ctx, cancel := context.WithDeadline(parent, b.phaseDeadline())
-	defer cancel()
-	action := "decrypt"
-	var words [4]string
-	if intercept {
-		action = "intercept"
-	} else {
-		words = r.GetCurrentTeam().GetWords()
+func (b *Bridge) aiEncryptStatus(round int, playerID, player string, actionState *action, state string, step, completed int, notice string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.phase != "encrypting" || b.round != round || actionState == nil || b.actions["encrypt"] != actionState || actionState.accepted ||
+		!isAI(playerID) || !b.canSubmitLocked(playerID, "encrypt") {
+		return
 	}
-	clues := r.GetEncryptedMessage()
-	history := formatHistoryForAI(b, r)
-	// Progress carries the AI seat's own call sign.
-	player := "AI"
-	team := r.GetCurrentTeam()
-	if intercept {
-		team = r.GetOpponent()
-	}
-	for _, p := range team.Members() {
-		if isAI(p.UID) && p.UID != r.EncryptPlayer().UID {
-			player = p.NickName
-			break
+	b.aiStatusLocked("encrypt", player, state, step, completed, notice)
+	visibleState, focus := state, step
+	if state == "completed" || state == "fallback" {
+		visibleState, focus = "thinking", 0
+		if completed == 3 {
+			visibleState = "ready"
 		}
 	}
+	filled := []bool{completed >= 1, completed >= 2, completed >= 3}
+	b.relayProgressLocked(ws.PlayerProgressData{Round: round, Action: "encrypt", Player: player, PlayerID: playerID,
+		IsAI: true, CanSubmit: true, State: visibleState, Step: completed, Focus: focus, Filled: filled, Total: 3})
+}
+
+// aiGuessJob is everything an AI guess reads, gathered on the game goroutine,
+// so that the guess can run beside the other team's without touching the core
+// session.
+type aiGuessJob struct {
+	action      string // "decrypt" or "intercept"
+	intercept   bool
+	player      string
+	playerID    string
+	suggestion  bool
+	canSubmit   bool
+	actionState *action // identity of the phase action; prevents late work entering another phase
+	round       uint8
+	clues       [3]string
+	words       [4]string // the decoding team's own words; none for an interception
+	history     string
+	deadline    time.Time
+}
+
+type aiAnswer struct {
+	job   aiGuessJob
+	guess [3]int
+}
+
+func (b *Bridge) newAIGuesses(r *core.Round, intercept bool) []aiGuessJob {
+	job := aiGuessJob{action: "decrypt", intercept: intercept, player: "AI", round: r.GetNumberOfRounds(),
+		clues: r.GetEncryptedMessage(), history: formatHistoryForAI(b, r)}
+	team := r.GetCurrentTeam()
+	if intercept {
+		job.action = "intercept"
+		team = r.GetOpponent()
+	} else {
+		job.words = team.GetWords()
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	a := b.actions[job.action]
+	if a == nil || a.accepted {
+		return nil
+	}
+	job.deadline, job.actionState = a.deadline, a
+	var jobs []aiGuessJob
+	// Each seat receives its own immutable context and produces its own choices.
+	for _, p := range team.Members() {
+		if isAI(p.UID) && p.UID != r.EncryptPlayer().UID {
+			own := job
+			own.player, own.playerID = p.NickName, p.UID
+			own.canSubmit = b.canSubmitLocked(p.UID, job.action)
+			own.suggestion = !own.canSubmit
+			jobs = append(jobs, own)
+		}
+	}
+	return jobs
+}
+
+func (b *Bridge) startAIGuesses(parent context.Context, r *core.Round, intercept bool, answers chan<- aiAnswer) {
+	b.runAIGuesses(parent, b.newAIGuesses(r, intercept), answers)
+}
+
+func (b *Bridge) runAIGuesses(parent context.Context, jobs []aiGuessJob, answers chan<- aiAnswer) {
+	if len(jobs) == 0 {
+		return
+	}
+	// One cancellation tree per action, never replaced by individual workers.
+	ctx, cancel := context.WithCancel(parent)
+	b.mu.Lock()
+	if !b.aiGuessActiveLocked(jobs[0]) {
+		b.mu.Unlock()
+		cancel()
+		return
+	}
+	jobs[0].actionState.cancel = cancel
+	b.mu.Unlock()
+	for _, job := range jobs {
+		go b.aiGuess(ctx, job, answers)
+	}
+}
+
+func (b *Bridge) aiGuessActiveLocked(job aiGuessJob) bool {
+	a := b.actions[job.action]
+	v, exists := b.views[job.playerID]
+	return b.phase == "guess" && b.round == int(job.round) && a != nil && a == job.actionState && !a.accepted && exists &&
+		isAI(job.playerID) && seatAction(v.YourRole, b.phase, b.round) == job.action &&
+		job.canSubmit == b.canSubmitLocked(job.playerID, job.action) && job.suggestion != job.canSubmit
+}
+
+// Submission authority is checked again when a completed job reaches the game
+// goroutine. Advisory workers cannot gain authority by forging their flags.
+func (b *Bridge) acceptAIGuess(answer aiAnswer) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	job := answer.job
+	if !b.aiGuessActiveLocked(job) || !job.canSubmit || job.suggestion || !job.actionState.ai ||
+		job.actionState.submitterID != job.playerID || !validGuess(answer.guess) {
+		return false
+	}
+	b.relayProgressLocked(ws.PlayerProgressData{Round: int(job.round), Action: job.action, Player: job.player, PlayerID: job.playerID,
+		IsAI: true, CanSubmit: true, State: "submitted", Step: 3, Guesses: answer.guess[:], Total: 3})
+	job.actionState.accepted = true
+	if job.actionState.cancel != nil {
+		job.actionState.cancel()
+	}
+	b.refreshLocked()
+	return true
+}
+
+// AI choices are individual progress, never the timeout draft shared by humans.
+func (b *Bridge) broadcastAIProgress(job aiGuessJob, state string, step, focus int, guesses []int) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if state == "submitted" || !b.aiGuessActiveLocked(job) {
+		return false
+	}
+	padded := make([]int, 3)
+	copy(padded, guesses)
+	b.relayProgressLocked(ws.PlayerProgressData{Round: int(job.round), Action: job.action, Player: job.player, PlayerID: job.playerID,
+		IsAI: true, CanSubmit: job.canSubmit, Suggestion: job.suggestion, State: state, Step: step, Focus: focus, Guesses: padded, Total: 3})
+	return true
+}
+
+func (b *Bridge) aiGuessStatus(job aiGuessJob, state string, step, completed int, notice string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.aiGuessActiveLocked(job) && job.canSubmit {
+		b.aiStatusLocked(job.action, job.player, state, step, completed, notice)
+	}
+}
+
+// aiGuess answers for an AI team, one digit at a time, and always answers: a
+// step the model cannot settle in time takes a legal fallback.
+func (b *Bridge) aiGuess(parent context.Context, job aiGuessJob, answers chan<- aiAnswer) {
+	if job.suggestion {
+		b.aiSuggest(parent, job)
+		return
+	}
+	ctx, cancel := context.WithDeadline(parent, job.deadline)
+	defer cancel()
 	var result [3]int
 	for i := range result {
 		if parent.Err() != nil {
-			break
+			return
 		}
 		fallback := 1
 		for {
@@ -122,23 +280,85 @@ func handleAIGuess(parent context.Context, b *Bridge, r *core.Round, intercept b
 			}
 			fallback++
 		}
-		b.broadcastAIProgress(action, player, "editing", i, i+1, result[:i])
-		if placeholderClue(clues[i]) {
+		if !b.broadcastAIProgress(job, "thinking", i, i+1, result[:i]) {
+			return
+		}
+		if placeholderClue(job.clues[i]) {
 			// A line left empty by a timeout carries nothing to reason about.
 			result[i] = fallback
 		} else {
-			result[i] = aiStep(ctx, b, action, player, i+1, func(ctx context.Context) (int, error) {
+			result[i] = aiStepWithStatus(ctx, b, job.action, i+1, func(ctx context.Context) (int, error) {
 				if b.AIPlayer == nil {
 					return 0, fmt.Errorf("AI provider unavailable")
 				}
-				return b.AIPlayer.GuessSingleNumber(ctx, clues[i], words, intercept, history, result[:i])
-			}, fallback)
+				return b.AIPlayer.GuessSingleNumber(ctx, job.clues[i], job.words, job.intercept, job.history, result[:i])
+			}, fallback, func(state string, completed int, notice string) {
+				b.aiGuessStatus(job, state, i+1, completed, notice)
+				if state == "thinking" || state == "retrying" {
+					b.broadcastAIProgress(job, state, i, i+1, result[:i])
+				}
+			})
 		}
-		b.broadcastAIProgress(action, player, "editing", i+1, 0, result[:i+1])
-		log.Printf("[AI-%s] Round %d step %d/3 → %d", action, r.GetNumberOfRounds(), i+1, result[i])
+		state := "thinking"
+		if i == len(result)-1 {
+			state = "ready"
+		}
+		if parent.Err() != nil || !b.broadcastAIProgress(job, state, i+1, 0, result[:i+1]) {
+			return
+		}
+		log.Printf("[AI-%s] Round %d step %d/3 → %d", job.action, job.round, i+1, result[i])
 	}
-	b.broadcastAIProgress(action, player, "submitted", 3, 0, result[:])
-	return result
+	select {
+	case answers <- aiAnswer{job: job, guess: result}:
+	case <-parent.Done():
+	}
+}
+
+// Each advisory AI offers its own opinion. Missing or failed model
+// calls leave an unavailable suggestion rather than presenting fallback digits
+// as advice, and a human answer cancels all remaining requests immediately.
+func (b *Bridge) aiSuggest(parent context.Context, job aiGuessJob) {
+	ctx, cancel := context.WithDeadline(parent, job.deadline)
+	defer cancel()
+	var result [3]int
+	for i := range result {
+		if ctx.Err() != nil || !b.broadcastAIProgress(job, "thinking", i, i+1, result[:i]) {
+			return
+		}
+		var n int
+		err := fmt.Errorf("AI suggestion unavailable")
+		if b.AIPlayer != nil && !placeholderClue(job.clues[i]) {
+			for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
+				if attempt > 0 && !b.broadcastAIProgress(job, "retrying", i, i+1, result[:i]) {
+					return
+				}
+				requestCtx, stop := context.WithTimeout(ctx, b.Timing.Request)
+				n, err = b.AIPlayer.GuessSingleNumber(requestCtx, job.clues[i], job.words, job.intercept, job.history, result[:i])
+				if err == nil {
+					err = requestCtx.Err()
+				}
+				stop()
+				if err == nil {
+					break
+				}
+			}
+		}
+		if parent.Err() != nil {
+			return
+		}
+		if err != nil || ctx.Err() != nil {
+			b.broadcastAIProgress(job, "unavailable", i, 0, result[:i])
+			return
+		}
+		result[i] = n
+		state := "thinking"
+		if i == len(result)-1 {
+			state = "ready"
+		}
+		if !b.broadcastAIProgress(job, state, i+1, 0, result[:i+1]) {
+			return
+		}
+	}
 }
 
 func placeholderClue(clue string) bool {

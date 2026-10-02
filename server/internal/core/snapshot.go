@@ -17,9 +17,9 @@ type TeamSnapshot struct {
 }
 
 // RoundSnapshot is one round, finished or interrupted. Phase is the phase the
-// round was in. Intercepted and Decrypted tell whether that guess was scored:
-// a guess that ran out of time is all zeros, like one not given yet. A round
-// whose code was intercepted finishes without decoding.
+// round was in. Intercepted and Decrypted tell whether that guess was given:
+// a guess that ran out of time is all zeros, like one not given yet. Guesses
+// are scored only once the round is DONE, when the code is revealed.
 type RoundSnapshot struct {
 	Number      uint8     `json:"number"`
 	Phase       TeamState `json:"phase"`
@@ -103,11 +103,8 @@ func Restore(snap SessionSnapshot) (*Session, error) {
 			intercepted:        rs.Intercepted,
 			decrypted:          rs.Decrypted,
 		}
-		if r.intercepted && r.IsInterceptSuccess() {
-			opponent.InterceptedSuccess()
-		}
-		if r.decrypted && !r.IsDecryptedCorrect() {
-			current.DecryptFailed()
+		if r.state == DONE {
+			r.reveal()
 		}
 		s.rounds = append(s.rounds, r)
 		s.currentRound = r
@@ -128,13 +125,13 @@ func (rs RoundSnapshot) validate(index, teamSize int, last bool) error {
 		return fmt.Errorf("encryptor %d of %d players", rs.Encryptor, teamSize)
 	case !validCode(rs.Secret):
 		return fmt.Errorf("code %v", rs.Secret)
-	case rs.Intercepted && (!intercepts || rs.Phase < INTERCEPT):
-		return fmt.Errorf("interception scored in phase %d", rs.Phase)
-	case rs.Decrypted && rs.Phase < DECRYPT:
-		return fmt.Errorf("decoding scored in phase %d", rs.Phase)
-	case rs.Phase >= DECRYPT && intercepts && !rs.Intercepted:
-		return fmt.Errorf("interception skipped")
-	case rs.Phase == DONE && !rs.Decrypted && !(rs.Intercepted && rs.Intercept == rs.Secret):
+	case rs.Intercepted && (!intercepts || rs.Phase < GUESSING):
+		return fmt.Errorf("interception given in phase %d", rs.Phase)
+	case rs.Decrypted && rs.Phase < GUESSING:
+		return fmt.Errorf("decoding given in phase %d", rs.Phase)
+	case rs.Phase == DONE && intercepts && !rs.Intercepted:
+		return fmt.Errorf("finished without the interception")
+	case rs.Phase == DONE && !rs.Decrypted:
 		return fmt.Errorf("finished without decoding")
 	}
 	return nil

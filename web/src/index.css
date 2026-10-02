@@ -443,6 +443,18 @@ button,input { font: inherit; }
   .mobile-guess b { font: 13px monospace; }
   .mobile-guess span { flex: 1; min-width: 0; font-size: 17px; }
   .mobile-guess em { font: normal 26px monospace; min-width: 1.2em; text-align: right; }
+  .mobile-peer-status { list-style: none; padding: 12px 0; margin: 0; display: flex; flex-wrap: wrap; gap: 12px 24px; border-bottom: 1px solid #a1a48f; }
+  .mobile-peer-status li { display: grid; gap: 4px; max-width: 100%; overflow-wrap: anywhere; font-size: 13px; }
+  .mobile-peer-status small { color: #596457; font-size: 12px; }
+  .mobile-peer-status [data-unavailable] small { color: #9b3d2b; }
+  .mobile-peer-choices { list-style: none; margin: 6px 0 12px; padding: 0 12px; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+  .mobile-peer-choices li { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; max-width: 100%; color: #596457; }
+  .mobile-peer-choices span { flex: initial; font-size: 13px; overflow-wrap: anywhere; }
+  .mobile-peer-choices strong { color: #273d36; }
+  .mobile-peer-choices small { font-size: 12px; }
+  .mobile-peer-choices [data-active]::before { content: ''; width: 5px; height: 9px; background: #596457; animation: mobile-slot-blink .625s steps(1) infinite; }
+  .mobile-peer-note { font-size: 12px; color: #596457; }
+  @media (prefers-reduced-motion: reduce) { .mobile-peer-choices [data-active]::before { animation: none; } }
   .mobile-outcome { margin: 18px 0; padding: 12px 0; border-block: 1px solid #a1a48f; }
   .mobile-outcome h3 { margin: 0 0 6px; }
   .mobile-status { padding-left: 12px; border-left: 3px solid #9b422c; }

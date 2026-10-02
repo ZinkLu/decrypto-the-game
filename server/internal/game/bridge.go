@@ -32,16 +32,13 @@ type Bridge struct {
 	views       map[string]ws.GameSyncData
 	phase       string
 	round       int
-	deadline    time.Time
-	accepted    bool
+	// The actions of the current phase by name: "encrypt", "decrypt", "intercept".
+	actions     map[string]*action
 	roundNotice string
 	Timing      Timings
-	// The acting seat's latest draft, sent if its time runs out.
-	draftClues [3]string
-	draftGuess [3]int
-	// This round's timeout notice, and every timed-out action by round.
-	timeout  *ws.TimeoutData
-	timeouts map[int][]string
+	// This round's timeouts, and every timed-out action by round.
+	roundTimeouts []ws.TimeoutData
+	timeouts      map[int][]string
 	// OnSave receives the game each time it moves on, to keep it across a
 	// restart. Assign it before Start.
 	OnSave func(Snapshot)
@@ -171,12 +168,7 @@ func (b *Bridge) Stop() {
 func RegisterHandlers() {
 	core.RegisterInitHandler(initHandler)
 	core.RegisterEncryptHandler(encryptHandler)
-	core.RegisterInterceptHandler(interceptHandler)
-	core.RegisterInterceptSuccessHandler(interceptSuccessHandler)
-	core.RegisterInterceptFailHandler(interceptFailHandler)
-	core.RegisterDecryptHandler(decryptHandler)
-	core.RegisterDecryptSuccessHandler(decryptSuccessHandler)
-	core.RegisterDecryptFailHandler(decryptFailHandler)
+	core.RegisterGuessHandler(guessHandler)
 	core.RegisterDoneHandler(doneHandler)
 	core.RegisterGameOverHandler(gameOverHandler)
 }
@@ -228,7 +220,7 @@ func encryptHandler(ctx context.Context, r *core.Round, t *core.Team, p *core.Pl
 	var clues [3]string
 	select {
 	case clues = <-b.CluesCh:
-	case <-time.After(b.remaining()):
+	case <-time.After(b.remaining("encrypt")):
 		log.Printf("bridge: encryptHandler: timeout waiting for clues in session %s", r.GetGameSession().SessionID())
 		b.closeInput()
 		var outcome string
@@ -244,123 +236,84 @@ func encryptHandler(ctx context.Context, r *core.Round, t *core.Team, p *core.Pl
 	return clues, false
 }
 
-func interceptHandler(ctx context.Context, r *core.Round, opponent *core.Team, ts core.TeamState) ([3]int, bool) {
+// guessHandler runs the guessing phase: the encrypting team decodes while, from
+// round 3, the other team intercepts. Each team answers once, and the phase ends
+// when both have answered or run out of time. Neither learns the other's guess,
+// or whether it was right, before the code is revealed.
+func guessHandler(ctx context.Context, r *core.Round, ts core.TeamState) bool {
 	b, ok := GetBridge(r.GetGameSession().SessionID())
 	if !ok {
-		log.Printf("bridge: interceptHandler: bridge not found for session %s", r.GetGameSession().SessionID())
-		return [3]int{}, true
-	}
-
-	log.Printf("[PHASE] Round %d → INTERCEPT | opponent team=%s allAI=%v",
-		r.GetNumberOfRounds(), b.teamLabel(opponent), b.isTeamAllAI(opponent))
-	b.broadcastPhaseChange("intercept", r)
-	defer b.closeInput()
-
-	if b.isTeamAllAI(opponent) {
-		guess := handleAIGuess(ctx, b, r, true)
-		return guess, ctx.Err() != nil
-	}
-
-	select {
-	case guess := <-b.InterceptCh:
-		return guess, false
-	case <-time.After(b.remaining()):
-		log.Printf("bridge: interceptHandler: timeout waiting for intercept in session %s", r.GetGameSession().SessionID())
-		b.closeInput()
-		guess, outcome := b.draftGuessOnTimeout()
-		b.timedOut(r, "intercept", b.teamLabel(opponent), "", outcome)
-		return guess, false
-	case <-ctx.Done():
-		return [3]int{}, true
-	}
-}
-
-func interceptSuccessHandler(ctx context.Context, r *core.Round, opponent *core.Team, ts core.TeamState) bool {
-	b, ok := GetBridge(r.GetGameSession().SessionID())
-	if !ok {
-		return false
-	}
-
-	log.Printf("[RESULT] Round %d | INTERCEPT SUCCESS by team %s, decoding skipped", r.GetNumberOfRounds(), b.teamLabel(opponent))
-	// The round ends here; the receipt that follows stays up between rounds.
-	b.broadcastRoundResult(r, boolPtr(true), nil)
-	return ctx.Err() != nil
-}
-
-func interceptFailHandler(ctx context.Context, r *core.Round, opponent *core.Team, ts core.TeamState) bool {
-	b, ok := GetBridge(r.GetGameSession().SessionID())
-	if !ok {
-		return false
-	}
-
-	log.Printf("[RESULT] Round %d | INTERCEPT FAILED by team %s", r.GetNumberOfRounds(), b.teamLabel(opponent))
-	b.broadcastRoundResult(r, boolPtr(false), nil)
-
-	select {
-	case <-time.After(b.Timing.AfterIntercept):
-	case <-ctx.Done():
+		log.Printf("bridge: guessHandler: bridge not found for session %s", r.GetGameSession().SessionID())
 		return true
 	}
-	return false
-}
 
-func decryptHandler(ctx context.Context, r *core.Round, t *core.Team, ts core.TeamState) ([3]int, bool) {
-	b, ok := GetBridge(r.GetGameSession().SessionID())
-	if !ok {
-		log.Printf("bridge: decryptHandler: bridge not found for session %s", r.GetGameSession().SessionID())
-		return [3]int{}, true
-	}
-
-	encryptorUID := r.EncryptPlayer().UID
-	decryptorsAllAI := b.areDecryptorsAllAI(t, encryptorUID)
-	log.Printf("[PHASE] Round %d → DECRYPT | team=%s allAI=%v decryptorsAllAI=%v encryptor=%s",
-		r.GetNumberOfRounds(), b.teamLabel(t), b.isTeamAllAI(t), decryptorsAllAI, r.EncryptPlayer().NickName)
-	b.broadcastPhaseChange("decrypt", r)
+	decoders, interceptors := r.GetCurrentTeam(), r.GetOpponent()
+	log.Printf("[PHASE] Round %d → GUESS | decoding team=%s (AI=%v) | intercepting team=%s (AI=%v, intercepts=%v)",
+		r.GetNumberOfRounds(), b.teamLabel(decoders), b.areDecryptorsAllAI(decoders, r.EncryptPlayer().UID),
+		b.teamLabel(interceptors), b.isTeamAllAI(interceptors), r.HasInterception())
+	b.broadcastPhaseChange("guess", r)
 	defer b.closeInput()
 
-	if decryptorsAllAI {
-		guess := handleAIGuess(ctx, b, r, false)
-		return guess, ctx.Err() != nil
+	// Every eligible AI starts independently. Only an all-AI team's designated
+	// seat may submit; the others offer individual suggestions.
+	guessCtx, cancelGuesses := context.WithCancel(ctx)
+	defer cancelGuesses()
+	answers := make(chan aiAnswer, 2)
+	if r.NeedsDecrypt() {
+		b.startAIGuesses(guessCtx, r, false, answers)
+	}
+	if r.NeedsIntercept() {
+		b.startAIGuesses(guessCtx, r, true, answers)
 	}
 
-	select {
-	case guess := <-b.DecryptCh:
-		return guess, false
-	case <-time.After(b.remaining()):
-		log.Printf("bridge: decryptHandler: timeout waiting for decrypt in session %s", r.GetGameSession().SessionID())
-		b.closeInput()
-		guess, outcome := b.draftGuessOnTimeout()
-		b.timedOut(r, "decrypt", b.teamLabel(t), "", outcome)
-		return guess, false
-	case <-ctx.Done():
-		return [3]int{}, true
+	for r.NeedsDecrypt() || r.NeedsIntercept() {
+		var timer *time.Timer
+		var expiry <-chan time.Time
+		if wait, ok := b.nextExpiry(); ok {
+			timer = time.NewTimer(wait)
+			expiry = timer.C
+		}
+		select {
+		case guess := <-b.DecryptCh:
+			b.recordGuess(r, "decrypt", guess)
+		case guess := <-b.InterceptCh:
+			b.recordGuess(r, "intercept", guess)
+		case answer := <-answers:
+			if b.acceptAIGuess(answer) {
+				b.recordGuess(r, answer.job.action, answer.guess)
+			}
+		case <-expiry:
+			for _, name := range b.expired() {
+				log.Printf("bridge: guessHandler: timeout waiting for %s in session %s", name, r.GetGameSession().SessionID())
+				team := decoders
+				if name == "intercept" {
+					team = interceptors
+				}
+				guess, outcome := b.draftGuessOnTimeout(name)
+				b.timedOut(r, name, b.teamLabel(team), "", outcome)
+				b.recordGuess(r, name, guess)
+			}
+		case <-ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return true
+		}
+		if timer != nil {
+			timer.Stop()
+		}
 	}
-}
-
-func decryptSuccessHandler(ctx context.Context, r *core.Round, t *core.Team, ts core.TeamState) bool {
-	b, ok := GetBridge(r.GetGameSession().SessionID())
-	if !ok {
-		return false
-	}
-
-	log.Printf("[RESULT] Round %d | DECRYPT SUCCESS by team %s", r.GetNumberOfRounds(), b.teamLabel(t))
-	b.broadcastRoundResult(r, nil, boolPtr(true))
-	return false
-}
-
-func decryptFailHandler(ctx context.Context, r *core.Round, t *core.Team, ts core.TeamState) bool {
-	b, ok := GetBridge(r.GetGameSession().SessionID())
-	if !ok {
-		return false
-	}
-
-	log.Printf("[RESULT] Round %d | DECRYPT FAILED by team %s", r.GetNumberOfRounds(), b.teamLabel(t))
-	b.broadcastRoundResult(r, nil, boolPtr(false))
 	return false
 }
 
 func doneHandler(ctx context.Context, r *core.Round, ts core.TeamState) bool {
 	if b, ok := GetBridge(r.GetGameSession().SessionID()); ok {
+		interception := "none"
+		if r.HasInterception() {
+			interception = fmt.Sprintf("team %s right=%v", b.teamLabel(r.GetOpponent()), r.IsInterceptSuccess())
+		}
+		log.Printf("[RESULT] Round %d | interception: %s | decoding: team %s right=%v",
+			r.GetNumberOfRounds(), interception, b.teamLabel(r.GetCurrentTeam()), r.IsDecryptedCorrect())
 		b.finishRound(r)
 	}
 	return ctx.Err() != nil
@@ -439,7 +392,7 @@ func (b *Bridge) buildHistory(currentRound *core.Round) []ws.RoundHistoryRow {
 			Clues:     clues[:],
 			Secret:    secret[:],
 			Intercept: intercept[:],
-			Decrypt:   publicDecrypt(r, decrypt),
+			Decrypt:   decrypt[:],
 		}
 		rows = append(rows, row)
 	}
@@ -518,69 +471,9 @@ func (b *Bridge) broadcastPhaseChange(phase string, round *core.Round) {
 			return nil
 		}
 		return &ws.ServerMessage{Type: ws.MsgPhaseChange, Data: ws.PhaseChangeData{
-			Phase: phase, Round: v.Round, YourRole: v.YourRole, Encryptor: v.Encryptor, SecretDigits: v.SecretDigits,
-			SecretWords: v.SecretWords, Clues: v.Clues, History: v.History, Waiting: v.Waiting, Deadline: v.Deadline, Notice: v.Notice}}
-	})
-}
-
-// broadcastRoundResult sends round_result to the room.
-func (b *Bridge) broadcastRoundResult(round *core.Round, interceptSuccess *bool, decryptSuccess *bool) {
-	scoreA, scoreB := b.buildScores()
-	b.mu.Lock()
-	b.phase = "round_result"
-	b.accepted = true
-	for id, v := range b.views {
-		result := ws.RoundResultData{Round: int(round.GetNumberOfRounds()), ScoreA: scoreA, ScoreB: scoreB}
-		if v.RoundResult != nil {
-			result.InterceptSuccess = v.RoundResult.InterceptSuccess
-			result.DecryptSuccess = v.RoundResult.DecryptSuccess
-		}
-		if interceptSuccess != nil {
-			result.InterceptSuccess = interceptSuccess
-		}
-		if decryptSuccess != nil {
-			result.DecryptSuccess = decryptSuccess
-		}
-		v.RoundResult = &result
-		v.Phase = "round_result"
-		v.ScoreA = scoreA
-		v.ScoreB = scoreB
-		v.Deadline = 0
-		b.views[id] = v
-	}
-	b.saveLocked()
-	b.mu.Unlock()
-
-	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
-		Type: ws.MsgRoundResult,
-		Data: ws.RoundResultData{
-			Notice:           b.roundNotice,
-			Round:            int(round.GetNumberOfRounds()),
-			InterceptSuccess: interceptSuccess,
-			DecryptSuccess:   decryptSuccess,
-			ScoreA:           scoreA,
-			ScoreB:           scoreB,
-		},
-	})
-}
-
-// broadcastAIProgress mirrors a human player's player_progress stream for AI
-// players, so observer pages light up the selector oscilloscopes with AI's
-// chosen digits just like they do for humans.
-func (b *Bridge) broadcastAIProgress(action, player, state string, step, focus int, guesses []int) {
-	padded := make([]int, 3)
-	copy(padded, guesses)
-	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{
-		Type: ws.MsgPlayerProgress,
-		Data: ws.PlayerProgressData{
-			Action:  action,
-			Player:  player,
-			State:   state,
-			Step:    step,
-			Focus:   focus,
-			Guesses: padded,
-			Total:   3,
-		},
+			Phase: phase, Round: v.Round, YourRole: v.YourRole, Encryptor: v.Encryptor, EncryptorID: v.EncryptorID, SecretDigits: v.SecretDigits,
+			SecretWords: v.SecretWords, Clues: v.Clues, History: v.History, Waiting: v.Waiting, Deadline: v.Deadline, Notice: v.Notice,
+			Submitted: v.Submitted, Actions: v.Actions, TeammateProgress: v.TeammateProgress}}
 	})
 }
 
@@ -597,18 +490,22 @@ func (b *Bridge) broadcastGameOver(winner *core.Team) {
 	r := b.Session.GetCurrentRound()
 	teams := b.Session.GetTeams()
 	wordsA, wordsB := teams[0].GetWords(), teams[1].GetWords()
-	result := &ws.GameOverData{Notice: b.roundNotice, Winner: winnerLabel, ScoreA: scoreA, ScoreB: scoreB, Round: int(r.GetNumberOfRounds()), History: append(b.buildHistory(r), b.historyRow(r)),
+	result := &ws.GameOverData{Winner: winnerLabel, ScoreA: scoreA, ScoreB: scoreB, Round: int(r.GetNumberOfRounds()), History: append(b.buildHistory(r), b.historyRow(r)),
 		Reason: gameOverReason(teams, winner), WordsA: wordsA[:], WordsB: wordsB[:]}
 	b.mu.Lock()
 	b.phase = "game_over"
-	b.accepted = true
+	b.actions = nil
+	result.Notice = b.roundNotice
 	for id, v := range b.views {
 		v.Phase = "game_over"
 		v.GameOver = result
 		v.History = result.History
 		v.ScoreA = scoreA
 		v.ScoreB = scoreB
+		v.Actions = nil
 		v.Deadline = 0
+		v.Submitted = false
+		v.Waiting = true
 		b.views[id] = v
 	}
 	b.saveLocked()
@@ -647,7 +544,7 @@ func (b *Bridge) isTeamAllAI(team *core.Team) bool {
 }
 
 // areDecryptorsAllAI returns true if every non-encryptor member of the team is AI.
-// During decrypt, the encryptor doesn't participate, so we only check teammates.
+// The encryptor does not decode, so only the teammates count.
 func (b *Bridge) areDecryptorsAllAI(team *core.Team, encryptorUID string) bool {
 	for _, p := range team.Members() {
 		if p.UID == encryptorUID {

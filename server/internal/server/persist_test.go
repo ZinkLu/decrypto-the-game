@@ -87,7 +87,7 @@ func TestGamesGoOnWhileNothingCanBeStored(t *testing.T) {
 	ann.inPhase(1, "encrypting")
 	secret := ann.Phase.SecretDigits
 	ann.send("submit_clues", map[string]any{"round": 1, "clues": []string{"one", "two", "three"}})
-	alf.inPhase(1, "decrypt")
+	alf.inPhase(1, "guess")
 	alf.send("submit_decrypt", map[string]any{"round": 1, "guess": secret})
 	for _, c := range everyone {
 		c.inPhase(2, "encrypting")
@@ -106,8 +106,8 @@ func TestGamesGoOnWhileNothingCanBeStored(t *testing.T) {
 	// with its next change: here, Bea losing her connection and returning.
 	disk.down.Store(false)
 	bob.send("submit_clues", map[string]any{"round": 2, "clues": []string{"uno", "dos", "tres"}})
-	bea.inPhase(2, "decrypt")
-	if got := query(t, db, storedRoom); !reflect.DeepEqual(got, [][]string{{"1", "0", "2", "decrypt"}}) {
+	bea.inPhase(2, "guess")
+	if got := query(t, db, storedRoom); !reflect.DeepEqual(got, [][]string{{"1", "0", "2", "guess"}}) {
 		t.Fatalf("stored once the disk had space: %v", got)
 	}
 	bea.conn.Close()
@@ -115,7 +115,7 @@ func TestGamesGoOnWhileNothingCanBeStored(t *testing.T) {
 	if bea.Refused != nil {
 		t.Fatalf("Bea was refused: %+v", bea.Refused)
 	}
-	if got := query(t, db, storedRoom); !reflect.DeepEqual(got, [][]string{{"5", "1", "2", "decrypt"}}) {
+	if got := query(t, db, storedRoom); !reflect.DeepEqual(got, [][]string{{"5", "1", "2", "guess"}}) {
 		t.Fatalf("stored after the room changed: %v", got)
 	}
 
@@ -130,7 +130,7 @@ func TestGamesGoOnWhileNothingCanBeStored(t *testing.T) {
 		if back.Refused != nil || back.ID != c.ID {
 			t.Fatalf("%s came back as %s, refused %+v", c.name, back.ID, back.Refused)
 		}
-		if g := back.Sync.Game; g == nil || g.Round != 2 || g.Phase != "decrypt" || g.Encryptor != "Bob" || len(g.History) != 1 || g.Deadline == 0 {
+		if g := back.Sync.Game; g == nil || g.Round != 2 || g.Phase != "guess" || g.Encryptor != "Bob" || len(g.History) != 1 || g.Deadline == 0 {
 			t.Fatalf("%s came back to %+v", c.name, g)
 		}
 		if room := back.Sync.Room; len(room.TeamA) != 3 || len(room.TeamB) != 2 || !room.Started {

@@ -50,7 +50,7 @@ Go paths below are relative to `server/`.
 
 ### Key Architectural Patterns
 
-**Handler Registration (Observer Pattern):** Game events use registered handlers in `internal/core/state.go`. Handlers are called at lifecycle events: INIT, ENCRYPTING, INTERCEPT, DECRYPT, DONE, GAMEOVER.
+**Handler Registration (Observer Pattern):** Game events use registered handlers in `internal/core/state.go`. Handlers are called at lifecycle events: INIT, ENCRYPTING, GUESSING, DONE, GAMEOVER. The guess handler hands each team's guess to the round as it arrives (`Round.SetDecryptedSecret`, `Round.SetInterceptSecret`); both are scored together when the round leaves GUESSING.
 
 ```go
 RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, ts TeamState) ([3]string, bool) {
@@ -58,11 +58,11 @@ RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, t
 })
 ```
 
-**State Machine:** Rounds progress through states: NEW → INIT → ENCRYPTING → INTERCEPT → DECRYPT → DONE. `Round.AutoForward()` advances through all states by calling registered handlers.
+**State Machine:** Rounds progress through states: NEW → INIT → ENCRYPTING → GUESSING → DONE. `Round.AutoForward()` advances through all states by calling registered handlers. In GUESSING both teams guess at once: the encryptor's teammates decode and, from round 3, the opponents intercept. The bridge keeps one action per team with its own deadline and draft; a guess's digits reach only its team and the round's encryptor (`Bridge.RelayProgress`).
 
 **WebSocket Message Flow:** Client → `ws.Hub` → `server.Handler` → `room.Room` / `game.Bridge` → broadcast back to clients.
 
-**Persistence:** Each layer has a plain snapshot type with JSON tags and a restore function that refuses impossible states: `core.SessionSnapshot`, `room.State`, `game.Snapshot`. The bridge saves at every point where it changes what players see, while holding its lock. After a restart `Session.Resume()` re-enters the interrupted phase with a fresh deadline; a guess already scored is not asked for again. A restored game stays paused until the first human resumes. `server.Handler` knows storage only as `store.Rooms`; `cmd/server/main.go` chooses the implementation. Storing is best effort: a store that fails is logged and the game goes on. Raise `room.StateVersion` or `game.SnapshotVersion` when a stored state can no longer be read as written: a game of another version returns its room to the lobby.
+**Persistence:** Each layer has a plain snapshot type with JSON tags and a restore function that refuses impossible states: `core.SessionSnapshot`, `room.State`, `game.Snapshot`. The bridge saves at every point where it changes what players see, while holding its lock. After a restart `Session.Resume()` re-enters the interrupted phase with a fresh deadline; a guess already given is not asked for again, and is scored only when the round is revealed. A restored game stays paused until the first human resumes. `server.Handler` knows storage only as `store.Rooms`; `cmd/server/main.go` chooses the implementation. Storing is best effort: a store that fails is logged and the game goes on. Raise `room.StateVersion` or `game.SnapshotVersion` when a stored state can no longer be read as written: a game of another version returns its room to the lobby.
 
 **Console:** `paint()` is memoized by `paintKey`; a state change that alters neither `displayState` nor `paintKey` leaves a stale screen. Analog input (knobs) must not repaint. After exporting a new GLB, bump `revision` in `ConsoleEngine.load()`. A part fetches what it moves with `chassis.moving(name)`, which keeps it out of the static batch, and returns an `Effect` from `tick()` so that a still machine draws nothing. Ambient frames redraw only the regions parts list in `ambientRegions()`, over a copy of the last full frame (`partialRedraw.ts`): anything that moves on its own must be listed there or it freezes, and damped motion must land on its target; `?partial=verify` catches both. Whether a control works in the machine's state (power, face, link) is decided by `reachable()` in `actions.ts`, not inside `act()`. Strings are written in Chinese and translated through `translate()`; every new string needs its English entry in `i18n.ts`.
 
@@ -82,4 +82,4 @@ When behaviour changes, update the document that describes it.
 - Two teams with 2+ players each
 - Max 16 rounds (8 per team as encryptor)
 - Win conditions: 2 successful interceptions OR opponent makes 2 decryption errors; 16 rounds played without a winner are decided by interceptions minus errors
-- Round flow: Encryptor gets secret indices [1-4], provides clues, opponent intercepts (rounds 3+), team decrypts unless the opponent intercepted, which ends the round
+- Round flow: Encryptor gets secret indices [1-4] and provides clues; then both teams guess at once (team decrypts, opponent intercepts from round 3); once both have answered or run out of time, the code is revealed and both guesses score independently

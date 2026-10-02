@@ -1,4 +1,4 @@
-import type { StationState } from './model';
+import { seatAction, type StationState } from './model';
 import { soundBank } from './soundBank';
 import type { CrtSoundEvent } from './crtSound';
 
@@ -226,8 +226,6 @@ export function gameSound(previous: StationState, next: StationState): ConsoleSo
         return next.gameOver.winner === next.myTeam ? 'success' : 'error';
     }
     if (next.phase === 'round_result') return 'receive';
-    if (!next.waiting && !next.submitted && (!next.deadline || next.deadline > Date.now()) &&
-        ((next.phase === 'encrypting' && next.myRole === 'encryptor') ||
-        (next.phase === 'intercept' && next.myRole === 'opponent') ||
-        (next.phase === 'decrypt' && next.myRole === 'teammate'))) return 'turn';
+    // Both teams guess at once: the decoders and the interceptors hear their turn together.
+    if (!next.waiting && !next.submitted && (!next.deadline || next.deadline > Date.now()) && seatAction(next)) return 'turn';
 }

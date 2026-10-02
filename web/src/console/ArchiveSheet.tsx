@@ -98,7 +98,7 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, onVisibil
                             <p className="archive-clue-line">{row.clues.map((clue, index) => <span key={index}><small>{String(index + 1).padStart(2, '0')}</small>{clue}</span>)}</p>
                             <dl className="archive-sequences">
                                 <div><dt>{interceptOwner} · {t('截获')}</dt><dd>{sequence(row.intercept, row.timeouts?.includes('intercept') ? t('超时未提交') : '')}</dd></div>
-                                <div><dt>{decryptOwner} · {t('解码')}</dt><dd>{sequence(row.decrypt, row.timeouts?.includes('decrypt') ? t('超时未提交') : !row.decrypt && interceptSuccess ? t('已被截获，不解码') : '')}</dd></div>
+                                <div><dt>{decryptOwner} · {t('解码')}</dt><dd>{sequence(row.decrypt, row.timeouts?.includes('decrypt') ? t('超时未提交') : '')}</dd></div>
                                 <div className="archive-secret"><dt>{t("公开密码")}</dt><dd>{sequence(row.secret)}</dd></div>
                             </dl>
                             <p className="archive-outcome">

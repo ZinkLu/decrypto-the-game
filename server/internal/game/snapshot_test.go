@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ZinkLu/decrypto-the-game/server/internal/core"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
 
 var patientTimings = Timings{Encrypt: 5 * time.Second, Guess: 5 * time.Second, AI: 5 * time.Second,
-	Request: 20 * time.Millisecond, BetweenRounds: time.Millisecond, AfterIntercept: time.Millisecond}
+	Request: 20 * time.Millisecond, BetweenRounds: time.Millisecond}
 
 // A plan says which rounds are intercepted and which are decoded wrongly.
 type plan struct{ rightIntercept, wrongDecrypt map[int]bool }
@@ -86,27 +87,33 @@ func tokensOf(r *room.Room, ids []string) map[string]string {
 }
 
 // play acts for the four seats until the game is over or stop says so, and
-// returns the last view of the first seat.
+// returns the last view of the first seat. A seat checks stop against the very
+// view it would act on, so that nobody acts in the phase play stops at.
 func play(t *testing.T, b *Bridge, ids []string, p plan, stop func(ws.GameSyncData) bool) ws.GameSyncData {
 	t.Helper()
 	acted := map[string]bool{}
 	until := time.Now().Add(10 * time.Second)
 	for time.Now().Before(until) {
-		if v := b.Sync(ids[0]); v != nil && (v.Phase == "game_over" || stop != nil && stop(*v)) {
-			return *v
-		}
 		for _, id := range ids[:4] {
 			v := b.Sync(id)
-			if v == nil || !canAct(v.YourRole, v.Phase) || v.Submitted || acted[fmt.Sprintf("%d:%s", v.Round, v.Phase)] {
+			if v == nil {
+				continue
+			}
+			if v.Phase == "game_over" || stop != nil && stop(*v) {
+				return *b.Sync(ids[0])
+			}
+			name := seatAction(v.YourRole, v.Phase, v.Round)
+			key := fmt.Sprintf("%d:%s", v.Round, name)
+			if name == "" || v.Submitted || acted[key] {
 				continue
 			}
 			var err error
-			if v.Phase == "encrypting" {
+			if name == "encrypt" {
 				clue := fmt.Sprintf("round-%d", v.Round)
 				err = b.SubmitClues(id, ws.SubmitCluesData{Round: v.Round, Clues: [3]string{clue + "-a", clue + "-b", clue + "-c"}})
 			} else {
 				right := !p.wrongDecrypt[v.Round]
-				if v.Phase == "intercept" {
+				if name == "intercept" {
 					right = p.rightIntercept[v.Round]
 				}
 				var guess [3]int
@@ -118,11 +125,11 @@ func play(t *testing.T, b *Bridge, ids []string, p plan, stop func(ws.GameSyncDa
 				if !right {
 					guess[0], guess[1] = guess[1], guess[0]
 				}
-				err = b.SubmitGuess(id, v.Phase, ws.SubmitGuessData{Round: v.Round, Guess: guess})
+				err = b.SubmitGuess(id, name, ws.SubmitGuessData{Round: v.Round, Guess: guess})
 			}
 			// A paused or just finished phase refuses; the seat tries again.
 			if err == nil {
-				acted[fmt.Sprintf("%d:%s", v.Round, v.Phase)] = true
+				acted[key] = true
 			}
 		}
 		time.Sleep(time.Millisecond)
@@ -154,9 +161,10 @@ func TestRestoredGameContinuesFromEverySavedState(t *testing.T) {
 	}
 
 	states := stored.saved()
-	// Before the first round, four states in each of the first two rounds and
-	// in each intercepted round (3 and 5, not decoded), six in round 4, and the end.
-	if len(states) != 1+2*4+2*4+6+1 {
+	// Before the first round; in each round its clues, its guessing, each guess
+	// as it comes in (one in the first two rounds, two later) and its result;
+	// and the end.
+	if len(states) != 1+2*4+3*5+1 {
 		t.Fatalf("%d states saved", len(states))
 	}
 	for i, state := range states {
@@ -170,22 +178,31 @@ func TestRestoredGameContinuesFromEverySavedState(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			// Until it starts, the game shows what was saved and takes no input.
+			// Until it starts, the game shows what was saved, with no deadline,
+			// and takes no input.
 			for id, saved := range snap.Views {
 				saved.Deadline = 0
+				for name, a := range saved.Actions {
+					a.Deadline = 0
+					saved.Actions[name] = a
+				}
 				if got := b.Sync(id); got == nil || asJSON(t, got) != asJSON(t, saved) {
 					t.Fatalf("%s sees %s, saw %s", id, asJSON(t, got), asJSON(t, saved))
 				}
 			}
 			for _, id := range ids[:4] {
 				v := b.Sync(id)
-				if v == nil || !canAct(v.YourRole, v.Phase) {
+				name := ""
+				if v != nil {
+					name = seatAction(v.YourRole, v.Phase, v.Round)
+				}
+				if name == "" {
 					continue
 				}
-				if v.Phase == "encrypting" {
+				if name == "encrypt" {
 					err = b.SubmitClues(id, ws.SubmitCluesData{Round: v.Round, Clues: [3]string{"a", "b", "c"}})
 				} else {
-					err = b.SubmitGuess(id, v.Phase, ws.SubmitGuessData{Round: v.Round, Guess: [3]int{1, 2, 3}})
+					err = b.SubmitGuess(id, name, ws.SubmitGuessData{Round: v.Round, Guess: [3]int{1, 2, 3}})
 				}
 				if err == nil {
 					t.Fatalf("%s acted in a paused game", id)
@@ -211,7 +228,7 @@ func TestRestoredGameContinuesFromEverySavedState(t *testing.T) {
 			// played then; later rounds draw their own codes.
 			for j, round := range snap.Session.Rounds {
 				row, was := got.History[j], want.History[j]
-				if round.Phase == 5 && asJSON(t, row) != asJSON(t, was) {
+				if round.Phase == core.DONE && asJSON(t, row) != asJSON(t, was) {
 					t.Errorf("round %d changed: %s, was %s", j+1, asJSON(t, row), asJSON(t, was))
 				}
 				if !reflect.DeepEqual(row.Secret, was.Secret) {
@@ -239,7 +256,7 @@ func TestRestoredGameKeepsTimeoutsAndNotices(t *testing.T) {
 	// Nobody writes the clues of round 1: its time runs out.
 	var decrypt ws.GameSyncData
 	until := time.Now().Add(3 * time.Second)
-	for decrypt.Phase != "decrypt" {
+	for decrypt.Phase != "guess" {
 		if time.Now().After(until) {
 			t.Fatal("the clues never timed out")
 		}
@@ -258,7 +275,7 @@ func TestRestoredGameKeepsTimeoutsAndNotices(t *testing.T) {
 		t.Fatal(err)
 	}
 	v := b.Sync(ids[2])
-	if v == nil || v.Phase != "decrypt" || v.Timeout == nil || v.Timeout.Action != "encrypt" || v.Timeout.Outcome != "blank" || v.Timeout.Round != 1 {
+	if v == nil || v.Phase != "guess" || len(v.Timeouts) != 1 || v.Timeouts[0].Action != "encrypt" || v.Timeouts[0].Outcome != "blank" || v.Timeouts[0].Round != 1 {
 		t.Fatalf("the restored game forgot the timeout: %s", asJSON(t, v))
 	}
 	// The notice came after the last saved state: the restart forgets it.
@@ -269,9 +286,9 @@ func TestRestoredGameKeepsTimeoutsAndNotices(t *testing.T) {
 	after := &disk{}
 	b.OnSave = after.save
 	b.Start()
-	round2 := play(t, b, ids, plan{}, func(v ws.GameSyncData) bool { return v.Round == 2 && v.Phase == "decrypt" })
-	if round2.Timeout != nil {
-		t.Fatalf("round 2 still announces %+v", round2.Timeout)
+	round2 := play(t, b, ids, plan{}, func(v ws.GameSyncData) bool { return v.Round == 2 && v.Phase == "guess" })
+	if len(round2.Timeouts) != 0 {
+		t.Fatalf("round 2 still announces %+v", round2.Timeouts)
 	}
 	// The row of the round that timed out, as its result showed it.
 	var settled []ws.RoundHistoryRow
@@ -298,7 +315,7 @@ func TestRestoreRefusesAGameTheRoomIsNotPlaying(t *testing.T) {
 	original.OnSave = stored.save
 	tokens := tokensOf(original.Room, ids)
 	original.Start()
-	play(t, original, ids, plan{}, func(v ws.GameSyncData) bool { return v.Round == 3 && v.Phase == "intercept" })
+	play(t, original, ids, plan{}, func(v ws.GameSyncData) bool { return v.Round == 3 && v.Phase == "guess" })
 	original.Stop()
 	states := stored.saved()
 	valid := states[len(states)-1]

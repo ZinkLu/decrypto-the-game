@@ -5,17 +5,10 @@ import (
 	"reflect"
 )
 
-// 设置当前队伍的拦截密码
-//
-// 自动增加拦截正确计数, 返回是否拦截成功
-func (r *Round) SetInterceptSecret(interceptedSecret [3]int) bool {
+// 记下对手的拦截密码。本轮揭晓时才结算，在那之前不改变任何计数
+func (r *Round) SetInterceptSecret(interceptedSecret [3]int) {
 	r.interceptedSecret = interceptedSecret
 	r.intercepted = true
-	result := r.IsInterceptSuccess()
-	if result {
-		r.opponent.InterceptedSuccess()
-	}
-	return result
 }
 
 // 当前队伍有没有破解成功
@@ -23,17 +16,10 @@ func (r *Round) IsInterceptSuccess() bool {
 	return reflect.DeepEqual(r.interceptedSecret, r.secret)
 }
 
-// 设置当前队伍解密的密码
-//
-// 自动增加解密错误计数, 返回是否解密成功
-func (r *Round) SetDecryptedSecret(secret [3]int) bool {
+// 记下当前队伍解密的密码。本轮揭晓时才结算，在那之前不改变任何计数
+func (r *Round) SetDecryptedSecret(secret [3]int) {
 	r.decryptSecret = secret
 	r.decrypted = true
-	result := r.IsDecryptedCorrect()
-	if !result {
-		r.currentTeam.DecryptFailed()
-	}
-	return result
 }
 
 // 当前队伍有没有猜中自己的密码
@@ -41,10 +27,30 @@ func (r *Round) IsDecryptedCorrect() bool {
 	return reflect.DeepEqual(r.secret, r.decryptSecret)
 }
 
-// IsDecryptSkipped reports whether the team gave no decoding because the
-// opponent had intercepted the code.
-func (r *Round) IsDecryptSkipped() bool {
-	return !r.decrypted && r.intercepted && r.IsInterceptSuccess()
+// HasInterception reports whether the opponents guess this round's code: from
+// the third round on, once each team has had a round with no record to go by.
+func (r *Round) HasInterception() bool {
+	return r.roundN > 2
+}
+
+// NeedsIntercept reports whether the opponents' guess is still to come.
+func (r *Round) NeedsIntercept() bool {
+	return r.HasInterception() && !r.intercepted
+}
+
+// NeedsDecrypt reports whether the encrypting team's guess is still to come.
+func (r *Round) NeedsDecrypt() bool {
+	return !r.decrypted
+}
+
+// reveal scores both guesses at once, as the encryptor turning over the code.
+func (r *Round) reveal() {
+	if r.intercepted && r.IsInterceptSuccess() {
+		r.opponent.InterceptedSuccess()
+	}
+	if !r.IsDecryptedCorrect() {
+		r.currentTeam.DecryptFailed()
+	}
 }
 
 // 获取本局的加密词语
@@ -91,10 +97,8 @@ func (round *Round) Next() TeamState {
 	case INIT:
 		nextStep = ENCRYPTING
 	case ENCRYPTING:
-		nextStep = INTERCEPT
-	case INTERCEPT:
-		nextStep = DECRYPT
-	case DECRYPT:
+		nextStep = GUESSING
+	case GUESSING:
 		nextStep = DONE
 	}
 	round.state = nextStep
@@ -108,7 +112,7 @@ func (round *Round) AutoForward(c context.Context) bool {
 }
 
 // Resume re-enters the phase a restored round was saved in. A guess that was
-// already scored is not asked for again.
+// already given is not asked for again.
 func (round *Round) Resume(c context.Context) bool {
 	return round.forward(c, round.state)
 }
@@ -127,52 +131,22 @@ func (round *Round) forward(c context.Context, state TeamState) bool {
 				return isCancelled
 			}
 			round.encryptedMessage = eString
-		case INTERCEPT:
-			if round.roundN <= 2 { // 前两局（每个队伍的第一局）都进行拦截
-				continue
-			}
-			if round.intercepted {
-				continue
-			}
-			opponent := round.opponent
-			interceptedSecret, isCancelled := interceptHandler(c, round, opponent, INTERCEPT)
-			if isCancelled {
-				return isCancelled
-			}
-			intercepted := round.SetInterceptSecret(interceptedSecret)
-
-			if intercepted && interceptSuccessHandler != nil {
-				if interceptSuccessHandler(c, round, opponent, INTERCEPT) {
+		case GUESSING:
+			// As in the original game, both teams write their guess before the
+			// code is turned over, and the two guesses score independently.
+			if round.NeedsDecrypt() || round.NeedsIntercept() {
+				if guessHandler(c, round, GUESSING) {
 					return true
 				}
-			} else if !intercepted && interceptFailHandler != nil {
-				if interceptFailHandler(c, round, opponent, INTERCEPT) {
-					return true
+				// A guess the handler never gave counts as an empty one.
+				if round.NeedsIntercept() {
+					round.SetInterceptSecret([3]int{})
+				}
+				if round.NeedsDecrypt() {
+					round.SetDecryptedSecret([3]int{})
 				}
 			}
-
-		case DECRYPT:
-			// An interception ends the round: the team does not decode, and no
-			// decoding error can be scored.
-			if round.decrypted || round.IsDecryptSkipped() {
-				continue
-			}
-			decryptedSecret, isCancelled := decryptHandler(c, round, round.currentTeam, DECRYPT)
-			if isCancelled {
-				return isCancelled
-			}
-
-			success := round.SetDecryptedSecret(decryptedSecret)
-
-			if success && decryptSuccessHandler != nil {
-				if decryptSuccessHandler(c, round, round.currentTeam, DECRYPT) {
-					return true
-				}
-			} else if !success && decryptFailHandler != nil {
-				if decryptFailHandler(c, round, round.currentTeam, DECRYPT) {
-					return true
-				}
-			}
+			round.reveal()
 
 		case DONE:
 			if doneHandler(c, round, DONE) {
@@ -218,5 +192,5 @@ func (r *Round) GetSecretDigits() [3]int { return r.secret }
 // 获取 opponent 给出的拦截密码，如果是前两局，则永远返回 0,0,0
 func (r *Round) GetInterceptSecret() [3]int { return r.interceptedSecret }
 
-// 获取解密者给出的密码；拦截成功、本轮跳过解码时（IsDecryptSkipped）返回 0,0,0
+// 获取解密者给出的密码，尚未给出或超时未给出时返回 0,0,0
 func (r *Round) GetDecryptSecret() [3]int { return r.decryptSecret }

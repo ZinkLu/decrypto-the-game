@@ -142,10 +142,9 @@ test('a role introduction does not restart on updates or reinsertion and is revo
         const delivered = { id, phase, startedAt: 100 };
         assert.equal(syncKeyDisk(delivered, id, 200, true, false, true), delivered);
     }
-    for (const phase of ['intercept', 'decrypt']) {
-        const resumedID = keyDiskIdentity({ ...state, phase });
-        assert.equal(syncKeyDisk(emptyKeyDisk, resumedID, 100, true, false, false).phase, 'arriving');
-    }
+    // Resumed while both teams guess, the encryptor still holds the round's disk.
+    const resumedID = keyDiskIdentity({ ...state, phase: 'guess' });
+    assert.equal(syncKeyDisk(emptyKeyDisk, resumedID, 100, true, false, false).phase, 'arriving');
 });
 
 test('a disk without an authorized identity stays invisible in every mechanical phase', () => {
@@ -162,7 +161,7 @@ test('eject conceals immediately; refreshes, translations and phase changes do n
     assert.equal(actKeyDisk(disk, false, 110), disk, 'rapid clicks cannot reverse the spring');
     disk = advanceKeyDisk(disk, 720);
     assert.equal(disk.phase, 'ejected');
-    for (const change of [{}, { encryptor: 'You' }, { phase: 'intercept' }, { phase: 'decrypt', waiting: true }, { recovering: true }]) {
+    for (const change of [{}, { encryptor: 'You' }, { phase: 'guess' }, { phase: 'guess', waiting: true }, { recovering: true }]) {
         assert.equal(syncKeyDisk(disk, keyDiskIdentity({ ...state, ...change }), 900, true, false), disk);
     }
     disk = actKeyDisk(disk, false, 1000);

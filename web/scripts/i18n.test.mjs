@@ -326,14 +326,23 @@ test('watching screens blink the slot being worked on and keep the round in the 
   assert.deepEqual(out.screenBlink.map(cell => cell.kind).sort(), ['cursor', 'live']);
   const cursor = out.screenBlink.find(cell => cell.kind === 'cursor');
   assert.ok(cursor.y > 239 + 2 * 92 - 30 && cursor.y < 239 + 2 * 92 + 60, 'the third line blinks');
-  const quiet = paint({ ...s, playerProgress: null }, initialLocal);
+  const quiet = paint({ ...s, playerProgress: {} }, initialLocal);
   assert.deepEqual(quiet.screenBlink.map(cell => cell.kind), ['live'], 'before any progress only the link lamp breathes');
   assert.ok(quiet.frames.screen.canvas.ink.some(value => value.startsWith('链路已接通')));
   assert.deepEqual(paint(s, { ...initialLocal, unpluggedCables: 1 }).screenBlink, [], 'nothing blinks offline');
   const guessing = paint(previewState({}, 'decrypt'), initialLocal);
   assert.deepEqual(guessing.screenBlink.map(cell => cell.kind), ['cursor'], 'the keypad cursor marks the empty slot');
-  const intercepting = paint(previewState({}, 'watch-intercept'), initialLocal).frames.screen.canvas.ink;
-  assert.ok(intercepting.includes('推敲中') && intercepting.includes('2') && intercepting.includes('1'), 'the encryptor watches the rivals pick');
+  // While both teams guess, the encryptor follows both columns at once.
+  const watching = paint(previewState({}, 'watch-guess'), initialLocal);
+  const both = watching.frames.screen.canvas.ink;
+  assert.ok(both.includes('B 队拦截') && both.includes('A 队解码'), 'a column for each team');
+  assert.equal(both.filter(value => value === '推敲中').length, 2, 'each team blinks the slot it works on');
+  assert.ok(both.includes('2') && both.includes('1') && both.includes('3'), 'the encryptor sees both teams pick');
+  assert.deepEqual(watching.screenBlink.map(cell => cell.kind).sort(), ['cursor', 'cursor', 'live']);
+  // A team that has answered sees the other team work, never its picks.
+  const sent = paint(previewState({}, 'decrypt-sent'), initialLocal).frames.screen.canvas.ink;
+  assert.ok(sent.includes('已提交') && sent.some(value => value.includes('等 B 队拦截后揭晓')), 'the answer waits for the other team');
+  assert.ok(sent.some(value => value.includes('John · 已选 2 / 3')), 'the other team is still working');
 });
 
 test('the last intercept or decode digit updates without moving its selected slot', () => {
@@ -417,5 +426,49 @@ test('briefings, watching screens and every guide page are fully localized', asy
   for (let guidePage = 0; guidePage < 4; guidePage++) {
     const en = paint(fixture('home'), { ...initialLocal, manual: true, guidePage, locale: 'en' });
     assert.deepEqual([...en.frames.screen.canvas.ink, ...en.targets.map(t => t.label)].filter(value => /[\u3400-\u9fff]/.test(value)), [], `guide page ${guidePage + 1}`);
+  }
+});
+
+
+test('teammate hints retain per-person digits beside each clue without filling the local answer', () => {
+  for (const name of ['decrypt-peers', 'intercept-peers']) for (const locale of ['zh', 'en']) {
+    const s = previewState({}, name, locale);
+    const out = paint(s, { ...initialLocal, locale });
+    const rows = out.frames.screen.canvas.draws.filter(d => [294, 386, 478].includes(d.y));
+    assert.deepEqual(rows.filter(d => d.value.startsWith(' · ')).map(d => d.value), name === 'intercept-peers' ?
+      [' · —', ' · 3', ' · 3', ' · —', ' · —', ' · 1', ' · —', ' · 4', ' · 4'] :
+      [' · 3', ' · 3', ' · —', ' · 1', ' · 4', ' · 4']);
+    assert.equal(out.ready, false, 'AI advice never makes an empty local draft ready');
+    assert.ok(out.screenBlink.some(cell => cell.y === 378 && cell.h === 16), 'the peer cursor follows the second clue');
+    assert.ok(!out.frames.screen.canvas.ink.includes('John'), 'opponent names and choices stay out of the acting screen');
+    if (locale === 'en') assert.deepEqual(out.frames.screen.canvas.ink.filter(value => /[\u3400-\u9fff]/.test(value)), []);
+    const sent = paint(s, { ...initialLocal, locale, submitted: true, guess: [2, 3, 4] });
+    assert.ok(!sent.frames.screen.canvas.draws.some(d => [294, 386, 478].includes(d.y)), 'sending replaces advice with the submitted answer');
+  }
+});
+
+test('long clues can still be expanded when teammate annotations occupy their second line', () => {
+  const s = previewState({}, 'decrypt-peers');
+  s.clues[0] = '线'.repeat(79) + '尾';
+  const out = paint(s, initialLocal);
+  assert.ok(out.targets.some(target => target.id === 'read-clue-0'));
+  const expanded = paint(s, { ...initialLocal, readingClue: 0 });
+  assert.equal(expanded.frames.screen.canvas.draws.filter(d => d.y > 138 && d.y < 218).map(d => d.value).join(''), s.clues[0]);
+});
+
+
+test('parallel AI advice keeps each named status visible without changing submission readiness', () => {
+  for (const locale of ['zh', 'en']) {
+    const s = previewState({}, 'intercept-ai-peers', locale);
+    const output = paint(s, { ...initialLocal, locale });
+    const ink = output.frames.screen.canvas.ink;
+    for (const label of ['建议已就绪', '建议暂不可用']) assert.ok(ink.includes(translate(locale, label)), label);
+    assert.ok(ink.some(value => value.includes(locale === 'zh' ? '重试' : 'Retrying')));
+    const peers = s.teamA.filter(person => person.id !== s.myPlayerID);
+    assert.equal(peers.length, 3);
+    for (const peer of peers) assert.ok(ink.includes(peer.nickname), peer.nickname);
+    assert.equal(output.ready, false, 'three AI opinions do not fill the local draft');
+    assert.equal(paint(s, { ...initialLocal, locale, guess: [3, 1, 4] }).ready, true, 'a failed or retrying AI cannot block a human answer');
+    if (locale === 'en') assert.deepEqual(ink.filter(value => /[\u3400-\u9fff]/.test(value)), []);
   }
 });

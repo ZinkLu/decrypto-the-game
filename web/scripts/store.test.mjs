@@ -66,12 +66,50 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     assert.equal(store.getState().phase, 'room');
     socket.receive('phase_change', { phase: 'encrypting', round: 3, your_role: 'encryptor', secret_digits: [2, 4, 1] });
     socket.receive('clues_submitted', { clues: ['one', 'two', 'three'], history: [{ round: 1, team: 'A', clues: ['a', 'b', 'c'] }] });
-    socket.receive('phase_change', { phase: 'intercept', round: 3, your_role: 'teammate', waiting: true });
-    assert.deepEqual(store.getState().clues, ['one', 'two', 'three'], 'waiting players retain public clues');
-    socket.receive('round_result', { intercept_success: false });
-    socket.receive('phase_change', { phase: 'decrypt', round: 3, your_role: 'teammate' });
-    socket.receive('round_result', { decrypt_success: true });
+    // Both teams guess at once: the other team may answer first, and the round is
+    // revealed in one message once both have answered.
+    socket.receive('phase_change', { phase: 'guess', round: 3, your_role: 'teammate',
+      actions: { decrypt: { team: 'A', deadline: 0 }, intercept: { team: 'B', deadline: 0 } } });
+    assert.deepEqual(store.getState().clues, ['one', 'two', 'three'], 'guessing players keep the public clues');
+    assert.deepEqual(Object.keys(store.getState().actions).sort(), ['decrypt', 'intercept']);
+    const draft = { round: 3, action: 'decrypt', player: 'Ann', state: 'editing', step: 2, focus: 2, total: 3 };
+    socket.receive('player_progress', { ...draft, player_id: 'one', is_ai: false, guesses: [3, 0, 4] });
+    socket.receive('player_progress', { ...draft, player_id: 'two', is_ai: false, guesses: [1, 0, 4] });
+    assert.deepEqual(Object.keys(store.getState().teammateProgress), ['one', 'two'], 'same-name seats keep independent drafts');
+    assert.deepEqual(store.getState().teammateProgress.one.guesses, [3, 0, 4]);
+    assert.equal(store.getState().playerProgress.decrypt.player_id, 'two', 'watching screens retain the latest action signal');
+    socket.receive('player_progress', { ...draft, round: 2, player_id: 'one', guesses: [2, 3, 4] });
+    socket.receive('player_progress', { ...draft, action: 'encrypt', player_id: 'one', filled: [true, true, true] });
+    assert.deepEqual(store.getState().teammateProgress.one.guesses, [3, 0, 4], 'old rounds and other phases cannot replace a draft');
+    socket.receive('player_progress', { ...draft, player_id: 'ai', is_ai: true, suggestion: true, step: 3, focus: 0, guesses: [3, 1, 4] });
+    assert.equal(store.getState().teammateProgress.ai.suggestion, true);
+    assert.equal(store.getState().submitted, false, 'a complete recommendation never submits for humans');
+    for (const [id, state, step, focus] of [['ai-one', 'thinking', 1, 2], ['ai-two', 'retrying', 0, 1],
+      ['ai-three', 'ready', 3, 0], ['ai-four', 'unavailable', 0, 0]]) {
+      socket.receive('player_progress', { ...draft, player_id: id, is_ai: true, suggestion: true, can_submit: false, state, step, focus });
+    }
+    assert.deepEqual(['ai-one', 'ai-two', 'ai-three', 'ai-four'].map(id => store.getState().teammateProgress[id].state),
+      ['thinking', 'retrying', 'ready', 'unavailable'], 'parallel AI states never overwrite one another');
+    assert.equal(store.getState().teammateProgress['ai-one'].focus, 2);
+    assert.equal(store.getState().teammateProgress['ai-three'].can_submit, false);
+    socket.receive('action_submitted', { round: 3, action: 'intercept', team: 'B' });
+    assert.equal(store.getState().actions.intercept.submitted, true);
+    assert.equal(store.getState().submitted, false, 'the other team answering leaves this seat its turn');
+    socket.receive('action_submitted', { round: 2, action: 'decrypt', team: 'A' });
+    assert.equal(store.getState().submitted, false, 'an answer from another round changes nothing');
+    socket.receive('action_submitted', { round: 3, action: 'decrypt', team: 'A' });
+    assert.equal(store.getState().submitted, true, 'a teammate answered for the team');
+    assert.equal(store.getState().waiting, true);
+    socket.receive('player_progress', { ...draft, player_id: 'one', guesses: [2, 3, 4] });
+    assert.deepEqual(store.getState().teammateProgress.one.guesses, [3, 0, 4], 'a late edit cannot replace the accepted team state');
+    socket.receive('player_progress', { ...draft, player_id: 'two', state: 'submitted', step: 3, focus: 0, guesses: [1, 3, 4] });
+    assert.equal(store.getState().teammateProgress.two.state, 'submitted', 'final progress may follow the team submission message');
+    socket.receive('round_result', { intercept_success: false, decrypt_success: true });
     assert.deepEqual(store.getState().roundResult, { intercept_success: false, decrypt_success: true });
+    assert.deepEqual(store.getState().actions, {}, 'nothing is left to answer');
+    assert.deepEqual(store.getState().teammateProgress, {}, 'revealing the round clears working drafts');
+    socket.receive('player_progress', { ...draft, player_id: 'one', guesses: [2, 3, 4] });
+    assert.deepEqual(store.getState().teammateProgress, {}, 'progress after the phase ends stays hidden');
     socket.receive('phase_change', { phase: 'new_round', round: 4, your_role: 'opponent' });
     assert.equal(store.getState().phase, 'encrypting');
     assert.equal(store.getState().roundResult, null);
@@ -99,7 +137,7 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     assert.deepEqual(live.sent.at(-1).data, { round: 3, action: 'encrypt', step: 2, total: 3, state: 'editing', focus: 2, filled: [true, false, true] },
       'drafting reports which lines hold a clue, never the clue');
     live.receive('player_progress', { action: 'encrypt', player: 'Ann', state: 'editing', step: 2, focus: 2, filled: [true, 0, 'yes', true], total: 3 });
-    assert.deepEqual(store.getState().playerProgress.filled, [true, false, true], 'received flags are booleans, three at most');
+    assert.deepEqual(store.getState().playerProgress.encrypt.filled, [true, false, true], 'received flags are booleans, three at most');
     store.getState().submitClues(['a', 'b', 'c']);
     assert.equal(live.sent.at(-1).data.round, 3, 'outbound actions identify their round');
     live.receive('room_state', { started: true, team_a: [{id:'me'}] });
@@ -111,14 +149,52 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     const recovered = sockets.at(-1); recovered.onopen();
     assert.deepEqual(recovered.sent.at(-1), { type:'resume_room', data: {room_code:'1234',resume_token:'test-token'} });
     recovered.receive('room_resumed', {room_code:'1234',my_player_id:'me'});
-    recovered.receive('full_sync', { room:{room_code:'1234'},game:{phase:'encrypting',round:3,your_role:'encryptor',secret_digits:[2,4,1],deadline,submitted:true} });
+    recovered.receive('full_sync', { room:{room_code:'1234'},game:{phase:'encrypting',round:3,your_role:'encryptor',secret_digits:[2,4,1],deadline,submitted:true,
+      encryptor_id: 'me', teammate_progress: {
+        me: { round: 3, action: 'encrypt', player_id: 'me', player: 'Ann', state: 'editing', step: 2, focus: 2, filled: [true, false, true] },
+        stale: { round: 2, action: 'encrypt', player_id: 'stale', player: 'Old', state: 'editing' },
+        wrong: { round: 3, action: 'encrypt', player_id: 'different', player: 'Mismatch', state: 'editing' },
+      }} });
     assert.equal(store.getState().recovering, false);
     assert.equal(store.getState().submitted, true);
     assert.equal(store.getState().deadline, deadline);
+    assert.equal(store.getState().encryptorID, 'me');
+    assert.deepEqual(Object.keys(store.getState().teammateProgress), ['me'], 'sync replaces drafts and rejects stale or mismatched identities');
+    assert.deepEqual(store.getState().playerProgress.encrypt.filled, [true, false, true], 'reconnect also restores the watching signal');
+    recovered.receive('phase_change', { phase: 'guess', round: 3, your_role: 'teammate',
+      actions: { decrypt: { team: 'A', submitted: false } }, teammate_progress: {
+        human: { ...draft, player_id: 'human', state: 'idle', step: 0, focus: 0, can_submit: true },
+        ai: { ...draft, player_id: 'ai', state: 'thinking', step: 0, focus: 1, is_ai: true, suggestion: true, can_submit: false },
+      } });
+    assert.deepEqual(Object.keys(store.getState().teammateProgress), ['human', 'ai'], 'a phase starts with every seeded participant already visible');
+    assert.equal(store.getState().teammateProgress.human.can_submit, true);
+    assert.equal(store.getState().playerProgress.decrypt.player_id, 'ai', 'an active AI wins a snapshot tie with an idle human');
+    recovered.receive('full_sync', { game: { phase: 'guess', round: 3, your_role: 'teammate', teammate_progress: {
+      one: { ...draft, player_id: 'one', state: 'retrying', step: 1, focus: 2, is_ai: true, suggestion: true, can_submit: false },
+      two: { ...draft, player_id: 'two', state: 'ready', step: 3, focus: 0, is_ai: true, suggestion: false, can_submit: true, guesses: [2, 4, 1] },
+    } } });
+    assert.deepEqual(Object.values(store.getState().teammateProgress).map(progress => [progress.state, progress.can_submit]),
+      [['retrying', false], ['ready', true]], 'reconnect retains each AI status and designated submit authority');
+    recovered.receive('full_sync', { game: { phase: 'guess', round: 3, your_role: 'teammate', submitted: true,
+      actions: { decrypt: { team: 'A', submitted: true } }, teammate_progress: {
+        accepted: { ...draft, player_id: 'accepted', state: 'submitted', step: 3, guesses: [2, 4, 1] },
+        later: { ...draft, player_id: 'later', step: 3, guesses: [1, 2, 3], is_ai: true, suggestion: true },
+      } } });
+    assert.deepEqual(store.getState().playerProgress.decrypt.guesses, [2, 4, 1], 'accepted team answer wins over later-key advice on reconnect');
+    recovered.receive('phase_change', { phase: 'guess', round: 3, your_role: 'teammate', submitted: true,
+      actions: { decrypt: { team: 'A', submitted: true } }, teammate_progress: {
+        accepted: { ...draft, player_id: 'accepted', state: 'submitted', step: 3, guesses: [2, 4, 1] },
+      } });
+    assert.deepEqual(store.getState().playerProgress.decrypt.guesses, [2, 4, 1], 'resuming the same phase keeps the accepted answer supplied by the server');
+    assert.deepEqual(Object.keys(store.getState().teammateProgress), ['accepted'], 'phase changes replace drafts with the authoritative resumed snapshot');
+    recovered.receive('full_sync', { game: { phase: 'encrypting', round: 3, your_role: 'encryptor', secret_digits: [2, 4, 1], deadline, submitted: true } });
+    assert.deepEqual(store.getState().teammateProgress, {}, 'an empty phase snapshot replaces earlier drafts');
     live.receive('phase_change', {phase:'room'}); live.close();
     assert.equal(store.getState().phase, 'encrypting', 'stale sockets cannot replace recovered state');
     recovered.receive('ai_thinking', {action:'encrypt',player:'AI',step:3,completed:2,state:'thinking'});
-    assert.equal(store.getState().aiStatus.completed, 2);
+    assert.equal(store.getState().aiStatus.encrypt.completed, 2);
+    recovered.receive('ai_thinking', {action:'intercept',player:'AI · 2',step:1,completed:0,state:'thinking'});
+    assert.equal(store.getState().aiStatus.encrypt.completed, 2, 'two AI players at once keep their own status');
     recovered.receive('ai_acted', {action:'encrypt',player:'AI',step:3,completed:3,state:'fallback',notice:'AI 未能完成回答'});
     recovered.receive('ai_thinking', {action:'encrypt',player:'AI',step:3,completed:2,state:'retrying',notice:'retry'});
     assert.equal(store.getState().aiNotice, 'AI 未能完成回答');
@@ -127,6 +203,7 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     assert.equal(refreshed.sent.at(-1).type, 'resume_room', 'a reload restores the per-tab credential');
     refreshed.receive('full_sync', {game:{phase:'game_over',round:3,history:[{round:3,secret:[2,4,1]}],game_over:{winner:'B'}}});
     assert.equal(store.getState().gameOver.winner, 'B'); assert.equal(store.getState().history.length, 1);
+    assert.deepEqual(store.getState().teammateProgress, {}, 'a fresh sync cannot keep progress from a former phase');
     refreshed.receive('error', {code:'resume_expired',message:'room resume expired; please create or join a room'});
     assert.equal(store.getState().phase, 'home'); assert.equal(saved.size, 0);
 
@@ -142,9 +219,11 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     store.getState().sendProgress('encrypt', 1, { state: 'editing', focus: 2, filled: [true, false, false], clues: ['harbor', '', ''] });
     assert.deepEqual(clock.sent.at(-1).data.clues, ['harbor', '', ''], 'the draft goes to the server for a timeout');
     send('timeout', { round: 1, action: 'encrypt', team: 'A', player: 'me', outcome: 'draft' });
-    assert.equal(store.getState().timeout.outcome, 'draft');
+    assert.equal(store.getState().timeouts.at(-1).outcome, 'draft');
+    send('timeout', { round: 1, action: 'decrypt', team: 'A', outcome: 'none' });
+    assert.deepEqual(store.getState().timeouts.map(timeout => timeout.action), ['encrypt', 'decrypt'], 'each timed-out action keeps its notice');
     send('phase_change', { phase: 'new_round', round: 2, your_role: 'opponent' });
-    assert.equal(store.getState().timeout, null, 'a timeout notice ends with its round');
+    assert.deepEqual(store.getState().timeouts, [], 'a timeout notice ends with its round');
     send('game_over', { winner: 'A', reason: 'interceptions', words_a: ['a', 'b', 'c', 'd'], words_b: ['e', 'f', 'g', 'h'] });
     assert.deepEqual(store.getState().gameOver.wordsB, ['e', 'f', 'g', 'h']);
     send('room_state', { started: false, room_code: '5555', team_a: [{ id: 'me', nickname: 'me' }] });
@@ -162,54 +241,49 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     scoring.receive('room_created', { room_code: '2468', my_player_id: 'me', resume_token: 'score-session' });
     const startingA = { interceptions: 0, decrypt_failures: 1 };
     const startingB = { interceptions: 1, decrypt_failures: 0 };
-    scoring.receive('full_sync', { game: { phase: 'intercept', round: 4, score_a: startingA, score_b: startingB } });
+    scoring.receive('full_sync', { game: { phase: 'guess', round: 4, score_a: startingA, score_b: startingB } });
     assert.equal(store.getState().scoreChange, null, 'loading already scored flags is silent');
     scoring.receive('round_result', { intercept_success: false, decrypt_success: true, score_a: startingA, score_b: startingB });
     assert.equal(store.getState().scoreChange, null, 'an ordinary result without a score increase has no pulse');
 
     scoring.receive('phase_change', { phase: 'new_round', round: 5, your_role: 'teammate' });
-    scoring.receive('phase_change', { phase: 'intercept', round: 5, your_role: 'teammate', waiting: true });
-    const interception = { intercept_success: true, score_a: startingA, score_b: { ...startingB, interceptions: 2 } };
+    scoring.receive('phase_change', { phase: 'guess', round: 5, your_role: 'teammate' });
+    // One reveal can score both registers: team B intercepts while team A decodes wrongly.
+    const both = { intercept_success: true, decrypt_success: false,
+      score_a: { ...startingA, decrypt_failures: 2 }, score_b: { ...startingB, interceptions: 2 } };
     const scoredAt = Date.now();
-    scoring.receive('round_result', interception);
-    const firstScore = store.getState().scoreChange;
-    assert.equal(firstScore.round, 5);
-    assert.ok(firstScore.at >= scoredAt && firstScore.at <= Date.now(), 'the pulse is dated when the live result arrives');
-    assert.deepEqual(firstScore.changes, [{ team: 'B', kind: 'intercept', total: 2 }]);
-    scoring.receive('round_result', interception);
-    assert.equal(store.getState().scoreChange, firstScore, 'a repeated result cannot retrigger the pulse');
-
-    scoring.receive('phase_change', { phase: 'decrypt', round: 5, your_role: 'teammate' });
-    assert.equal(store.getState().scoreChange, firstScore, 'the handover retains the current pulse');
-    const failure = { decrypt_success: false, score_a: { ...startingA, decrypt_failures: 2 }, score_b: interception.score_b };
-    scoring.receive('round_result', failure);
-    const secondScore = store.getState().scoreChange;
-    assert.ok(secondScore.id > firstScore.id, 'the second scored action in the same round has its own pulse');
-    assert.equal(secondScore.round, 5);
-    assert.deepEqual(secondScore.changes, [{ team: 'A', kind: 'failure', total: 2 }]);
+    scoring.receive('round_result', both);
+    const score = store.getState().scoreChange;
+    assert.equal(score.round, 5);
+    assert.ok(score.at >= scoredAt && score.at <= Date.now(), 'the pulse is dated when the live result arrives');
+    assert.deepEqual(score.changes, [{ team: 'A', kind: 'failure', total: 2 }, { team: 'B', kind: 'intercept', total: 2 }]);
     assert.deepEqual(store.getState().roundResult, { intercept_success: true, decrypt_success: false });
-    scoring.receive('round_result', { ...failure, history: [{ round: 5, team: 'A', secret: [2, 4, 1] }] });
-    assert.equal(store.getState().scoreChange, secondScore, 'completing the public history does not replay a score');
-    scoring.receive('game_over', { winner: 'B', reason: 'interceptions', score_a: failure.score_a, score_b: failure.score_b });
-    assert.equal(store.getState().scoreChange, secondScore, 'an immediate terminal packet preserves the final pulse');
+    scoring.receive('round_result', both);
+    assert.equal(store.getState().scoreChange, score, 'a repeated result cannot retrigger the pulse');
+    scoring.receive('round_result', { ...both, history: [{ round: 5, team: 'A', secret: [2, 4, 1] }] });
+    assert.equal(store.getState().scoreChange, score, 'completing the public history does not replay a score');
+    scoring.receive('game_over', { winner: 'B', reason: 'interceptions', score_a: both.score_a, score_b: both.score_b });
+    assert.equal(store.getState().scoreChange, score, 'an immediate terminal packet preserves the final pulse');
     assert.deepEqual(store.getState().roundResult, { intercept_success: true, decrypt_success: false }, 'the ending retains both final judgements');
 
-    const finalSnapshot = { game: { phase: 'game_over', round: 5, score_a: failure.score_a, score_b: failure.score_b,
+    const finalSnapshot = { game: { phase: 'game_over', round: 5, score_a: both.score_a, score_b: both.score_b,
       round_result: { intercept_success: true, decrypt_success: false }, game_over: { winner: 'B' } } };
     scoring.receive('full_sync', finalSnapshot);
     assert.equal(store.getState().scoreChange, null, 'a full sync clears the transient event even when its scores match');
-    scoring.receive('round_result', { ...interception, ...failure });
+    scoring.receive('round_result', both);
     assert.equal(store.getState().scoreChange, null, 'a repeated result after a snapshot does not manufacture a new pulse');
 
-    scoring.receive('full_sync', { game: { phase: 'intercept', round: 5, score_a: startingA, score_b: startingB } });
-    scoring.receive('round_result', interception);
+    scoring.receive('full_sync', { game: { phase: 'guess', round: 5, score_a: startingA, score_b: startingB,
+      actions: { decrypt: { team: 'A', deadline: 0 }, intercept: { team: 'B', deadline: 0, submitted: true } } } });
+    assert.equal(store.getState().actions.intercept.submitted, true, 'a resumed seat sees who has answered');
+    scoring.receive('round_result', both);
     assert.ok(store.getState().scoreChange);
     scoring.close();
     assert.equal(store.getState().scoreChange, null, 'losing the link clears the live event before recovery');
     store.getState().wsService.connect();
     const resumedScore = sockets.at(-1); resumedScore.onopen();
     assert.equal(store.getState().recovering, true);
-    resumedScore.receive('round_result', failure);
+    resumedScore.receive('round_result', both);
     assert.equal(store.getState().scoreChange, null, 'score packets arriving before recovery completes remain silent');
     resumedScore.receive('full_sync', finalSnapshot);
     assert.equal(store.getState().scoreChange, null, 'reconnecting to an ending restores scores without a pulse');

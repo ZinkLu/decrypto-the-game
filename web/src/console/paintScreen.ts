@@ -1,7 +1,7 @@
 import { localizeError } from './i18n';
 import { originalGameLinks, gameIntroduction, guideSteps } from './guide';
-import { word, keyDiskMessage, teamPalette, themeColors, beats, isBeat, briefingKey, transmission, deadlineWarning, timeoutNotice, resultView, resultSummary, handoverLine, gameOverView } from './model';
-import type { Beat, StationState } from './model';
+import { word, keyDiskMessage, teamPalette, themeColors, isBeat, briefingKey, transmission, teammateChoices, teammateStatus, deadlineWarning, timeoutNotice, resultView, resultSummary, handoverLine, gameOverView, seatAction } from './model';
+import type { Action, StationState } from './model';
 import { CREAM, DARK, DIM, FONT, MUTED, RULE, fitLabel, readableText, textLines, line, round, text, wrap, type Painter } from './paintKit';
 import { guideNav, paintGuide } from './paintGuide';
 
@@ -22,10 +22,11 @@ export function paintScreen(p: Painter, guideArt?: HTMLImageElement) {
     const right = w - 55;
     // Most urgent first: an error, this seat's running-out time, how a timeout was settled, AI trouble.
     const warning = deadlineWarning(s, u, u.seconds), settled = s.phase === 'game_over' ? null : timeoutNotice(s);
-    const status = (s.error ? localizeError(u.locale, s.error) : warning ? t(...warning) : settled ? t(...settled) : s.aiNotice ? t(s.aiNotice) : '') || (u.note ? t(u.note) : '') || (u.submitted ? t("密报已发送，等待服务器确认。") : '');
+    const status = (s.error ? localizeError(u.locale, s.error) : warning ? t(...warning) : settled ? t(...settled) : s.aiNotice ? t(s.aiNotice) : '') || (u.note ? t(u.note) : '') || (u.submitted && !s.submitted ? t("密报已发送，等待服务器确认。") : '');
     const helpPage = u.manual || u.about;
     const briefing = !helpPage && !!u.brief && u.brief === briefingKey(s) && s.phase === 'encrypting' ? s.phase : null;
     const sent = u.submitted || s.submitted;
+    const peers = sent ? [] : teammateChoices(s);
     const observing = isBeat(s.phase) && !briefing && !sent && !r.encrypt && !r.guess;
     const revealed = ['round_result', 'game_over'].includes(s.phase) ? [...s.history].reverse().find(row => row.round === s.round && row.secret?.length === 3) : undefined;
     const shownClues = revealed?.clues ?? (s.phase === 'encrypting' && sent && r.encrypt ? u.clues : s.clues);
@@ -43,7 +44,7 @@ export function paintScreen(p: Painter, guideArt?: HTMLImageElement) {
         briefing ? t('第 {0} / 16 回合', [s.round]) : t('第 {0} 回合', [String(s.round).padStart(2, '0')]),
         ...!isBeat(s.phase) ? [] : briefing ? [t('简报')] :
             s.phase === 'encrypting' ? [cast.sending && t('{0} 队发报', [cast.sending]), s.encryptor && t('加密者 {0}', [called(s.encryptor)])] :
-            s.phase === 'intercept' ? [cast.receiving && t('{0} 队拦截', [cast.receiving])] : [cast.sending && t('{0} 队解码', [cast.sending])],
+            [cast.sending && t('{0} 队解码', [cast.sending]), cast.intercepted && cast.receiving ? t('{0} 队拦截', [cast.receiving]) : ''],
         ...isBeat(s.phase) && !['encryptor', 'teammate', 'opponent'].includes(s.myRole) ? [t('旁观')] : [],
     ].filter(Boolean);
     const headerRoom = navX - 79;
@@ -71,10 +72,10 @@ export function paintScreen(p: Painter, guideArt?: HTMLImageElement) {
         });
     };
     // Only overflowing rows need a reading control; the numeric slot stays exposed.
-    const clue = (value: string, index: number, x: number, middle: number, width: number, size = 32, color = CREAM) => {
-        const overflowing = textLines(c, value, width, size, 22, 2, 500).truncated;
+    const clue = (value: string, index: number, x: number, middle: number, width: number, size = 32, color = CREAM, maxLines = 2) => {
+        const overflowing = textLines(c, value, width, size, 22, maxLines, 500).truncated;
         const reading = expanded === index;
-        readableText(c, value, x, middle, overflowing || reading ? width - 68 : width, size, color, 500, 22);
+        readableText(c, value, x, middle, overflowing || reading ? width - 68 : width, size, color, 500, 22, maxLines);
         if (overflowing || reading) {
             text(c, t(reading ? '收起' : '展开'), x + width - 55, middle, 17, tint, 500);
             target('screen', `read-clue-${index}`, t(reading ? '收起第 {0} 条线索' : '展开第 {0} 条线索', [index + 1]), x, middle - 35, width, 70);
@@ -179,21 +180,30 @@ export function paintScreen(p: Painter, guideArt?: HTMLImageElement) {
         });
         foot = revealed ? t('结果已记入纸带 · 等待下一步通信。') : view.sub ? t(...view.sub) : t('本轮结束后揭晓密码。');
     } else if (briefing) {
-        paintBriefing(briefing);
+        paintBriefing();
     } else if (sent) {
-        const confirmed = s.submitted;
-        heading(t(confirmed ? '已提交' : '正在发送…'), t(confirmed ? '已提交，等待结算。' : '等待服务器确认。'));
+        const confirmed = s.submitted, mine = seatAction(s);
+        // A teammate may have answered for us: the team's answer is the one that went out.
+        const answer = s.playerProgress[mine]?.state === 'submitted' && s.playerProgress[mine]?.guesses?.length === 3 ? s.playerProgress[mine]!.guesses! : u.guess;
+        heading(t(confirmed ? '已提交' : '正在发送…'), confirmed ? handover ? t(...handover) : t('已提交，等待结算。') : t('等待服务器确认。'));
         [0, 1, 2].forEach(i => {
             const y = 239 + i * 92;
             underline(y + 67);
             text(c, `0${i + 1}`, 55, y + 27, 22, MUTED);
-            clue((r.encrypt ? u.clues[i] : s.clues[i]) || '—', i, 126, y + 27, 674);
-            if (r.guess && u.guess[i]) text(c, String(u.guess[i]), 875, y + 27, 42, tint, 500);
+            clue((mine === 'encrypt' ? u.clues[i] : s.clues[i]) || '—', i, 126, y + 27, 674);
+            if (mine !== 'encrypt' && answer[i]) text(c, String(answer[i]), 875, y + 27, 42, tint, 500);
         });
+        // While the other team still guesses, its progress shows at the foot; never its picks.
+        const other: Action | '' = mine === 'decrypt' ? 'intercept' : mine === 'intercept' ? 'decrypt' : '';
+        const rival = other && s.actions[other] && !s.actions[other]!.submitted ? transmission(s, false, other) : null;
+        if (confirmed && rival) {
+            live = true;
+            foot = guessStatus(rival, rival.team);
+        }
     } else if (observing) {
         paintWatch();
     } else {
-        heading(t(r.encrypt ? '写下三条线索。' : s.phase === 'intercept' ? '截获对手的密码。' : '译出队友的密码。'), handover ? t(...handover) : t(r.encrypt ? diskReadable ? '按私密密码顺序，分别提示对应密词。' : keyDiskMessage(u.keyDisk) : '点击一行，再用下方数字键选择编号。'));
+        heading(t(r.encrypt ? '写下三条线索。' : r.action === 'intercept' ? '截获对手的密码。' : '译出队友的密码。'), peers.length ? t('参考队友建议，按 ACTION 提交你选的三位。') : handover ? t(...handover) : t(r.encrypt ? diskReadable ? '按私密密码顺序，分别提示对应密词。' : keyDiskMessage(u.keyDisk) : '点击一行，再用下方数字键选择编号。'));
         [0, 1, 2].forEach(i => {
             const y = 239 + i * 92;
             const active = u.focus === `clue-${i}` || r.guess && u.slot === i;
@@ -214,18 +224,41 @@ export function paintScreen(p: Painter, guideArt?: HTMLImageElement) {
                 // The empty slot the next key will fill blinks like a terminal cursor.
                 if (active && !u.guess[i] && r.active) blink.push({ x: 866, y: y + 3, w: 52, h: 48, kind: 'cursor' });
                 target('screen', `slot-${i}`, t('选择第 {0} 位密码', [i + 1]), 55, y - 9, 890, 78, { disabled: !r.active });
-                clue(s.clues[i] || t('等待线索…'), i, 126, y + 27, 674);
+                clue(s.clues[i] || t('等待线索…'), i, 126, y + 27, 674, 32, CREAM, peers.length ? 1 : 2);
+                // Each seat keeps its own small annotation below the public clue. A blinking
+                // cursor marks its current line without hiding the digit already suggested.
+                peers.forEach((peer, j) => {
+                    const width = 674 / peers.length, x = 126 + j * width;
+                    const active = peer.focus === i + 1 && !peer.disconnected;
+                    const color = active ? tint : MUTED;
+                    if (active) {
+                        c.fillStyle = tint; c.fillRect(x, y + 49, 6, 12);
+                        blink.push({ x: x - 2, y: y + 47, w: 10, h: 16, kind: 'cursor' });
+                    }
+                    const name = peer.ai && !peer.player.startsWith('AI') ? t('AI · {0}', [peer.player]) : peer.player;
+                    const label = textLines(c, name, width - 66, 20, 20, 1, 400).lines[0] || '';
+                    text(c, label, x + 12, y + 55, 20, color);
+                    text(c, ` · ${peer.guesses[i] || '—'}`, x + 12 + measure(label, 20), y + 55, 22, peer.guesses[i] ? CREAM : DIM, 500);
+                });
             }
         });
-        // With more than one of us on the keypad, a teammate's picks arrive as they make them.
-        const peer = r.guess && s.playerProgress?.action === r.action && s.playerProgress.state === 'editing' &&
-            s.playerProgress.player !== 'AI Agent' && s.playerProgress.player !== me?.nickname ? s.playerProgress : null;
         foot = r.encrypt ? t('已填写 {0} / 3 · 按 ACTION 发报', [u.clues.filter(v => v.trim()).length]) :
-            peer ? t('{0} 选了 {1} · 按 ACTION 确认', [peer.player, [0, 1, 2].map(i => peer.guesses?.[i] || '—').join(' · ')]) : t('三个不同编号 · 按 ACTION 确认');
+            peers.length ? t('队友建议 · ACTION 提交你选的三位') : t('三个不同编号 · 按 ACTION 确认');
     }
     if (!u.manual) {
         line(c, 55, 527, 890, RULE);
-        if (live && !status) {
+        if (peers.length && r.guess && !sent && !briefing && !helpPage && !status) {
+            // A separate state per seat: one model retrying never replaces another's
+            // ready suggestion, and a complete suggestion is not a submitted answer.
+            peers.forEach((peer, j) => {
+                const width = 890 / peers.length, x = 55 + j * width;
+                const name = peer.ai && !peer.player.startsWith('AI') ? t('AI · {0}', [peer.player]) : peer.player;
+                const nameLine = textLines(c, name, width - 18, 20, 20, 1).lines[0] || '';
+                text(c, nameLine, x, 547, 20, CREAM);
+                fitLabel(c, t(...teammateStatus(peer)), x, 572, 19,
+                    peer.state === 'unavailable' ? colors.warning.light : MUTED, 400, width - 18);
+            });
+        } else if (live && !status) {
             // The link lamp of the terminal: a slow pulse while the other seat is quiet.
             text(c, '●', 55, 555, 15, tint);
             blink.push({ x: 50, y: 543, w: 22, h: 24, kind: 'live' });
@@ -235,22 +268,16 @@ export function paintScreen(p: Painter, guideArt?: HTMLImageElement) {
         c.fillStyle = DARK; c.fillRect(50, 539, 900, 42);
         fitLabel(c, status, 55, 559, 19, colors.warning.light, 400, 890);
     }
-    /** Round start and every handover: who acts in this beat, and what this seat does now. */
-    function paintBriefing(beat: Beat) {
-        const step = beats.indexOf(beat);
+    /** Round start: who acts in each beat of the round, and what this seat does first. */
+    function paintBriefing() {
         const teamOf = (i: number) => i === 1 ? cast.receiving : cast.sending;
         const color = (i: number) => teamPalette(teamOf(i), s.myTeam, u.theme).light;
         const encryptor = called(s.encryptor) || t('加密者');
-        const headline = beat === 'encrypting' ? cast.sending ? t('{0} 队发报', [cast.sending]) : t('新的回合开始') :
-            beat === 'intercept' ? t('{0} 队拦截', [cast.receiving || '—']) : t('{0} 队解码', [cast.sending || '—']);
-        fitLabel(c, headline, 55, 127, 43, color(step), 600, 890);
+        fitLabel(c, cast.sending ? t('{0} 队发报', [cast.sending]) : t('新的回合开始'), 55, 127, 43, color(0), 600, 890);
         // Teams by letter, never "rivals": the same page reaches both sides of the table.
-        fitLabel(c, beat === 'encrypting' ? t('加密者读取密码，为三个编号各写一条线索。') :
-            beat === 'intercept' ? t('{0} 队的三条线索已公开，{1} 队先猜。', [cast.sending || '—', cast.receiving || '—']) :
-            !cast.intercepted ? t('前两次发报不拦截，线索直达 {0} 队。', [cast.sending || '—']) :
-            t('{0} 队没能截获，轮到 {1} 队解码。', [cast.receiving || '—', cast.sending || '—']),
+        fitLabel(c, cast.intercepted ? t('加密者写好三条线索后，两队同时猜，都提交后揭晓密码。') : t('加密者读取密码，为三个编号各写一条线索。'),
             55, 180, 22, MUTED, 400, 890);
-        // The round as the phase panel shows it: three stations, the current one lit.
+        // The round as the phase panel shows it: the clues, then both guesses at once.
         const stations = [
             { name: encryptor, who: cast.sending ? t('{0} 队 · 写三条线索', [cast.sending]) : t('写三条线索') },
             cast.intercepted ? { name: cast.receiving ? t('{0} 队', [cast.receiving]) : '—', who: listed(cast.interceptors) || t('看公开线索与旧记录') }
@@ -259,34 +286,29 @@ export function paintScreen(p: Painter, guideArt?: HTMLImageElement) {
         ];
         stations.forEach((station, i) => {
             const x = 55 + i * 312, skipped = i === 1 && !cast.intercepted;
-            const state = skipped ? 'skip' : i < step ? 'done' : i === step ? 'now' : 'next';
-            const ink = state === 'now' ? color(i) : state === 'done' ? CREAM : DIM;
+            const state = skipped ? 'skip' : i === 0 ? 'now' : 'next';
+            const ink = state === 'now' ? color(i) : DIM;
             text(c, `0${i + 1}`, x, 242, 18, ink, 600);
             fitLabel(c, t(['加密', '拦截', '解码'][i]), x + 34, 242, 20, ink, 600, 200);
-            if (i < 2) text(c, '›', x + 282, 242, 26, DIM);
-            c.fillStyle = state === 'now' ? color(i) : state === 'done' ? '#6f7c78' : '#2b3a3c';
+            // Interception and decoding run side by side.
+            if (i === 0) text(c, '›', x + 282, 242, 26, DIM);
+            else if (i === 1 && !skipped) text(c, '+', x + 280, 242, 24, DIM);
+            c.fillStyle = state === 'now' ? color(i) : '#2b3a3c';
             c.fillRect(x, state === 'now' ? 259 : 260, 266, state === 'now' ? 4 : 2);
-            fitLabel(c, station.name, x, 304, 28, state === 'now' || state === 'done' ? CREAM : MUTED, 600, 266);
+            fitLabel(c, station.name, x, 304, 28, state === 'now' ? CREAM : MUTED, 600, 266);
             text(c, station.who, x, 342, 17, MUTED, 400, 266);
-            const mark = t(state === 'now' ? '进行中' : state === 'done' ? i === 1 ? s.roundResult?.intercept_success ? '已截获' : '未截获' : '已完成' : state === 'skip' ? '本轮跳过' : '稍后');
+            const mark = t(state === 'now' ? '进行中' : state === 'skip' ? '本轮跳过' : i === 2 && cast.intercepted ? '与拦截同时' : '稍后');
             if (state === 'now') {
                 cursor(x, 382, color(i));
                 text(c, mark, x + 22, 382, 19, color(i), 600);
                 blink.push({ x: x - 4, y: 362, w: 34 + measure(mark, 19, 600), h: 40, kind: 'cursor' });
-            } else text(c, state === 'done' && i !== 1 ? `✓ ${mark}` : mark, x, 382, 19, state === 'done' ? CREAM : DIM, 500);
+            } else text(c, mark, x, 382, 19, DIM, 500);
         });
         const role = s.myRole;
-        const you = beat === 'encrypting'
-            ? role === 'encryptor' ? t('你来加密：等软盘读出密码，再写三条线索。')
+        const you = role === 'encryptor' ? t('你来加密：等软盘读出密码，再写三条线索。')
             : role === 'teammate' ? t('你负责解码：先等 {0} 写好线索。', [encryptor])
             : role === 'opponent' ? t(cast.intercepted ? '你方稍后拦截：留意他们的线索。' : '本轮你方旁听：前两次发报不拦截。')
-            : t('你正在旁听这一轮。')
-            : beat === 'intercept'
-            ? role === 'opponent' ? t('轮到你拦截：三个编号全对才算截获。')
-            : role === 'encryptor' || role === 'teammate' ? t('对手正在猜你们的密码。') : t('你正在旁听这一轮。')
-            : role === 'teammate' ? t('轮到你解码：对照我方密词，按顺序选编号。')
-            : role === 'encryptor' ? t('队友正在解码，你只能等待。')
-            : role === 'opponent' ? t('{0} 队正在解码。', [cast.sending || '—']) : t('你正在旁听这一轮。');
+            : t('你正在旁听这一轮。');
         line(c, 55, 424, 890, RULE);
         text(c, '▶', 55, 464, 20, tint);
         fitLabel(c, you, 86, 464, 26, CREAM, 500, 859);
@@ -294,60 +316,86 @@ export function paintScreen(p: Painter, guideArt?: HTMLImageElement) {
         // The whole glass skips ahead; the header's guide key stays above it.
         targets.unshift({ surface: 'screen', id: 'brief-skip', label: t('跳过简报'), x: 0, y: 0, w: w, h: frames.screen.height });
     }
-    /** Another seat is acting: its three slots, the one being worked on blinking. */
-    function paintWatch() {
-        const tx = transmission(s, diskReadable && s.myRole === 'encryptor')!;
-        const team = s.phase === 'intercept' ? cast.receiving : cast.sending;
+    /** One team's progress in a line: who works on which slot, or that it has answered. */
+    function guessStatus(tx: NonNullable<ReturnType<typeof transmission>>, team: string) {
         const crew = team ? t('{0} 队', [team]) : t('对手');
-        heading(s.phase === 'encrypting' ? t('{0} 正在加密。', [called(s.encryptor) || t('加密者')]) :
-            s.phase === 'intercept' ? team ? t('{0} 队正在拦截。', [team]) : t('对手正在拦截。') :
-            s.myRole === 'encryptor' || !team ? t('队友正在解码。') : t('{0} 队正在解码。', [team]),
-            handover ? t(...handover) : s.phase === 'encrypting'
-                ? t(s.myRole === 'teammate' ? cast.intercepted ? '线索写好后，对手先拦截，再轮到你解码。' : '线索写好后，就轮到你解码。'
-                    : s.myRole === 'opponent' ? cast.intercepted ? '线索写好后，轮到你方拦截。' : '前两次发报不拦截，这一轮你方旁听。' : '线索发出后，这里会公开显示。')
-                : s.myRole === 'encryptor' && diskReadable ? t('本轮密码 {0} · 对照看他们猜得对不对。', [s.secretDigits.join('·')])
-                : t(s.phase === 'intercept' ? '他们只看得到公开线索和旧记录。' : s.myRole === 'encryptor' ? '你只能看着，不能提示。' : '看看他们能不能译对。'));
+        const who = tx.player ? called(tx.player) : crew;
+        const working = tx.slots.findIndex(slot => slot.active);
+        return tx.submitted ? t('{0} 已提交', [crew]) : !tx.started ? t('{0} 尚未开始', [crew]) :
+            tx.ai && working >= 0 ? t(tx.retrying ? '{0} 正在重试第 {1} 条' : '{0} 正在推理第 {1} 条', [who, working + 1]) :
+            t('{0} · 已选 {1} / 3', [who, tx.count]);
+    }
+    /** Other seats are acting: their slots, the one being worked on blinking. */
+    function paintWatch() {
+        if (s.phase === 'guess') return paintGuessWatch();
+        const tx = transmission(s, false, 'encrypt')!;
+        heading(t('{0} 正在加密。', [called(s.encryptor) || t('加密者')]),
+            t(s.myRole === 'teammate' ? cast.intercepted ? '线索公开后，你方解码，对手同时拦截。' : '线索写好后，就轮到你解码。'
+                : s.myRole === 'opponent' ? cast.intercepted ? '线索公开后，你方拦截，他们同时解码。' : '前两次发报不拦截，这一轮你方旁听。' : '线索发出后，这里会公开显示。'));
         tx.slots.forEach((slot, i) => {
             const y = 239 + i * 92, middle = y + 27;
             underline(y + 67, slot.active);
             text(c, `0${i + 1}`, 55, middle, 22, slot.active ? tint : MUTED);
-            if (s.phase === 'encrypting') {
-                if (slot.active) {
-                    const label = t(slot.done ? '正在修改这一条…' : '正在写这一条…');
-                    cursor(126, middle, tint);
-                    fitLabel(c, label, 152, middle, 28, tint, 500, 560);
-                    blink.push({ x: 120, y: middle - 24, w: 42 + Math.min(560, measure(label, 28, 500)), h: 48, kind: 'cursor' });
-                } else if (slot.done) {
-                    text(c, t('已写好'), 126, middle, 28, CREAM, 500);
-                    text(c, '✓', 875, middle, 32, tint, 600);
-                } else text(c, t('等待'), 126, middle, 28, DIM);
-                return;
-            }
-            clue(s.clues[i] || t('等待线索…'), i, 126, middle, 560);
-            c.save();
-            c.textAlign = 'right';
             if (slot.active) {
-                text(c, t('推敲中'), 856, middle, 21, tint, 500);
-                cursor(876, middle, tint);
-                blink.push({ x: 846 - measure(t('推敲中'), 21, 500), y: middle - 24, w: 60 + measure(t('推敲中'), 21, 500), h: 48, kind: 'cursor' });
-            } else if (slot.done && slot.digit) {
-                // Only the encryptor can grade a pick; a rival's hit is bad news, a teammate's is good.
-                if (slot.match !== undefined) {
-                    const rivals = s.phase === 'intercept';
-                    text(c, t(rivals ? slot.match ? '猜中' : '未中' : slot.match ? '译对' : '译错'), 856, middle, 21,
-                        rivals === slot.match ? colors.warning.light : slot.match ? tint : MUTED, 600);
-                }
-            } else if (slot.done) text(c, t('已选定'), 856, middle, 21, CREAM, 500);
-            c.restore();
-            if (slot.done && slot.digit) text(c, String(slot.digit), 875, middle, 42, tint, 500);
-            else if (!slot.active) text(c, slot.done ? '●' : '—', 875, middle, slot.done ? 24 : 42, slot.done ? CREAM : MUTED, 500);
+                const label = t(slot.done ? '正在修改这一条…' : '正在写这一条…');
+                cursor(126, middle, tint);
+                fitLabel(c, label, 152, middle, 28, tint, 500, 560);
+                blink.push({ x: 120, y: middle - 24, w: 42 + Math.min(560, measure(label, 28, 500)), h: 48, kind: 'cursor' });
+            } else if (slot.done) {
+                text(c, t('已写好'), 126, middle, 28, CREAM, 500);
+                text(c, '✓', 875, middle, 32, tint, 600);
+            } else text(c, t('等待'), 126, middle, 28, DIM);
         });
         live = true;
-        const who = tx.player ? called(tx.player) : crew;
-        const working = tx.slots.findIndex(slot => slot.active);
-        foot = !tx.started ? t('链路已接通 · 等待 {0} 开始', [s.phase === 'encrypting' ? called(s.encryptor) || t('加密者') : crew]) :
-            tx.ai && working >= 0 ? t(tx.retrying ? '{0} 正在重试第 {1} 条' : '{0} 正在推理第 {1} 条', [who, working + 1]) :
-            t(s.phase === 'encrypting' ? '{0} · 已写好 {1} / 3' : '{0} · 已选 {1} / 3', [who, tx.count]);
+        const who = tx.player ? called(tx.player) : t('加密者');
+        foot = !tx.started ? t('链路已接通 · 等待 {0} 开始', [called(s.encryptor) || t('加密者')]) :
+            tx.ai && tx.slots.some(slot => slot.active) ? t(tx.retrying ? '{0} 正在重试第 {1} 条' : '{0} 正在推理第 {1} 条', [who, tx.slots.findIndex(slot => slot.active) + 1]) :
+            t('{0} · 已写好 {1} / 3', [who, tx.count]);
+    }
+    /**
+     * Both teams guess at once: a column for each, beside the public clues. A pick shows only
+     * to its own team and the encryptor; with the disk read, the encryptor sees which are right.
+     */
+    function paintGuessWatch() {
+        const readable = diskReadable && s.myRole === 'encryptor';
+        const columns = [
+            ...cast.intercepted ? [{ action: 'intercept' as const, team: cast.receiving, x: 660 }] : [],
+            { action: 'decrypt' as const, team: cast.sending, x: 805 },
+        ].map(column => ({ ...column, tx: transmission(s, readable, column.action)! }));
+        const both = columns.length > 1, sending = cast.sending || '—', receiving = cast.receiving || '—';
+        heading(s.myRole === 'encryptor' ? t(both ? '队友解码，对手同时拦截。' : '队友正在解码。') :
+            both ? t('{0} 队解码，{1} 队同时拦截。', [sending, receiving]) : t('{0} 队正在解码。', [sending]),
+            readable ? t('本轮密码 {0} · 对照看两队猜得对不对。', [s.secretDigits.join('·')]) :
+            s.myRole === 'encryptor' ? t('你只能看着，不能提示。') : handover ? t(...handover) : t('揭晓前，谁也看不到对方选了什么。'));
+        columns.forEach(({ action, team, x, tx }) => {
+            const color = teamPalette(team, s.myTeam, u.theme).light;
+            fitLabel(c, t(action === 'intercept' ? '{0} 队拦截' : '{0} 队解码', [team || '—']) + (tx.submitted ? ' ✓' : ''), x, 220, 18, tx.submitted ? CREAM : color, 600, 135);
+        });
+        [0, 1, 2].forEach(i => {
+            const y = 239 + i * 92, middle = y + 27;
+            underline(y + 67, columns.some(({ tx }) => tx.slots[i].active));
+            text(c, `0${i + 1}`, 55, middle, 22, MUTED);
+            clue(s.clues[i] || t('等待线索…'), i, 126, middle, both ? 520 : 670);
+            columns.forEach(({ action, team, x, tx }) => {
+                const slot = tx.slots[i], color = teamPalette(team, s.myTeam, u.theme).light;
+                if (slot.active) {
+                    const label = t('推敲中');
+                    cursor(x, middle, color);
+                    text(c, label, x + 22, middle, 20, color, 500);
+                    blink.push({ x: x - 4, y: middle - 24, w: 34 + measure(label, 20, 500), h: 48, kind: 'cursor' });
+                } else if (slot.done && slot.digit) {
+                    text(c, String(slot.digit), x, middle, 38, color, 500);
+                    // Only the encryptor grades a pick: a rival's hit is bad news, a teammate's good.
+                    if (slot.match !== undefined) {
+                        const rivals = action === 'intercept';
+                        text(c, t(rivals ? slot.match ? '猜中' : '未中' : slot.match ? '译对' : '译错'), x + 34, middle, 18,
+                            rivals === slot.match ? colors.warning.light : slot.match ? tint : MUTED, 600);
+                    }
+                } else text(c, slot.done ? '●' : '—', x, middle, slot.done ? 24 : 38, slot.done ? CREAM : DIM, 500);
+            });
+        });
+        live = true;
+        foot = columns.map(({ team, tx }) => guessStatus(tx, team)).join(u.locale === 'zh' ? '　' : ' · ');
     }
     function field(id: string, value: string, placeholder: string, x: number, y: number, width: number, height: number, maxLength: number) {
         if (!s.connected) placeholder = t('连接中') + '…';

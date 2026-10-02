@@ -29,9 +29,9 @@ export default function GuideContent({ locale, about = false, transcript = false
                 <h3>{t('加密者抽到的密码')}</h3><div className="field-guide-words">{guideClues.map((clue, i) => <span key={clue}><b>{[3, 1, 4][i]} ↓</b>{t(clue)}</span>)}</div><small>{t('公开线索 · 只说词，不说编号')}</small>
                 {step(2)}
                 {history}
-                <div className="field-guide-step"><i className="field-agent" style={{ backgroundImage: `url(${guideArtUrl})`, backgroundPosition: 'right center' }}/><div><h3>{t('对手 · 看记录拦截')}</h3><small>{t('先猜')} · 2 · 1 · 4 ×</small></div></div>
+                <div className="field-guide-step"><i className="field-agent" style={{ backgroundImage: `url(${guideArtUrl})`, backgroundPosition: 'right center' }}/><div><h3>{t('对手 · 看记录拦截')}</h3><small>{t('同时猜')} · 2 · 1 · 4 ×</small></div></div>
                 {step(3)}
-                <div className="field-guide-step"><i className="field-agent" style={{ backgroundImage: `url(${guideArtUrl})`, backgroundPosition: 'center' }}/><div><h3>{t('队友 · 看密词解码')}</h3><small>{t('后猜')}</small><strong className="field-code">3 · 1 · 4 ✓</strong></div></div>
+                <div className="field-guide-step"><i className="field-agent" style={{ backgroundImage: `url(${guideArtUrl})`, backgroundPosition: 'center' }}/><div><h3>{t('队友 · 看密词解码')}</h3><small>{t('同时猜')}</small><strong className="field-code">3 · 1 · 4 ✓</strong></div></div>
                 <small>{t('三个编号，顺序全对才成功。')}</small>
             </div>}
             {transcript && <ol>{guideSteps.map((title, i) => <li key={title}>{t(title)}{locale === 'zh' ? '：' : ': '}{t(guideLeads[i])}</li>)}</ol>}

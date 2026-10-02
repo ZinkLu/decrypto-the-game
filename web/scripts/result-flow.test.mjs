@@ -6,9 +6,9 @@ const { resultSummary, resultView, handoverLine, briefingKey, previewState } = a
 const { translate } = await import(await moduleUrl('i18n'));
 const labels = state => resultSummary(state).map(row => translate('zh', ...row.label));
 
-test('an interception ends the round without a decode, with its meaning for both teams', () => {
+test('a correct decode keeps the rival interception, with its meaning for both teams', () => {
     const sender = previewState({}, 'round-scored');
-    assert.deepEqual(labels(sender), ['B 队截获成功 · 截获 +1', 'A 队被截获 · 本轮不解码']);
+    assert.deepEqual(labels(sender), ['B 队截获成功 · 截获 +1', 'A 队解码成功 · 失误不变']);
     assert.deepEqual(resultSummary(sender).map(row => row.scoring), [true, false]);
     assert.equal(resultView(sender).tone, 'bad');
     assert.deepEqual(resultView(sender).title, ['本轮回执', []]);
@@ -17,7 +17,7 @@ test('an interception ends the round without a decode, with its meaning for both
     assert.equal(resultView({ ...sender, myTeam: '', myRole: 'observer' }).tone, 'neutral');
 });
 
-test('a round stored under the earlier rule, intercepted and then decoded wrongly, still shows both', () => {
+test('interception and decode errors both appear when the same round changes both registers', () => {
     const state = previewState({}, 'round-scored');
     state.roundResult = { intercept_success: true, decrypt_success: false };
     state.history = state.history.map(row => row.round === state.round ? { ...row, decrypt: [0, 0, 0], timeouts: ['decrypt'] } : row);
@@ -34,13 +34,13 @@ test('unsuccessful interception and successful decode are neutral when no regist
     assert.deepEqual(resultView(state).sub, ['本轮没有新增截获或失误', []]);
 });
 
-test('an interim interception never invents a decode from the encryptor private code', () => {
-    const state = previewState({}, 'intercept-hit');
-    assert.equal(resultSummary(state).length, 1);
-    assert.deepEqual(resultView(state).title, ['{0} 队截获成功', ['B']]);
-    assert.deepEqual(resultView(state).sub, ['{0} 队截获 {1} / 2 · 本轮不再解码', ['B', 1]]);
-    assert.ok(!state.history.some(row => row.round === state.round));
-    assert.equal(resultSummary({ ...state, roundResult: null }).length, 0);
+test('nothing is judged while both teams still guess, even after one of them answered', () => {
+    for (const name of ['watch-guess', 'decrypt-sent']) {
+        const state = previewState({}, name);
+        assert.ok(!state.history.some(row => row.round === state.round));
+        assert.deepEqual(resultSummary(state), [], name);
+        assert.deepEqual(resultView(state), { title: ['本轮回执', []], sub: null, tone: 'neutral' }, name);
+    }
 });
 
 test('a restored final screen reconstructs the deciding error only from this round public history', () => {
@@ -63,11 +63,16 @@ test('early-round receipts show interception was skipped and handovers do not bl
         assert.ok(handoverLine(working));
     }
     assert.deepEqual(handoverLine({ ...previewState({}, 'decrypt'), round: 2 }), ['前两次发报不拦截 · 轮到 {0} 队解码', ['A']]);
+    assert.deepEqual(handoverLine(previewState({}, 'decrypt')), ['{0} 队解码，{1} 队同时拦截', ['A', 'B']]);
+    assert.deepEqual(handoverLine(previewState({}, 'decrypt-sent')), ['{0} 队已提交 · 等 {1} 队拦截后揭晓', ['A', 'B']]);
+    const intercepted = previewState({}, 'intercept');
+    assert.deepEqual(handoverLine({ ...intercepted, actions: { ...intercepted.actions, intercept: { ...intercepted.actions.intercept, submitted: true } } }),
+        ['{0} 队已提交 · 等 {1} 队解码后揭晓', ['A', 'B']]);
     assert.equal(handoverLine(previewState({}, 'encrypting')), null);
 });
 
 test('all result and handover copy has an English translation', () => {
-    for (const name of ['intercept-hit', 'round-scored', 'round-failure', 'game-over-failure', 'round_result', 'game_over', 'intercept', 'decrypt']) {
+    for (const name of ['round-scored', 'round-failure', 'game-over-failure', 'round_result', 'game_over', 'intercept', 'decrypt', 'decrypt-sent', 'watch-guess']) {
         const state = previewState({}, name);
         const view = resultView(state);
         const lines = [view.title, view.sub, handoverLine(state), ...resultSummary(state).map(row => row.label)].filter(Boolean);
