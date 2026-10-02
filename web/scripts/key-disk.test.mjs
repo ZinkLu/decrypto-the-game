@@ -58,6 +58,32 @@ test('the encryptor introduction waits for a surface and finishes before ordinar
     assert.equal(advanceKeyDisk(arriving, 2500 + keyDiskDurations.arriving).phase, 'inserting');
 });
 
+test('delivery seats the disk within a second after the full role notice, then finishes reading before revealing', () => {
+    let disk = syncKeyDisk(emptyKeyDisk, id, 100, true, false, true);
+    assert.equal(keyDiskDurations.announcing, 2400, 'speeding up the drive must not shorten the role notice');
+    assert.ok(keyDiskDurations.arriving + keyDiskDurations.inserting <= 1000, 'physical delivery should finish within a second');
+    let now = 100 + keyDiskDurations.announcing;
+    assert.equal(advanceKeyDisk(disk, now - 1), disk);
+    disk = advanceKeyDisk(disk, now);
+    for (const phase of ['arriving', 'inserting']) {
+        assert.equal(disk.phase, phase);
+        now += keyDiskDurations[phase];
+        assert.equal(readable(advanceKeyDisk(disk, now - 1)), false);
+        const before = keyDiskPose(disk, now);
+        disk = advanceKeyDisk(disk, now);
+        const after = keyDiskPose(disk, now);
+        for (const property of ['visible', 'x', 'y', 'z', 'tilt', 'travel', 'button']) {
+            assert.equal(after[property], before[property], `${phase} ends without a ${property} jump`);
+        }
+        assert.equal(readable(disk), false);
+    }
+    assert.equal(disk.phase, 'reading');
+    assert.equal(keyDiskPose(disk, now).travel, diskSeatTravel);
+    assert.equal(advanceKeyDisk(disk, now + keyDiskDurations.reading - 1), disk);
+    assert.equal(readable(disk), false, 'seating alone does not expose the password');
+    assert.equal(readable(advanceKeyDisk(disk, now + keyDiskDurations.reading)), true);
+});
+
 test('reduced motion keeps the role introduction readable for the full duration', () => {
     const disk = syncKeyDisk(emptyKeyDisk, id, 100, true, true, true);
     assert.equal(disk.phase, 'announcing');
@@ -142,10 +168,11 @@ test('eject conceals immediately; refreshes, translations and phase changes do n
     disk = actKeyDisk(disk, false, 1000);
     assert.equal(disk.phase, 'inserting');
     assert.equal(readable(disk), false);
-    disk = advanceKeyDisk(disk, 2195);
+    const seatedAt = 1000 + keyDiskDurations.inserting;
+    disk = advanceKeyDisk(disk, seatedAt);
     assert.equal(disk.phase, 'reading');
     assert.equal(readable(disk), false);
-    assert.equal(readable(advanceKeyDisk(disk, 2615)), true);
+    assert.equal(readable(advanceKeyDisk(disk, seatedAt + keyDiskDurations.reading)), true);
 });
 
 test('an eject during reading cancels reveal and role/round changes revoke the old key', () => {
@@ -174,7 +201,7 @@ test('reduced motion settles without waiting and background pauses cannot reveal
 
 test('delivery aligns fully before entering guides and geometry is seated before reading', () => {
     const disk = { id, phase: 'arriving', startedAt: 0 };
-    const presented = keyDiskPose(disk, 500);
+    const presented = keyDiskPose(disk, keyDiskDurations.arriving / 2);
     assert.ok(presented.tilt > 0 && presented.z > 0, 'label faces the player outside the drive');
     const aligned = keyDiskPose(disk, keyDiskDurations.arriving);
     assert.equal(aligned.tilt, 0); assert.equal(aligned.x, 0); assert.equal(aligned.y, 0); assert.equal(aligned.z, 0);
@@ -256,9 +283,10 @@ test('an ejected disk can be fully removed and reinserted without an early revea
     const inserting = advanceKeyDisk(returning, 820);
     assert.equal(keyDiskPose(returning, 820).travel, keyDiskPose(inserting, 820).travel);
     assert.equal(keyDiskPose(returning, 820).tilt, 0);
-    const reading = advanceKeyDisk(inserting, 2015);
+    const seatedAt = inserting.startedAt + keyDiskDurations.inserting;
+    const reading = advanceKeyDisk(inserting, seatedAt);
     assert.equal(readable(reading), false);
-    assert.equal(readable(advanceKeyDisk(reading, 2435)), true);
+    assert.equal(readable(advanceKeyDisk(reading, seatedAt + keyDiskDurations.reading)), true);
     assert.equal(releaseKeyDisk(pulled, false, 200, true).phase, 'removed');
     assert.equal(actKeyDisk(removed, false, 500, true).phase, 'ready');
 });

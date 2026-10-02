@@ -2,14 +2,15 @@ import { translate } from './i18n';
 import { useLayoutEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { archiveRows, type StationState } from './model';
-import { paperFeedDuration, paperTearDuration } from './mechanics';
+import { paperFeedDuration } from './mechanics';
 import FieldNotebook from './FieldNotebook';
 import ArchiveViews from './ArchiveViews';
 import './notebook.css';
 
 const motionRate = import.meta.env.DEV && new URLSearchParams(location.search).get('motion') === 'slow' ? .2 : 1;
 const enterDuration = paperFeedDuration / motionRate;
-const exitDuration = paperTearDuration / motionRate;
+// Return control promptly; the printer finishes tearing its physical sheet underneath.
+const exitDuration = 200 / motionRate;
 
 interface Props { locale: 'zh' | 'en'; open: boolean; state: StationState; onClose: () => void; onClosed: () => void; onVisibilityChange: (shown: boolean) => void }
 

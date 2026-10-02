@@ -190,12 +190,12 @@ button,input { font: inherit; }
 /* This untransformed track fixes the scroll extent while its paper moves. */
 .archive-paper-track { display: flow-root; min-height: 100%; padding: 64px 16px; overflow: clip; }
 .archive-dialog::backdrop { background: #14201b66; animation: archive-dim var(--archive-enter-duration, 260ms) both; backdrop-filter: blur(2px); }
-.archive-dialog[data-open="false"]::backdrop { animation: archive-dim-out var(--archive-exit-duration, 800ms) both; }
+.archive-dialog[data-open="false"]::backdrop { animation: archive-dim-out var(--archive-exit-duration, 200ms) both; }
 .archive-sheet { width: min(520px, 100%); min-height: 0; max-height: none; margin-inline: auto; border: 0; box-shadow: 0 18px 55px #08130b45; transform: translate3d(0, 0, 0); will-change: transform, opacity; animation: receipt-rise var(--archive-enter-duration, 260ms) cubic-bezier(.22,1,.36,1) both; }
 .archive-sheet::before { display: block; }
 .archive-sheet::after { content: ''; position: absolute; bottom: -8px; left: 0; right: 0; height: 9px; background: linear-gradient(45deg, transparent 6px, #f0e5ca 0) 0 0 / 12px 12px, linear-gradient(-45deg, transparent 6px, #f0e5ca 0) 0 0 / 12px 12px; }
 .archive-dialog[data-open="false"] { overflow-y: hidden; }
-.archive-dialog[data-open="false"] .archive-sheet { animation: receipt-discard var(--archive-exit-duration, 800ms) cubic-bezier(.5,0,.75,0) both; }
+.archive-dialog[data-open="false"] .archive-sheet { animation: receipt-discard var(--archive-exit-duration, 200ms) cubic-bezier(.5,0,.75,0) both; }
 .archive-header { position: relative; justify-content: center; text-align: center; padding: 28px 60px 18px; gap: 12px; border-bottom: 1px dashed #847b6190; }
 .archive-header h2 { font-size: 30px; letter-spacing: .15em; }
 .archive-eyebrow { justify-content: center; margin-bottom: 10px; font-size: 10px; gap: 6px 12px; }
@@ -355,8 +355,8 @@ button,input { font: inherit; }
 .mobile-drive > i { float: right; width: 9px; height: 5px; background: #756847; }
 .mobile-key-disk[data-phase="ready"] .mobile-drive > i { background: #4a7d4b; }
 .mobile-key-disk[data-phase="reading"] .mobile-drive > i { background: #a26934; animation: disk-read .14s steps(2) 3; }
-.mobile-key-disk[data-phase="arriving"] .mobile-floppy { animation: disk-deliver 1.05s both; }
-.mobile-key-disk[data-phase="inserting"] .mobile-floppy { animation: disk-insert 1.195s both; }
+.mobile-key-disk[data-phase="arriving"] .mobile-floppy { animation: disk-deliver var(--disk-arrive-duration, 420ms) both; }
+.mobile-key-disk[data-phase="inserting"] .mobile-floppy { animation: disk-insert var(--disk-insert-duration, 520ms) both; }
 .mobile-key-disk[data-phase="ejecting"] .mobile-floppy { animation: disk-eject .62s both; }
 .mobile-key-disk[data-phase="ejected"] .mobile-floppy { transform: translateY(82px); }
 .mobile-key-disk[data-phase="removed"] .mobile-floppy { transform: translateY(10px); }
@@ -372,7 +372,7 @@ button,input { font: inherit; }
 .mobile-console .mobile-disk-hint { margin: 8px 0 0; text-align: center; color: #657066; font-size: 12px; }
 .mobile-console .mobile-private-code { margin-bottom: 0; color: #496443; font-size: 20px; }
 .mobile-clue-target { float: right; color: #496443; max-width: 75%; }
-@keyframes disk-deliver { 0% { transform: translate(96px, -20px) rotate(16deg); opacity: 0; } 42%, 62% { transform: translate(0, 10px); opacity: 1; } 100% { transform: translateY(82px); } }
+@keyframes disk-deliver { 0% { transform: translate(96px, -20px) rotate(16deg); opacity: 0; } 43%, 57% { transform: translate(0, 10px); opacity: 1; } 100% { transform: translateY(82px); } }
 @keyframes disk-insert { 0% { transform: translateY(82px); } 52%, 65% { transform: translateY(135px); } 81% { transform: translateY(148px); } 92%, 100% { transform: translateY(154px); } }
 @keyframes disk-eject { 0%, 40% { transform: translateY(154px); } 100% { transform: translateY(82px); } }
 @keyframes disk-return { from { transform: translateY(10px); } to { transform: translateY(82px); } }

@@ -102,12 +102,13 @@ export function keyDiskPose(disk: KeyDiskState, now: number, reduced = false) {
     if (disk.phase === 'removed') return { ...pose, ...diskPullPose(2) };
     if (disk.phase === 'returning') return { ...pose, ...diskPullPose(2 - (reduced ? 1 : smoothstep(0, 320, elapsed))) };
     if (disk.phase === 'arriving') {
-        const arrive = reduced ? 1 : smoothstep(0, 430, elapsed);
-        const align = reduced ? 1 : smoothstep(650, 1050, elapsed);
+        const arrive = reduced ? 1 : smoothstep(0, 180, elapsed);
+        const align = reduced ? 1 : smoothstep(240, 420, elapsed);
         return { ...pose, x: 2.1 * (1 - arrive), y: .85 * (1 - align), z: 1.3 * (1 - align),
             tilt: 1.12 * (1 - align), travel: diskEjectedTravel };
     }
-    if (disk.phase === 'inserting') return { ...pose, ...diskInsertPose(reduced ? 2000 : elapsed, diskEjectedTravel) };
+    // Keep both physical pushes and the latch, compressed into the 520 ms UI beat.
+    if (disk.phase === 'inserting') return { ...pose, ...diskInsertPose(reduced ? 2000 : elapsed * 1195 / 520, diskEjectedTravel) };
     if (disk.phase === 'ejecting') return { ...pose, ...diskEjectPose(reduced ? 1000 : elapsed, diskSeatTravel) };
     if (disk.phase === 'ejected') return { ...pose, travel: diskEjectedTravel };
     return pose;

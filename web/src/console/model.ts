@@ -9,7 +9,7 @@ export interface KeyDiskState {
     pull?: { amount: number; origin: 'ready' | 'reading' | 'ejected' | 'removed'; target?: 0 | 1 | 2 };
 }
 export const emptyKeyDisk: KeyDiskState = { id: '', phase: 'absent', startedAt: 0 };
-export const keyDiskDurations: Partial<Record<KeyDiskPhase, number>> = { announcing: 2400, arriving: 1050, returning: 320, inserting: 1195, reading: 420, ejecting: 620, settling: 220 };
+export const keyDiskDurations: Partial<Record<KeyDiskPhase, number>> = { announcing: 2400, arriving: 420, returning: 320, inserting: 520, reading: 420, ejecting: 620, settling: 220 };
 export const diskInscriptions = ['top secret', 'credential', 'classified', 'eyes only', 'confidential',
     'restricted', 'black file', 'cipher key', 'no copies', 'burn after use'] as const;
 /** Seeded variation keeps the same handwriting through repaints, locale changes and reinsertion. */

@@ -48,7 +48,7 @@
   will-change: transform, opacity;
 }
 .archive-study[data-open="false"] .field-notebook {
-  animation: notebook-leave var(--archive-exit-duration, 800ms) cubic-bezier(.5,0,.75,0) both;
+  animation: notebook-leave var(--archive-exit-duration, 200ms) cubic-bezier(.5,0,.75,0) both;
   pointer-events: none;
 }
 .notebook-cover {

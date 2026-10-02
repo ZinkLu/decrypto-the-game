@@ -2,7 +2,7 @@ import { useEffect, useRef, type CSSProperties } from 'react';
 import GuideContent from './GuideContent';
 import type { StationState, LocalState, KeyDiskState } from './model';
 import { useDiskPull } from './useDiskPull';
-import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word, isBeat, roundCast, transmission, seatDuty, deadlineWarning, timeoutNotice, resultView, resultSummary, handoverLine, gameOverView } from './model';
+import { consoleHardware, hardwareMessage, roleState, diskInscription, keyDiskDurations, keyDiskReadable, keyDiskIdentity, keyDiskMessage, phaseSignal, teamPalette, word, isBeat, roundCast, transmission, seatDuty, deadlineWarning, timeoutNotice, resultView, resultSummary, handoverLine, gameOverView } from './model';
 import { translate, localizeError } from './i18n';
 
 type Props = { state: StationState; local: LocalState; ready: boolean; status: string; inert: boolean;
@@ -21,10 +21,14 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
     const diskPull = useDiskPull({ disk: u.keyDisk, reduced: reducedMotion,
         enabled: diskCurrent && !inert && ['ready', 'reading', 'ejected', 'removed', 'pulling'].includes(u.keyDisk.phase),
         axis: () => ({ x: 0, y: -1, pixels: 72 }), onChange: onDiskChange, onClick: () => onAct('disk-toggle') });
-    const diskStyle = u.keyDisk.pull ? {
+    const diskStyle = {
+        '--disk-arrive-duration': `${keyDiskDurations.arriving}ms`,
+        '--disk-insert-duration': `${keyDiskDurations.inserting}ms`,
+        ...u.keyDisk.pull ? {
         '--disk-pull-y': `${154 - 72 * u.keyDisk.pull.amount}px`,
         '--disk-settle-y': `${154 - 72 * (u.keyDisk.pull.target ?? 0)}px`,
-    } as CSSProperties : undefined;
+        } : {},
+    } as CSSProperties;
     const signal = phaseSignal(s, u.theme);
     const cast = roundCast(s);
     // The same round context and live slots as the CRT, without its briefing page.

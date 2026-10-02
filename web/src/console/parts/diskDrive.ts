@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { diskSeatTravel, diskEjectedTravel, keyDiskPose } from '../mechanics';
-import { initialLocal, type KeyDiskState } from '../model';
+import { initialLocal, keyDiskDurations, type KeyDiskState } from '../model';
 import { diskIntroPreview } from '../options';
 import type { ConsoleSound } from '../sound';
 import { Effect, type Chassis } from './chassis';
@@ -103,7 +103,7 @@ export class DiskDrive {
         }
         const elapsed = now - this.state.startedAt;
         const clunk = `${this.state.id}:${this.state.phase}:${this.state.startedAt}`;
-        if (this.clunk !== clunk && (this.state.phase === 'inserting' && elapsed >= 1100 ||
+        if (this.clunk !== clunk && (this.state.phase === 'inserting' && elapsed >= keyDiskDurations.inserting! * 1100 / 1195 ||
             this.state.phase === 'ejecting' && elapsed >= 250)) {
             this.clunk = clunk;
             this.play(this.state.phase === 'ejecting' ? 'disk-out' : 'disk-seat');
@@ -120,7 +120,7 @@ export class DiskDrive {
         const elapsed = diskIntroPreview || reduced ? 900 : Math.max(0, (this.state.pausedAt ?? now) - this.state.startedAt);
         const rise = Math.min(1, elapsed / 450);
         const back = 1 + 2.35 * (rise - 1) ** 3 + 1.35 * (rise - 1) ** 2;
-        const returnToDrive = THREE.MathUtils.smoothstep(elapsed, 1650, 2400);
+        const returnToDrive = THREE.MathUtils.smoothstep(elapsed, 2100, 2400);
         this.arrivalQuaternion.copy(this.disk.quaternion);
         this.arrivalCenter.copy(this.pivot).multiply(this.disk.scale).applyQuaternion(this.disk.quaternion).add(this.disk.position);
 
