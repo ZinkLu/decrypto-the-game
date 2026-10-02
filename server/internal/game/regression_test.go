@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/ai"
-	"github.com/ZinkLu/decrypto-the-game/internal/room"
-	"github.com/ZinkLu/decrypto-the-game/internal/ws"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ai"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
 
 func TestMain(m *testing.M) { RegisterHandlers(); os.Exit(m.Run()) }

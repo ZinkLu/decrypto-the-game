@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/store"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/store"
 )
 
 func open(t *testing.T, path string) *Store {

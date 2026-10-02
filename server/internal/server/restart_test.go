@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/game"
-	"github.com/ZinkLu/decrypto-the-game/internal/room"
-	"github.com/ZinkLu/decrypto-the-game/internal/store"
-	"github.com/ZinkLu/decrypto-the-game/internal/store/sqlite"
-	"github.com/ZinkLu/decrypto-the-game/internal/ws"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/game"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/store"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/store/sqlite"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 	"github.com/gorilla/websocket"
 )
 

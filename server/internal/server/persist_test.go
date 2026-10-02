@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/store"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/store"
 )
 
 // unreliable is a store that fails every call while it is down, as a full

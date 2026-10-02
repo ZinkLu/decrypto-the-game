@@ -1,4 +1,4 @@
-module github.com/ZinkLu/decrypto-the-game
+module github.com/ZinkLu/decrypto-the-game/server
 
 go 1.25.0
 

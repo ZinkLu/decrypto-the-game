@@ -6,14 +6,15 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/game"
-	"github.com/ZinkLu/decrypto-the-game/internal/room"
-	"github.com/ZinkLu/decrypto-the-game/internal/server"
-	"github.com/ZinkLu/decrypto-the-game/internal/store/sqlite"
-	"github.com/ZinkLu/decrypto-the-game/internal/ws"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/game"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/server"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/store/sqlite"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
 
 func main() {
@@ -52,11 +53,15 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
 	})
-	mux.Handle("/", http.FileServer(http.Dir("web/dist")))
+	webDir := os.Getenv("DECRYPTO_WEB_DIR")
+	if webDir == "" {
+		webDir = "web/dist"
+	}
+	mux.Handle("/", http.FileServer(http.Dir(webDir)))
 	// Preview is a client-rendered page and must also work on a direct visit.
 	for _, path := range []string{"/preview", "/preview/"} {
 		mux.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {
-			http.ServeFile(w, r, "web/dist/index.html")
+			http.ServeFile(w, r, filepath.Join(webDir, "index.html"))
 		})
 	}
 	mux.HandleFunc("/ws", hub.ServeWS)

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/ai"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ai"
 )
 
 // OpenAIProvider calls any OpenAI-compatible chat completions API.

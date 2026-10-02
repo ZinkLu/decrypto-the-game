@@ -1,16 +1,18 @@
 # 后端架构
 
-服务端是一个 Go 进程（`cmd/server`）。它在同一个端口上提供三样东西：
+服务端是一个 Go 进程，代码在仓库的 `server/` 目录，自成一个 Go 模块；入口是 `server/cmd/server`。它在同一个端口上提供三样东西：
 
 | 路径 | 内容 |
 | --- | --- |
-| `/` | 构建好的页面，取自工作目录下的 `web/dist`；`/preview` 返回同一个 `index.html` |
+| `/` | 构建好的页面，取自工作目录下的 `web/dist`（可用 `DECRYPTO_WEB_DIR` 改）；`/preview` 返回同一个 `index.html` |
 | `/ws` | WebSocket，全部游戏交互都走这里，见 [WebSocket 协议](protocol.md) |
 | `/healthz` | 只接受 `GET`，返回 `ok` |
 
 没有其他 HTTP 接口。端口取自 `PORT`（默认 `8080`）。启动顺序是：注册游戏处理函数 → 打开数据库 → 恢复上次未关闭的房间 → 开始监听。房间在接受第一个连接之前就已恢复，因为恢复请求被拒绝的页面会丢弃自己保存的座位。
 
 ## 包的划分
+
+以下路径都相对于 `server/`。
 
 ```
 cmd/server            入口：组装各层，选择存储实现
@@ -252,7 +254,7 @@ type LLMProvider interface {
 ## 测试
 
 ```bash
-# 在仓库根目录运行；core 读取词库，需要它的绝对路径
+# 在 server/ 目录运行；core 读取词库，需要它的绝对路径。根目录的 make test-server 做同样的事
 DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
 ```
 

@@ -6,39 +6,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Encrypto is an unofficial web-based fan project inspired by the board game "Decrypto" (谍报风云), with real-time multiplayer via WebSocket and AI player support. The whole interface is one modeled machine, the Console (Three.js), in `web/`.
 
-The project began as a chat-channel bot. That code is gone; `origin_msg.md` and `docs/intro.gif` remain from it, and `internal/core` still knows nothing about WebSocket so that other channels can drive a game later. Leave those in place.
+The project began as a chat-channel bot. That code is gone; `origin_msg.md` and `docs/intro.gif` remain from it, and `server/internal/core` still knows nothing about WebSocket so that other channels can drive a game later. Leave those in place.
 
 ## Build & Run Commands
 
+The repository holds three independent parts: `server/` (Go module `github.com/ZinkLu/decrypto-the-game/server`), `web/` (pnpm) and `assets/` (Blender and audio sources, whose scripts write into `web/public`). The root keeps only docs, the `Makefile` and the `Dockerfile`. Run make targets from the root.
+
 ```bash
-# Build backend
-go build -o server ./cmd/server
-
-# Build frontend
-cd web && pnpm install && pnpm build && cd ..
-
-# Run (words.txt must exist in working directory)
-./server
-
-# Development (frontend hot reload)
-cd web && pnpm dev    # port 3000, proxies /ws to 8080
-
-# Backend tests (the word list needs its absolute path)
-DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
-
-# Frontend tests (Node, no browser) and type check + build
-cd web && pnpm test && pnpm build
+make build          # web/dist, then bin/server
+make run            # build, then run bin/server from the root on 8080
+make dev-web        # port 3000, hot reload, proxies /ws to 8080
+make test           # both sides
+make test-server    # cd server && DECRYPTO_WORDS_PATH=$PWD/words.txt go test ./...
+make test-web       # cd web && pnpm test && pnpm build (Node, no browser)
+make docker
 ```
 
-pnpm is the only package manager for `web/`.
+pnpm is the only package manager for `web/`. Go commands run inside `server/`.
 
-**Runtime dependency:** `words.txt` must exist in the working directory.
+**Runtime layout:** the server runs from the repository root and reads `web/dist` (`DECRYPTO_WEB_DIR`) and `words.txt` (`DECRYPTO_WORDS_PATH`; the file lives at `server/words.txt`, which `make run` passes) relative to its working directory.
 
 **Runtime state:** rooms and games are kept in `data/decrypto.db` (SQLite; override with `DECRYPTO_DB_PATH`). The server refuses to start if it cannot open the file.
 
 ## Architecture
 
 ### Core Packages
+
+Go paths below are relative to `server/`.
 
 - **`internal/core/`** — Game logic (sessions, rounds, teams, players, state machine)
 - **`internal/core/word_providers/`** — Word source abstraction (file-based from `words.txt`)

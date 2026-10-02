@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/store"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/store"
 	_ "modernc.org/sqlite"
 )
 

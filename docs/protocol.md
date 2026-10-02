@@ -1,6 +1,6 @@
 # WebSocket 协议
 
-页面与服务端之间的全部游戏交互都经过一条 WebSocket 连接。服务端是唯一的状态来源；页面只保存收到的内容。消息类型与载荷定义在 `internal/ws/message.go`，页面一侧的处理在 `web/src/store/gameStore.ts`。
+页面与服务端之间的全部游戏交互都经过一条 WebSocket 连接。服务端是唯一的状态来源；页面只保存收到的内容。消息类型与载荷定义在 `server/internal/ws/message.go`，页面一侧的处理在 `web/src/store/gameStore.ts`。
 
 ## 连接
 

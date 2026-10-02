@@ -7,11 +7,11 @@ COPY web/ ./
 RUN pnpm build
 
 FROM golang:1.27-alpine AS server-build
-WORKDIR /src
-COPY go.mod go.sum ./
+WORKDIR /src/server
+COPY server/go.mod server/go.sum ./
 RUN go mod download
-COPY cmd/ ./cmd/
-COPY internal/ ./internal/
+COPY server/cmd/ ./cmd/
+COPY server/internal/ ./internal/
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
 
 FROM alpine:3.22
@@ -19,7 +19,7 @@ RUN addgroup -S app && adduser -S -G app app
 WORKDIR /app
 COPY --from=server-build --chown=app:app /out/server ./server
 COPY --from=web-build --chown=app:app /src/web/dist ./web/dist
-COPY --chown=app:app words.txt ./words.txt
+COPY --chown=app:app server/words.txt ./words.txt
 # Rooms are kept here. Mount a named volume to keep them when the container is replaced.
 RUN mkdir /data && chown app:app /data
 ENV PORT=8080 DECRYPTO_DB_PATH=/data/decrypto.db

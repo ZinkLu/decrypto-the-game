@@ -6,8 +6,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/core"
-	"github.com/ZinkLu/decrypto-the-game/internal/ws"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/core"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
 
 func (b *Bridge) aiStatus(action, player, state string, step, completed int, notice string) {

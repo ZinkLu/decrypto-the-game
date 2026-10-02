@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/ai"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ai"
 )
 
 const claudeAPIURL = "https://api.anthropic.com/v1/messages"

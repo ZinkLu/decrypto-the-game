@@ -34,15 +34,13 @@ Encrypto 是一个多人在线的猜词游戏，玩法取材于桌游《Decrypto
 
 ## 在自己的电脑上运行
 
-需要 Go、Node.js 和 pnpm。
+需要 Go、Node.js、pnpm 和 make。
 
 ```bash
 git clone https://github.com/ZinkLu/decrypto-the-game.git
 cd decrypto-the-game
 
-cd web && pnpm install && pnpm build && cd ..
-go build -o server ./cmd/server
-./server
+make run
 ```
 
 打开 <http://localhost:8080>。版本要求、AI 队员的配置和其他选项见[构建与运行](docs/getting-started.md)；放到服务器上见[部署](docs/deployment.md)。
@@ -63,7 +61,7 @@ go build -o server ./cmd/server
 
 ## 关于原版
 
-这是玩家出于兴趣制作的非官方、非商业项目，玩法取材于桌游《Decrypto（谍报风云）》。原作由 Thomas Dagenais-Lespérance 设计、Le Scorpion Masqué 发行。网页代码与主要视觉交互由本项目重新设计，`words.txt` 词库由项目作者自行整理；本项目与原作设计者及发行商无关联，未获其认可或赞助，也不代表官方线上版本。
+这是玩家出于兴趣制作的非官方、非商业项目，玩法取材于桌游《Decrypto（谍报风云）》。原作由 Thomas Dagenais-Lespérance 设计、Le Scorpion Masqué 发行。网页代码与主要视觉交互由本项目重新设计，`server/words.txt` 词库由项目作者自行整理；本项目与原作设计者及发行商无关联，未获其认可或赞助，也不代表官方线上版本。
 
 想了解或支持原作，请访问[原版官方网站](https://www.scorpionmasque.com/en/decrypto)或[官方购买页面](https://shop.scorpionmasque.com/products/decrypto)。本项目不收费，也没有商业运营计划。
 

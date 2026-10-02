@@ -2,7 +2,9 @@
 .env
 .env.*
 .DS_Store
-server
+bin/
+server/server
+server/data/
 data/
 assets/
 docs/

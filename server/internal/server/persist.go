@@ -9,9 +9,9 @@ import (
 	"log"
 	"regexp"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/game"
-	"github.com/ZinkLu/decrypto-the-game/internal/room"
-	"github.com/ZinkLu/decrypto-the-game/internal/store"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/game"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/store"
 )
 
 // Storing is best effort: a room that cannot be written is still played, and

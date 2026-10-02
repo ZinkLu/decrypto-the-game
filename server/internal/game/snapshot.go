@@ -3,9 +3,9 @@ package game
 import (
 	"fmt"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/core"
-	"github.com/ZinkLu/decrypto-the-game/internal/room"
-	"github.com/ZinkLu/decrypto-the-game/internal/ws"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/core"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
 
 // SnapshotVersion is raised when a stored Snapshot can no longer be read as written.

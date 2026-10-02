@@ -1,6 +1,6 @@
 # Go build output
-/server
-/cmd/server/server
+/bin/
+/server/server
 *.exe
 *.exe~
 *.dll
@@ -24,6 +24,7 @@ build/
 
 # Rooms kept by the server
 /data/
+/server/data/
 *.db
 *.db-shm
 *.db-wal

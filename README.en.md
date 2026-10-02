@@ -32,15 +32,13 @@ The whole interface is one modeled machine. Its screen, keyword windows, name ca
 
 ## Run it on your own computer
 
-You need Go, Node.js and pnpm.
+You need Go, Node.js, pnpm and make.
 
 ```bash
 git clone https://github.com/ZinkLu/decrypto-the-game.git
 cd decrypto-the-game
 
-cd web && pnpm install && pnpm build && cd ..
-go build -o server ./cmd/server
-./server
+make run
 ```
 
 Open <http://localhost:8080>.
@@ -63,7 +61,7 @@ The full index is in [docs/](docs/README.md).
 
 ## About the original
 
-This is an unofficial, non-commercial fan project. Its gameplay is inspired by the board game *Decrypto*, designed by Thomas Dagenais-Lespérance and published by Le Scorpion Masqué. The web code and the main visual and interaction design were made for this project, and the word list in `words.txt` was compiled by its author. The project is not affiliated with, endorsed or sponsored by the original designer or publisher, and is not an official online edition.
+This is an unofficial, non-commercial fan project. Its gameplay is inspired by the board game *Decrypto*, designed by Thomas Dagenais-Lespérance and published by Le Scorpion Masqué. The web code and the main visual and interaction design were made for this project, and the word list in `server/words.txt` was compiled by its author. The project is not affiliated with, endorsed or sponsored by the original designer or publisher, and is not an official online edition.
 
 To learn about or support the original, visit the [official website](https://www.scorpionmasque.com/en/decrypto) or the [official shop](https://shop.scorpionmasque.com/products/decrypto). This project is free and has no commercial plans.
 

@@ -6,8 +6,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/core"
-	"github.com/ZinkLu/decrypto-the-game/internal/ws"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/core"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
 
 // Timings are assigned before Start. Tests can exercise real deadlines without waiting minutes.

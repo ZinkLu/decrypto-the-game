@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ZinkLu/decrypto-the-game/internal/room"
-	"github.com/ZinkLu/decrypto-the-game/internal/ws"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
 
 var patientTimings = Timings{Encrypt: 5 * time.Second, Guess: 5 * time.Second, AI: 5 * time.Second,
