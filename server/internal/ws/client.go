@@ -14,6 +14,8 @@ const (
 	pongWait       = 60 * time.Second
 	pingPeriod     = (pongWait * 9) / 10
 	maxMessageSize = 4096
+	// Voice signals carry session descriptions, which are larger.
+	maxVoiceSignalSize = 64 << 10
 )
 
 type Identity struct{ PlayerID, Nickname, RoomCode string }
@@ -98,7 +100,7 @@ func (c *Client) ReadPump() {
 		c.conn.Close()
 	}()
 
-	c.conn.SetReadLimit(maxMessageSize)
+	c.conn.SetReadLimit(maxVoiceSignalSize)
 	c.conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.conn.SetPongHandler(func(string) error {
 		c.conn.SetReadDeadline(time.Now().Add(pongWait))
@@ -115,7 +117,12 @@ func (c *Client) ReadPump() {
 		}
 
 		var msg ClientMessage
-		if err := json.Unmarshal(message, &msg); err != nil {
+		err = json.Unmarshal(message, &msg)
+		if len(message) > maxMessageSize && (err != nil || msg.Type != MsgVoiceSignal) {
+			log.Printf("ws: %d-byte message from player %s exceeds the limit", len(message), c.Identity().PlayerID)
+			break
+		}
+		if err != nil {
 			log.Printf("ws: unmarshal error from player %s: %v", c.Identity().PlayerID, err)
 			c.SendError("invalid message format")
 			continue

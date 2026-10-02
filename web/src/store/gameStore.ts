@@ -125,6 +125,8 @@ interface GameStore {
   ownerID: string;
   canStart: boolean;
   myPlayerID: string;
+  /** The page code of the server's voice service; empty without voice. */
+  voice: string;
 
   // Game state
   round: number;
@@ -205,6 +207,7 @@ const initialState = {
   ownerID: "",
   canStart: false,
   myPlayerID: "",
+  voice: "",
   round: 0,
   myRole: "" as PlayerRole,
   myTeam: "",
@@ -373,6 +376,13 @@ function deviceToken(): string {
   } catch { return ""; /* Without storage this browser stays unnamed. */ }
 }
 
+// Signals of the voice service go to the voice controller, which is loaded with
+// the voice controls.
+let voiceListener: ((signal: unknown) => void) | null = null;
+export function listenVoice(listener: (signal: unknown) => void) {
+  voiceListener = listener;
+}
+
 function handleServerMessage(
   set: SetFn,
   get: GetFn,
@@ -402,7 +412,11 @@ function handleServerMessage(
       break;
 
     case "room_resumed":
-      set({ roomCode: d.room_code as string, myPlayerID: d.my_player_id as string });
+      set({ roomCode: d.room_code as string, myPlayerID: d.my_player_id as string, voice: String(d.voice ?? "") });
+      break;
+
+    case "voice_signal":
+      voiceListener?.(data);
       break;
 
     case "room_created":
@@ -412,6 +426,7 @@ function handleServerMessage(
         recovering: false,
         roomCode: d.room_code as string,
         myPlayerID: (d.my_player_id as string) ?? "",
+        voice: String(d.voice ?? ""),
         phase: "room",
       });
       break;

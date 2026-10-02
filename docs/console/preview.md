@@ -85,6 +85,7 @@ cd web && pnpm dev     # http://localhost:3000
 | `recorder` | 打印机和纸带 |
 | `score` | 计分翻牌 |
 | `roster` | 名册 |
+| `intercom` | 对讲：RX 灯、旋钮和 TALK 键 |
 
 ## 其他参数
 
@@ -103,6 +104,7 @@ cd web && pnpm dev     # http://localhost:3000
 | `words` | `led`、`crt` | 打开词窗试装台，在 LED 点阵和早期的滤光小显像管之间切换，可以换词组、看细节。和 `instruments` 同时出现时以 `instruments` 为准 |
 | `zoom` | 1 到 4 | 词窗试装台的放大倍数。带 `detail=words` 而不给 `zoom` 时为 2 |
 | `filter` | `baseline`、`area`、`lod`、`ssaa` | 词窗试装台里 LED 灯珠的缩放算法。默认 `area`，也是游戏里用的那一种 |
+| `intercom` | 逗号分隔的 `all`、`team`、`connecting`、`talk`、`hold`、`huddle`、`quiet`、`rx` | 不连服务器摆出对讲的状态：`all`、`team` 是旋钮的挡位（已接通），`connecting` 接通中，`talk` 键按下，`hold` 按住模式，`huddle` 旋钮在 ALL 而声音送往本队（两队分开讨论），`quiet` 此刻不许说话，`rx` 让 RX 灯一明一暗。例：`?preview=decrypt&detail=intercom&intercom=huddle,talk,rx` |
 | `partial` | `off`、`verify` | 局部帧的开关与校验：`off` 整页只画整帧；`verify` 把每个局部帧和同状态的整帧逐像素比较，不一致在控制台警告并累加到画布的 `data-partial-mismatch`。校验很慢，只用来检查。见[画质与性能](quality.md) |
 
 试装台上的选择会写回地址栏，当前的方案和观察距离可以直接复制给别人。

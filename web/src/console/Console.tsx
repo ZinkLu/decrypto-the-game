@@ -1,6 +1,7 @@
 import { translate, localizeError, readLocale, saveLocale } from './i18n';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useGameStore } from '../store/gameStore';
+import { hearing, intercomDeck, setMachine, talk, turnIntercom, useVoice } from '../services/voice';
 import { ConsoleEngine } from './engine';
 import { gameSound } from './sound';
 import { readMusicPreferences, saveMusicPreferences, type MusicPreferences } from './music';
@@ -19,11 +20,12 @@ import { InstrumentBench, RosterBench, ScoreBench, WordBench, benchAmplitude, be
 import { guidePageFor } from './guide';
 import { useConsoleAudio, useDiskFont, useGuideArt, useKeyDisk, useReducedMotion } from './hooks';
 import { useDiskPull } from './useDiskPull';
-import { briefMode, detail, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, notebookPreview, partialMode, pinnedQuality, portable, preview, route, scoreBench, wordBench } from './options';
+import { briefMode, detail, intercomPreview, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, notebookPreview, partialMode, pinnedQuality, portable, preview, route, scoreBench, wordBench } from './options';
 import type { LocalState, KeyDiskState } from './model';
 import type { Target } from './paint';
 import type { QualityChoice, QualityLevel } from './quality';
 import { handleSurfaces, type HandleSide } from './view';
+import { previewIntercom, turnSelector, type IntercomPosition } from './voice';
 export default function Console() {
     const live = useGameStore();
     const [u, setU] = useState<LocalState>(() => { const music = readMusicPreferences(); return { ...initialLocal, name: readName(), musicOn: music.enabled, musicVolume: music.volume, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal', wordDisplay: initialWordDisplay,
@@ -96,6 +98,13 @@ export default function Console() {
         onRelease: deliberate => { if (deliberate) setAnnouncement(t('向内拖动把手，即可翻面')); project(); } });
     useEffect(() => { saveLocale(u.locale); document.documentElement.lang = u.locale === 'zh' ? 'zh-CN' : 'en'; document.title = (u.locale === 'zh' ? 'Encrypto - 密报终端' : 'Encrypto') + (inspection ? ' · Preview' : ''); setAnnouncement(translate(u.locale, '语言已切换'));  }, [u.locale]);
     useEffect(() => { saveTheme(u.theme); }, [u.theme]);
+    // The intercom shows the voice of the room. Its state is the machine's own, so
+    // the targets over it repaint; who is speaking is read by its lamp directly.
+    useVoice(v => [v.status, v.whisper, v.micOn, v.holding, v.mode, v.listenOnly, v.machine].join());
+    const deck = intercomPreview ? previewIntercom(intercomPreview) : intercomDeck(), deckKey = JSON.stringify(deck);
+    useEffect(() => { if (JSON.stringify(current.current.u.intercom) !== deckKey) patch({ intercom: deck }); }, [deckKey]);
+    // Without power or its network cable, the console neither speaks nor hears.
+    useEffect(() => setMachine(hardware.powered && hardware.linked), [hardware.powered, hardware.linked]);
     function patch(values: Partial<LocalState>) { setU(old => ({ ...old, ...values })); }
     function changeDisk(disk: KeyDiskState) {
         if (disk.id !== keyDiskIdentity(current.current.s)) return;
@@ -206,6 +215,7 @@ export default function Console() {
         let instance: ConsoleEngine | undefined;
         try {
             instance = new ConsoleEngine(stage.current!, { project, fail: setFailure, inspection, instrumentPreview, partial: partialMode,
+                hearing: intercomPreview?.split(',').includes('rx') ? () => Math.max(0, Math.sin(performance.now() / 160)) ** 2 : hearing,
                 onPaperPull: () => {
                     if (!cancelled && current.current.u.archiveOpen) {
                         setArchiveVisible(true);
@@ -488,6 +498,22 @@ export default function Console() {
             batteryOpen: local.batteryOpen, pending: pending.current, briefing: !!local.brief && !failure && !portable() })) return;
         if (id in handleSurfaces) {
             turnConsole(!id.includes('Rear'), id.includes('Left') ? 'left' : 'right');
+            return;
+        }
+        if (id.startsWith('voice-line')) {
+            const now = intercomDeck().selector;
+            const next: IntercomPosition = id === 'voice-line' ? turnSelector(now, 'click') : id === 'voice-line-next' ? turnSelector(now, 1) :
+                id === 'voice-line-prev' ? turnSelector(now, -1) : id === 'voice-line-off' ? 'off' : 'team';
+            if (next === now) return;
+            turnIntercom(next);
+            playSound('switch');
+            return;
+        }
+        if (id.startsWith('voice-talk')) {
+            const event = id === 'voice-talk' ? 'click' : id === 'voice-talk-down' ? 'down' : 'up';
+            // A click latches the key in toggle mode; in hold mode the stroke starts when it goes down.
+            if (event === (useVoice.getState().mode === 'toggle' ? 'click' : 'down')) playSound('key');
+            talk(event);
             return;
         }
         if (id.startsWith('read-clue-')) {

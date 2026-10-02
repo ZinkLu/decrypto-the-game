@@ -23,6 +23,7 @@ The whole interface is one modeled machine. Its screen, keyword windows, name ca
 - **Play with friends.** Open a room, share its four-digit code, and split 4 to 8 players into two teams.
 - **AI teammates.** Any seat can be given to an AI player that writes clues and guesses codes.
 - **Games survive.** After a page reload, a lost connection or a server restart you return to your seat and your round.
+- **Talk while you play.** When the server offers voice, the whole table hears you, or only your team when you whisper; while the code is being guessed, each team talks apart.
 - **Chinese and English**, four colour themes, a compact layout for phones, and full keyboard and screen-reader access.
 
 | | | |

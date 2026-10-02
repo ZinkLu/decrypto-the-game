@@ -1,5 +1,6 @@
 import type { PlayerProgress, PlayerProgressState, useGameStore } from '../store/gameStore';
 import type { WordDisplay } from './dotMatrix';
+import type { IntercomDeck } from './voice';
 export type StationState = ReturnType<typeof useGameStore.getState>;
 export type KeyDiskPhase = 'absent' | 'queued' | 'announcing' | 'arriving' | 'inserting' | 'reading' | 'ready' | 'ejecting' | 'ejected' | 'removed' | 'returning' | 'pulling' | 'settling';
 export interface KeyDiskState {
@@ -207,6 +208,8 @@ export interface LocalState {
     /** The briefing on the main CRT (`briefingKey`), or '' once the working page is up. */
     brief: string;
     guidePage: number;
+    /** The intercom beside the speaker vents, as the voice of the room leaves it. */
+    intercom: IntercomDeck;
 }
 export const initialLocal: LocalState = {
     // FREQ rests on the engraved 2:1 mark: two locked cycles per sweep.
@@ -218,8 +221,9 @@ export const initialLocal: LocalState = {
     backView: false, batteryOpen: false, soundOn: true, musicOn: true, musicVolume: .6, powerOn: true,
     removedBatteries: 0, unpluggedCables: 0, meterAmplitude: 14, meterRate: 2,
     instrumentVariant: 'signal', instrumentDemo: true, wordDisplay: 'led', brief: '', guidePage: 0,
+    intercom: { available: false, line: 'off', selector: 'off', route: null, open: false, mode: 'toggle', listenOnly: false },
 };
-export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'keyDisk' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'musicOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo' | 'wordDisplay'>;
+export type HardwareState = Pick<LocalState, 'locale' | 'scopeFreq' | 'diskOut' | 'keyDisk' | 'scopeWave' | 'scopeRate' | 'scopeAxis' | 'backView' | 'batteryOpen' | 'soundOn' | 'musicOn' | 'powerOn' | 'archiveOpen' | 'manual' | 'removedBatteries' | 'unpluggedCables' | 'meterAmplitude' | 'meterRate' | 'instrumentVariant' | 'instrumentDemo' | 'wordDisplay' | 'intercom'>;
 /** powerOn is the physical switch, never the derived availability of electricity. */
 export function consoleHardware(u: Pick<LocalState, 'powerOn' | 'removedBatteries' | 'unpluggedCables'>,
     connection: { connected: boolean; recovering?: boolean } = { connected: true }) {

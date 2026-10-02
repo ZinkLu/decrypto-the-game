@@ -30,10 +30,12 @@ func deviceID(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// roomChanged stores the room, then shows it to everyone in it.
+// roomChanged stores the room, shows it to everyone in it, and tells the voice
+// service who may now hear whom.
 func (h *Handler) roomChanged(r *room.Room) {
 	h.saveRoom(r)
 	h.broadcastRoomState(r)
+	h.hearVoice(r)
 }
 
 // saveRoom writes the room if it differs from what is stored. Connections are

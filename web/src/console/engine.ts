@@ -19,6 +19,7 @@ import { DiskDrive } from './parts/diskDrive';
 import { Displays } from './parts/displays';
 import { fitCrystal } from './parts/glass';
 import { Keys } from './parts/keys';
+import { Intercom } from './parts/intercom';
 import { Lamps } from './parts/lamps';
 import { NixieBay } from './parts/nixies';
 import { Oscilloscope } from './parts/oscilloscope';
@@ -45,6 +46,8 @@ export interface EngineHooks {
     instrumentPreview?: boolean;
     /** DEV `?partial=`: full frames only, or every partial frame checked against a full one. */
     partial?: PartialMode | null;
+    /** How loud what this seat hears over the intercom is now, from 0 to 1. */
+    hearing?: () => number;
 }
 
 /**
@@ -63,6 +66,7 @@ export class ConsoleEngine {
     private lamps = new Lamps();
     private nixies = new NixieBay();
     private keys = new Keys();
+    private intercom: Intercom;
     private rear = new RearPanel();
     private printer: Printer;
     private disk: DiskDrive;
@@ -135,6 +139,7 @@ export class ConsoleEngine {
         this.disk = new DiskDrive(host, play);
         this.roster = new RosterRack(this.chassis);
         this.score = new ScoreRegister(play);
+        this.intercom = new Intercom(() => hooks.hearing?.() ?? 0);
         this.observer = new ResizeObserver(() => this.resize());
         this.observer.observe(host);
         this.applyQuality();
@@ -144,7 +149,7 @@ export class ConsoleEngine {
     async load() {
         // Geometry and projected labels must always share a revision, including
         // on servers that allow the browser to reuse previously cached assets.
-        const revision = 'console-encrypto-20260930-v1';
+        const revision = 'console-encrypto-20261003-intercom';
         const [gltf, response] = await Promise.all([
             new GLTFLoader().setDRACOLoader(this.draco).loadAsync(`/models/decrypto-console.glb?v=${revision}`),
             fetch(`/models/console-surfaces.json?v=${revision}`),
@@ -170,6 +175,7 @@ export class ConsoleEngine {
         if (!this.rear.install(chassis)) throw new Error('电池仓组件不完整。');
         this.lamps.install(chassis);
         if (!this.keys.install(chassis)) throw new Error('电源开关组件不完整。');
+        this.intercom.install(chassis);
         this.nixies.install(chassis);
         fitCrystal(chassis.part('SignalGlass'));
         this.printer.install(chassis, this.content?.paperRecords ?? 0);
@@ -232,6 +238,7 @@ export class ConsoleEngine {
         this.powered = powered;
         this.nixies.show(content.roomCode);
         this.keys.update(local.powerOn, local.manual);
+        this.intercom.update(local.intercom, powered);
         this.displays.update(content, powered, local.wordDisplay, reduced);
         this.lamps.update(powered, local.unpluggedCables, content.connected, traffic);
         this.view.face(local.backView);
@@ -426,6 +433,7 @@ export class ConsoleEngine {
             ...this.displays.ambientRegions(),
             ...this.nixies.ambientRegions(),
             ...this.lamps.ambientRegions(),
+            ...this.intercom.ambientRegions(),
             ...this.instruments?.ambientRegions() ?? [],
         ];
     }
@@ -452,6 +460,7 @@ export class ConsoleEngine {
         if (this.studio.clear(this.view.swing, this.view.tilt)) effect |= Effect.project | Effect.shadow;
         effect |= this.view.tickFlip(dt, reduced);
         effect |= this.keys.tick(now, dt, reduced);
+        effect |= this.intercom.tick(now, dt, reduced);
         effect |= this.printer.tick(paced, reduced, this.powered);
         const instruments = this.instruments?.tick(now, dt, reduced);
         if (instruments === 'control') effect |= Effect.redraw;

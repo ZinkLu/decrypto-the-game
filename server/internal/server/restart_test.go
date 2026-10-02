@@ -100,6 +100,7 @@ type client struct {
 	conn *websocket.Conn
 
 	ID, Code, Token string
+	Voice           string
 	Room            ws.RoomStateData
 	Words           []string
 	Team            string
@@ -151,7 +152,7 @@ func (c *client) until(what string, holds func() bool) {
 		case "room_created", "room_resumed":
 			var d ws.RoomCreatedData
 			into(&d)
-			c.ID, c.Code = d.MyPlayerID, d.RoomCode
+			c.ID, c.Code, c.Voice = d.MyPlayerID, d.RoomCode, d.Voice
 			if d.ResumeToken != "" {
 				c.Token = d.ResumeToken
 			}

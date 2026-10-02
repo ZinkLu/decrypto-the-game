@@ -29,6 +29,18 @@ OPENAI_MODEL=your-model
 
 也可以使用 `ANTHROPIC_API_KEY`；全部变量见[构建与运行](getting-started.md#ai-队员)。未设置 Key 时，AI 席位只会给出备用答案；如要在公开试玩中展示 AI，请用部署环境的模型完成一次真实对局。
 
+需要语音时，在同一个文件里加上 Cloudflare Realtime 的应用：
+
+```dotenv
+CLOUDFLARE_REALTIME_APP_ID=your-app-id
+CLOUDFLARE_REALTIME_APP_SECRET=your-app-secret
+# 可选
+CLOUDFLARE_TURN_KEY_ID=your-turn-key-id
+CLOUDFLARE_TURN_KEY_TOKEN=your-turn-key-token
+```
+
+语音的声音不经过这台服务器，只在玩家的浏览器与 Cloudflare 之间传；服务器只转发连接时的信令。Cloudflare 按发给玩家的流量计费（2026 年 10 月：每月前 1000 GB 免费，之后每 GB 0.05 美元），没人说话的那一路几乎不占流量；按同一时刻一两个人在说话估算，一局 8 人、45 分钟约 0.3–0.5 GB。页面必须通过 HTTPS 访问，浏览器才允许使用麦克风。
+
 若服务器使用 Caddy，域名指向服务器后可配置：
 
 ```caddyfile
@@ -70,6 +82,7 @@ sqlite3 -header -column decrypto.db "
 3. 用两个不同的浏览器创建房间、加入并进行至少一轮；刷新其中一个页面，确认能回到同一局。
 4. 对局进行中执行 `docker restart decrypto-demo`，确认两个页面在几秒内自动回到同一回合、同一阶段，并能继续提交。
 5. 若开放 AI，使用服务器上的模型配置完成一局，确认没有持续使用备用线索。
-6. 拍摄或录制发布素材时使用这个部署的版本；将版本号或 Git 提交号记录在帖文草稿中。
+6. 若开放语音，用分属两队的两台设备加入语音：大厅里能互相听到；一方开「悄悄话」后另一方听不到；加密者发出线索后两队互相听不到，揭晓后恢复。
+7. 拍摄或录制发布素材时使用这个部署的版本；将版本号或 Git 提交号记录在帖文草稿中。
 
 发布前检查第三方游戏名称、词库和素材的使用范围。当前项目许可证只覆盖有权许可的项目内容。

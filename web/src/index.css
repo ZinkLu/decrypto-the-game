@@ -305,6 +305,26 @@ button,input { font: inherit; }
 .station-settings button[aria-pressed="true"], .station-settings button[role="switch"][aria-checked="true"] { color: #eee5cf; background: #394c48; }
 .station-settings button:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
 .station-settings .station-music-row { padding: 5px 0; }
+/* The room's voice sits between the navigation and the settings. */
+.station-voice { display: flex; align-items: center; gap: 2px; min-width: 0; padding: 3px; border: 1px solid #afa994; border-radius: 4px; background: #e5decb; color: #59604f; font-size: 12px; }
+.station-voice-status { min-width: 0; padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.station-voice[data-apart] .station-voice-status { color: #903c2e; }
+.station-voice-people { display: flex; gap: 10px; margin: 0; padding: 0 8px; list-style: none; white-space: nowrap; }
+.station-voice-people li::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #9d9a86; vertical-align: 1px; transition: background 120ms, box-shadow 120ms; }
+.station-voice-people li[data-speaking]::before, .station-settings .station-voice button[data-talking]::after { background: #5a8a52; box-shadow: 0 0 0 3px #5a8a5233; }
+.station-settings .station-voice button[data-talking]::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; vertical-align: 1px; }
+.station-settings .station-voice button:disabled { cursor: default; opacity: .45; }
+.station-voice-mode { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 0; }
+.station-voice-modes { display: flex; gap: 2px; padding: 3px; border: 1px solid #afa994; border-radius: 4px; background: #e5decb; }
+@media (max-width: 850px) { .station-voice-people { display: none; } }
+@media (max-width: 600px) {
+  /* On a phone the voice takes a row of its own, so its status stays readable. */
+  .station-settings { flex-wrap: wrap; row-gap: 6px; }
+  .station-voice { order: 3; flex: 1 0 100%; }
+  .station-voice-status { flex: 1; }
+  .station:has(.station-voice) .mobile-console { padding-top: 118px; }
+}
+@media (prefers-reduced-motion: reduce) { .station-voice-people li::before { transition: none; } }
 .mobile-audio { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 16px 24px; }
 .mobile-audio button { flex: 1; justify-content: center; }
 .mobile-audio button:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }

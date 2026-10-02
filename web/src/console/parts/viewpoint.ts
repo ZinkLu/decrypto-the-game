@@ -155,7 +155,7 @@ export class Viewpoint {
         this.camera.updateProjectionMatrix();
         this.camera.updateMatrixWorld();
         const display = detail === 'words' ? surfaces.word1 : detail ? surfaces[detail] : undefined;
-        if (detail === 'disk' || detail === 'meter' || detail === 'nixie' || detail === 'recorder' || display && (detail === 'screen' || detail === 'scope' || detail === 'words' || detail === 'score' || detail === 'roster')) {
+        if (detail === 'disk' || detail === 'meter' || detail === 'nixie' || detail === 'recorder' || detail === 'intercom' || display && (detail === 'screen' || detail === 'scope' || detail === 'words' || detail === 'score' || detail === 'roster')) {
             // Crop the original camera frustum without moving the camera:
             // close-up and full-console views keep exactly the same perspective.
             this.inspection.rotation.set(this.pitch, this.yaw, 0);
@@ -163,9 +163,11 @@ export class Viewpoint {
             const focus = (display
                 ? this.root.localToWorld(new THREE.Vector3(detail === 'words' ? -.45 : display.x, display.y, display.z))
                 : detail === 'meter' ? this.root.localToWorld(new THREE.Vector3(5.83, -1.78, 1.1))
+                : detail === 'intercom' ? this.root.localToWorld(new THREE.Vector3(3.2, -4.64, .7))
                 : new THREE.Vector3(5.83, detail === 'nixie' ? 3.55 : -.2, 1.1)).project(this.camera);
             const detailHeight = display
                 ? Math.max(display.h * (detail === 'scope' ? 2.7 : detail === 'disk' ? 3.5 : 1.35), (detail === 'words' ? 9.8 : display.w * (detail === 'scope' ? 1.9 : 1.3)) / aspect)
+                : detail === 'intercom' ? Math.max(1.3, 2.3 / aspect)
                 : Math.max(detail === 'nixie' ? 3.6 : 3.3, 4.1 / aspect);
             const scale = detail === 'words' && this.wordScale !== undefined ? this.wordScale : normalHeight / detailHeight;
             // The review slider starts at the normal full-console framing and

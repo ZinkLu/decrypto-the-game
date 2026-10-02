@@ -21,6 +21,8 @@ export const wordBench = dev && !instrumentPreview && params.has('words');
 export const initialWordDisplay = wordBench ? wordDisplayOptions.find(option => option.id === params.get('words'))?.id || 'led' : initialLocal.wordDisplay;
 export const initialInstrument = instrumentPreview ? instrumentOptions.find(option => option.id === params.get('instruments'))?.id || 'signal' : initialLocal.instrumentVariant;
 export const detail = dev ? params.get('detail') : null;
+/** DEV `?intercom=`: the intercom in a given state, see `previewIntercom`. */
+export const intercomPreview = dev ? params.get('intercom') : null;
 export const scoreBench = dev && params.get('score') === 'flags';
 // Deterministic stills and benchmarks pin a level without touching the saved choice.
 export const pinnedQuality = dev ? qualityChoices.find(choice => choice === params.get('quality')) : undefined;

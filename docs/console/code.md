@@ -29,6 +29,8 @@ web/
       parts/              引擎的部件，每个会动的组件一个模块
     store/gameStore.ts    对局状态与发往服务器的动作（Zustand）
     services/websocket.ts WebSocket 连接与自动重连
+    services/voice.ts     语音：麦克风、接入与重连、播放与静音、按住说话（见后端架构的"语音"）
+    services/cloudflareVoice.ts  Cloudflare Realtime SFU 的页面一侧
   scripts/*.test.mjs      测试
   scripts/perf/           渲染功耗的测量脚本，在无头 Chrome 里驱动开发服务器上的引擎（见画质与性能）
   public/
@@ -46,7 +48,9 @@ web/
 | --- | --- |
 | `Console.tsx` | 整个界面的根组件。持有 `LocalState`，从 store 取对局状态，调用 `paint()`，驱动引擎、声音和音乐，把输入分发给 `act()` / `change()` |
 | `Controls.tsx` | 盖在 3D 零件上的透明 DOM 控件，以及旋钮、纸带、把手的指针手势（`useHandleGrip`） |
-| `Settings.tsx` | 页面右上角的导航和设置：画质、主题、声音、语言 |
+| `Settings.tsx` | 页面右上角的导航和设置：画质、主题、声音、语音、语言 |
+| `VoiceBar.tsx` | 导航与设置之间的语音控件（开麦、悄悄话、状态、在线的人），以及设置里的说话方式与语音音量 |
+| `voice.ts` | 语音的规则：什么时候分组讨论、声音送到哪个频道、听得到哪个频道。只有纯函数，可在 Node 里测试 |
 | `Transcript.tsx` | 机器上全部内容的文字记录，给读屏软件用；3D 无法启动时直接显示 |
 | `MobileConsole.tsx` | 窄屏的紧凑终端。只接收状态和回调，不持有自己的草稿 |
 | `ArchiveSheet.tsx` | 纸带拉出后的阅读器（`<dialog>`）：并列放置记录板与逐回合打印的纸条，处理打开和收起 |
@@ -133,6 +137,7 @@ web/
 | `oscilloscope.ts` | `Oscilloscope`：示波器的四个旋钮和屏幕 |
 | `nixies.ts` | `NixieBay`：房间码辉光管的数字、光晕和呼吸 |
 | `lamps.ts` | `Lamps`：各指示灯、灯光自检、LOCK 灯 |
+| `intercom.ts` | `Intercom`：对讲旋钮的挡位、TALK 键的行程、RX 灯和路由灯 |
 | `keys.ts` | `Keys`：电源开关、说明键、数字键、ACTION 和复制键的行程 |
 | `printer.ts` | `Printer`：纸带的网格、送纸、撕纸和补纸 |
 | `diskDrive.ts` | `DiskDrive`：软盘和弹出键的姿态 |
@@ -151,7 +156,7 @@ web/
 
 引擎把各部件的标志合并，每帧最多重投影一次、更新一次阴影。没有部件报告变化时，帧循环就睡到下一个氛围帧。
 
-只到节奏才画的氛围帧不重画整幅画面：引擎把上一整帧的拷贝铺回去，只在会动的区域里重新渲染（见[画质与性能](quality.md)的“氛围帧只重画在动的区域”）。会自己动的部件通过 `ambientRegions(): THREE.Object3D[]` 登记这些物体，引擎把它们汇总交给 `PartialRedraw`，后者在拷贝整帧时把包围盒投影成画布矩形。登记清单：显像管平面（`Displays`，LED 词窗只在跑马灯爬行时登记）、辉光管的光晕和余辉（`NixieBay`）、LOCK 灯的网格（`Lamps`）、接收机的整块表盘玻璃（`ConsoleInstruments`）。两种帧的判定和矩形的外扩、裁剪、合并在 `partialFrame.ts` 里，是不依赖 three.js 的纯函数，测试在 `scripts/partial-frame.test.mjs`。
+只到节奏才画的氛围帧不重画整幅画面：引擎把上一整帧的拷贝铺回去，只在会动的区域里重新渲染（见[画质与性能](quality.md)的“氛围帧只重画在动的区域”）。会自己动的部件通过 `ambientRegions(): THREE.Object3D[]` 登记这些物体，引擎把它们汇总交给 `PartialRedraw`，后者在拷贝整帧时把包围盒投影成画布矩形。登记清单：显像管平面（`Displays`，LED 词窗只在跑马灯爬行时登记）、辉光管的光晕和余辉（`NixieBay`）、LOCK 灯的网格（`Lamps`）、接收机的整块表盘玻璃（`ConsoleInstruments`）、对讲的 RX 灯和两颗路由灯（`Intercom`）。两种帧的判定和矩形的外扩、裁剪、合并在 `partialFrame.ts` 里，是不依赖 three.js 的纯函数，测试在 `scripts/partial-frame.test.mjs`。
 
 一个相关约定：往目标位置阻尼靠近的动作必须能精确落停（`settle()`，或到阈值直接取目标值）。报了 `Effect` 的门限之下如果还在缓慢漂移，漂移的像素没有任何帧会重画，局部帧的拷贝就会在那里失准。
 
@@ -183,6 +188,7 @@ web/
 - 机器的物理状态：电源开关、拔掉了哪些线、取出了哪些电池、电池仓盖、正面还是背面、软盘在哪里、纸带是否拉出
 - 旋钮的位置：示波器的四个旋钮、接收机的调谐和增益
 - 偏好：语言、主题、音效、音乐
+- 对讲面板（`intercom`）：服务器是否开启语音、线路、旋钮挡位、声音送往哪一路、TALK 键是否按下。它从语音的状态推出，因此对讲变化会重画受影响的目标；谁在说话变得太快，不放在这里，由 RX 灯直接读取
 
 本机状态不会整体发给服务器。发出去的只有动作本身（线索、猜测）和进度（`sendProgress`：正在填第几格、哪几行已经有字）。草稿文本只交给服务器保管，用于超时代发，不转发给其他玩家。
 
@@ -223,7 +229,7 @@ web/
 2. 机器没电且在正面时，只有软盘还能取放
 3. 背面的电池仓、电池、插头和灯光自检：电池要先打开仓盖，插头要从背面拔，自检要有电
 4. 机器背对时，正面的控件都不起作用
-5. 本机的屏幕操作不需要网络：跳过简报、翻页、遮词、纸带、软盘、旋钮、数字键；简报期间的 ACTION 也算
+5. 本机的屏幕操作不需要网络：跳过简报、翻页、遮词、纸带、软盘、旋钮、数字键、对讲；简报期间的 ACTION 也算。松开按住的 TALK 键任何时候都有效
 6. 离开频道和复制房间码需要网络，但不等在途的请求
 7. 其余都是发往服务器的操作，需要网络，并且一次只发一个请求
 
@@ -263,6 +269,7 @@ web/
 | `Key_0`–`4`、`TransmitLever`、`ManualKey`、`ChannelCopy` | 数字键、ACTION 键、说明键、复制键 |
 | `PaperFeed`、`Paper back`、`Paper roller`、`Printer opening` | 纸带机构 |
 | `RearSoundSwitch`、`RearMusicSwitch`、`RearTestLamp`（必需）、`Connection lens`、`Instrument_RJ45 lamp 0` / `1` | 背面的声音开关和各指示灯；开关的 `centerX` 属性给出滑动中心 |
+| `IntercomSelector`、`IntercomTalk`（内含 `IntercomTX`）、`IntercomRX`、`IntercomAll`、`IntercomTeam` | 对讲旋钮、TALK 键和四盏灯；`detent_degrees` 给出挡位间隔，`travel` 给出按键行程 |
 
 建模脚本和导出方法见[建模流水线](../../assets/console/README.md)。
 
@@ -317,6 +324,7 @@ t('第 {0} 回合', [s.round])
 | `decrypto-quality` | localStorage | 画质选择：`auto`、`high`、`medium`、`low` | `quality.ts` |
 | `decrypto-quality-auto` | localStorage | 自动档上次测定的档位 | `quality.ts` |
 | `decrypto-music` | localStorage | 音乐开关和音量 | `music.ts` |
+| `decrypto-voice` | localStorage | 说话方式（`toggle` 或 `hold`）和语音音量 | `services/voice.ts` |
 
 音效开关、拔掉的线缆、取出的电池和旋钮位置不保存，刷新后回到默认值。线缆和电池在换房间时也会复位。
 

@@ -16,12 +16,14 @@ export interface Reach {
 
 const has = (id: string, ...names: string[]) => names.some(name => name.endsWith('-') ? id.startsWith(name) : id === name);
 
-// Turning the machine, its mains and its speaker never depend on its state.
+// Turning the machine, its mains and its speaker never depend on its state; a held key can always be let go.
 const free = (id: string) => id in handleSurfaces ||
-    has(id, 'restore-power', 'restore-link', 'power-toggle', 'restore-switch', 'sound-toggle', 'music-toggle');
-// What the terminal does by itself: pages, dials, the drive, the printer, the keypad.
+    has(id, 'restore-power', 'restore-link', 'power-toggle', 'restore-switch', 'sound-toggle', 'music-toggle', 'voice-talk-up');
+// What the terminal does by itself: pages, dials, the drive, the printer, the keypad, and the
+// intercom, whose line waits for the connection by itself.
 const local = (id: string) => has(id, 'receiver-sweep', 'meter-', 'brief-skip', 'manual', 'about', 'screen-close', 'guide-done',
-    'guide-prev', 'guide-next', 'guide-page-', 'read-clue-', 'words', 'mode-', 'archive-toggle', 'disk-toggle', 'disk-eject', 'scope-', 'slot-', 'key-');
+    'guide-prev', 'guide-next', 'guide-page-', 'read-clue-', 'words', 'mode-', 'archive-toggle', 'disk-toggle', 'disk-eject', 'scope-', 'slot-', 'key-',
+    'voice-');
 
 /**
  * Whether a control does anything in this state of the machine. What it does then,

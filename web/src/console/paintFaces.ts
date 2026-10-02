@@ -6,6 +6,7 @@ import { paperHeadReserve, paperTextureLength, paperLengthForRecords, paperTextu
 import { guideSteps } from './guide';
 import type { Frame } from './paint';
 import { CREAM, FONT, INK, fitLabel, keyword, line, plateWear, printWear, round, segmentDigit, text, type Painter } from './paintKit';
+import { selectorLabel, talkLabel } from './voice';
 
 const guidePages = guideSteps.length;
 
@@ -361,6 +362,13 @@ export function paintFront(p: Painter) {
     fitLabel(dl, ownsDisk ? t('{0} 队 · 仅你可见', [s.myTeam]) : 'ENCRYPTO', 116, 87, 13, '#817c70', 500, 168);
     frame('powerControl', 320, 180);
     target('powerControl', 'power-toggle', u.powerOn ? t("关闭终端电源") : t("开启终端电源"), 0, 0, 320, 180);
+    // The intercom beside the speaker vents: the selector joins the line, TALK opens the microphone.
+    const [selector, values] = selectorLabel(u.intercom);
+    frame('intercomSelector', 100, 100);
+    target('intercomSelector', 'voice-line', t(selector, values.map(value => t(value))), 0, 0, 100, 100, { disabled: !u.intercom.available });
+    frame('intercomTalk', 100, 100);
+    target('intercomTalk', 'voice-talk', t(talkLabel(u.intercom)), 0, 0, 100, 100,
+        { disabled: !u.intercom.available || u.intercom.line === 'off' || u.intercom.listenOnly });
     const ft = frame('footer', 1100, 65);
     text(ft, 'NETWORK', 350, 32, 29, '#3e3a33');
     text(ft, 'UNOFFICIAL EDITION', 770, 32, 18, '#817c70');

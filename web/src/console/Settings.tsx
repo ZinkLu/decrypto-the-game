@@ -2,6 +2,7 @@ import type { Locale } from './i18n';
 import { themeChoices, type ThemeId } from './model';
 import type { MusicPreferences, MusicStatus } from './music';
 import { qualityChoices, qualityProfiles, describeQuality, type QualityChoice, type QualityLevel } from './quality';
+import VoiceBar, { VoiceSettings } from './VoiceBar';
 
 export const qualityLabels: Record<QualityChoice, string> = { auto: '自动', high: '高', medium: '中', low: '低' };
 
@@ -45,6 +46,7 @@ export default function Settings({ t, inspection, failed, inert, quality, level,
         <a href="/" aria-current={!inspection ? 'page' : undefined}>{t('游戏')}</a>
         <a href="/preview" aria-current={inspection ? 'page' : undefined}>Preview</a>
       </nav>
+      <VoiceBar t={t}/>
       <details className="station-preferences"><summary>{t('设置')}</summary><div className="station-preferences-panel">
       {!failed && <div className="station-quality" role="group" aria-label={t("画质")}>
         <span aria-hidden="true">{t("画质")}</span>
@@ -91,6 +93,7 @@ export default function Settings({ t, inspection, failed, inert, quality, level,
         {musicStatus === 'error' && <button type="button" onClick={onRetryMusic}>{t('重试音乐')}</button>}
         <a href="/audio/CREDITS.md" target="_blank" rel="noreferrer">{t('音乐与音效来源')}</a>
       </fieldset>
+      <VoiceSettings t={t}/>
       <div className="station-language" role="group" aria-label="Language / 语言">
         <button lang="zh-CN" aria-pressed={locale === 'zh'} onClick={() => onLocale('zh')}>中文</button>
         <button lang="en" aria-pressed={locale === 'en'} onClick={() => onLocale('en')}>EN</button>

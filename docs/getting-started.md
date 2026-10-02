@@ -73,6 +73,27 @@ AI 的每一次请求限时 30 秒。推理模型想得太久会超时，可以�
 
 没有设置任何密钥时，AI 席位仍然可以添加，每一步都直接使用备用答案。这适合调试，不适合真的玩。
 
+## 语音
+
+房间里的语音经过 [Cloudflare Realtime](https://developers.cloudflare.com/realtime/) 的 SFU 传递，服务端只转发信令。在 Cloudflare 控制台的 Realtime 里新建一个 SFU 应用，把它的 App ID 和 App Secret 交给服务端：
+
+```bash
+export CLOUDFLARE_REALTIME_APP_ID=...
+export CLOUDFLARE_REALTIME_APP_SECRET=...
+# 可选：TURN，帮助防火墙后面的玩家连上
+export CLOUDFLARE_TURN_KEY_ID=...
+export CLOUDFLARE_TURN_KEY_TOKEN=...
+```
+
+| 变量 | 作用 |
+| --- | --- |
+| `CLOUDFLARE_REALTIME_APP_ID`、`CLOUDFLARE_REALTIME_APP_SECRET` | 两个都设置时开启语音；否则页面上没有语音控件 |
+| `CLOUDFLARE_TURN_KEY_ID`、`CLOUDFLARE_TURN_KEY_TOKEN` | 两个都设置时，页面加入语音时拿到 24 小时有效的 TURN 凭据；否则只用 STUN |
+
+浏览器只在 HTTPS 页面或 `localhost` 上允许使用麦克风。用局域网地址打开开发服务器时，只能收听。
+
+想换成别的语音服务，见[后端架构](architecture.md#换一个服务)。
+
 ## 开发
 
 两个终端：

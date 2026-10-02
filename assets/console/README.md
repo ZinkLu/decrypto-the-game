@@ -19,7 +19,7 @@
 
 | 文件 | 大小 | 何时加载 |
 | --- | --- | --- |
-| `decrypto-console.glb` | 约 9.9 MB | 正式页面，整机模型 |
+| `decrypto-console.glb` | 约 10.5 MB | 正式页面，整机模型 |
 | `console-surfaces.json` | 约 8 KB | 正式页面，画面和点击区域的位置表 |
 | `instrument-studies.glb` | 约 1.3 MB | 只在开发环境的仪表对比台加载 |
 | `instrument-vu.glb` | 约 1.5 MB | 只在开发环境的仪表对比台加载，是被替换下来的 VU 表 |
@@ -96,6 +96,7 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 | 20 | `refine_handles.py` | 两侧把手，每侧一根弯管，螺丝固定在背板 | 是 | 40 个数字 |
 | 21 | `refine_visual_polish.py` | 暖中性色、背面格栅、各处边距和字样位置 | 是 | 贴图生成结果与已打包贴图一致；40 个数字 |
 | 22 | `refine_rear_wordmark.py` | 背面的 `E N C R Y P T O` 字样，只换这一个部件 | 是 | 字样宽度、贴在背面、旧字样已不存在；40 个数字 |
+| 23 | `refine_intercom.py` | 底部导轨上通风槽右边的对讲：RX 灯、OFF / ALL / TEAM 旋钮与两颗路由灯、TALK 键与 TX 灯，以及两处点击区域 | 是 | 每个零件都在导轨上、不碰通风槽和 ACTION 键座；TALK 键按到底不碰键座；40 个数字。`-- --dry <path.glb>` 只试导出 |
 
 `refine_score_register.py` 运行时会删除所有 `ScoreLamp_*` 对象，已发布的模型里没有计分灯。`refine_score_lamps.py` 和 `scoreLamps.json` 只作为被取代的方案保留。
 
@@ -141,6 +142,8 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 | `Tactile_RJ45 flexible lead`、`Tactile_Serial flexible lead`、`Tactile_DC flexible lead` | 三根线缆，见下文的变形目标 |
 | `RearMusicSwitch`、`RearSoundSwitch` | 背面两个滑钮，位置取自 `centerX` |
 | `RearTestLamp`、`Connection lens`、`Instrument_RJ45 lamp 0`、`Instrument_RJ45 lamp 1` | 指示灯，运行时各自克隆材质 |
+| `IntercomSelector`、`IntercomTalk` | 对讲旋钮绕自身原点转动；TALK 键沿自身的 z 轴下压。TX 灯 `IntercomTX` 是键的子对象 |
+| `IntercomRX`、`IntercomAll`、`IntercomTeam`、`IntercomTX` | 对讲的四盏灯，运行时各自克隆材质 |
 | `Front_roster team plaque A`、`Front_roster team plaque B`、`Front_score enamel bed` | 队牌和计分板，运行时换饰面 |
 | `NixieCover_*`、`Nixie_* glass`、`ScoreRegister_glass *`、`Ruby lens 0` … `Ruby lens 3` | 透明罩和词窗底座，运行时调整材质 |
 
@@ -156,6 +159,8 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 | `PowerSwitch` | `throw_degrees` | 拨杆行程，当前为 32 |
 | `RosterCard_*` | `travel` | 名牌抽出行程，当前为 0.58 |
 | `RearMusicSwitch`、`RearSoundSwitch` | `centerX` | 滑钮行程的中心，两端各偏 0.22 |
+| `IntercomSelector` | `detent_degrees` | 对讲旋钮的挡位间隔，当前为 55 |
+| `IntercomTalk` | `travel` | TALK 键的行程，当前为 0.055 |
 | `Nixie_Digit_*` | `slot`、`digit`、`cathode_path` | 管位、数字，以及画辉光用的阴极路径 |
 
 ### 线缆的变形目标
@@ -164,7 +169,7 @@ blender -b -t 1 --factory-startup assets/console/decrypto-console.blend --python
 
 ### 位置表
 
-`console-surfaces.json` 列出 60 个平面，运行时在这些位置贴上画面或放置点击区域。每项有 `x`、`y`、`z`、`w`、`h`，可选 `rotationX`、`rotationY`（背面的平面转 180 度）、`lit`（受场景灯光照明的印刷面；不带 `lit` 的是自发光的显示面）和 `digitScale`。
+`console-surfaces.json` 列出 62 个平面，运行时在这些位置贴上画面或放置点击区域。每项有 `x`、`y`、`z`、`w`、`h`，可选 `rotationX`、`rotationY`（背面的平面转 180 度）、`lit`（受场景灯光照明的印刷面；不带 `lit` 的是自发光的显示面）和 `digitScale`。
 
 把手和背面两处点击区域不在位置表里：把手的位置写在 `web/src/console/view.ts`，坐标要与 `refine_handles.py` 一致；电池仓和灯光自检的位置写在 `engine.ts` 的 `load()` 里。
 

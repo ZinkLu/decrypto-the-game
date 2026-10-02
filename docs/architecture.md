@@ -8,14 +8,14 @@
 | `/ws` | WebSocket，全部游戏交互都走这里，见 [WebSocket 协议](protocol.md) |
 | `/healthz` | 只接受 `GET`，返回 `ok` |
 
-没有其他 HTTP 接口。端口取自 `PORT`（默认 `8080`）。启动顺序是：注册游戏处理函数 → 打开数据库 → 恢复上次未关闭的房间 → 开始监听。房间在接受第一个连接之前就已恢复，因为恢复请求被拒绝的页面会丢弃自己保存的座位。
+没有其他 HTTP 接口；语音的媒体不经过这个进程，见下文"语音"。端口取自 `PORT`（默认 `8080`）。启动顺序是：注册游戏处理函数 → 打开数据库 → 恢复上次未关闭的房间 → 开始监听。房间在接受第一个连接之前就已恢复，因为恢复请求被拒绝的页面会丢弃自己保存的座位。
 
 ## 包的划分
 
 以下路径都相对于 `server/`。
 
 ```
-cmd/server            入口：组装各层，选择存储实现
+cmd/server            入口：组装各层，选择存储与语音的实现
 internal/
   core                游戏规则与回合状态机，不知道网络的存在
     word_providers    词库来源（读取 words.txt）
@@ -27,6 +27,8 @@ internal/
     sqlite            Rooms 的 SQLite 实现
   ai                  AI 玩家与 LLMProvider 接口
     providers         Claude 与 OpenAI 兼容接口的实现
+  voice               语音服务接口 Service 及其类型，没有实现也没有依赖
+    cloudflare        Service 的 Cloudflare Realtime SFU 实现
 ```
 
 依赖只朝一个方向：
@@ -38,10 +40,11 @@ cmd/server ──► server ──► game ──► core ──► core/word_pr
                  │          └────► ws
                  ├──► room
                  ├──► ws
-                 └──► store ◄──── store/sqlite
+                 ├──► store ◄──── store/sqlite
+                 └──► voice ◄──── voice/cloudflare
 ```
 
-`core`、`room`、`ws`、`store` 互不引用。`server` 只通过 `store.Rooms` 接口认识存储，具体用哪个实现由 `cmd/server/main.go` 决定。
+`core`、`room`、`ws`、`store`、`voice` 互不引用。`server` 只通过 `store.Rooms` 接口认识存储，只通过 `voice.Service` 接口认识语音服务，具体用哪个实现由 `cmd/server/main.go` 决定。
 
 ## 游戏核心（`internal/core`）
 
@@ -246,6 +249,43 @@ type LLMProvider interface {
 | 都没有 | 无 | 每一步都直接使用备用答案 |
 
 两个 Key 都设置时使用 OpenAI 兼容接口。OpenAI 兼容接口返回空内容或 `finish_reason` 为 `length` 时视为失败。
+
+## 语音（`internal/voice`）
+
+房间里有全桌和队内两个语音频道，玩家看到的规则见[玩法](gameplay.md#语音)，消息见 [WebSocket 协议](protocol.md#语音)。声音本身在页面与语音服务之间传，不经过这个进程；服务端只做两件事：决定谁能听到谁，以及转发双方的信令。
+
+### 谁能听谁
+
+`server/voice.go` 的 `voicePlan` 从房间快照算出 `voice.Plan`：对每位真人，列出能听到的 `Source`（说话的人与频道）。人人都能听其他人的全桌；队内只列同队；没有队伍的成员只听全桌；AI 不在其中。这份结果只管"谁能接收"，不管阶段：分组讨论时关掉全桌、加密者不出声，由页面执行（`web/src/console/voice.ts`）。
+
+服务端在这些时候调用语音服务：
+
+| 时机 | 调用 |
+| --- | --- |
+| 房间有变化（`roomChanged`，包括进出、换队、开局、重开） | `Hear`，交出整份新结果 |
+| 收到 `voice_signal` | `Signal`，原样交出 |
+| 连接断开，或同一位玩家从新连接恢复、旧连接被关闭 | `Hangup` |
+| 房间关闭 | `Close` |
+
+语音服务的信令经 `Handler.SendVoice` 发给对应的页面。`Service` 的方法都立即返回，工作在后台进行，所以 `Handler` 不会在持锁时等网络请求。
+
+### 选择实现
+
+`cmd/server/main.go` 在设置了 `CLOUDFLARE_REALTIME_APP_ID` 与 `CLOUDFLARE_REALTIME_APP_SECRET` 时使用 Cloudflare 实现；`CLOUDFLARE_TURN_KEY_ID` 与 `CLOUDFLARE_TURN_KEY_TOKEN` 可选，用来给页面发 TURN 临时凭据。都没有设置时 `Handler.Voice` 为 `nil`：`room_created` 里没有 `voice` 字段，页面不显示语音控件，其余一切照常。
+
+### Cloudflare 实现
+
+每个页面在 SFU 上有一个会话，发布 `table` 与 `team` 两路。服务端为每个连通的会话"对账"：按 `Plan` 算出它应当接收的各路，多出来的立即强制关闭（不需要页面参与），缺的一次请求补齐，再把 SFU 的 offer 交给页面回答。
+
+- 一个房间的所有工作排成一队依次执行，因此同一个会话上不会有两个请求同时进行，这是 SFU 的要求。
+- 页面 15 秒内不回答 offer，或任何请求失败，这次接入作废：关掉它发布和接收的各路，告诉页面 `failed`，页面稍后重新接入。
+- 挂断时同时关闭发布与接收：别人听不到它，它保持连接也听不到别人。
+- 发布方刚连通、媒体还没到时，接收可能失败；会在 2 秒后重试，最多 5 次。
+- 每次有人开始发布，日志记下玩家与会话 ID（`speaks through session`），可以拿它向 SFU 查询这个会话正在接收哪几路。
+
+### 换一个服务
+
+要改用别的语音服务（LiveKit、声网……），服务端在 `internal/voice` 下加一个子包实现 `Service`，页面在 `web/src/services/` 加一个实现 `VoiceLink` 的模块并登记在 `voice.ts` 的 `links` 里，名字与 `Service.Client()` 相同，最后在 `main.go` 里选它。实现只需守住一条：`Plan` 里没有的，绝不接通。
 
 ## Channel：接入其他入口
 

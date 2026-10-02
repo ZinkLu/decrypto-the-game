@@ -14,6 +14,7 @@ import (
 	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/server"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/store/sqlite"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/voice/cloudflare"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
 
@@ -34,6 +35,10 @@ func main() {
 	handler := server.NewHandler(roomManager, nil, rooms)
 	hub := ws.NewHub(handler.HandleMessage)
 	handler.Hub = hub
+	if realtime, ok := cloudflare.FromEnv(); ok {
+		handler.Voice = cloudflare.New(realtime, handler.SendVoice)
+		log.Println("Voice is carried by the Cloudflare Realtime SFU")
+	}
 
 	// Rooms come back before the first connection is accepted.
 	if err := handler.Restore(); err != nil {

@@ -50,10 +50,31 @@ test('no moving assembly contains another, so each can be merged on its own', as
   const gltf = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString());
   const parent = new Map();
   gltf.nodes.forEach((node, index) => node.children?.forEach(child => parent.set(child, index)));
-  const moving = /^(Nixie_Digit_.*|FloppyTransport|FloppyEject|Scope(Tuning|Wave|Rate|Persistence)|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|Rear(Sound|Music)Switch|RearTestLamp|Connection[ _]lens|Instrument_RJ45[ _]lamp[ _][01]|PaperFeed|Paper[ _]roller|ManualKey|ChannelCopy|ScoreFlag_.*)$/;
+  const moving = /^(Nixie_Digit_.*|FloppyTransport|FloppyEject|Scope(Tuning|Wave|Rate|Persistence)|TransmitLever|PowerSwitch|Key_[0-4]|BatteryDoor|BatteryCell_[0-3]|CablePlug_.*|RosterCard_[AB][0-3]|Rear(Sound|Music)Switch|RearTestLamp|Connection[ _]lens|Instrument_RJ45[ _]lamp[ _][01]|PaperFeed|Paper[ _]roller|ManualKey|ChannelCopy|ScoreFlag_.*|Intercom(Selector|Talk|RX|All|Team))$/;
   gltf.nodes.forEach((node, index) => {
     if (!moving.test(node.name)) return;
     for (let p = parent.get(index); p !== undefined; p = parent.get(p))
       assert.ok(!moving.test(gltf.nodes[p].name), `${node.name} is inside ${gltf.nodes[p].name}`);
   });
+});
+
+test('the intercom turns and presses as far as the model says, with its jewel in the key', async () => {
+  const bytes = await readFile(new URL('../public/models/decrypto-console.glb', import.meta.url));
+  const gltf = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString());
+  const named = name => gltf.nodes.findIndex(node => node.name === name);
+  const selector = gltf.nodes[named('IntercomSelector')], key = gltf.nodes[named('IntercomTalk')];
+  assert.equal(selector.extras.detent_degrees, 55);
+  assert.ok(key.extras.travel > 0 && key.extras.travel < .1);
+  const inside = (child, parent) => {
+    const parents = new Map();
+    gltf.nodes.forEach((node, index) => node.children?.forEach(c => parents.set(c, index)));
+    for (let p = parents.get(named(child)); p !== undefined; p = parents.get(p)) if (p === named(parent)) return true;
+    return false;
+  };
+  assert.ok(inside('IntercomTX', 'IntercomTalk'), 'the TALK jewel rides in the key');
+  const surfaces = JSON.parse(await readFile(new URL('../public/models/console-surfaces.json', import.meta.url), 'utf8'));
+  // The control over each part sits on its axis (the model stores single precision).
+  for (const [surface, node] of [[surfaces.intercomSelector, selector], [surfaces.intercomTalk, key]]) {
+    assert.ok(Math.abs(surface.x - node.translation[0]) < 1e-5 && Math.abs(surface.y - node.translation[1]) < 1e-5);
+  }
 });

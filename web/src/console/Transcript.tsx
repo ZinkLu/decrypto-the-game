@@ -1,4 +1,5 @@
 import { archiveRows, consoleHardware, resultSummary, rosterTeams, teammateChoices, teammateStatus, word, type LocalState, type StationState } from './model';
+import { intercomLine } from './voice';
 
 interface Props {
     state: StationState;
@@ -17,6 +18,7 @@ interface Props {
 export default function Transcript({ state: s, local: u, hardware, status, diskReadable, failed, t }: Props) {
     return <section hidden={!hardware.powered} className={failed ? 'fallback-readout' : 'sr-only'} aria-label={t("当前通信文字记录")}><h2>{t(hardware.online ? '当前通信' : '已断开连接')}</h2><p>{status}</p>
       {hardware.batteryPercent !== null && <p>{t('电池电量 {0}%', [hardware.batteryPercent])}</p>}
+      {u.intercom.available && <p>{(([line, values]) => t(line, values.map(value => t(value))))(intercomLine(u.intercom))}</p>}
       {!hardware.online && <p>CH 0000 · {t('离线')}</p>}
       <p>{!hardware.online ? Array.from({ length: 4 }, (_, i) => `${i + 1} ${t('离线')}`).join(' · ') : u.hiddenWords ? t("秘密词已遮住") : s.myWords.map(value => word(value, u.locale)).join(' · ')}</p>
       <p>{hardware.online ? s.clues.join(' / ') : t('输入已保留，不会自动提交。')}</p>

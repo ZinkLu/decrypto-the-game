@@ -18,6 +18,8 @@ const (
 	MsgRequestSync     = "request_sync"
 	MsgProgress        = "progress"
 	MsgReopenRoom      = "reopen_room"
+	// MsgVoiceSignal carries the voice service's own signals, both ways.
+	MsgVoiceSignal = "voice_signal"
 )
 
 // Server -> Client message type constants
@@ -107,11 +109,13 @@ type SubmitGuessData struct {
 
 // --- Server message data types ---
 
-// RoomCreatedData is the data payload for MsgRoomCreated.
+// RoomCreatedData is the data payload for MsgRoomCreated. Voice names the page
+// code that speaks the server's voice service; it is empty without voice.
 type RoomCreatedData struct {
 	RoomCode    string `json:"room_code"`
 	MyPlayerID  string `json:"my_player_id"`
 	ResumeToken string `json:"resume_token,omitempty"`
+	Voice       string `json:"voice,omitempty"`
 }
 
 // PlayerInfo represents a player in the room.

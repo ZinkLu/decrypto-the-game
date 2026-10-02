@@ -252,7 +252,7 @@
 
 ## 指示灯
 
-源文件：`paintFaces.ts`（相位面板）、`parts/lamps.ts`（`Lamps`）。
+源文件：`paintFaces.ts`（相位面板）、`parts/lamps.ts`（`Lamps`）、`parts/intercom.ts`（对讲的三类灯）。
 
 | 灯 | 含义 |
 | --- | --- |
@@ -261,6 +261,9 @@
 | 背面 RJ45 的 LINK / ACT | LINK 在网线接入时常亮；ACT 在每次收到房间状态后亮 140 ms |
 | LOCK | 示波器的鉴相器，见上 |
 | 背面自检灯 | 通电时微亮 |
+| 对讲 RX | 绿色，随这个座位听到的音量明暗，见[机械与交互](mechanics.md#对讲) |
+| 对讲 ALL / TEAM | 琥珀色，声音此刻送往全桌还是本队；接通中闪烁 |
+| 对讲 TX | TALK 键上的红灯，声音正在送出时亮 |
 
 背面的 LAMP TEST 让背面各灯、NETWORK 和 LOCK 一起点亮 1.8 秒，用来证明灯是好的。它不改变连接状态，也不动计分翻牌，需要供电。
 

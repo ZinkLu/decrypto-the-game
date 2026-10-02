@@ -10,6 +10,7 @@ import (
 	"github.com/ZinkLu/decrypto-the-game/server/internal/game"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/store"
+	"github.com/ZinkLu/decrypto-the-game/server/internal/voice"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 	"github.com/google/uuid"
 )
@@ -20,6 +21,8 @@ type Handler struct {
 	Hub         *ws.Hub
 	// Store keeps rooms across restarts. Without one they live in memory only.
 	Store store.Rooms
+	// Voice carries the players' voices. Without one the rooms have no voice.
+	Voice voice.Service
 	// SeatGrace is how long an offline player keeps their seat and host role.
 	SeatGrace time.Duration
 	// RoomGrace is how long a room without any human online is kept.
@@ -44,6 +47,7 @@ func validName(name string) bool {
 func (h *Handler) attach(client *ws.Client, r *room.Room, p *room.PlayerInfo, token string, resume bool) {
 	if old := h.active[p.ID]; old != nil && old != client {
 		old.Close()
+		h.hangupVoice(r.Code, p.ID)
 	}
 	client.SetIdentity(p.ID, p.Nickname)
 	h.active[p.ID] = client
@@ -60,7 +64,7 @@ func (h *Handler) attach(client *ws.Client, r *room.Room, p *room.PlayerInfo, to
 	if resume {
 		typ = "room_resumed"
 	}
-	client.SendMessage(ws.ServerMessage{Type: typ, Data: ws.RoomCreatedData{RoomCode: r.Code, MyPlayerID: p.ID, ResumeToken: token}})
+	client.SendMessage(ws.ServerMessage{Type: typ, Data: ws.RoomCreatedData{RoomCode: r.Code, MyPlayerID: p.ID, ResumeToken: token, Voice: h.voiceClient()}})
 	h.roomChanged(r)
 	if resume {
 		// A game restored after a restart waits for its first player.
@@ -103,6 +107,9 @@ func (h *Handler) expireLater(r *room.Room) {
 			game.RemoveBridge(b.Session.SessionID())
 		}
 		h.RoomManager.RemoveRoom(r.Code)
+		if h.Voice != nil {
+			h.Voice.Close(r.Code)
+		}
 		delete(h.expiry, r.Code)
 		h.closeStored(r)
 	})
@@ -121,6 +128,7 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			return
 		}
 		delete(h.active, identity.PlayerID)
+		h.hangupVoice(r.Code, identity.PlayerID)
 		r.Disconnect(identity.PlayerID)
 		h.roomChanged(r)
 		h.holdSeat(r, identity.PlayerID)
@@ -280,6 +288,11 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 		h.saveRoom(r)
 	case ws.MsgRequestSync:
 		h.sendSync(client, r)
+	case ws.MsgVoiceSignal:
+		// Pages only signal a voice service the server told them about.
+		if h.Voice != nil {
+			h.Voice.Signal(r.Code, identity.PlayerID, msg.Data)
+		}
 	case ws.MsgReopenRoom:
 		// After the game any player may reopen the room with the same teams.
 		if b, ok := game.GetBridge(state.SessionID); ok && !b.Finished() {

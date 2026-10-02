@@ -1,5 +1,6 @@
 import { useRef, type PointerEvent, type RefObject } from 'react';
 import { instrumentSteps, type LocalState } from './model';
+import { intercomPositions } from './voice';
 import type { Target } from './paint';
 import type { useDiskPull } from './useDiskPull';
 import { handleSurfaces, handlePull, handleCommit, type HandleSide } from './view';
@@ -110,24 +111,26 @@ export default function Controls({ targets, local: u, failed, visible, t, nodes,
     return <div className="station-controls" aria-label={t("密码通信终端控件")} style={{ visibility: visible ? 'visible' : 'hidden' }}>
       {targets.map(target => {
         const key = target.surface + ':' + target.id, knob = isKnob(target.id), paper = target.surface === 'paper';
+        const selector = target.id === 'voice-line';
         const common = {
             ref: (el: HTMLElement | null) => { if (el)
                 nodes.current.set(key, el);
             else
                 nodes.current.delete(key); },
             'aria-label': target.label, 'data-control': target.id, 'data-surface': target.surface,
-            role: knob ? 'slider' : ['power-toggle', 'receiver-sweep', 'sound-toggle', 'music-toggle'].includes(target.id) ? 'switch' : undefined,
-            'aria-valuemin': knob ? 0 : undefined,
-            'aria-valuemax': knob ? 100 : undefined,
-            'aria-valuenow': knob ? Math.round(turned(target.id) * 1000) / 10 : undefined,
-            'aria-valuetext': knob ? target.label : undefined,
+            role: knob || selector ? 'slider' : ['power-toggle', 'receiver-sweep', 'sound-toggle', 'music-toggle'].includes(target.id) ? 'switch' : undefined,
+            'aria-valuemin': knob || selector ? 0 : undefined,
+            'aria-valuemax': knob ? 100 : selector ? intercomPositions.length - 1 : undefined,
+            'aria-valuenow': knob ? Math.round(turned(target.id) * 1000) / 10 : selector ? intercomPositions.indexOf(u.intercom.selector) : undefined,
+            'aria-valuetext': knob || selector ? target.label : undefined,
             'aria-checked': target.id === 'power-toggle' ? u.powerOn : target.id === 'receiver-sweep' ? u.instrumentDemo : target.id === 'sound-toggle' ? u.soundOn : target.id === 'music-toggle' ? u.musicOn : undefined,
             disabled: target.disabled,
             style: failed ? { visibility: 'visible' as const } : undefined,
             title: target.label,
             'aria-expanded': target.id === 'archive-toggle' ? u.archiveOpen : target.id === 'battery-toggle' ? u.batteryOpen : undefined,
             'aria-haspopup': target.id === 'archive-toggle' ? 'dialog' as const : undefined,
-            'aria-pressed': target.id === 'disk-toggle' ? u.diskOut : target.id === 'manual' ? u.manual : target.id === 'about' ? u.about : undefined,
+            'aria-pressed': target.id === 'disk-toggle' ? u.diskOut : target.id === 'manual' ? u.manual : target.id === 'about' ? u.about :
+                target.id === 'voice-talk' ? u.intercom.open : undefined,
             onMouseEnter: () => onHint(target.id),
             onMouseLeave: () => onHint(''),
             onFocus: () => onFocus(target),
@@ -145,6 +148,22 @@ export default function Controls({ targets, local: u, failed, visible, t, nodes,
             onPointerUp={grip.onPointerUp}
             onLostPointerCapture={grip.onLostPointerCapture}
             onPointerCancel={grip.onPointerCancel}>{target.label}</button>;
+        // The intercom's selector clicks round its three detents; the arrow keys stop at either end.
+        if (selector) return <button key={key} {...common} onClick={() => onAct('voice-line')} onKeyDown={e => {
+            const step = { ArrowRight: 'next', ArrowUp: 'next', ArrowLeft: 'prev', ArrowDown: 'prev', Home: 'off', End: 'team' }[e.key];
+            if (!step) return;
+            e.preventDefault();
+            onAct('voice-line-' + step);
+        }}>{target.label}</button>;
+        // TALK latches with a click in toggle mode and talks while held in hold mode.
+        if (target.id === 'voice-talk') {
+            const up = () => onAct('voice-talk-up');
+            return <button key={key} {...common} onClick={() => onAct('voice-talk')}
+                onPointerDown={e => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); onAct('voice-talk-down'); }}
+                onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up}
+                onKeyDown={e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) onAct('voice-talk-down'); }}
+                onKeyUp={e => { if (e.key === ' ' || e.key === 'Enter') up(); }}>{target.label}</button>;
+        }
         if (target.kind === 'input') return <input key={key} {...common} type="text" value={target.value || ''} maxLength={target.maxLength} placeholder={target.input?.placeholder || target.label} autoComplete={target.id === 'name' ? 'nickname' : 'off'} spellCheck={false} onChange={e => onChange(target, e.target.value)} onKeyDown={e => {
             if (e.key === 'Enter' && !e.nativeEvent.isComposing && target.id.startsWith('clue-')) {
                 e.preventDefault();
