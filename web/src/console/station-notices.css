@@ -104,6 +104,28 @@
 .station-notices .station-voice-people { max-width: 100%; gap: 10px; padding: 0 4px; overflow-x: auto; font-size: 11px; scrollbar-width: thin; }
 .station-notices .station-voice-people li { flex-shrink: 0; }
 
+/* Joining needs one small control, without a panel around it. */
+.station-notices .station-voice-join {
+    align-self: flex-end;
+    flex-wrap: nowrap;
+    justify-content: center;
+    gap: 7px;
+    min-height: 36px;
+    max-width: 100%;
+    padding: 8px 12px;
+    border-radius: 999px;
+    box-shadow: 0 3px 12px #322a2018;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.4;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+.station-notices .station-voice-join svg { flex-shrink: 0; }
+.station-notices .station-voice-join:hover { background: #f5f0e5; }
+.station-notices .station-voice-join:active { background: #e5ddcd; }
+.station-notices .station-voice-join:focus-visible { outline-offset: -4px; }
+
 @media (max-width: 850px) {
     .station-notices {
         right: max(12px, env(safe-area-inset-right));
@@ -117,6 +139,7 @@
     .station-notice-dismiss { width: 40px; height: 40px; }
     .station-notices .station-voice { flex: 0 0 auto; order: initial; }
     .station-notices .station-voice button { min-height: 40px; }
+    .station-notices .station-voice-join { min-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
     .station-toast { animation: none; }

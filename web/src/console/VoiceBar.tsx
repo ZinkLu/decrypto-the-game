@@ -54,7 +54,12 @@ export default function VoiceBar({ t }: { t: Translate }) {
       {toast && <StationToast key={toast.id} message={`${t(toast.message)}${toast.listenOnly ? ` · ${t(toast.listenOnly)}` : ''}`}
           t={t} onClose={() => setToast(null)} />}
       {v.status === 'off'
-        ? <div className="station-voice"><button type="button" onClick={() => void startVoice()}>{t('加入语音')}</button></div>
+        ? <button type="button" className="station-voice station-voice-join" onClick={() => void startVoice()}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+                <rect x="9" y="2" width="6" height="12" rx="3"/>
+                <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>
+            </svg><span>{t('加入语音')}</span>
+          </button>
         : <div className="station-voice" role="group" aria-label={t('语音')} data-apart={split || undefined}>
       <span className="station-voice-status">{t(label)}{v.listenOnly && ` · ${t('仅收听')}`}</span>
       <div className="station-voice-actions">
