@@ -89,7 +89,7 @@
 .notebook-page-content { position: relative; height: 520px; }
 .notebook-entries { display: grid; grid-template-rows: repeat(4, 111px); height: 444px; list-style: none; margin: 0; padding: 0; }
 .notebook-entry { position: relative; display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 12px; min-width: 0; padding: 13px 0 8px; border-bottom: 1px solid #ac9d7d55; }
-.notebook-entry-title { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: baseline; gap: 6px 9px; min-width: 0; }
+.notebook-entry-title { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
 .notebook-number { color: #994331; font: italic 23px Georgia, serif; padding-top: 2px; }
 .notebook-keyword { max-width: 100%; font: 600 18px/1.35 'Songti SC', 'Noto Serif SC', 'SimSun', serif; color: #544a39; overflow-wrap: anywhere; }
 .notebook-keyword-guess {
@@ -138,7 +138,7 @@
   .notebook-page { padding-inline: 23px; }
   .notebook-clue { font-size: 16px; }
   .notebook-entry { grid-template-columns: 68px minmax(0, 1fr); gap: 12px; }
-  .notebook-entry-title { gap: 4px 7px; }
+  .notebook-entry-title { gap: 4px; }
   .notebook-keyword { font-size: 17px; }
   .notebook-number { font-size: 19px; }
   .archive-study .archive-records { padding-inline: 17px; }
@@ -163,7 +163,7 @@
   .notebook-entries { height: 484px; grid-template-rows: repeat(4, 121px); }
   .notebook-entry-body { grid-template-rows: 54px minmax(0, 1fr); }
   .notebook-entry { grid-template-columns: 60px minmax(0, 1fr); gap: 10px; }
-  .notebook-entry-title { flex-direction: column; gap: 4px; }
+  .notebook-entry-title { gap: 4px; }
   .notebook-number { font-size: 21px; }
   .notebook-keyword { font-size: 17px; }
   .notebook-clues { max-height: 54px; }
