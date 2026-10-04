@@ -155,7 +155,9 @@ export async function startVoice() {
     // Without a microphone the page publishes silence, and still hears the room.
     source = audio.createMediaStreamDestination().stream.getAudioTracks()[0];
   }
-  out = { table: source, team: source.clone() };
+  // Keep the analyser's capture track independent of either channel's mute gate.
+  // Otherwise choosing TEAM disables the table track and also silences the meter.
+  out = { table: microphone ? source.clone() : source, team: source.clone() };
   useVoice.setState({ listenOnly });
   window.addEventListener("keydown", keyDown);
   window.addEventListener("keyup", keyUp);
@@ -269,6 +271,18 @@ export function hearing() {
   let level = 0;
   for (const r of remotes.values()) level = Math.max(level, rms(r.level));
   return Math.min(1, level * 6);
+}
+
+/** Current transmitted microphone level, read without publishing audio samples to React. */
+export function inputLevel(): number {
+  const g = useGameStore.getState();
+  const s = useVoice.getState();
+  if (!mine || !out || audio?.state !== "running" || s.status !== "on" || !s.machine || s.listenOnly ||
+      !g.connected || g.recovering || !g.roomCode || !(s.mode === "toggle" ? s.micOn : s.holding)) return 0;
+  const route = speakingTo(currentView(), s.whisper);
+  const track = route ? out[route] : null;
+  if (!track?.enabled || track.muted || track.readyState !== "live") return 0;
+  return Math.min(1, rms(mine) * 6);
 }
 
 export function setVolume(volume: number) {
@@ -390,6 +404,7 @@ function apply() {
   const s = useVoice.getState();
   const to = speakingTo(view, s.whisper);
   const open = s.machine && !s.listenOnly && (s.mode === "toggle" ? s.micOn : s.holding);
+  microphone?.getAudioTracks().forEach(track => { track.enabled = open && !!to; });
   out.table.enabled = open && to === "table";
   out.team.enabled = open && to === "team";
   const turn = lastView ? voiceTurn(lastView, view) : null;

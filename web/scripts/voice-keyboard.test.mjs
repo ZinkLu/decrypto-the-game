@@ -8,7 +8,7 @@ import { moduleUrl } from './load.mjs';
 
 const dataUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
 
-test('voice shortcuts safely switch channels and release a held microphone after focus or state changes', async t => {
+test('voice controls gate outgoing audio, input metering and keyboard shortcuts together', async t => {
   const globals = ['window', 'navigator', 'AudioContext', 'Element', 'HTMLElement', 'localStorage'];
   const before = new Map(globals.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const listeners = new Map();
@@ -16,16 +16,21 @@ test('voice shortcuts safely switch channels and release a held microphone after
     constructor(tagName = 'DIV', editable = false) { this.tagName = tagName; this.isContentEditable = editable; }
     closest() { return /^(INPUT|TEXTAREA|SELECT)$/.test(this.tagName) ? this : null; }
   }
-  const track = () => ({ enabled: true, stop() {}, clone: track });
-  const microphone = { getAudioTracks: () => [track()], getTracks: () => [] };
+  const track = () => ({ enabled: true, muted: false, readyState: 'live', stop() { this.readyState = 'ended'; }, clone: track });
+  const captureTrack = track();
+  const microphone = { getAudioTracks: () => [captureTrack], getTracks: () => [captureTrack] };
+  let microphoneAmplitude = 0;
+  let audioContext;
   class AudioContext {
+    constructor() { audioContext = this; }
     currentTime = 0;
+    state = 'running';
     destination = {};
     async resume() {}
-    async close() {}
+    async close() { this.state = 'closed'; }
     createGain() { return { gain: {}, connect() {} }; }
-    createAnalyser() { return { getFloatTimeDomainData(samples) { samples.fill(0); } }; }
-    createMediaStreamSource() { return { connect() {} }; }
+    createAnalyser() { return { getFloatTimeDomainData(samples) { samples.fill(this.track?.enabled && this.track.readyState === 'live' ? microphoneAmplitude : 0); } }; }
+    createMediaStreamSource(stream) { return { connect(analyser) { analyser.track = stream.getAudioTracks()[0]; } }; }
   }
   const browser = {
     addEventListener(name, handler) { listeners.set(name, handler); },
@@ -63,6 +68,7 @@ test('voice shortcuts safely switch channels and release a held microphone after
     }).outputText));
     const { state: game } = await import(imports['@/store/gameStore']);
     const media = await import(imports['./cloudflareVoice']);
+    assert.equal(voice.inputLevel(), 0, 'a closed voice line has no microphone level');
     await voice.startVoice();
     const dispatch = (name, extra = {}) => {
       const event = {
@@ -76,6 +82,71 @@ test('voice shortcuts safely switch channels and release a held microphone after
     const channelKey = extra => dispatch('keydown', { code: 'KeyV', key: 'v', ...extra });
     const activeTracks = () => [media.outgoing.table.enabled, media.outgoing.team.enabled];
     const microphoneState = () => ({ micOn: state().micOn, holding: state().holding, mode: state().mode });
+
+    await t.test('the input meter reads real samples on both channels without notifying React subscribers', () => {
+      let updates = 0;
+      const unsubscribe = voice.useVoice.subscribe(() => updates++);
+      assert.equal(voice.inputLevel(), 0, 'silent samples stay at zero');
+      microphoneAmplitude = .05;
+      assert.ok(Math.abs(voice.inputLevel() - .3) < .000001);
+      microphoneAmplitude = .5;
+      assert.equal(voice.inputLevel(), 1, 'the displayed level is clamped to one');
+      assert.equal(updates, 0, 'reading or changing audio samples does not publish voice state');
+      unsubscribe();
+      microphoneAmplitude = .05;
+      voice.setWhisper(true);
+      assert.deepEqual(activeTracks(), [false, true]);
+      assert.equal(captureTrack.enabled, true);
+      assert.ok(voice.inputLevel() > 0, 'muting the table output must not silence the analyser while the team output transmits');
+      voice.setWhisper(false);
+      assert.deepEqual(activeTracks(), [true, false]);
+      assert.ok(voice.inputLevel() > 0);
+      microphoneAmplitude = 0;
+    });
+
+    await t.test('the input meter becomes silent immediately when muted, released, or unable to transmit', () => {
+      microphoneAmplitude = .05;
+      voice.setMic(false);
+      assert.equal(voice.inputLevel(), 0);
+      assert.equal(captureTrack.enabled, false, 'muting still disables the analyser capture track');
+      voice.setMode('hold');
+      assert.equal(voice.inputLevel(), 0);
+      voice.hold(true);
+      assert.ok(voice.inputLevel() > 0);
+      voice.hold(false);
+      assert.equal(voice.inputLevel(), 0);
+      voice.setMode('toggle');
+      voice.setMic(true);
+      voice.setMachine(false);
+      assert.equal(voice.inputLevel(), 0);
+      voice.setMachine(true);
+      for (const change of [{ status: 'off' }, { status: 'starting' }, { status: 'reconnecting' }, { listenOnly: 'no microphone' }]) {
+        const previous = { ...state() };
+        voice.useVoice.setState(change);
+        assert.equal(voice.inputLevel(), 0, JSON.stringify(change));
+        voice.useVoice.setState(previous);
+      }
+      for (const change of [{ connected: false }, { recovering: true }, { roomCode: null }, { phase: 'guess', myRole: 'encryptor', encryptor: 'me' }]) {
+        const previous = { ...game };
+        Object.assign(game, change);
+        assert.equal(voice.inputLevel(), 0, JSON.stringify(change));
+        for (const key of Object.keys(change)) {
+          if (key in previous) game[key] = previous[key];
+          else delete game[key];
+        }
+      }
+      for (const change of [{ enabled: false }, { muted: true }, { readyState: 'ended' }]) {
+        const previous = { ...media.outgoing.table };
+        Object.assign(media.outgoing.table, change);
+        assert.equal(voice.inputLevel(), 0, JSON.stringify(change));
+        Object.assign(media.outgoing.table, previous);
+      }
+      audioContext.state = 'suspended';
+      assert.equal(voice.inputLevel(), 0, 'a suspended audio context must not show stale microphone samples');
+      audioContext.state = 'running';
+      assert.ok(voice.inputLevel() > 0, 'the level returns when transmission is possible');
+      microphoneAmplitude = 0;
+    });
 
     await t.test('a normal press toggles once; a repeat or other key does nothing', () => {
       assert.equal(state().micOn, true);
@@ -215,6 +286,10 @@ test('voice shortcuts safely switch channels and release a held microphone after
 
     voice.stopVoice();
     assert.equal(listeners.size, 0, 'leaving voice removes every keyboard listener');
+    assert.equal(voice.inputLevel(), 0);
+    assert.equal(captureTrack.readyState, 'ended', 'leaving voice stops the analyser capture');
+    assert.equal(media.outgoing.table.readyState, 'ended');
+    assert.equal(media.outgoing.team.readyState, 'ended');
   } finally {
     voice?.stopVoice();
     for (const [name, descriptor] of before) {

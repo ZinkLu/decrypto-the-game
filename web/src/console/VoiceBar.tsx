@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
-import { currentView, hold, setMic, setMode, setVolume, toggleVoiceChannel, startVoice, stopVoice, useVoice } from '../services/voice';
+import { currentView, inputLevel, hold, setMic, setMode, setVolume, toggleVoiceChannel, startVoice, stopVoice, useVoice } from '../services/voice';
 import { apart, speakingTo, voiceStatus } from './voice';
 import StationToast, { type Translate } from './StationToast';
+import './voice-bar.css';
 
 type VoiceNotice = { id: number; message: string; listenOnly: string };
 
@@ -11,22 +12,25 @@ function useAvailable() {
     return useGameStore(s => !!s.voice && !!s.roomCode);
 }
 
-/** Compact room voice controls and its transient notices, in the page's notice rail. */
-export default function VoiceBar({ t }: { t: Translate }) {
+/** Keep route labels in sync without publishing continuously sampled input levels. */
+function useRoomVoice() {
     const available = useAvailable();
-    const players = useGameStore(s => s.players);
-    const me = useGameStore(s => s.myPlayerID);
-    // Channel labels follow the game; voice activity does not generate notices.
     useGameStore(s => s.phase);
     useGameStore(s => s.myRole);
+    useGameStore(s => s.myPlayerID);
     useGameStore(s => s.encryptorID);
     useGameStore(s => s.teamA);
     useGameStore(s => s.teamB);
     const v = useVoice();
     const view = currentView();
-    const split = apart(view);
     const line = v.status === 'starting' ? '正在接通语音…' : v.status === 'reconnecting' ? '语音中断，正在重连…' :
         !v.machine ? '终端脱机，对讲暂停' : voiceStatus(view, v.whisper);
+    return { available, v, view, line };
+}
+
+/** Transient voice feedback stays with the other notices, outside the header. */
+export function VoiceNotices({ t }: { t: Translate }) {
+    const { available, v, line } = useRoomVoice();
     const [toast, setToast] = useState<VoiceNotice | null>(null);
     const serial = useRef(0);
     const previous = useRef({ available: false, status: 'off', line: '', notice: '', listenOnly: '' });
@@ -44,43 +48,73 @@ export default function VoiceBar({ t }: { t: Translate }) {
         if (!before.available || v.status !== before.status || line !== before.line || v.listenOnly !== before.listenOnly || newNotice)
             setToast({ id: ++serial.current, message: newNotice ? v.notice : line, listenOnly: v.listenOnly });
     }, [available, v.status, line, v.notice, v.listenOnly]);
+    if (!available || !toast) return null;
+    return <StationToast key={toast.id} message={`${t(toast.message)}${toast.listenOnly ? ` · ${t(toast.listenOnly)}` : ''}`}
+        t={t} onClose={() => setToast(null)}/>;
+}
+
+/** This tiny meter updates itself, without repainting the machine or the toolbar. */
+function InputLevel({ active, t }: { active: boolean; t: Translate }) {
+    const meter = useRef<HTMLSpanElement>(null);
+    useEffect(() => {
+        const update = () => {
+            const level = active && !document.hidden ? inputLevel() : 0;
+            meter.current?.style.setProperty('--input-level', String(level));
+            meter.current?.setAttribute('aria-valuenow', String(Math.round(level * 100)));
+        };
+        update();
+        if (!active) return;
+        const timer = window.setInterval(update, 120);
+        document.addEventListener('visibilitychange', update);
+        return () => { clearInterval(timer); document.removeEventListener('visibilitychange', update); };
+    }, [active]);
+    return <span ref={meter} className="station-voice-level" role="meter" aria-label={t('输入电平')}
+        aria-valuemin={0} aria-valuemax={100} aria-valuenow={0}><span/></span>;
+}
+
+function MicIcon() {
+    return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+        <rect x="9" y="2" width="6" height="12" rx="3"/>
+        <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>
+    </svg>;
+}
+
+/** Voice is a normal set of page controls at the top left. */
+export default function VoiceBar({ t }: { t: Translate }) {
+    const { available, v, view, line } = useRoomVoice();
     if (!available) return null;
+    const split = apart(view);
     const route = speakingTo(view, v.whisper);
-    const label = v.status !== 'on' || !v.machine ? line : route === 'table' ? '全桌通话' : route === 'team' ? '本队' : '静音';
-    const names = new Map(players.map(p => [p.id, p.nickname]));
-    const talking = v.speaking.includes(me) || undefined;
+    const muted = !v.machine || !!v.listenOnly || route === null;
+    const ready = v.status === 'on';
     const end = () => hold(false);
-    return <>
-      {toast && <StationToast key={toast.id} message={`${t(toast.message)}${toast.listenOnly ? ` · ${t(toast.listenOnly)}` : ''}`}
-          t={t} onClose={() => setToast(null)} />}
-      {v.status === 'off'
-        ? <button type="button" className="station-voice station-voice-join" onClick={() => void startVoice()}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
-                <rect x="9" y="2" width="6" height="12" rx="3"/>
-                <path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3m-4 0h8"/>
-            </svg><span>{t('加入语音')}</span>
-          </button>
-        : <div className="station-voice" role="group" aria-label={t('语音')} data-apart={split || undefined}>
-      <span className="station-voice-status">{t(label)}{v.listenOnly && ` · ${t('仅收听')}`}</span>
-      <div className="station-voice-actions">
+    if (v.status === 'off') return <div className="station-voice">
+        <button type="button" className="station-voice-join" onClick={() => void startVoice()}><MicIcon/>{t('加入语音')}</button>
+    </div>;
+    return <div className="station-voice" role="group" aria-label={t('语音')}>
+      <span className="sr-only" role="status">{t(line)}{v.listenOnly && ` · ${t('仅收听')}`}</span>
+      <div className="station-voice-input">
       {v.mode === 'toggle'
-        ? <button type="button" role="switch" aria-checked={v.micOn && !v.listenOnly} disabled={!!v.listenOnly} data-talking={talking}
-            aria-label={`${t(v.micOn && !v.listenOnly ? '开麦' : '闭麦')} · ${t('快捷键 ` 开关麦克风')}`} aria-keyshortcuts="`" onClick={() => setMic(!v.micOn)}>{t(v.micOn && !v.listenOnly ? '开麦' : '闭麦')}</button>
-        : <button type="button" aria-pressed={v.holding} disabled={!!v.listenOnly} data-talking={talking} aria-label={`${t('按住说话')} · ${t('按住 ` 说话')}`} aria-keyshortcuts="`"
+        ? <button type="button" role="switch" aria-checked={v.micOn && !muted} disabled={!ready || muted}
+            aria-label={`${t(v.micOn && !muted ? '开麦' : '闭麦')} · ${t('快捷键 ` 开关麦克风')}`} aria-keyshortcuts="`" onClick={() => setMic(!v.micOn)}>
+            <MicIcon/>{t(v.micOn && !muted ? '开麦' : '闭麦')}</button>
+        : <button type="button" aria-pressed={v.holding && !muted} disabled={!ready || muted} aria-label={`${t('按住说话')} · ${t('按住 ` 说话')}`} aria-keyshortcuts="`"
             onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); hold(true); }}
             onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}
             onKeyDown={event => { if ((event.key === ' ' || event.key === 'Enter') && !event.ctrlKey && !event.metaKey && !event.altKey &&
                 !event.repeat && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); hold(true); } }}
-            onKeyUp={event => { if (event.key === ' ' || event.key === 'Enter') end(); }}>{t('按住说话')}</button>}
-      <button type="button" role="switch" aria-checked={v.whisper && !split && !!view.team} disabled={split || !view.team || !v.machine || !!v.listenOnly || v.status !== 'on'}
-          aria-keyshortcuts="V" aria-label={`${t('悄悄话')} · ${t('切换全桌／队内语音')}`} onClick={() => toggleVoiceChannel()}>{t('悄悄话')}</button>
-      <button type="button" className="station-voice-leave" onClick={stopVoice}>{t('退出语音')}</button>
+            onKeyUp={event => { if (event.key === ' ' || event.key === 'Enter') end(); }}><MicIcon/>{t('按住说话')}</button>}
+      <InputLevel active={ready && !muted && (v.mode === 'hold' ? v.holding : v.micOn)} t={t}/>
       </div>
-      {v.heard.length > 0 && <ul className="station-voice-people" aria-label={t('通话中')}>
-        {v.heard.map(id => <li key={id} data-speaking={v.speaking.includes(id) || undefined}>{names.get(id) ?? '?'}</li>)}
-      </ul>}
-      </div>}
-    </>;
+      <select aria-label={t('语音频道')} value={!ready ? 'connecting' : muted ? 'muted' : route!}
+          disabled={split || !view.team || !v.machine || !!v.listenOnly || !ready}
+          onChange={event => { if (event.target.value !== route) toggleVoiceChannel(); }}>
+        {!ready && <option value="connecting">{t(v.status === 'starting' ? '正在接通语音…' : '语音中断，正在重连…')}</option>}
+        {ready && muted && <option value="muted">{t(v.listenOnly ? '仅收听' : '静音')}</option>}
+        <option value="table">{t('全桌通话')}</option><option value="team">{t('本队通话')}</option>
+      </select>
+      <button type="button" className="station-voice-leave" onClick={stopVoice}>{t('退出语音')}</button>
+    </div>;
 }
 
 /** How this page talks, among the settings. */

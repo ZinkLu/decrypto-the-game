@@ -48,9 +48,9 @@ export function tourSteps(context: TourContext): TourStep[] {
             mobile: '点击 1–4 依次输入三个不重复的编号。点击上方某一位可修改，「退格」删除。',
             target: '[data-control^="key-"]', compactTarget: '.mobile-keypad' }] : [],
         ...context.action ? [actionStep(context.action)] : [],
-        ...context.voice ? [{ id: 'voice', title: '语音通话', body: '将右侧对讲旋钮转到 ALL 或 TEAM 加入语音，TALK 控制开麦。猜测时自动分队，加密者保持静音。',
-            mobile: '点击「加入语音」，再选择开麦或闭麦。猜测时自动分队，加密者保持静音。',
-            target: '[data-control="voice-line"]', compactTarget: '.station-voice' }] : [],
+        ...context.voice ? [{ id: 'voice', title: '语音通话', body: '在左上角加入语音、开关麦克风，并切换全桌或本队频道。旁边显示输入电平；猜测时自动分队，加密者保持静音。',
+            mobile: '在页面顶部加入语音、开关麦克风，并切换全桌或本队频道。猜测时自动分队，加密者保持静音。',
+            target: '.station-voice', compactTarget: '.station-voice' }] : [],
     ];
 }
 

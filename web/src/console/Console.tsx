@@ -17,7 +17,7 @@ import EncryptorIntro from './EncryptorIntro';
 import GuideContent from './GuideContent';
 import Settings, { qualityHint, qualityLabels } from './Settings';
 import Transcript from './Transcript';
-import VoiceBar from './VoiceBar';
+import { VoiceNotices } from './VoiceBar';
 import StationToast from './StationToast';
 import OperationTour from './OperationTour';
 import { tourAction } from './onboarding';
@@ -182,12 +182,13 @@ export default function Console() {
         else controls.current.get('paper:archive-toggle')?.focus();
     }
     function tourRegion(id: string) {
-        const surfaces = id === 'room' ? ['channel', 'channelCopy'] : id === 'voice' ? ['intercomSelector', 'intercomTalk'] :
+        if (id === 'voice') return Array.from(document.querySelectorAll<HTMLElement>('.station-settings .station-voice')).map(node => node.getBoundingClientRect());
+        const surfaces = id === 'room' ? ['channel', 'channelCopy'] :
             id === 'keypad' ? ['key0', 'key1', 'key2', 'key3', 'key4'] : id.startsWith('action-') ? ['transmitControl', 'transmitLabel'] :
             id === 'words' ? ['word0', 'word1', 'word2', 'word3'] : id === 'enter' ? ['screen'] : ['paper'];
         const offset = stage.current?.getBoundingClientRect();
         if (!offset || !engine.current || failure) {
-            const step = id === 'room' ? 'copy-code' : id === 'history' ? 'archive-toggle' : id === 'words' ? 'words' : id === 'voice' ? 'voice-line' : id.startsWith('action-') ? 'transmit' : 'name';
+            const step = id === 'room' ? 'copy-code' : id === 'history' ? 'archive-toggle' : id === 'words' ? 'words' : id.startsWith('action-') ? 'transmit' : 'name';
             return Array.from(controls.current.values()).filter(node => id === 'keypad' ? node.dataset.control?.startsWith('key-') : node.dataset.control === step).map(node => node.getBoundingClientRect());
         }
         return surfaces.flatMap(surface => {
@@ -832,9 +833,9 @@ export default function Console() {
       {u.backView && hardware.powered && !hardware.aux && hardwareRecovery(u) && <p>{t('AUX 已断开 · SIGNAL 无外部输入')}</p>}
       {staleDraft && <details><summary>{t('旧草稿 · 第 {0} 回合', [staleDraft.round])}</summary><p>{staleDraft.text}</p><small>{t('仅供查看，不会自动提交')}</small></details>}
     </aside>}
-    <VoiceBar t={t}/>
+    <VoiceNotices t={t}/>
     {notice && <StationToast message={notice} t={t} onClose={() => setNotice('')}/>}
-    {!keepsMachine && <OperationTour home={s.phase === 'home'} words={!!s.myWords.length} compactWords={!roleState(displayState, u).encrypt} voice={deck.available}
+    {!keepsMachine && <OperationTour home={s.phase === 'home'} words={!!s.myWords.length} compactWords={!roleState(displayState, u).encrypt} voice={!!live.voice && !!live.roomCode}
         action={tourAction(displayState, u)} briefing={!!u.brief && !failure}
         enabled={(loaded || !!failure) && hardware.online && !u.backView && !archiveBlocking && !u.manual && !u.about && !notice && u.keyDisk.phase !== 'announcing'}
         autoStart={!preview || new URLSearchParams(location.search).has('tour')} persist={!preview} replay={tourReplay} measureRegion={tourRegion} t={t}/>}

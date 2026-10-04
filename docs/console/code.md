@@ -29,7 +29,7 @@ web/
       parts/              引擎的部件，每个会动的组件一个模块
     store/gameStore.ts    对局状态与发往服务器的动作（Zustand）
     services/websocket.ts WebSocket 连接与自动重连
-    services/voice.ts     语音：麦克风、接入与重连、播放与静音、按住说话（见后端架构的"语音"）
+    services/voice.ts     语音：麦克风、接入与重连、播放与静音、按住说话、输入电平（见后端架构的"语音"）
     services/cloudflareVoice.ts  Cloudflare Realtime SFU 的页面一侧
   scripts/*.test.mjs      测试
   scripts/perf/           渲染功耗的测量脚本，在无头 Chrome 里驱动开发服务器上的引擎（见画质与性能）
@@ -48,8 +48,8 @@ web/
 | --- | --- |
 | `Console.tsx` | 整个界面的根组件。持有 `LocalState`，从 store 取对局状态，调用 `paint()`，驱动引擎、声音和音乐，把输入分发给 `act()` / `change()` |
 | `Controls.tsx` | 盖在 3D 零件上的透明 DOM 控件，以及旋钮、纸带、把手的指针手势（`useHandleGrip`） |
-| `Settings.tsx` | 页面右上角的导航和设置：画质、主题、声音、语音、语言 |
-| `VoiceBar.tsx` | 导航与设置之间的语音控件（开麦、悄悄话、状态、在线的人），以及设置里的说话方式与语音音量 |
+| `Settings.tsx` | 页面顶部的语音工具栏、导航和设置：画质、主题、声音、语音、语言 |
+| `VoiceBar.tsx` / `voice-bar.css` | 左上角页面语音工具栏（开麦、输入电平、全桌／本队频道、退出）；语音 toast 单独放入通知区，设置保留说话方式与音量 |
 | `voice.ts` | 语音的规则：什么时候分组讨论、声音送到哪个频道、听得到哪个频道。只有纯函数，可在 Node 里测试 |
 | `Transcript.tsx` | 机器上全部内容的文字记录，给读屏软件用；3D 无法启动时直接显示 |
 | `MobileConsole.tsx` | 窄屏的紧凑终端。只接收状态和回调，不持有自己的草稿 |

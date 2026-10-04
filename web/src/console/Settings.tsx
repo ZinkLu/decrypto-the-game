@@ -2,7 +2,7 @@ import type { Locale } from './i18n';
 import { themeChoices, type ThemeId } from './model';
 import type { MusicPreferences, MusicStatus } from './music';
 import { qualityChoices, qualityProfiles, describeQuality, type QualityChoice, type QualityLevel } from './quality';
-import { VoiceSettings } from './VoiceBar';
+import VoiceBar, { VoiceSettings } from './VoiceBar';
 import ShortcutHelp from './ShortcutHelp';
 
 export const qualityLabels: Record<QualityChoice, string> = { auto: '自动', high: '高', medium: '中', low: '低' };
@@ -43,12 +43,15 @@ interface Props {
 export default function Settings({ t, inspection, failed, inert, quality, level, theme, locale, soundOn, music, musicStatus, powered,
     onQuality, onTour, onTheme, onLocale, onAct, onVolume, onRetryMusic }: Props) {
     return <div className="station-settings" inert={inert}>
+      <div className="station-session-tools">
+      <VoiceBar t={t}/>
       <nav className="station-navigation" aria-label={t('页面导航')}>
         <a href="/" aria-current={!inspection ? 'page' : undefined}>{t('游戏')}</a>
         <a href="/preview" aria-current={inspection ? 'page' : undefined}>Preview</a>
         <ShortcutHelp t={t}/>
         {!inspection && <button type="button" className="station-tour-replay" data-tour-replay onClick={onTour}>{t('操作提示')}</button>}
       </nav>
+      </div>
       <details name="station-panel" id="station-preferences" className="station-preferences"><summary>{t('设置')}</summary><div className="station-preferences-panel">
       {!failed && <div className="station-quality" role="group" aria-label={t("画质")}>
         <span aria-hidden="true">{t("画质")}</span>
