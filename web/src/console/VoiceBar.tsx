@@ -87,6 +87,8 @@ export default function VoiceBar({ t }: { t: Translate }) {
     const route = speakingTo(view, v.whisper);
     const muted = !v.machine || !!v.listenOnly || route === null;
     const ready = v.status === 'on';
+    const channelLabel = !ready ? v.status === 'starting' ? '正在接通语音…' : '语音中断，正在重连…' :
+        muted ? v.listenOnly ? '仅收听' : '静音' : route === 'team' ? '本队通话' : '全桌通话';
     const end = () => hold(false);
     if (v.status === 'off') return <div className="station-voice">
         <button type="button" className="station-voice-join" onClick={() => void startVoice()}><MicIcon/>{t('加入语音')}</button>
@@ -106,13 +108,15 @@ export default function VoiceBar({ t }: { t: Translate }) {
             onKeyUp={event => { if (event.key === ' ' || event.key === 'Enter') end(); }}><MicIcon/>{t('按住说话')}</button>}
       <InputLevel active={ready && !muted && (v.mode === 'hold' ? v.holding : v.micOn)} t={t}/>
       </div>
-      <select aria-label={t('语音频道')} value={!ready ? 'connecting' : muted ? 'muted' : route!}
+      <button type="button" className="station-voice-channel" aria-keyshortcuts="V"
+          aria-label={`${t(channelLabel)} · ${t('切换全桌／队内语音')}`}
           disabled={split || !view.team || !v.machine || !!v.listenOnly || !ready}
-          onChange={event => { if (event.target.value !== route) toggleVoiceChannel(); }}>
-        {!ready && <option value="connecting">{t(v.status === 'starting' ? '正在接通语音…' : '语音中断，正在重连…')}</option>}
-        {ready && muted && <option value="muted">{t(v.listenOnly ? '仅收听' : '静音')}</option>}
-        <option value="table">{t('全桌通话')}</option><option value="team">{t('本队通话')}</option>
-      </select>
+          onClick={() => toggleVoiceChannel()}>
+        <span>{t(channelLabel)}</span>
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 5h10m-3-3 3 3-3 3M13 11H3m3-3-3 3 3 3"/>
+        </svg>
+      </button>
       <button type="button" className="station-voice-leave" onClick={stopVoice}>{t('退出语音')}</button>
     </div>;
 }

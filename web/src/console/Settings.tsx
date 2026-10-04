@@ -44,13 +44,13 @@ export default function Settings({ t, inspection, failed, inert, quality, level,
     onQuality, onTour, onTheme, onLocale, onAct, onVolume, onRetryMusic }: Props) {
     return <div className="station-settings" inert={inert}>
       <div className="station-session-tools">
-      <VoiceBar t={t}/>
       <nav className="station-navigation" aria-label={t('页面导航')}>
         <a href="/" aria-current={!inspection ? 'page' : undefined}>{t('游戏')}</a>
         <a href="/preview" aria-current={inspection ? 'page' : undefined}>Preview</a>
         <ShortcutHelp t={t}/>
         {!inspection && <button type="button" className="station-tour-replay" data-tour-replay onClick={onTour}>{t('操作提示')}</button>}
       </nav>
+      <VoiceBar t={t}/>
       </div>
       <details name="station-panel" id="station-preferences" className="station-preferences"><summary>{t('设置')}</summary><div className="station-preferences-panel">
       {!failed && <div className="station-quality" role="group" aria-label={t("画质")}>
