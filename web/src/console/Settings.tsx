@@ -3,6 +3,7 @@ import { themeChoices, type ThemeId } from './model';
 import type { MusicPreferences, MusicStatus } from './music';
 import { qualityChoices, qualityProfiles, describeQuality, type QualityChoice, type QualityLevel } from './quality';
 import VoiceBar, { VoiceSettings } from './VoiceBar';
+import ShortcutHelp from './ShortcutHelp';
 
 export const qualityLabels: Record<QualityChoice, string> = { auto: '自动', high: '高', medium: '中', low: '低' };
 
@@ -45,9 +46,10 @@ export default function Settings({ t, inspection, failed, inert, quality, level,
       <nav className="station-navigation" aria-label={t('页面导航')}>
         <a href="/" aria-current={!inspection ? 'page' : undefined}>{t('游戏')}</a>
         <a href="/preview" aria-current={inspection ? 'page' : undefined}>Preview</a>
+        <ShortcutHelp t={t}/>
       </nav>
       <VoiceBar t={t}/>
-      <details className="station-preferences"><summary>{t('设置')}</summary><div className="station-preferences-panel">
+      <details name="station-panel" id="station-preferences" className="station-preferences"><summary>{t('设置')}</summary><div className="station-preferences-panel">
       {!failed && <div className="station-quality" role="group" aria-label={t("画质")}>
         <span aria-hidden="true">{t("画质")}</span>
         {qualityChoices.map(choice => <button key={choice} aria-pressed={quality === choice} title={qualityHint(choice, level, t)}

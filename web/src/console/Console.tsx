@@ -9,6 +9,7 @@ import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draft
 import { paint, paintClock, knobLabel, guidePages } from './paint';
 import { qualityProfiles, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import { reachable } from './actions';
+import { isEditingTarget, isNativeKeyTarget, shortcutAction, shortcutLabel } from './shortcuts';
 import ArchiveSheet from './ArchiveSheet';
 import Controls, { isKnob, useHandleGrip } from './Controls';
 import MobileConsole from './MobileConsole';
@@ -376,50 +377,51 @@ export default function Console() {
     useEffect(() => { pending.current = false; }, [s.teamA, s.teamB, s.roomCode]);
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
-            if (event.isComposing)
-                return;
-            if (document.querySelector('.archive-dialog[open]')) return;
-            if (current.current.u.archiveOpen && consoleHardware(current.current.u).powered) {
-                if (event.key === 'Escape') closeArchive();
+            const local = current.current.u;
+            const command = shortcutAction(event, {
+                editing: isEditingTarget(event.target), nativeControl: isNativeKeyTarget(event.target),
+                submitInput: event.target instanceof Element && event.target.hasAttribute('data-console-input'),
+                manual: local.manual, briefing: !!local.brief && !failure && !portable(),
+            });
+            if (!command || document.querySelector('.archive-dialog[open]')) return;
+            if (local.archiveOpen && consoleHardware(local).powered) {
+                if (command === 'dismiss' || command === 'archive-toggle') { event.preventDefault(); closeArchive(); }
                 return;
             }
-            if (event.key === 'Escape') {
+            const help = document.querySelector<HTMLDetailsElement>('#station-shortcuts');
+            const preferences = document.querySelector<HTMLDetailsElement>('#station-preferences');
+            const closePanel = (panel: HTMLDetailsElement) => {
+                panel.open = false;
+                panel.querySelector('summary')?.focus({ preventScroll: true });
+            };
+            if (command === 'shortcuts' && help) {
+                event.preventDefault();
+                if (preferences) preferences.open = false;
+                help.open = !help.open;
+                help.querySelector('summary')?.focus({ preventScroll: true });
+                if (help.open) help.querySelector('summary')?.scrollIntoView({ block: 'nearest' });
+                return;
+            }
+            // Page panels own focus; no game actions leak through while reading them.
+            const panel = help?.open ? help : preferences?.open ? preferences : null;
+            if (panel) {
+                if (command === 'dismiss') { event.preventDefault(); closePanel(panel); }
+                return;
+            }
+            if (command === 'dismiss') {
                 if (!grip.cancel()) {
-                    if (current.current.u.manual || current.current.u.about)
-                        handleFocusPending.current = current.current.u.about ? 'about' : 'manual';
+                    if (local.manual || local.about)
+                        handleFocusPending.current = local.about ? 'about' : 'manual';
                     else skipBriefing();
                     patch({ archiveOpen: false, manual: false, about: false });
                 }
+                event.preventDefault();
                 return;
             }
-            const input = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || (event.target instanceof HTMLElement && event.target.isContentEditable);
-            if (!consoleHardware(current.current.u).powered || facingRear()) return;
-            if (current.current.u.manual && !input) {
-                // The guide turns with the arrow keys, or straight to a page with 1–4.
-                const page = event.key === 'ArrowLeft' ? current.current.u.guidePage - 1 : event.key === 'ArrowRight' ? current.current.u.guidePage + 1 :
-                    /^[1-4]$/.test(event.key) ? Number(event.key) - 1 : null;
-                if (page !== null) { event.preventDefault(); turnGuide(page); }
-                return;
-            }
-            if (current.current.u.manual || current.current.u.about) return;
-            // Any deliberate key ends the briefing; a number still goes to the keypad.
-            if (current.current.u.brief && !input && !event.metaKey && !event.ctrlKey && !event.altKey &&
-                (/^[1-4]$/.test(event.key) || ['Enter', ' ', 'Escape', 'Backspace', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key))) {
-                skipBriefing();
-                if (!/^[1-4]$/.test(event.key)) { event.preventDefault(); return; }
-            }
-            if (!input && /^[1-4]$/.test(event.key)) {
-                event.preventDefault();
-                act('key-' + (Number(event.key) - 1));
-            }
-            if (!input && event.key === 'Backspace') {
-                event.preventDefault();
-                act('key-4');
-            }
-            if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-                event.preventDefault();
-                act('transmit');
-            }
+            if (!consoleHardware(local).powered || facingRear()) return;
+            if ((local.manual || local.about) && !['manual', 'archive-toggle'].includes(command) && !command.startsWith('guide-')) return;
+            event.preventDefault();
+            act(command);
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
@@ -806,7 +808,7 @@ export default function Console() {
     {wordBench && loaded && !failure && <WordBench bench={bench} local={u} powered={hardware.powered} inert={archiveBlocking} t={t}
         onPatch={patch} announce={setAnnouncement}/>}
     {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{hint.startsWith('quality:')
-        ? qualityHint(hint.slice(8) as QualityChoice, level, t) : content.targets.find(target => target.id === hint)?.label}</div>}
+        ? qualityHint(hint.slice(8) as QualityChoice, level, t) : [content.targets.find(target => target.id === hint)?.label, shortcutLabel(hint)].filter(Boolean).join(' · ')}</div>}
     <p className="mobile-hint">{t("横向滑动查看终端 · 下拉纸带查看密报记录")}</p>
     <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${s.myTeam}:${!!preview}`} open={archiveVisible && hardware.powered} locale={u.locale} state={displayState} onClose={closeArchive} onClosed={restoreArchiveFocus} onVisibilityChange={setArchiveShown}/>
     <div className="sr-only" role="status" aria-live="polite">{announcement}</div>

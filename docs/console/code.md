@@ -238,7 +238,7 @@ web/
 - `transmit`（红色 ACTION 键）：按当前阶段调用 `createRoom` / `joinRoom` / `startGame` / `submitClues` / `submitIntercept` / `submitDecrypt` / `returnToRoom`
 - 选队、加减 AI
 
-键盘快捷键（数字键 1–4、Backspace、Ctrl/Cmd+Enter、Esc、方向键）在 `Console.tsx` 的全局 `keydown` 监听里转换成同样的 `act()` 调用。
+键盘意图由 `shortcuts.ts` 统一识别（数字键 1–4、Backspace、Enter、Ctrl/Cmd+Enter、H、G、?、Esc、方向键），`Console.tsx` 的全局 `keydown` 监听再按面板、供电和朝向决定是否交给同样的 `act()` 调用。`ShortcutHelp.tsx` 在页面导航提供常驻说明；`Controls.tsx` 复用快捷键标记生成无障碍属性和悬停提示。语音服务独立处理反引号的按下与松开，以及 V 切换全桌／队内；快捷键和网页的「悄悄话」按钮共用 `toggleVoiceChannel()`，只在语音接通、有队伍且未分组讨论时切换。语音复用相同的文字编辑检测，记录面板也能通话。
 
 ## 模型与表面
 

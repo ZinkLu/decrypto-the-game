@@ -5,6 +5,7 @@ import { archiveRows, type StationState } from './model';
 import { paperFeedDuration } from './mechanics';
 import FieldNotebook from './FieldNotebook';
 import ArchiveViews from './ArchiveViews';
+import { isEditingTarget, shortcutAction } from './shortcuts';
 import './notebook.css';
 
 const motionRate = import.meta.env.DEV && new URLSearchParams(location.search).get('motion') === 'slow' ? .2 : 1;
@@ -66,6 +67,12 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, onVisibil
 
     return <dialog ref={dialog} className="archive-dialog archive-study" data-open={open} aria-labelledby="archive-title"
         style={{ '--archive-enter-duration': `${enterDuration}ms`, '--archive-exit-duration': `${exitDuration}ms` } as CSSProperties}
+        onKeyDown={event => {
+            if (shortcutAction(event.nativeEvent, { editing: isEditingTarget(event.target), nativeControl: true,
+                submitInput: false, manual: false, briefing: false }) !== 'archive-toggle') return;
+            event.preventDefault();
+            requestClose();
+        }}
         onClose={() => { onVisibilityChange(false); onClosed(); }}
         onCancel={event => { event.preventDefault(); requestClose(); }}
         onClick={event => { if (event.target === event.currentTarget) requestClose(); }}>
@@ -114,7 +121,7 @@ export default function ArchiveSheet({ open, state, onClose, onClosed, onVisibil
         </article>
         </div>
         </div>
-        <button className="archive-dismiss" onClick={requestClose} aria-label={t("收起密报记录")}>{t("收起记录")}<span aria-hidden="true">×</span></button>
+        <button className="archive-dismiss" aria-keyshortcuts="H Escape" onClick={requestClose} aria-label={t("收起密报记录")}>{t("收起记录")}<span aria-hidden="true">×</span></button>
         <ArchiveViews locale={locale}/>
     </dialog>;
 }

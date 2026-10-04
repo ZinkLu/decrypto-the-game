@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { listenVoice, useGameStore } from "@/store/gameStore";
+import { isEditingTarget } from "@/console/shortcuts";
 import {
   apart, audible, speakingTo, voiceTurn,
   type IntercomDeck, type IntercomPosition, type VoiceChannel, type VoiceMode, type VoiceView,
@@ -33,7 +34,7 @@ export interface VoiceLink {
 /** Page code for each voice service the server may name. */
 const links: Record<string, (out: Outgoing, host: VoiceHost) => VoiceLink> = { cloudflare: cloudflareLink };
 
-/** Key held or pressed to talk: the one left of 1, which clues never need. */
+/** Key held or pressed to talk: the physical key left of 1. */
 export const talkKey = "Backquote";
 
 export interface VoiceState {
@@ -204,6 +205,17 @@ export function setWhisper(on: boolean) {
   apply();
 }
 
+/** Chooses table or team for a joined line; guessing keeps the team's forced channel. */
+export function toggleVoiceChannel(): boolean {
+  const s = useVoice.getState();
+  const view = currentView();
+  if (s.status !== "on" || !s.machine || s.listenOnly || !view.team || apart(view)) return false;
+  clearTimeout(noticeTimer);
+  useVoice.setState({ whisper: !s.whisper, notice: "" });
+  apply();
+  return true;
+}
+
 export function setMode(mode: VoiceMode) {
   useVoice.setState({ mode, holding: false });
   savePreferences();
@@ -213,7 +225,7 @@ export function setMode(mode: VoiceMode) {
 /** Powers the intercom down with the console, or up again; the line itself stays. */
 export function setMachine(ready: boolean) {
   if (useVoice.getState().machine === ready) return;
-  useVoice.setState({ machine: ready });
+  useVoice.setState(ready ? { machine: true } : { machine: false, holding: false });
   apply();
 }
 
@@ -266,15 +278,22 @@ export function setVolume(volume: number) {
 }
 
 function keyDown(event: KeyboardEvent) {
+  if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229 ||
+      event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || isEditingTarget(event.target)) return;
+  if (event.key.toLowerCase() === "v") {
+    if (toggleVoiceChannel()) event.preventDefault();
+    return;
+  }
   if (event.code !== talkKey) return;
-  event.preventDefault();
-  if (event.repeat) return;
   const s = useVoice.getState();
+  if (!s.machine || s.status === "off" || s.listenOnly) return;
+  event.preventDefault();
   if (s.mode === "hold") hold(true);
   else setMic(!s.micOn);
 }
 
 function keyUp(event: KeyboardEvent) {
+  // Focus, composition or machine state may have changed since the press.
   if (event.code === talkKey) hold(false);
 }
 

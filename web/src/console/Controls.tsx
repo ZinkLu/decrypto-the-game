@@ -1,6 +1,7 @@
 import { useRef, type PointerEvent, type RefObject } from 'react';
 import { instrumentSteps, type LocalState } from './model';
 import { intercomPositions } from './voice';
+import { controlShortcut, shortcutLabel } from './shortcuts';
 import type { Target } from './paint';
 import type { useDiskPull } from './useDiskPull';
 import { handleSurfaces, handlePull, handleCommit, type HandleSide } from './view';
@@ -118,6 +119,7 @@ export default function Controls({ targets, local: u, failed, visible, t, nodes,
             else
                 nodes.current.delete(key); },
             'aria-label': target.label, 'data-control': target.id, 'data-surface': target.surface,
+            'aria-keyshortcuts': controlShortcut(target.id), 'data-console-input': target.kind === 'input' ? '' : undefined,
             role: knob || selector ? 'slider' : ['power-toggle', 'receiver-sweep', 'sound-toggle', 'music-toggle'].includes(target.id) ? 'switch' : undefined,
             'aria-valuemin': knob || selector ? 0 : undefined,
             'aria-valuemax': knob ? 100 : selector ? intercomPositions.length - 1 : undefined,
@@ -126,7 +128,7 @@ export default function Controls({ targets, local: u, failed, visible, t, nodes,
             'aria-checked': target.id === 'power-toggle' ? u.powerOn : target.id === 'receiver-sweep' ? u.instrumentDemo : target.id === 'sound-toggle' ? u.soundOn : target.id === 'music-toggle' ? u.musicOn : undefined,
             disabled: target.disabled,
             style: failed ? { visibility: 'visible' as const } : undefined,
-            title: target.label,
+            title: [target.label, shortcutLabel(target.id)].filter(Boolean).join(' · '),
             'aria-expanded': target.id === 'archive-toggle' ? u.archiveOpen : target.id === 'battery-toggle' ? u.batteryOpen : undefined,
             'aria-haspopup': target.id === 'archive-toggle' ? 'dialog' as const : undefined,
             'aria-pressed': target.id === 'disk-toggle' ? u.diskOut : target.id === 'manual' ? u.manual : target.id === 'about' ? u.about :
@@ -161,14 +163,15 @@ export default function Controls({ targets, local: u, failed, visible, t, nodes,
             return <button key={key} {...common} onClick={() => onAct('voice-talk')}
                 onPointerDown={e => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); onAct('voice-talk-down'); }}
                 onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up}
-                onKeyDown={e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) onAct('voice-talk-down'); }}
+                onKeyDown={e => { if ((e.key === ' ' || e.key === 'Enter') && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229) onAct('voice-talk-down'); }}
                 onKeyUp={e => { if (e.key === ' ' || e.key === 'Enter') up(); }}>{target.label}</button>;
         }
         if (target.kind === 'input') return <input key={key} {...common} type="text" value={target.value || ''} maxLength={target.maxLength} placeholder={target.input?.placeholder || target.label} autoComplete={target.id === 'name' ? 'nickname' : 'off'} spellCheck={false} onChange={e => onChange(target, e.target.value)} onKeyDown={e => {
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing && target.id.startsWith('clue-')) {
+            if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey &&
+                !e.repeat && !e.nativeEvent.isComposing && e.nativeEvent.keyCode !== 229 && target.id.startsWith('clue-')) {
                 e.preventDefault();
                 const i = Number(target.id.slice(5));
-                nodes.current.get(`screen:clue-${Math.min(i + 1, 2)}`)?.focus();
+                nodes.current.get(i < 2 ? `screen:clue-${i + 1}` : 'transmitControl:transmit')?.focus();
             }
         }}/>;
         return <button key={key} {...common} onClick={e => {

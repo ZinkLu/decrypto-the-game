@@ -1,5 +1,5 @@
 import { useGameStore } from '../store/gameStore';
-import { currentView, hold, setMic, setMode, setVolume, setWhisper, startVoice, stopVoice, useVoice } from '../services/voice';
+import { currentView, hold, setMic, setMode, setVolume, toggleVoiceChannel, startVoice, stopVoice, useVoice } from '../services/voice';
 import { apart, voiceStatus } from './voice';
 
 type Translate = (message: string, values?: unknown[]) => string;
@@ -38,10 +38,11 @@ export default function VoiceBar({ t }: { t: Translate }) {
         : <button type="button" aria-pressed={v.holding} disabled={!!v.listenOnly} data-talking={talking} title={t('按住 ` 说话')}
             onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); hold(true); }}
             onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}
-            onKeyDown={event => { if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) { event.preventDefault(); hold(true); } }}
+            onKeyDown={event => { if ((event.key === ' ' || event.key === 'Enter') && !event.ctrlKey && !event.metaKey && !event.altKey &&
+                !event.repeat && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); hold(true); } }}
             onKeyUp={event => { if (event.key === ' ' || event.key === 'Enter') end(); }}>{t('按住说话')}</button>}
-      <button type="button" role="switch" aria-checked={v.whisper && !split && !!view.team} disabled={split || !view.team}
-          title={t('只说给队友听')} onClick={() => setWhisper(!v.whisper)}>{t('悄悄话')}</button>
+      <button type="button" role="switch" aria-checked={v.whisper && !split && !!view.team} disabled={split || !view.team || !v.machine || !!v.listenOnly || v.status !== 'on'}
+          aria-keyshortcuts="V" title={`${t('切换全桌／队内语音')} · V`} onClick={() => toggleVoiceChannel()}>{t('悄悄话')}</button>
       <span className="station-voice-status" role="status">
         {t(v.notice || line)}{v.listenOnly && ` · ${t(v.listenOnly)}`}
       </span>

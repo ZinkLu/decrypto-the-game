@@ -87,17 +87,17 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
                 <ol>{Array.from({ length: 4 }, (_, i) => <li key={i}><b>{i + 1}</b> {t('离线')}</li>)}</ol></section>
             <p>{t('连接恢复后，词窗与房间码将重新显示。')}</p>
             <p>{t('输入已保留，不会自动提交。')}</p>
-            {!home && <button data-mobile-archive onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button>}
+            {!home && <button data-mobile-archive aria-keyshortcuts="H" onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button>}
         </>}
     </section>;
     if (u.manual || u.about) return <section className="mobile-console" aria-label={t(u.about ? '原版桌游' : '玩法')} inert={inert}>
         <button onClick={() => onAct('screen-close')}>{t('返回操作')}</button>
         <GuideContent locale={u.locale} about={u.about}/>
-        {u.about && <button onClick={() => onAct('manual')}>{t('一图读懂玩法')}</button>}
+        {u.about && <button aria-keyshortcuts="G" onClick={() => onAct('manual')}>{t('一图读懂玩法')}</button>}
     </section>;
     const words = !!s.myWords.length && <section className="mobile-words"><div><h3>{t('我方秘密词')}</h3><button onClick={() => onAct('words')}>{t(u.hiddenWords ? '显示' : '遮住')}</button></div><ol>{s.myWords.map((v, i) => <li key={i}><b>{i + 1}</b> {u.hiddenWords ? '••••' : word(v, u.locale)}</li>)}</ol></section>;
     const round = <>
-        <div className="mobile-round"><strong>{t('第 {0} / 16 回合', [s.round])}</strong><button data-mobile-archive onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button></div>
+        <div className="mobile-round"><strong>{t('第 {0} / 16 回合', [s.round])}</strong><button data-mobile-archive aria-keyshortcuts="H" onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button></div>
         <div className="mobile-scores">{(['A', 'B'] as const).map(team => {
             const score = team === 'A' ? s.scoreA : s.scoreB;
             return <p key={team}><strong style={{ color: teamPalette(team, s.myTeam, u.theme).ink }}>{t('{0} 队', [team])}{team === s.myTeam ? t(' · 我方') : ''}</strong>
@@ -120,7 +120,14 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
             <p className="mobile-private-code">— · — · —</p>}
     </section>;
     const clueInputs = r.encrypt && u.clues.map((value, i) => <label key={i}>{t('线索 {0}', [i + 1])}
-        <span className="mobile-clue-target">{diskReadable ? `${s.secretDigits[i]} · ${word(s.myWords[s.secretDigits[i] - 1] || s.secretWords[i], u.locale)}` : t('已隐藏')}</span><input value={value} maxLength={80} disabled={!r.active || disabled} onChange={e => onChange(`clue-${i}`, e.target.value)}/></label>);
+        <span className="mobile-clue-target">{diskReadable ? `${s.secretDigits[i]} · ${word(s.myWords[s.secretDigits[i] - 1] || s.secretWords[i], u.locale)}` : t('已隐藏')}</span><input data-console-input data-clue-index={i} value={value} maxLength={80} disabled={!r.active || disabled} onChange={e => onChange(`clue-${i}`, e.target.value)}
+            onKeyDown={event => {
+                if (event.key !== 'Enter' || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || event.repeat ||
+                    event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+                event.preventDefault();
+                const terminal = event.currentTarget.closest('.mobile-console');
+                terminal?.querySelector<HTMLElement>(i < 2 ? `[data-clue-index="${i + 1}"]` : '.mobile-action')?.focus();
+            }}/></label>);
     // Each public clue sits beside the digit chosen for it; tapping a row picks the slot.
     const guessRows = r.guess && <>
         {peers.length > 0 && <ul className="mobile-peer-status" aria-label={t('队友状态')}>{peers.map(peer => <li key={peer.id} data-unavailable={peer.state === 'unavailable' || undefined}>
@@ -191,8 +198,8 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
         </header>
         {home && <>
             <div className="mobile-tabs"><button aria-pressed={u.mode === 'create'} onClick={() => onAct('mode-create')}>{t('建立频道')}</button><button aria-pressed={u.mode === 'join'} onClick={() => onAct('mode-join')}>{t('加入频道')}</button></div>
-            <label>{t('代号')}<input autoComplete="nickname" value={u.name} maxLength={20} onChange={e => onChange('name', e.target.value)}/></label>
-            {u.mode === 'join' && <label>{t('四位频道编号')}<input inputMode="numeric" autoComplete="off" value={u.code} maxLength={4} placeholder="1234" onChange={e => onChange('code', e.target.value)}/></label>}
+            <label>{t('代号')}<input data-console-input autoComplete="nickname" value={u.name} maxLength={20} onChange={e => onChange('name', e.target.value)}/></label>
+            {u.mode === 'join' && <label>{t('四位频道编号')}<input data-console-input inputMode="numeric" autoComplete="off" value={u.code} maxLength={4} placeholder="1234" onChange={e => onChange('code', e.target.value)}/></label>}
             <p>{t('每队至少两人，可以由 AI 补位。')}</p>
         </>}
         {lobby && <>
@@ -233,7 +240,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
             <button role="switch" aria-checked={u.soundOn} onClick={() => onAct('sound-toggle')}>{t(u.soundOn ? '关闭音效' : '开启音效')}</button>
             <button role="switch" aria-checked={u.musicOn} onClick={() => onAct('music-toggle')}>{t(u.musicOn ? '关闭背景音乐' : '开启背景音乐')}</button>
         </div>
-        <nav className="mobile-tabs"><button onClick={() => onAct('manual')}>{t('一图读懂玩法')}</button><button onClick={() => onAct('about')}>{t('原版桌游与购买')}</button></nav>
-        <footer><button className="mobile-action" disabled={!ready || disabled} onClick={() => onAct('transmit')}><span>ACTION</span>{t(action)}</button></footer>
+        <nav className="mobile-tabs"><button aria-keyshortcuts="G" onClick={() => onAct('manual')}>{t('一图读懂玩法')}</button><button onClick={() => onAct('about')}>{t('原版桌游与购买')}</button></nav>
+        <footer><button className="mobile-action" aria-keyshortcuts="Control+Enter Meta+Enter" disabled={!ready || disabled} onClick={() => onAct('transmit')}><span>ACTION</span>{t(action)}</button></footer>
     </section>;
 }
