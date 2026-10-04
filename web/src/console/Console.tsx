@@ -27,7 +27,7 @@ import { useConsoleAudio, useDiskFont, useGuideArt, useKeyDisk, useReducedMotion
 import { useDiskPull } from './useDiskPull';
 import { briefMode, detail, intercomPreview, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, notebookPreview, partialMode, pinnedQuality, portable, preview, route, scoreBench, wordBench } from './options';
 import type { LocalState, KeyDiskState } from './model';
-import type { Target } from './paint';
+import type { Content, Target } from './paint';
 import type { QualityChoice, QualityLevel } from './quality';
 import { handleSurfaces, type HandleSide } from './view';
 import { previewIntercom, turnSelector, type IntercomPosition } from './voice';
@@ -73,7 +73,7 @@ export default function Console() {
     const paintKey = JSON.stringify({ ...u, seconds: paintedSeconds(u.seconds), keyDisk: { ...u.keyDisk, pull: u.keyDisk.pull ? { ...u.keyDisk.pull, amount: 0 } : undefined }, scopeFreq: 0, scopeWave: 0, scopeRate: 0, scopeAxis: 0, meterAmplitude: 0, meterRate: 0 });
     const painted = useMemo(() => paint(displayState, u, inspection, guideArt), [displayState, paintKey, diskFontReady, guideArt]);
     const clock = useMemo(() => paintClock(displayState, u), [displayState, paintKey, u.seconds]);
-    const content = useMemo(() => ({ ...painted, frames: { ...painted.frames, clock }, targets: [...painted.targets, ...Object.keys(handleSurfaces).filter(surface =>
+    const content = useMemo<Content>(() => ({ ...painted, frames: { ...painted.frames, clock }, targets: [...painted.targets, ...Object.keys(handleSurfaces).filter(surface =>
         inspection || surface.includes('Rear') === u.backView).map<Target>(surface => ({
             id: surface, surface, x: 0, y: 0, w: 1, h: 1,
             label: translate(u.locale, surface.includes('Rear') ? '点击把手连接处，回到正面' :
@@ -179,6 +179,21 @@ export default function Console() {
         archiveFocusPending.current = false;
         if (portable()) document.querySelector<HTMLButtonElement>('[data-mobile-archive]')?.focus();
         else controls.current.get('paper:archive-toggle')?.focus();
+    }
+    function tourRegion(id: string) {
+        const surfaces = id === 'room' ? ['channel', 'channelCopy'] : id === 'voice' ? ['intercomSelector', 'intercomTalk'] :
+            id === 'words' ? ['word0', 'word1', 'word2', 'word3'] : id === 'enter' ? ['screen'] : ['paper'];
+        const offset = stage.current?.getBoundingClientRect();
+        if (!offset || !engine.current || failure) {
+            const step = id === 'room' ? 'copy-code' : id === 'history' ? 'archive-toggle' : id === 'words' ? 'words' : id === 'voice' ? 'voice-line' : 'name';
+            return Array.from(controls.current.values()).filter(node => node.dataset.control === step).map(node => node.getBoundingClientRect());
+        }
+        return surfaces.flatMap(surface => {
+            const frame = current.current.content.frames[surface];
+            if (!frame) return [];
+            const bounds = engine.current!.bounds({ id: 'tour-region', label: '', surface, x: 0, y: 0, w: frame.width, h: frame.height });
+            return bounds ? [{ ...bounds, left: bounds.left + offset.left, top: bounds.top + offset.top }] : [];
+        });
     }
     useEffect(restoreArchiveFocus, [u.archiveOpen]);
     function project() {
@@ -819,7 +834,7 @@ export default function Console() {
     {notice && <StationToast message={notice} t={t} onClose={() => setNotice('')}/>}
     {!keepsMachine && <OperationTour home={s.phase === 'home'} words={!!s.myWords.length} compactWords={!roleState(displayState, u).encrypt} voice={deck.available}
         enabled={(loaded || !!failure) && hardware.online && !u.backView && !archiveBlocking && !u.manual && !u.about && !notice && u.keyDisk.phase !== 'announcing'}
-        autoStart={!preview || new URLSearchParams(location.search).has('tour')} persist={!preview} replay={tourReplay} t={t}/>}
+        autoStart={!preview || new URLSearchParams(location.search).has('tour')} persist={!preview} replay={tourReplay} measureRegion={tourRegion} t={t}/>}
     </div>
     {instrumentPreview && loaded && !failure && <InstrumentBench bench={bench} local={u} powered={hardware.powered} inert={archiveBlocking} t={t}
         onPatch={patch} announce={setAnnouncement} onHint={id => { if (id) setNotice(content.targets.find(target => target.id === id)?.label || ''); }} onInspect={closeup => engine.current?.inspectInstrument(closeup)}/>}

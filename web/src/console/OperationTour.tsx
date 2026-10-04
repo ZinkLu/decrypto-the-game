@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { readTourProgress, saveTourProgress, tourSteps, type TourContext, type TourStep } from './onboarding';
+import TourSpotlight from './TourSpotlight';
+import type { SpotlightRect } from './spotlight';
 import './operation-tour.css';
 
 type Props = TourContext & { enabled: boolean; autoStart: boolean; persist: boolean; replay: number; compactWords: boolean;
+    measureRegion: (step: string) => SpotlightRect[];
     t: (message: string, values?: unknown[]) => string };
 
-export default function OperationTour({ home, words, voice, enabled, autoStart, persist, replay, compactWords, t }: Props) {
+export default function OperationTour({ home, words, voice, enabled, autoStart, persist, replay, compactWords, measureRegion, t }: Props) {
     const [progress, setProgress] = useState(() => persist ? readTourProgress() : { seen: [], dismissed: false });
     const [steps, setSteps] = useState<TourStep[]>([]);
     const [index, setIndex] = useState(0);
@@ -69,7 +72,7 @@ export default function OperationTour({ home, words, voice, enabled, autoStart, 
         nextButton.current?.focus({ preventScroll: true });
     }
     if (!enabled || !step) return null;
-    return <section ref={card} className="station-notice station-tour" aria-label={t('操作提示')} onKeyDown={event => {
+    return <><section ref={card} className="station-notice station-tour" aria-label={t('操作提示')} onKeyDown={event => {
         if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); }
     }}>
         <div className="station-tour-copy" role="status" aria-live="polite" aria-atomic="true">
@@ -79,5 +82,8 @@ export default function OperationTour({ home, words, voice, enabled, autoStart, 
         </div>
         <footer><button type="button" onClick={() => close(true)}>{t('跳过提示')}</button>
             <button ref={nextButton} type="button" className="station-tour-next" onClick={next}>{t(index + 1 === steps.length ? '知道了' : '下一步')}</button></footer>
-    </section>;
+    </section>
+    <TourSpotlight key={`${step.id}:${compact}`} selector={compact ? step.compactTarget : step.target} card={card}
+        measure={compact ? undefined : () => measureRegion(step.id)}/>
+    </>;
 }

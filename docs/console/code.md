@@ -61,7 +61,7 @@ web/
 | `NotebookWriting.tsx` | 记录板上的手写便条：放置、拖动、随纸张缩放 |
 | `EncryptorIntro.tsx` | 密钥软盘发放时的加密者播报，桌面端落在软盘槽上，窄屏回到自己的驱动器 |
 | `ShortcutHelp.tsx` | 页面导航里的快捷键说明面板（`?` 打开），由 `Settings.tsx` 挂出 |
-| `OperationTour.tsx` | 首次操作提示：按当前可用功能逐步说明入房、房间号、历史、密词与语音，高亮对应控件；可以跳过或从页面导航重看 |
+| `OperationTour.tsx` / `TourSpotlight.tsx` | 首次操作提示：按当前可用功能逐步说明入房、房间号、历史、密词与语音，高亮对应控件；可以跳过或从页面导航重看 |
 | `GuideContent.tsx` | 玩法说明和原版桌游介绍的 DOM 版本，供窄屏和读屏软件使用 |
 | `hooks.ts` | 从 `Console.tsx` 分出来的几组 effect：扬声器和音乐的生命周期、软盘状态机的定时器、减弱动效、字体和插图的载入 |
 | `useDiskPull.ts` | 拖拽软盘的指针手势，桌面和窄屏共用 |
