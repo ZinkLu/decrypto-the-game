@@ -24,12 +24,12 @@ var DefaultTimings = Timings{Encrypt: 90 * time.Second, Guess: 60 * time.Second,
 // the decoding and, from round 3, the interception while guessing. Each has its
 // own deadline, so that a team of AI players gets the time its requests need.
 type action struct {
-	team        string // "A" or "B"
-	deadline    time.Time
-	accepted    bool
-	ai          bool
-	submitterID string             // one designated AI when all eligible guessers are AI
-	cancel      context.CancelFunc // stop every AI worker as soon as the team answers
+	team       string // "A" or "B"
+	deadline   time.Time
+	accepted   bool
+	ai         bool
+	aiPlayerID string             // the team's only AI guesser, also its submitter when a.ai
+	cancel     context.CancelFunc // stop the AI guesser as soon as the team answers
 	// The acting seats' latest draft, sent if the time runs out.
 	clues [3]string
 	guess [3]int
@@ -85,7 +85,7 @@ func (b *Bridge) phaseActions(phase string, r *core.Round) map[string]*action {
 		}
 	}
 	for name, a := range actions {
-		if !a.ai || name == "encrypt" {
+		if name == "encrypt" {
 			continue
 		}
 		team := r.GetCurrentTeam()
@@ -94,7 +94,7 @@ func (b *Bridge) phaseActions(phase string, r *core.Round) map[string]*action {
 		}
 		for _, player := range team.Members() {
 			if player.UID != r.EncryptPlayer().UID && isAI(player.UID) {
-				a.submitterID = player.UID
+				a.aiPlayerID = player.UID
 				break
 			}
 		}
@@ -183,12 +183,15 @@ func (b *Bridge) setPhase(phase string, r *core.Round) {
 		views[id] = b.seatViewLocked(v, public)
 	}
 	b.views = views
-	// Seed every eligible seat before phase_change, so absent network events do
-	// not make a slow AI or a quiet human disappear from another seat's view.
+	// Seed human actors and the selected AI before phase_change, so absent
+	// network events do not make an actor disappear from another seat's view.
 	for _, p := range roster {
 		v := b.views[p.ID]
 		name := seatAction(v.YourRole, phase, b.round)
 		if name == "" || b.actions[name].accepted || v.TeammateProgress[p.ID] != nil {
+			continue
+		}
+		if p.IsAI && name != "encrypt" && p.ID != b.actions[name].aiPlayerID {
 			continue
 		}
 		state, focus := "idle", 0
@@ -271,7 +274,7 @@ func (b *Bridge) canSubmitLocked(playerID, name string) bool {
 	if !exists || a == nil || seatAction(v.YourRole, b.phase, b.round) != name {
 		return false
 	}
-	return !isAI(playerID) || name == "encrypt" || a.ai && a.submitterID == playerID
+	return !isAI(playerID) || name == "encrypt" || a.ai && a.aiPlayerID == playerID
 }
 
 func (b *Bridge) ValidateProgress(playerID string, data ws.ProgressData) error {

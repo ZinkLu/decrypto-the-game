@@ -149,65 +149,58 @@ type aiAnswer struct {
 	guess [3]int
 }
 
-func (b *Bridge) newAIGuesses(r *core.Round, intercept bool) []aiGuessJob {
-	job := aiGuessJob{action: "decrypt", intercept: intercept, player: "AI", round: r.GetNumberOfRounds(),
-		clues: r.GetEncryptedMessage(), history: formatHistoryForAI(b, r)}
-	team := r.GetCurrentTeam()
+func (b *Bridge) newAIGuess(r *core.Round, intercept bool) (aiGuessJob, bool) {
+	action, team := "decrypt", r.GetCurrentTeam()
 	if intercept {
-		job.action = "intercept"
-		team = r.GetOpponent()
-	} else {
+		action, team = "intercept", r.GetOpponent()
+	}
+	job := aiGuessJob{action: action, intercept: intercept, player: "AI", round: r.GetNumberOfRounds(),
+		clues: r.GetEncryptedMessage(), history: formatHistoryForAI(b, r)}
+	if !intercept {
 		job.words = team.GetWords()
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	a := b.actions[job.action]
-	if a == nil || a.accepted {
-		return nil
+	if a == nil || a.accepted || a.aiPlayerID == "" {
+		return aiGuessJob{}, false
 	}
 	job.deadline, job.actionState = a.deadline, a
-	var jobs []aiGuessJob
-	// Each seat receives its own immutable context and produces its own choices.
 	for _, p := range team.Members() {
-		if isAI(p.UID) && p.UID != r.EncryptPlayer().UID {
-			own := job
-			own.player, own.playerID = p.NickName, p.UID
-			own.canSubmit = b.canSubmitLocked(p.UID, job.action)
-			own.suggestion = !own.canSubmit
-			jobs = append(jobs, own)
+		if p.UID == a.aiPlayerID {
+			job.player, job.playerID = p.NickName, p.UID
+			job.canSubmit = b.canSubmitLocked(p.UID, job.action)
+			job.suggestion = !job.canSubmit
+			return job, true
 		}
 	}
-	return jobs
+	return aiGuessJob{}, false
 }
 
-func (b *Bridge) startAIGuesses(parent context.Context, r *core.Round, intercept bool, answers chan<- aiAnswer) {
-	b.runAIGuesses(parent, b.newAIGuesses(r, intercept), answers)
-}
-
-func (b *Bridge) runAIGuesses(parent context.Context, jobs []aiGuessJob, answers chan<- aiAnswer) {
-	if len(jobs) == 0 {
-		return
+func (b *Bridge) startAIGuess(parent context.Context, r *core.Round, intercept bool, answers chan<- aiAnswer) {
+	if job, ok := b.newAIGuess(r, intercept); ok {
+		b.runAIGuess(parent, job, answers)
 	}
-	// One cancellation tree per action, never replaced by individual workers.
+}
+
+func (b *Bridge) runAIGuess(parent context.Context, job aiGuessJob, answers chan<- aiAnswer) {
 	ctx, cancel := context.WithCancel(parent)
 	b.mu.Lock()
-	if !b.aiGuessActiveLocked(jobs[0]) {
+	if !b.aiGuessActiveLocked(job) {
 		b.mu.Unlock()
 		cancel()
 		return
 	}
-	jobs[0].actionState.cancel = cancel
+	job.actionState.cancel = cancel
 	b.mu.Unlock()
-	for _, job := range jobs {
-		go b.aiGuess(ctx, job, answers)
-	}
+	go b.aiGuess(ctx, job, answers)
 }
 
 func (b *Bridge) aiGuessActiveLocked(job aiGuessJob) bool {
 	a := b.actions[job.action]
 	v, exists := b.views[job.playerID]
 	return b.phase == "guess" && b.round == int(job.round) && a != nil && a == job.actionState && !a.accepted && exists &&
-		isAI(job.playerID) && seatAction(v.YourRole, b.phase, b.round) == job.action &&
+		isAI(job.playerID) && a.aiPlayerID == job.playerID && seatAction(v.YourRole, b.phase, b.round) == job.action &&
 		job.canSubmit == b.canSubmitLocked(job.playerID, job.action) && job.suggestion != job.canSubmit
 }
 
@@ -218,7 +211,7 @@ func (b *Bridge) acceptAIGuess(answer aiAnswer) bool {
 	defer b.mu.Unlock()
 	job := answer.job
 	if !b.aiGuessActiveLocked(job) || !job.canSubmit || job.suggestion || !job.actionState.ai ||
-		job.actionState.submitterID != job.playerID || !validGuess(answer.guess) {
+		!validGuess(answer.guess) {
 		return false
 	}
 	b.relayProgressLocked(ws.PlayerProgressData{Round: int(job.round), Action: job.action, Player: job.player, PlayerID: job.playerID,
@@ -314,9 +307,8 @@ func (b *Bridge) aiGuess(parent context.Context, job aiGuessJob, answers chan<- 
 	}
 }
 
-// Each advisory AI offers its own opinion. Missing or failed model
-// calls leave an unavailable suggestion rather than presenting fallback digits
-// as advice, and a human answer cancels all remaining requests immediately.
+// The selected AI offers advice when a human can submit. Failed model calls
+// leave an unavailable suggestion; a human answer cancels the request.
 func (b *Bridge) aiSuggest(parent context.Context, job aiGuessJob) {
 	ctx, cancel := context.WithDeadline(parent, job.deadline)
 	defer cancel()

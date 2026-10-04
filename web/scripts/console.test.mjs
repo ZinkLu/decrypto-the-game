@@ -75,8 +75,9 @@ test('roster follows public phase progress and does not attribute stale or ambig
   // Both teams are on the air while they guess: the opponents intercept, the
   // encryptor's teammates decode, and the encryptor only watches.
   const guessing = rosterTeams(previewState({}, 'intercept'), initialLocal);
-  assert.ok(guessing[0].seats.every(p => p.acting), 'opponents act during interception');
-  assert.deepEqual(guessing[1].seats.filter(p => p.acting).map(p => p.player.nickname), ['Lisa', 'AI · 02', 'AI · 03']);
+  assert.deepEqual(guessing[0].seats.filter(p => p.acting).map(p => p.player.id), ['0', '1', '2'],
+    'human opponents act while AI without current progress only listen');
+  assert.deepEqual(guessing[1].seats.filter(p => p.acting).map(p => p.player.nickname), ['Lisa']);
   assert.deepEqual(guessing.map(team => team.summary), ['正在拦截', '正在解码']);
   const answered = rosterTeams({ ...previewState({}, 'decrypt-sent') }, initialLocal);
   assert.deepEqual(answered.map(team => team.summary), ['已提交', '正在拦截']);

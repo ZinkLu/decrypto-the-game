@@ -265,7 +265,7 @@
 | `round_result` | 本回合揭晓的结果 |
 | `timeouts` | 本回合的超时，按发生的顺序，每项同 `timeout` |
 | `ai_status` | 本阶段每项 AI 行动最近一次的状态，以行动名为键，每项同 `ai_thinking` |
-| `teammate_progress` | 本阶段每位行动者最近一次的输入，以 `player_id` 为键，每项同 `player_progress`。真人、每位 AI 建议者以及 AI 加密者各有一项。每位收件人的数字可见范围与实时消息一致；新阶段重新建立。同阶段断线重连保留个人选择，服务器重启后已提交队伍保留个人状态及被采用的答案，未提交队伍重新开始推理 |
+| `teammate_progress` | 本阶段每位行动者最近一次的输入，以 `player_id` 为键，每项同 `player_progress`。真人、每队选中的 AI 猜码者以及 AI 加密者各有一项，未选中的 AI 没有猜码项。每位收件人的数字可见范围与实时消息一致；新阶段重新建立。同阶段断线重连保留个人选择，服务器重启后已提交队伍保留个人状态及被采用的答案，未提交队伍重新开始推理 |
 | `game_over` | 对局结束后的 `game_over` 载荷 |
 
 只有 `room` 而没有 `game`，说明房间在大厅里。
@@ -279,16 +279,16 @@
 | `player` | 行动者的昵称 |
 | `player_id` | 服务端确认的玩家 ID；同名队员也分别保存 |
 | `is_ai` | 是否为 AI 席位 |
-| `can_submit` | 本席位是否拥有此行动的提交资格；实际提交还要求回合、阶段和截止时间正确，且本队尚未提交。真人行动者为 `true`；混合队伍的 AI 全为 `false`；全 AI 猜测队伍仅指定的一位 AI 为 `true`；AI 加密者为 `true` |
+| `can_submit` | 本席位是否拥有此行动的提交资格；实际提交还要求回合、阶段和截止时间正确，且本队尚未提交。真人行动者为 `true`；有真人参与猜码时，选中的 AI 为 `false`；全部猜码者都是 AI 时，选中的 AI 为 `true`；AI 加密者为 `true` |
 | `suggestion` | 是否为只提供建议的 AI 猜测者；为 `true` 时不能提交本队答案，与是否有真人队友无关 |
 | `state` | 真人使用 `idle`、`editing`；AI 分别使用 `thinking`、`retrying`、`ready`、`unavailable`。猜测的 `submitted` 仅由已接受的正式提交产生，不代表全队其他人的个人选择也已提交 |
 | `step`，`focus`，`guesses`，`filled`，`total` | 同 `progress` |
 
 猜测的 `guesses` 只发给猜测的一队和本回合的加密者。发给其他人的同一条消息不带 `guesses`，改带 `filled`：每一格是否已经选了数字。
 
-每位合资格 AI 都会独立、并发开始猜测；每位 AI 内部按三条线索依次推理，但不同 AI 不互相等待。`player` 与 `player_id` 对应实际 AI 席位，`guesses` 是它自己选定的数字，收件范围相同。处理时 `state` 为 `thinking` 或 `retrying`，`focus` 指向当前格；完成时为 `ready`、`step: 3`、`focus: 0`；建议失败时为 `unavailable`，保留此前完成的格，不编造备用建议。某一位的重试或失败不会覆盖另一位的状态。
+每队按座次选择第一位合资格 AI 开始猜测，仅该 AI 发送猜码进度，其余 AI 不初始化或发送该行动的进度。两队的 AI 独立并发执行，每位 AI 内部按三条线索依次推理。`player` 与 `player_id` 对应选中的实际 AI 席位，`guesses` 是它选定的数字，收件范围相同。处理时 `state` 为 `thinking` 或 `retrying`，`focus` 指向当前格；完成时为 `ready`、`step: 3`、`focus: 0`；建议失败时为 `unavailable`，保留此前完成的格，不编造备用建议。
 
-有真人能猜测时，所有 AI 都是 `suggestion: true`、`can_submit: false`。全部猜测者为 AI 时，按座次选第一位作为可提交者，其余仍只给建议；可提交者完成后，服务端再次核对座位、权限、行动实例、回合和阶段，接受后才广播该玩家的 `submitted`。其他 AI 的个人状态保持原样。建议永远不会覆盖真人输入、本队超时草稿或通过消息伪造提交权限；本队提交、超时或阶段结束时，共同取消这一行动下全部未完成的 AI 请求，并拒绝迟到结果。
+有真人能猜测时，选中的 AI 为 `suggestion: true`、`can_submit: false`。全部猜测者为 AI 时，它为 `suggestion: false`、`can_submit: true`；真人担任加密者、其余队友全是 AI 时也允许它自动解码。可提交者完成后，服务端再次核对选中席位、权限、行动实例、回合和阶段，接受后才广播该玩家的 `submitted`。建议永远不会覆盖真人输入、本队超时草稿或通过消息伪造提交权限；本队提交、超时或阶段结束时，取消这一行动下未完成的 AI 请求，并拒绝迟到结果。
 
 AI 加密者也使用同一份逐玩家状态，携带自己的 ID、回合、已完成数量、当前格与 `filled`。线索完成前不带草稿文字，也不把密码放入 `guesses`。
 
@@ -304,7 +304,7 @@ AI 加密者也使用同一份逐玩家状态，携带自己的 ID、回合、�
 | `total` | 固定为 3 |
 | `notice` | 重试或使用备用答案时的说明 |
 
-这两种按行动汇总的消息继续供旧观察界面使用，仅由 AI 加密者和全 AI 队伍的指定提交者更新；所有 AI 的独立状态以 `player_progress` 和 `teammate_progress` 为准。
+这两种按行动汇总的消息继续供旧观察界面使用，仅由 AI 加密者和有权自动提交的 AI 猜码者更新；各行动者的状态以 `player_progress` 和 `teammate_progress` 为准。
 
 ### `timeout`
 

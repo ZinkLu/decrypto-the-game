@@ -57,7 +57,7 @@ cd web && pnpm dev     # http://localhost:3000
 | `intercept` | 两队同时猜，你是对手，正在拦截；B 队同时在解码 |
 | `decrypt` | 两队同时猜，你是队友，正在解码；B 队同时在拦截 |
 | `decrypt-peers` / `intercept-peers` | 解码 / 拦截工作页，每条线索下显示真人队友和 AI 的独立选号，并标出正在推敲的槽位 |
-| `decrypt-ai-peers` / `intercept-ai-peers` | 多个 AI 独立建议及状态；分别检查正在推理、重试、就绪和暂不可用，拦截页含三位 AI 队友 |
+| `decrypt-ai-peers` / `intercept-ai-peers` | 队内有多个 AI，但仅选中的一位显示建议：解码页正在推理，拦截页正在重试；其余 AI 只在名册中保留席位 |
 | `decrypt-sent` | 你所在的 A 队已经交了解码，B 队还在拦截：已提交页，页脚是 B 队的进度，不带数字 |
 | `watch-guess` | 两队同时猜，你是加密者，看左右两列：B 队拦截、A 队解码，都带数字 |
 | `round_result` | 本轮回执 |

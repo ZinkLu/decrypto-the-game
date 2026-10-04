@@ -23,8 +23,8 @@ test('guessing teammates keep individual partial choices and AI recommendations'
   assert.equal(unavailable.focus, 0, 'a failed recommendation no longer appears to be thinking');
   assert.deepEqual(unavailable.guesses, [0, 0, 0]);
   const idle = teammateChoices({ ...state, teammateProgress: {} });
-  assert.deepEqual(idle.map(choice => [choice.id, choice.state, choice.guesses]), [['2', 'idle', [0, 0, 0]], ['3', 'idle', [0, 0, 0]]],
-    'all eligible humans and AI appear before their first draft arrives');
+  assert.deepEqual(idle.map(choice => [choice.id, choice.state, choice.guesses]), [['2', 'idle', [0, 0, 0]]],
+    'humans remain visible while AI without current progress do not become advisors');
   assert.equal(teammateChoices(previewState({}, 'intercept-peers')).length, 3, 'all other seats can intercept, including the previous encryptor');
 });
 
@@ -63,16 +63,21 @@ test('accepted team answers freeze focus and redacted or invalid digits stay bla
   assert.deepEqual(teammateChoices(redacted).map(choice => choice.guesses), [[0, 0, 0], [0, 0, 4]]);
 });
 
-test('parallel AI peers expose separate states, focused clues and submit authority', () => {
+test('only the selected AI exposes advice, focused clues and submit authority', () => {
   const decode = previewState({}, 'decrypt-ai-peers');
   const choices = teammateChoices(decode);
   assert.deepEqual(choices.map(choice => [choice.id, choice.state, choice.guesses, choice.canSubmit]), [
-    ['2', 'thinking', [3, 0, 0], false], ['3', 'ready', [1, 3, 4], false],
-  ], 'AI encryptor is excluded while both other AI keep independent choices');
-  assert.deepEqual(choices.map(teammateStatus), [['正在推敲第 {0} 条', [2]], ['建议已就绪', []]]);
+    ['2', 'thinking', [3, 0, 0], false],
+  ], 'AI encryptor and unselected AI have no advice rows');
+  assert.deepEqual(choices.map(teammateStatus), [['正在推敲第 {0} 条', [2]]]);
   const intercept = teammateChoices(previewState({}, 'intercept-ai-peers'));
-  assert.deepEqual(intercept.map(choice => choice.state), ['retrying', 'ready', 'unavailable']);
-  assert.deepEqual(intercept.map(teammateStatus), [['正在重试第 {0} 条', [2]], ['建议已就绪', []], ['建议暂不可用', []]]);
+  assert.deepEqual(intercept.map(choice => choice.state), ['retrying']);
+  assert.deepEqual(intercept.map(teammateStatus), [['正在重试第 {0} 条', [2]]]);
+  for (const replacement of [{ round: 4 }, { action: 'intercept' }, { player_id: 'other' }]) {
+    assert.deepEqual(teammateChoices({ ...decode, teammateProgress: {
+      '2': { ...decode.teammateProgress['2'], ...replacement },
+    } }), [], 'outdated or mismatched AI progress does not create advice');
+  }
   const selected = { ...decode, teammateProgress: { ...decode.teammateProgress,
     '2': { ...decode.teammateProgress['2'], suggestion: false, can_submit: true, state: 'ready', step: 3, guesses: [3, 1, 4] },
   } };
@@ -82,9 +87,9 @@ test('parallel AI peers expose separate states, focused clues and submit authori
   selected.actions = { ...selected.actions, decrypt: { ...selected.actions.decrypt, submitted: true } };
   const finished = teammateChoices(selected);
   assert.deepEqual(finished.map(choice => [choice.submitted, choice.actionClosed, choice.state]), [
-    [true, true, 'submitted'], [false, true, 'ready'],
-  ], 'only the accepted individual is marked submitted');
-  assert.deepEqual(finished.map(teammateStatus), [['已提交', []], ['队伍已提交', []]]);
+    [true, true, 'submitted'],
+  ], 'only the selected AI is marked submitted');
+  assert.deepEqual(finished.map(teammateStatus), [['已提交', []]]);
   assert.ok(transmission({ ...decode, actions: selected.actions }, false, 'decrypt').slots.every(slot => !slot.active),
     'closing the action stops the watching cursor too');
 });
@@ -93,13 +98,13 @@ test('roster statuses track every stable ID, including same-name AI and encrypti
   const state = previewState({}, 'intercept-ai-peers');
   state.teamA = state.teamA.map(person => ({ ...person, nickname: '同名' }));
   const roster = rosterTeams(state, initialLocal)[0];
-  assert.deepEqual(roster.seats.map(seat => seat.status), ['尚未开始', '重试中', '建议已就绪', '建议暂不可用']);
-  assert.deepEqual(roster.seats.map(seat => seat.progress.step), [0, 1, 3, 0]);
+  assert.deepEqual(roster.seats.map(seat => seat.status), ['尚未开始', '重试中', '监听中', '监听中']);
+  assert.deepEqual(roster.seats.map(seat => seat.progress?.step ?? null), [0, 1, null, null]);
   assert.deepEqual(roster.seats[1].statusLine, ['正在重试第 {0} 条', [2]]);
   assert.deepEqual(rosterTeams(state, { ...initialLocal, guess: [3, 0, 4] })[0].seats[0].statusLine,
     ['已选 {0} / 3', [2]], 'this device reflects local choices before their network echo');
   const closed = rosterTeams({ ...state, actions: { ...state.actions, intercept: { ...state.actions.intercept, submitted: true } } }, initialLocal)[0];
-  assert.ok(closed.seats.every(seat => seat.status === '队伍已提交'));
+  assert.deepEqual(closed.seats.map(seat => seat.status), ['队伍已提交', '队伍已提交', '监听中', '监听中']);
   const encryption = previewState({}, 'waiting');
   encryption.teamA[1].is_ai = true;
   encryption.teammateProgress = { '1': { action: 'encrypt', player_id: '1', player: 'Alice', is_ai: true,

@@ -254,16 +254,16 @@ func guessHandler(ctx context.Context, r *core.Round, ts core.TeamState) bool {
 	b.broadcastPhaseChange("guess", r)
 	defer b.closeInput()
 
-	// Every eligible AI starts independently. Only an all-AI team's designated
-	// seat may submit; the others offer individual suggestions.
+	// Each team selects one AI guesser. The two teams start independently;
+	// the selected seat may submit only when the action is AI-controlled.
 	guessCtx, cancelGuesses := context.WithCancel(ctx)
 	defer cancelGuesses()
 	answers := make(chan aiAnswer, 2)
 	if r.NeedsDecrypt() {
-		b.startAIGuesses(guessCtx, r, false, answers)
+		b.startAIGuess(guessCtx, r, false, answers)
 	}
 	if r.NeedsIntercept() {
-		b.startAIGuesses(guessCtx, r, true, answers)
+		b.startAIGuess(guessCtx, r, true, answers)
 	}
 
 	for r.NeedsDecrypt() || r.NeedsIntercept() {

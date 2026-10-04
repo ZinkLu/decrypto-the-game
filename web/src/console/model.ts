@@ -572,6 +572,7 @@ export function teammateChoices(s: StationState): TeammateChoice[] {
     return people.flatMap(person => {
         if (person.id === s.myPlayerID || action === 'decrypt' && person.id === encryptor) return [];
         const progress = seatProgress(s, person.id, action);
+        if (person.is_ai && !progress) return [];
         const submitted = progress?.state === 'submitted' && !progress.suggestion;
         const actionClosed = !!ownAction.submitted;
         const guesses = Array.from({ length: 3 }, (_, index) => {
@@ -642,7 +643,8 @@ export function rosterTeams(s: StationState, u: LocalState) {
                 const owner = !!player && player.id === s.ownerID;
                 const encryptor = playing && !!player && (s.encryptorID ? player.id === s.encryptorID :
                     self ? s.myRole === 'encryptor' : encryptingPlayer?.id === player.id);
-                const acting = !!player && active && (s.phase === 'encrypting' ? encryptor : !encryptor);
+                const acting = !!player && active && (s.phase === 'encrypting' ? encryptor : !encryptor) &&
+                    (s.phase !== 'guess' || !player.is_ai || !!seatProgress(s, player.id, action));
                 const individual = acting && player ? seatProgress(s, player.id, action) : undefined;
                 // Name matching only serves old previews with no per-seat map.
                 // Real progress is attributed exclusively by its stable player ID.
@@ -690,14 +692,11 @@ export function previewState(base: StationState, name: string, locale: 'zh' | 'e
             '0': { round: s.round, action, player_id: '0', player: teamA[0].nickname, is_ai: false,
                 can_submit: true, state: 'idle', step: 0, focus: 0, guesses: [0, 0, 0], total: 3 },
         };
-        const states: PlayerProgressState[] = action === 'decrypt' ? ['thinking', 'ready'] : ['retrying', 'ready', 'unavailable'];
         const peers = action === 'decrypt' ? teamA.slice(2) : teamA.slice(1);
-        peers.forEach((person, index) => {
-            const state = states[index], ready = state === 'ready', unavailable = state === 'unavailable';
-            progress[person.id] = { round: s.round, action, player_id: person.id, player: person.nickname, is_ai: true,
-                can_submit: false, suggestion: true, state, step: ready ? 3 : unavailable ? 0 : 1,
-                focus: ready || unavailable ? 0 : 2, guesses: ready ? [1, 3, 4] : unavailable ? [] : [3, 0, 0], total: 3 };
-        });
+        const person = peers[0];
+        progress[person.id] = { round: s.round, action, player_id: person.id, player: person.nickname, is_ai: true,
+            can_submit: false, suggestion: true, state: action === 'decrypt' ? 'thinking' : 'retrying',
+            step: 1, focus: 2, guesses: [3, 0, 0], total: 3 };
         return { ...s, teamA, players: [...teamA, ...s.teamB], teammateProgress: progress,
             encryptor: action === 'decrypt' ? teamA[1].nickname : s.encryptor,
             playerProgress: { [action]: progress[peers[0].id] } };

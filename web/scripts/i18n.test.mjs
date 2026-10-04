@@ -457,18 +457,22 @@ test('long clues can still be expanded when teammate annotations occupy their se
 });
 
 
-test('parallel AI advice keeps each named status visible without changing submission readiness', () => {
+test('selected AI advice shows its status without changing human submission readiness', () => {
   for (const locale of ['zh', 'en']) {
+    for (const state of ['retrying', 'ready', 'unavailable']) {
     const s = previewState({}, 'intercept-ai-peers', locale);
+    const selected = s.teammateProgress['1'];
+    Object.assign(selected, { state, step: state === 'ready' ? 3 : 1,
+      focus: state === 'retrying' ? 2 : 0, guesses: state === 'ready' ? [1, 3, 4] : [3, 0, 0] });
     const output = paint(s, { ...initialLocal, locale });
     const ink = output.frames.screen.canvas.ink;
-    for (const label of ['建议已就绪', '建议暂不可用']) assert.ok(ink.includes(translate(locale, label)), label);
-    assert.ok(ink.some(value => value.includes(locale === 'zh' ? '重试' : 'Retrying')));
-    const peers = s.teamA.filter(person => person.id !== s.myPlayerID);
-    assert.equal(peers.length, 3);
-    for (const peer of peers) assert.ok(ink.includes(peer.nickname), peer.nickname);
-    assert.equal(output.ready, false, 'three AI opinions do not fill the local draft');
+    if (state === 'retrying') assert.ok(ink.some(value => value.includes(locale === 'zh' ? '重试' : 'Retrying')));
+    else assert.ok(ink.includes(translate(locale, state === 'ready' ? '建议已就绪' : '建议暂不可用')));
+    assert.ok(ink.includes(s.teamA[1].nickname));
+    for (const peer of s.teamA.slice(2)) assert.ok(!ink.includes(peer.nickname), 'unselected AI has no advice row');
+    assert.equal(output.ready, false, 'AI advice does not fill the local draft');
     assert.equal(paint(s, { ...initialLocal, locale, guess: [3, 1, 4] }).ready, true, 'a failed or retrying AI cannot block a human answer');
     if (locale === 'en') assert.deepEqual(ink.filter(value => /[\u3400-\u9fff]/.test(value)), []);
+    }
   }
 });

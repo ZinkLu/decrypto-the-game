@@ -169,6 +169,7 @@ func (p progressProvider) Complete(ctx context.Context, m []ai.Message) (string,
 
 func advisoryJob(b *Bridge) aiGuessJob {
 	a := b.actions["intercept"]
+	a.aiPlayerID = "ai-B-1"
 	b.views["ai-B-1"] = ws.GameSyncData{Phase: "guess", Round: 3, YourRole: "opponent", YourTeam: "B"}
 	return aiGuessJob{action: "intercept", intercept: true, player: "AI partner", playerID: "ai-B-1", suggestion: true,
 		round: 3, clues: [3]string{"harbor", "snow", "flight"}, deadline: a.deadline, actionState: a}
