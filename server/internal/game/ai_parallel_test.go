@@ -3,6 +3,7 @@ package game
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -15,6 +16,39 @@ import (
 	"github.com/ZinkLu/decrypto-the-game/server/internal/room"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
+
+func TestAIAttemptsFromEnv(t *testing.T) {
+	for _, tc := range []struct {
+		env  string
+		want int
+	}{
+		{"", defaultAIAttempts},
+		{" ", defaultAIAttempts},
+		{"0", defaultAIAttempts},
+		{"-3", defaultAIAttempts},
+		{"three", defaultAIAttempts},
+		{"1", 1},
+		{" 4 ", 4},
+	} {
+		t.Setenv("DECRYPTO_AI_ATTEMPTS", tc.env)
+		if got := aiAttempts(); got != tc.want {
+			t.Fatalf("DECRYPTO_AI_ATTEMPTS=%q: got %d, want %d", tc.env, got, tc.want)
+		}
+	}
+	t.Setenv("DECRYPTO_AI_ATTEMPTS", "3")
+	b := &Bridge{Room: room.NewRoom("attempts", &room.PlayerInfo{ID: "p"}), Hub: ws.NewHub(nil), views: map[string]ws.GameSyncData{"p": {}}, Timing: Timings{Request: time.Minute}}
+	calls := 0
+	got := aiStep(context.Background(), b, "decrypt", "AI", 1, func(context.Context) (int, error) {
+		calls++
+		return 0, fmt.Errorf("no answer")
+	}, 3)
+	if got != 3 || calls != 3 {
+		t.Fatalf("configured tries ignored: got=%d calls=%d", got, calls)
+	}
+	if v := b.Sync("p"); v.AIStatus["decrypt"].Notice != "AI 未能完成回答，已使用备用线索或合法猜测继续。" {
+		t.Fatalf("missing visible fallback: %+v", v)
+	}
+}
 
 func awaitSignals(t *testing.T, signals <-chan int, count int) {
 	t.Helper()
@@ -113,7 +147,7 @@ func aiGuessBridge(t *testing.T, teamA, teamB []bool, round int) (*Bridge, *core
 			}
 		}
 	}
-	b, err := NewBridge(r, ws.NewHub(nil))
+	b, err := NewBridge(context.Background(), r, ws.NewHub(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -332,7 +366,7 @@ func TestMixedTeamStartsOnlySelectedAIAndWaitsForHuman(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	b, err := NewBridge(r, ws.NewHub(nil))
+	b, err := NewBridge(context.Background(), r, ws.NewHub(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -392,7 +426,7 @@ func TestAIEncryptorSynchronizesIdentityAndFilledSlotsWithoutClueText(t *testing
 		}
 	}
 	aiID := r.Snapshot().TeamA[0].ID
-	b, err := NewBridge(r, ws.NewHub(nil))
+	b, err := NewBridge(context.Background(), r, ws.NewHub(nil))
 	if err != nil {
 		t.Fatal(err)
 	}

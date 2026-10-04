@@ -28,8 +28,9 @@ make run
 | 路径 | 内容 |
 | --- | --- |
 | `web/dist/` | 构建好的页面 |
-| `words.txt` | 词库，每行一个词，写作 `词[word]`。文件在 `server/words.txt`，`make run` 用 `DECRYPTO_WORDS_PATH` 指向它 |
 | `data/decrypto.db` | 房间与对局，首次运行时创建 |
+
+密语词不在这张表里：词库已经编译进二进制，除了可执行文件什么都不需要。想换一份自己的词库，用 `DECRYPTO_WORDS_PATH` 指向它，每行一个词，写作 `词[word]`，至少四个；想每一局都由模型现写四个词，用 `DECRYPTO_WORDS_PROVIDER=llm`。
 
 仓库地址、Go 模块路径（`github.com/ZinkLu/decrypto-the-game/server`）、数据库文件名和浏览器存储的键名沿用历史名称 `decrypto`；对外的名字是 Encrypto。
 
@@ -39,7 +40,8 @@ make run
 | --- | --- | --- |
 | `PORT` | `8080` | 监听端口 |
 | `DECRYPTO_DB_PATH` | `data/decrypto.db` | 数据库文件。打不开时服务拒绝启动 |
-| `DECRYPTO_WORDS_PATH` | `words.txt` | 词库文件 |
+| `DECRYPTO_WORDS_PROVIDER` | `local` | 每支队伍四个密语词的来源：`local` 用内置词库，`llm` 让模型现写。写成别的名字服务拒绝启动 |
+| `DECRYPTO_WORDS_PATH` | 无 | 自己的词库文件，覆盖内置词库 |
 | `DECRYPTO_WEB_DIR` | `web/dist` | 构建好的页面所在目录 |
 | `DECRYPTO_ALLOWED_ORIGINS` | 无 | 额外允许的页面来源，逗号分隔。只在反向代理改写了 `Host` 时需要，见[部署](deployment.md) |
 
@@ -68,10 +70,13 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | `OPENAI_EXTRA_BODY` | 无 | 并入每次请求的 JSON 对象，例如 `{"chat_template_kwargs":{"enable_thinking":false}}` |
 | `ANTHROPIC_BASE_URL` | Anthropic 官方地址 | 替换 Claude 的完整请求地址 |
 | `DECRYPTO_AI_DEBUG` | 无 | 设为 `1` 时，服务端日志打印模型每次的思考过程（`reasoning_content` 或 `reasoning`，Claude 为 thinking）和原始回答，以 `[AI-DEBUG]` 开头。`0`、`false` 或不设置为关闭 |
+| `DECRYPTO_AI_ATTEMPTS` | `2` | AI 每给出一步回答（一条线索或一个数字）最多请求模型几次，含首次。小于 1 或不是数字时按默认值 |
 
-AI 的每一次请求限时 30 秒。推理模型想得太久会超时，可以用 `OPENAI_REASONING_EFFORT` 和 `OPENAI_MAX_TOKENS` 缩短。模型两次都没有给出可用的回答时，AI 交出备用答案（线索为「线索暂缺」），对局继续。
+AI 的每一次请求限时 30 秒。推理模型想得太久会超时，可以用 `OPENAI_REASONING_EFFORT` 和 `OPENAI_MAX_TOKENS` 缩短。模型用完 `DECRYPTO_AI_ATTEMPTS` 次都没有给出可用的回答时，AI 交出备用答案（线索为「线索暂缺」），对局继续。接口不稳定时可以调大该值，但要留意整步的作答时间没有变长——超时的部分由每一步自己的 30 秒和整段的作答时间共同限制。
 
 没有设置任何密钥时，AI 席位仍然可以添加，每一步都直接使用备用答案。这适合调试，不适合真的玩。
+
+同一个模型也可以用来发密语词：`DECRYPTO_WORDS_PROVIDER=llm` 时，每支队伍的四个词由它现写（一次请求限时 20 秒），答不上来、超时或写的不是四个互不相同的中英双语词时，这手牌改由内置词库发。开局的点击会等这一次请求完成。
 
 ## 语音
 
@@ -111,14 +116,14 @@ make dev-web             # 页面，3000，带热更新
 
 ```bash
 make test          # 两边都测；页面还会做类型检查和构建
-make test-server   # 只测后端，词库路径由 Makefile 给出
+make test-server   # 只测后端
 make test-web      # 只测页面
 ```
 
-不经过 make 时，后端测试在 `server/` 里运行，core 的测试要读词库，需要它的绝对路径：
+不经过 make 时，后端测试在 `server/` 里运行，词库在二进制里，不需要额外准备：
 
 ```bash
-cd server && DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
+cd server && go test ./...
 ```
 
 页面的测试在 Node 里运行，不需要浏览器。各测试文件覆盖什么见[代码组织](console/code.md#测试)和[后端架构](architecture.md#测试)。

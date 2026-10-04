@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 )
@@ -44,7 +45,7 @@ type Session struct {
 }
 
 // 自动组队并开始一场对局
-func NewWithAutoTeamUp(sessionId string, players []*Player) (*Session, error) {
+func NewWithAutoTeamUp(ctx context.Context, sessionId string, players []*Player) (*Session, error) {
 	if len(players) < 4 {
 		return nil, fmt.Errorf("必须要 4 人才能开始游戏")
 	}
@@ -55,24 +56,30 @@ func NewWithAutoTeamUp(sessionId string, players []*Player) (*Session, error) {
 
 	splitter := len(players) / 2
 
-	teamA, _ := newTeam(players[:splitter])
-	teamB, _ := newTeam(players[splitter:])
+	teamA, err := newTeam(ctx, players[:splitter])
+	if err != nil {
+		return nil, err
+	}
+	teamB, err := newTeam(ctx, players[splitter:])
+	if err != nil {
+		return nil, err
+	}
 
 	return &Session{sessionId: sessionId, maxRounds: MAX_ROUND, teams: [2]*Team{teamA, teamB}}, nil
 }
 
 // 自选队伍并开始一场对局
-func NewWithTeams(sessionId string, teamAPlayers []*Player, teamBPlayers []*Player) (*Session, error) {
+func NewWithTeams(ctx context.Context, sessionId string, teamAPlayers []*Player, teamBPlayers []*Player) (*Session, error) {
 	if len(teamAPlayers) < 2 || len(teamBPlayers) < 2 {
 		return nil, fmt.Errorf("每一队人数不得少于 2 人")
 	}
 	// 将队伍分成两组
-	teamA, err := newTeam(teamAPlayers)
+	teamA, err := newTeam(ctx, teamAPlayers)
 	if err != nil {
 		return nil, err
 	}
 
-	teamB, err := newTeam(teamBPlayers)
+	teamB, err := newTeam(ctx, teamBPlayers)
 	if err != nil {
 		return nil, err
 	}

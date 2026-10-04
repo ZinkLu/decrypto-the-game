@@ -291,7 +291,7 @@ func TestMixedTeamStartsAVisibleSuggestionAndStillWaitsForHuman(t *testing.T) {
 		t.Fatal(err)
 	}
 	aiID := r.Snapshot().TeamA[2].ID
-	b, err := NewBridge(r, ws.NewHub(nil))
+	b, err := NewBridge(context.Background(), r, ws.NewHub(nil))
 	if err != nil {
 		t.Fatal(err)
 	}

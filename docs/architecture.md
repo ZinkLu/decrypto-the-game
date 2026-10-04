@@ -18,7 +18,7 @@
 cmd/server            入口：组装各层，选择存储与语音的实现
 internal/
   core                游戏规则与回合状态机，不知道网络的存在
-    word_providers    词库来源（读取 words.txt）
+    word_providers    密语词来源（内置词库，或由模型现写）
   ws                  WebSocket 连接、房间内广播、消息类型
   room                房间：房间码、队伍、座位、AI 席位、恢复令牌
   game                桥接层：把 WebSocket 输入接到 core 的处理函数上
@@ -35,19 +35,18 @@ internal/
 依赖只朝一个方向：
 
 ```
-cmd/server ──► server ──► game ──► core ──► core/word_providers
-                 │          ├────► ai ──► ai/prompts
-                 │          │        ▲
-                 │          ├────► ai/providers
-                 │          ├────► room
-                 │          └────► ws
+cmd/server ──► server ──► game ──► core ──► core/word_providers ──┐
+                 │          ├──► ai ──► ai/prompts ◄────────────┤
+                 │          ├────► ai/providers ◄───────────────┘
+                 │          ├──► room
+                 │          └──► ws
                  ├──► room
                  ├──► ws
                  ├──► store ◄──── store/sqlite
                  └──► voice ◄──── voice/cloudflare
 ```
 
-`core`、`room`、`ws`、`store`、`voice` 互不引用。`server` 只通过 `store.Rooms` 接口认识存储，只通过 `voice.Service` 接口认识语音服务，具体用哪个实现由 `cmd/server/main.go` 决定。
+`core`、`room`、`ws`、`store`、`voice` 互不引用。`core` 唯一的外部依赖是 `word_providers`：它可以只读内置词库，也可以请模型写，所以 core 间接认得 `ai.LLMProvider` 这个接口，仍不认得网络。`server` 只通过 `store.Rooms` 接口认识存储，只通过 `voice.Service` 接口认识语音服务，具体用哪个实现由 `cmd/server/main.go` 决定。
 
 ## 游戏核心（`internal/core`）
 
@@ -60,7 +59,7 @@ cmd/server ──► server ──► game ──► core ──► core/word_pr
 | `Player` | `UID` 与昵称 |
 | `Round` | 一个回合：行动队伍、对手、加密者、三位密码、三条线索、拦截猜测、解码猜测、当前状态 |
 
-建队时由词库为每队随机抽取四个词。每回合的密码从 `SECRET_CODES`（1–4 中取三个不同数字的全部 24 种排列）里随机取一个。
+建队时由词库为每队发一手四个词：见[密语词](#密语词)。每回合的密码从 `SECRET_CODES`（1–4 中取三个不同数字的全部 24 种排列）里随机取一个。
 
 ### 回合状态机
 
@@ -253,18 +252,36 @@ type LLMProvider interface {
 | `clue.md` | 加密者为一个密码给一条线索 | 四个密语词、密码编号、对应的密语词、本轮已给的线索、公开记录 |
 | `guess_intercept.md` | 拦截者猜一条线索的编号 | 线索、本轮已猜的编号、公开记录 |
 | `guess_decrypt.md` | 解密者猜一条线索的编号 | 线索、四个密语词、本轮已猜的编号、公开记录 |
+| `words.md` | 为一支队伍写这一局的四个密语词 | 本次抽到的领域 |
 
 文件是 `text/template`，按字段取值（`{{.Clue}}`、`{{.Digit}}`），另有两个函数：`list` 把密语词排成玩家习惯的「1: 长城」逐行编号，`join` 用分隔符连列表（`{{.Previous | join ", "}}`）。本轮已给线索、已猜编号这些条件段落写成 `{{if .Previous}}`，没有内容时整段不出现。写成没人赋值的字段会在渲染时报错，填空的占位符因此发不出去。拦截者的模板不列出密语词，那是它唯一能泄露对手密词的地方。
 
-对局创建时，若名单里有 AI，按以下顺序选择提供方：
+服务启动时按以下顺序选一次模型（`providers.FromEnv`），AI 玩家和[密语词](#密语词)共用它，不会一半用一个模型、一半用另一个：
 
 | 条件 | 提供方 | 相关环境变量 |
 | --- | --- | --- |
 | 设置了 `OPENAI_API_KEY` | OpenAI 兼容接口（`/chat/completions`） | `OPENAI_BASE_URL`（默认 `https://api.openai.com/v1`）、`OPENAI_MODEL`（默认 `gpt-4o`）、`OPENAI_MAX_TOKENS`（默认 2048）、`OPENAI_REASONING_EFFORT`、`OPENAI_EXTRA_BODY`（并入每次请求的 JSON 对象） |
 | 否则设置了 `ANTHROPIC_API_KEY` | Claude（Messages API） | `ANTHROPIC_BASE_URL`（替换完整的请求地址） |
-| 都没有 | 无 | 每一步都直接使用备用答案 |
+| 都没有 | 无 | AI 玩家每一步都直接使用备用答案，密语词由内置词库发 |
 
 两个 Key 都设置时使用 OpenAI 兼容接口。OpenAI 兼容接口返回空内容或 `finish_reason` 为 `length` 时视为失败。
+
+AI 每给出一步回答（一条线索或一个数字）都向模型请求一次，失败或超时再来一次，共 `DECRYPTO_AI_ATTEMPTS` 次（默认 2）。重试期间页面上的该步显示为「重试中」，用完仍失败则交出备用答案（线索为「线索暂缺」，猜测取一个尚未用过的合法编号），并向所有人提示。两次尝试各受单次请求时限限制，整段 AI 作答另受该阶段自己的时限限制，超时后不再重试。
+
+## 密语词（`internal/core/word_providers`）
+
+每支队伍开局时拿四个词，编号 1–4，就是它这一局的密语词卡。词在存档里，重启后不重新发。`DECRYPTO_WORDS_PROVIDER` 决定从哪里来：
+
+| 取值 | 词从哪里来 |
+| --- | --- |
+| `local`（默认） | 内置词库：`server/internal/core/word_providers/words.txt`，由 `//go:embed` 打进二进制。`DECRYPTO_WORDS_PATH` 可以指向一份自己的词库，一行一个词，写作 `词[word]`，至少四个 |
+| `llm` | 每支队伍问模型要四个词（`words.md`），模型答不上来、超时或写的不是四个双语且互不相同的词时，这手牌由内置词库发 |
+
+写成别的名字，服务拒绝启动：这样的错配本来就该在开局前发现。
+
+内置词库的发牌是洗牌取四张，一手之内不会重复——一支队伍抽到同一个词两次，就没法给它编号。`llm` 每次换一条领域（`themes.md` 里的清单），所以同一局的两支队伍不会拿到同一批词。
+
+`Provide(ctx) ([4]string, error)` 带 ctx 和 error 是因为模型这一步要网络：发牌是唯一会等进程外事物的地方，`core.NewWithTeams` 因此接收调用方的 ctx。`core` 在 `init` 里选定 provider，配置有问题就在 `log.Fatalf` 里停下，和数据库打不开时一样。
 
 ## 语音（`internal/voice`）
 
@@ -318,13 +335,14 @@ type LLMProvider interface {
 ## 测试
 
 ```bash
-# 在 server/ 目录运行；core 读取词库，需要它的绝对路径。根目录的 make test-server 做同样的事
-DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
+# 在 server/ 目录运行。词库在二进制里，不需要额外准备
+go test ./...
 ```
 
 | 包 | 覆盖内容 |
 | --- | --- |
 | `internal/core` | 自动推进整局；同回合双方达成条件时按得分判定；快照恢复后从被打断的阶段继续，拒绝不可能的快照 |
+| `internal/core/word_providers` | 内置词库不必依赖磁盘；一手牌里不会出现重复的词；自己给的词库要够长；模型写的词要双语、四个不同，答不上来时退回内置词库 |
 | `internal/game` | 提交校验与各种结局；超时发出草稿并通知所有人；AI 的请求时限、重试与备用答案；从每一个保存点恢复后继续对局 |
 | `internal/room` | 队伍操作、自动落座、断线与房主交接、恢复后座位与令牌不变 |
 | `internal/ws` | 消息的 JSON 字段名、三元素数组校验、来源检查 |

@@ -9,6 +9,11 @@
 //	clue.md            one clue word for one secret digit
 //	guess_intercept.md one digit for a clue of the other team
 //	guess_decrypt.md   one digit for a clue of your own team
+//	words.md           the four secret words of one team
+//
+// themes.md is not a prompt but a list: one field per line, which the word
+// provider rotates through so two teams in one game are not handed the same
+// words.
 //
 // Besides the fields of the input structs below, the templates may call
 // `list`, which numbers a list of words, and `join`, which joins a list with a
@@ -52,6 +57,43 @@ type ClueInput struct {
 
 // Clue asks the encryptor for one clue word.
 func Clue(in ClueInput) (string, error) { return render("clue.md", in) }
+
+// WordInput is what a team needs to be dealt: the field its four words are
+// written from.
+type WordInput struct {
+	Theme string // the drawn field, e.g. 海洋
+}
+
+// Words asks for the four words of one team, written from one field.
+func Words(in WordInput) (string, error) { return render("words.md", in) }
+
+// themes are the fields the words are written from, one per non-comment line of
+// themes.md. Two teams in one game are given two fields, so neither is handed
+// the words the other was.
+var themes = mustList("themes.md")
+
+// WordThemes are the fields the word provider rotates through, one drawn per
+// hand.
+func WordThemes() []string { return themes }
+
+// mustList reads a file that is a list rather than a template: one entry per
+// line, with the file's own # and > notes left out.
+func mustList(name string) []string {
+	raw, err := files.ReadFile(name)
+	if err != nil {
+		panic(err)
+	}
+	var out []string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") && !strings.HasPrefix(line, ">") {
+			out = append(out, line)
+		}
+	}
+	if len(out) == 0 {
+		panic("prompts: " + name + " holds no entry")
+	}
+	return out
+}
 
 // GuessInput is what a team needs to answer for one of the three clues.
 type GuessInput struct {

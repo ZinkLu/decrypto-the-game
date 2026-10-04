@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -48,8 +47,9 @@ type Bridge struct {
 }
 
 // NewBridge creates a Bridge from room data, initialises the core Session,
-// and registers the bridge in the global registry.
-func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
+// and registers the bridge in the global registry. ctx bounds dealing the
+// hands, which a model writes when it is asked to.
+func NewBridge(ctx context.Context, r *room.Room, hub *ws.Hub) (*Bridge, error) {
 	roster, err := r.BeginGame()
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func NewBridge(r *room.Room, hub *ws.Hub) (*Bridge, error) {
 		teamBPlayers[i] = &core.Player{UID: p.ID, NickName: p.Nickname}
 	}
 
-	session, err := core.NewWithTeams(r.Code, teamAPlayers, teamBPlayers)
+	session, err := core.NewWithTeams(ctx, r.Code, teamAPlayers, teamBPlayers)
 	if err != nil {
 		r.AbortStart()
 		return nil, err
@@ -106,18 +106,10 @@ func newBridge(r *room.Room, hub *ws.Hub, session *core.Session, roster room.Sna
 		}
 	}
 	if hasAI {
-		var provider ai.LLMProvider
-		if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-			baseURL := os.Getenv("OPENAI_BASE_URL")
-			model := os.Getenv("OPENAI_MODEL")
-			provider = providers.NewOpenAIProvider(key, baseURL, model)
-			log.Printf("bridge: using OpenAI-compatible provider (base=%s, model=%s)", baseURL, model)
-		} else if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-			provider = providers.NewClaudeProvider(key)
-			log.Printf("bridge: using Claude provider")
-		}
-		if provider != nil {
+		// The one model the whole server talks to; the hands may come from it too.
+		if provider, ok := providers.FromEnv(); ok {
 			b.AIPlayer = ai.NewAIPlayer(provider)
+			log.Printf("bridge: AI players get %d tries per step", aiAttempts())
 		} else {
 			log.Printf("bridge: no LLM API key set (OPENAI_API_KEY or ANTHROPIC_API_KEY); AI players will use fallback stubs")
 		}

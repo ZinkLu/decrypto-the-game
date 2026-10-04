@@ -17,14 +17,14 @@ make build          # web/dist, then bin/server
 make run            # build, then run bin/server from the root on 8080
 make dev-web        # port 3000, hot reload, proxies /ws to 8080
 make test           # both sides
-make test-server    # cd server && DECRYPTO_WORDS_PATH=$PWD/words.txt go test ./...
+make test-server    # cd server && go test ./...
 make test-web       # cd web && pnpm test && pnpm build (Node, no browser)
 make docker
 ```
 
 pnpm is the only package manager for `web/`. Go commands run inside `server/`.
 
-**Runtime layout:** the server runs from the repository root and reads `web/dist` (`DECRYPTO_WEB_DIR`) and `words.txt` (`DECRYPTO_WORDS_PATH`; the file lives at `server/words.txt`, which `make run` passes) relative to its working directory.
+**Runtime layout:** the server runs from the repository root and reads `web/dist` (`DECRYPTO_WEB_DIR`) relative to its working directory. The word list is embedded in the binary; `DECRYPTO_WORDS_PATH` points it at a list of its own and `DECRYPTO_WORDS_PROVIDER=llm` has a model write each hand instead.
 
 **Runtime state:** rooms and games are kept in `data/decrypto.db` (SQLite; override with `DECRYPTO_DB_PATH`). The server refuses to start if it cannot open the file.
 
@@ -35,7 +35,7 @@ pnpm is the only package manager for `web/`. Go commands run inside `server/`.
 Go paths below are relative to `server/`.
 
 - **`internal/core/`** — Game logic (sessions, rounds, teams, players, state machine)
-- **`internal/core/word_providers/`** — Word source abstraction (file-based from `words.txt`)
+- **`internal/core/word_providers/`** — Where each team deals its four secret words from: the embedded list (`words.txt`, overridable with `DECRYPTO_WORDS_PATH`) or a model writing one (`DECRYPTO_WORDS_PROVIDER=llm`); `Provider.Provide(ctx) ([4]string, error)` carries a context and a failure because a hand may be written by a model
 - **`internal/ws/`** — WebSocket infrastructure (Hub, Client, message types)
 - **`internal/room/`** — Room management (create, join, teams, AI slots)
 - **`internal/game/`** — Bridge layer (WebSocket <-> game state machine)

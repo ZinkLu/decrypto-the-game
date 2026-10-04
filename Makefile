@@ -1,7 +1,6 @@
 # Entry points for the three parts: server/ (Go), web/ (the Console), assets/ (model and sound sources).
 # The server runs from the repository root, where it finds web/dist and keeps data/.
-
-WORDS := $(CURDIR)/server/words.txt
+# The word list is compiled into the binary, so nothing else is needed beside it.
 
 .PHONY: build build-server build-web run dev-web test test-server test-web docker
 
@@ -14,7 +13,7 @@ build-web:
 	cd web && pnpm install && pnpm build
 
 run: build
-	DECRYPTO_WORDS_PATH=$(WORDS) ./bin/server
+	./bin/server
 
 # Port 3000, proxies /ws to a server on 8080 (make run in another terminal).
 dev-web:
@@ -23,7 +22,7 @@ dev-web:
 test: test-server test-web
 
 test-server:
-	cd server && DECRYPTO_WORDS_PATH=$(WORDS) go test ./...
+	cd server && go test ./...
 
 test-web:
 	cd web && pnpm test && pnpm build

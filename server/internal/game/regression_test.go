@@ -34,7 +34,7 @@ func newTestBridge(t *testing.T) (*Bridge, []string) {
 			}
 		}
 	}
-	b, err := NewBridge(r, ws.NewHub(nil))
+	b, err := NewBridge(context.Background(), r, ws.NewHub(nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestGameValidationAndAllEndings(t *testing.T) {
 	for _, ending := range []string{"16-round-draw", "two-decrypt-errors", "two-interceptions"} {
 		t.Run(ending, func(t *testing.T) {
 			b, ids := newTestBridge(t)
-			if _, err := NewBridge(b.Room, b.Hub); err == nil {
+			if _, err := NewBridge(context.Background(), b.Room, b.Hub); err == nil {
 				t.Fatal("duplicate start accepted")
 			}
 			b.Start()
@@ -197,7 +197,7 @@ func TestAIInvalidRepeatedAnswersRemainLegalAndFinish(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	b, err := NewBridge(r, ws.NewHub(nil))
+	b, err := NewBridge(context.Background(), r, ws.NewHub(nil))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,7 @@ func renderAll(t *testing.T) map[string]string {
 		"clue":            ClueInput{Words: words, Digit: 3, Word: words[2], History: "第 1 轮：密码 1 3 2"},
 		"guess_intercept": GuessInput{Clue: "风筝", Intercept: true, History: "第 1 轮：密码 1 3 2"},
 		"guess_decrypt":   GuessInput{Clue: "风筝", Words: words, History: "第 1 轮：密码 1 3 2"},
+		"words":           WordInput{Theme: WordThemes()[0]},
 	} {
 		out, err := render(name+".md", in)
 		if err != nil {
@@ -121,6 +122,25 @@ func TestInterceptorNeverSeesWords(t *testing.T) {
 		}
 		if !strings.Contains(decrypt, line) {
 			t.Fatalf("decrypt prompt is missing %q:\n%s", line, decrypt)
+		}
+	}
+}
+
+// A hand is written from one field and in both languages: a word the players
+// cannot read in English is a word the model will not be asked for twice.
+func TestWordsCarryTheFieldAndBothLanguages(t *testing.T) {
+	if len(WordThemes()) < 2 {
+		t.Fatalf("rotating %d fields rotates nothing", len(WordThemes()))
+	}
+	for _, theme := range WordThemes() {
+		out, err := Words(WordInput{Theme: theme})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{"这一局的领域是：" + theme, "长城[great wall]", "只有中文的词不算数"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("words prompt for %q is missing %q:\n%s", theme, want, out)
+			}
 		}
 	}
 }

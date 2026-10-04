@@ -4,12 +4,28 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ZinkLu/decrypto-the-game/server/internal/core"
 	"github.com/ZinkLu/decrypto-the-game/server/internal/ws"
 )
+
+// defaultAIAttempts is one try and one retry.
+const defaultAIAttempts = 2
+
+// aiAttempts is how many tries one step gets, the first one included, so a
+// slow or unstable model can be given more room. DECRYPTO_AI_ATTEMPTS says how
+// many; anything below one means the default.
+func aiAttempts() int {
+	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("DECRYPTO_AI_ATTEMPTS")))
+	if err != nil || n < 1 {
+		return defaultAIAttempts
+	}
+	return n
+}
 
 // aiStatus tells every seat how an AI action is going. Both teams' AI players
 // may be guessing at once, so each action keeps its own status.
@@ -45,7 +61,8 @@ func (b *Bridge) aiStatusLocked(action, player, state string, step, completed in
 	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{Type: typ, Data: d})
 }
 
-// One retry per step, bounded both by request and whole-action deadlines.
+// One retry per step by default, bounded both by request and whole-action
+// deadlines; DECRYPTO_AI_ATTEMPTS says how many tries a step gets.
 func aiStep[T any](ctx context.Context, b *Bridge, action, player string, step int, call func(context.Context) (T, error), fallback T) T {
 	return aiStepWithStatus(ctx, b, action, step, call, fallback, func(state string, completed int, notice string) {
 		b.aiStatus(action, player, state, step, completed, notice)
@@ -53,7 +70,8 @@ func aiStep[T any](ctx context.Context, b *Bridge, action, player string, step i
 }
 
 func aiStepWithStatus[T any](ctx context.Context, b *Bridge, action string, step int, call func(context.Context) (T, error), fallback T, report func(string, int, string)) T {
-	for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
+	attempts := aiAttempts()
+	for attempt := 0; attempt < attempts && ctx.Err() == nil; attempt++ {
 		state := "thinking"
 		notice := ""
 		if attempt > 0 {
@@ -320,7 +338,8 @@ func (b *Bridge) aiSuggest(parent context.Context, job aiGuessJob) {
 		var n int
 		err := fmt.Errorf("AI suggestion unavailable")
 		if b.AIPlayer != nil && !placeholderClue(job.clues[i]) {
-			for attempt := 0; attempt < 2 && ctx.Err() == nil; attempt++ {
+			attempts := aiAttempts()
+			for attempt := 0; attempt < attempts && ctx.Err() == nil; attempt++ {
 				if attempt > 0 && !b.broadcastAIProgress(job, "retrying", i, i+1, result[:i]) {
 					return
 				}

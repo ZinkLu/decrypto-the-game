@@ -104,7 +104,7 @@ func TestSession_AutoForward(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, _ := NewWithTeams(uuid.NewString(), tt.fields.PlayersA, tt.fields.PlayersB)
+			s, _ := NewWithTeams(context.Background(), uuid.NewString(), tt.fields.PlayersA, tt.fields.PlayersB)
 			s.AutoForward(tt.args.ctx)
 		})
 	}

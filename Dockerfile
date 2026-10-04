@@ -19,7 +19,8 @@ RUN addgroup -S app && adduser -S -G app app
 WORKDIR /app
 COPY --from=server-build --chown=app:app /out/server ./server
 COPY --from=web-build --chown=app:app /src/web/dist ./web/dist
-COPY --chown=app:app server/words.txt ./words.txt
+# The word list is compiled into the binary; mount one to replace it, or set
+# DECRYPTO_WORDS_PROVIDER=llm to have a model write each hand.
 # Rooms are kept here. Mount a named volume to keep them when the container is replaced.
 RUN mkdir /data && chown app:app /data
 ENV PORT=8080 DECRYPTO_DB_PATH=/data/decrypto.db

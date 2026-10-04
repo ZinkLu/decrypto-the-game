@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"sync"
@@ -276,7 +277,9 @@ func (h *Handler) HandleMessage(client *ws.Client, msg ws.ClientMessage) {
 			client.SendError("only the room owner can start the game")
 			return
 		}
-		b, err := game.NewBridge(r, h.Hub)
+		// The hands may be written by a model, so starting a game is the one
+		// message that waits on something outside this process.
+		b, err := game.NewBridge(context.Background(), r, h.Hub)
 		if err != nil {
 			client.SendError(err.Error())
 			return

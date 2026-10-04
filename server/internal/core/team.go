@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -24,12 +25,18 @@ func (t *Team) Score() int {
 	return int(t.InterceptedCounts) - int(t.DecryptWrongCounts)
 }
 
-func newTeam(players []*Player) (*Team, error) {
+// newTeam draws the team's four words. A model writing them takes a moment, so
+// ctx is the caller's to bound.
+func newTeam(ctx context.Context, players []*Player) (*Team, error) {
 	if 2 < len(players) && len(players) > 4 {
 		return nil, fmt.Errorf("%s", "A Team Can Only Take 2 - 4 Player")
 	}
 
-	return &Team{Players: players, Words: wordProvider.Provide()}, nil
+	words, err := wordProvider.Provide(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &Team{Players: players, Words: words}, nil
 }
 
 // Members returns the players in the team

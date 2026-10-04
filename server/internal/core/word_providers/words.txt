@@ -752,6 +752,6 @@
 蠕虫[worm]
 庭院[yard]
 僵尸[zombie]
-算账
-包袱
-水货
+算账[settle accounts]
+包袱[bundle]
+水货[smuggled goods]
