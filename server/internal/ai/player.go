@@ -4,10 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
-	"strings"
 	"sync/atomic"
-	"unicode/utf8"
 
 	"github.com/ZinkLu/decrypto-the-game/server/internal/ai/prompts"
 )
@@ -56,11 +53,9 @@ func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digits [3]int, index 
 		return "", err
 	}
 
-	clue := strings.TrimSpace(resp)
-	// Remove quotes if wrapped
-	clue = strings.TrimSpace(strings.Trim(clue, "\"'\u201c\u201d\u2018\u2019"))
-	if clue == "" || utf8.RuneCountInString(clue) > 80 {
-		return "", fmt.Errorf("invalid clue output")
+	clue, err := parseClue(resp)
+	if err != nil {
+		return "", err
 	}
 	log.Printf("[AI] GenerateSingleClue digit=%d word=%s → %q", digit, words[digit-1], clue)
 	return clue, nil
@@ -95,10 +90,9 @@ func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clues [3]string, index
 		return 0, err
 	}
 
-	trimmed := strings.TrimSpace(resp)
-	n, err := strconv.Atoi(trimmed)
-	if err != nil || n < 1 || n > 4 {
-		return 0, fmt.Errorf("invalid guess output: %q", trimmed)
+	n, err := parseGuess(resp)
+	if err != nil {
+		return 0, err
 	}
 	for _, previous := range alreadyGuessed {
 		if n == previous {
