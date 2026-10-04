@@ -6,6 +6,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/ZinkLu/decrypto-the-game/server/internal/ai/prompts"
@@ -15,6 +16,9 @@ import (
 // in the prompts package, one file per action.
 type AIPlayer struct {
 	Provider LLMProvider
+	// strategy counts the clue requests, one drawn strategy each, so a run of
+	// clues rotates through the whole list instead of settling into one trick.
+	strategy atomic.Uint64
 }
 
 // NewAIPlayer creates a new AIPlayer backed by the given LLMProvider.
@@ -22,14 +26,19 @@ func NewAIPlayer(provider LLMProvider) *AIPlayer {
 	return &AIPlayer{Provider: provider}
 }
 
-// GenerateSingleClue asks the AI to produce 1 clue word for a specific secret digit.
-// alreadyGenerated contains clues produced so far in this round (for context).
-func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digit int, words [4]string, history string, alreadyGenerated []string) (string, error) {
+// GenerateSingleClue asks the AI to produce the clue at position index of
+// this round's code. digits is the whole code, so the clue can be chosen
+// against the other two; alreadyGenerated contains the clues produced so far.
+func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digits [3]int, index int, words [4]string, history string, alreadyGenerated []string) (string, error) {
+	digit := digits[index]
 	prompt, err := prompts.Clue(prompts.ClueInput{
 		Words:    words[:],
+		Digits:   digits[:],
+		Index:    index,
 		Digit:    digit,
 		Word:     words[digit-1],
 		Previous: alreadyGenerated,
+		Strategy: prompts.DrawStrategy(a.strategy.Add(1)),
 		History:  history,
 	})
 	if err != nil {
@@ -57,11 +66,15 @@ func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digit int, words [4]s
 	return clue, nil
 }
 
-// GuessSingleNumber asks the AI to guess the number (1-4) for a single clue.
-// alreadyGuessed contains numbers guessed so far in this round (for context).
-func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clue string, words [4]string, isIntercept bool, history string, alreadyGuessed []int) (int, error) {
+// GuessSingleNumber asks the AI for the digit at position index of this
+// round's clues. The whole triple goes along, as every guesser sees all three
+// clues at once and reasons with the other two. alreadyGuessed contains the
+// digits guessed for the earlier clues of this round.
+func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clues [3]string, index int, words [4]string, isIntercept bool, history string, alreadyGuessed []int) (int, error) {
 	prompt, err := prompts.Guess(prompts.GuessInput{
-		Clue:      clue,
+		Clues:     clues[:],
+		Index:     index,
+		Clue:      clues[index],
 		Words:     words[:],
 		Intercept: isIntercept,
 		Previous:  alreadyGuessed,
@@ -92,6 +105,6 @@ func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clue string, words [4]
 			return 0, fmt.Errorf("duplicate guess output: %d", n)
 		}
 	}
-	log.Printf("[AI] GuessSingleNumber clue=%q → %d", clue, n)
+	log.Printf("[AI] GuessSingleNumber clue=%q → %d", clues[index], n)
 	return n, nil
 }

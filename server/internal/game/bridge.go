@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -557,19 +559,70 @@ func isAI(uid string) bool {
 	return len(uid) > 3 && uid[:3] == "ai-"
 }
 
-// formatHistoryForAI builds a human-readable history string from previous rounds.
-func formatHistoryForAI(b *Bridge, r *core.Round) string {
-	rows := b.buildHistory(r)
-	if len(rows) == 0 {
-		return "(no history yet)"
-	}
+// formatHistoryForAI renders the revealed rounds the way one team's AI reads
+// them: every clue paired with the digit it turned out to point at, and both
+// guesses marked against the code. myTeam is the label ("A"/"B") of the team
+// the history is relative to.
+func formatHistoryForAI(b *Bridge, r *core.Round, myTeam string) string {
+	return formatHistoryRowsForAI(b.buildHistory(r), myTeam)
+}
 
-	result := ""
-	for _, row := range rows {
-		result += fmt.Sprintf("Round %d (Team %s): clues=%v, secret=%v, intercept=%v, decrypt=%v\n",
-			row.Round, row.Team, row.Clues, row.Secret, row.Intercept, row.Decrypt)
+func formatHistoryRowsForAI(rows []ws.RoundHistoryRow, myTeam string) string {
+	if len(rows) == 0 {
+		return "(还没有已揭晓的回合)"
 	}
-	return result
+	var out strings.Builder
+	for _, row := range rows {
+		encryptor, interceptor := "对方", "你方"
+		if row.Team == myTeam {
+			encryptor, interceptor = "你方", "对方"
+		}
+		pairs := make([]string, len(row.Clues))
+		for i, clue := range row.Clues {
+			digit := 0
+			if i < len(row.Secret) {
+				digit = row.Secret[i]
+			}
+			pairs[i] = fmt.Sprintf("%q→%d", clue, digit)
+		}
+		out.WriteString(fmt.Sprintf("第%d回合（%s加密）：密码 %s；线索 %s；%s解密 %s；%s拦截 %s\n",
+			row.Round, encryptor, formatDigitsForAI(row.Secret), strings.Join(pairs, " "),
+			encryptor, formatGuessForAI(row.Decrypt, row.Secret, "未作答（算错）"),
+			interceptor, formatGuessForAI(row.Intercept, row.Secret, "无")))
+	}
+	return out.String()
+}
+
+func formatDigitsForAI(digits []int) string {
+	parts := make([]string, len(digits))
+	for i, d := range digits {
+		parts[i] = strconv.Itoa(d)
+	}
+	return "[" + strings.Join(parts, " ") + "]"
+}
+
+// formatGuessForAI marks a guess against the code position by position; an
+// all-zero guess was never answered, and none says what that counts as here.
+func formatGuessForAI(guess, secret []int, none string) string {
+	answered := false
+	for _, n := range guess {
+		if n != 0 {
+			answered = true
+		}
+	}
+	if !answered {
+		return none
+	}
+	correct := len(guess) == len(secret)
+	for i := range guess {
+		if correct && guess[i] != secret[i] {
+			correct = false
+		}
+	}
+	if correct {
+		return formatDigitsForAI(guess) + "（对）"
+	}
+	return formatDigitsForAI(guess) + "（错）"
 }
 
 // ---------------------------------------------------------------------------

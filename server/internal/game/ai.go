@@ -103,7 +103,7 @@ func handleAIEncrypt(parent context.Context, b *Bridge, r *core.Round) [3]string
 	b.mu.Unlock()
 	digits := r.GetSecretDigits()
 	words := r.GetCurrentTeam().GetWords()
-	history := formatHistoryForAI(b, r)
+	history := formatHistoryForAI(b, r, b.teamLabel(r.GetCurrentTeam()))
 	var result [3]string
 	for i := range result {
 		if parent.Err() != nil {
@@ -113,7 +113,7 @@ func handleAIEncrypt(parent context.Context, b *Bridge, r *core.Round) [3]string
 			if b.AIPlayer == nil {
 				return "", fmt.Errorf("AI provider unavailable")
 			}
-			return b.AIPlayer.GenerateSingleClue(ctx, digits[i], words, history, result[:i])
+			return b.AIPlayer.GenerateSingleClue(ctx, digits, i, words, history, result[:i])
 		}, "线索暂缺", func(state string, completed int, notice string) {
 			if parent.Err() == nil {
 				b.aiEncryptStatus(int(r.GetNumberOfRounds()), r.EncryptPlayer().UID, r.EncryptPlayer().NickName, actionState, state, i+1, completed, notice)
@@ -173,7 +173,7 @@ func (b *Bridge) newAIGuess(r *core.Round, intercept bool) (aiGuessJob, bool) {
 		action, team = "intercept", r.GetOpponent()
 	}
 	job := aiGuessJob{action: action, intercept: intercept, player: "AI", round: r.GetNumberOfRounds(),
-		clues: r.GetEncryptedMessage(), history: formatHistoryForAI(b, r)}
+		clues: r.GetEncryptedMessage(), history: formatHistoryForAI(b, r, b.teamLabel(team))}
 	if !intercept {
 		job.words = team.GetWords()
 	}
@@ -302,7 +302,7 @@ func (b *Bridge) aiGuess(parent context.Context, job aiGuessJob, answers chan<- 
 				if b.AIPlayer == nil {
 					return 0, fmt.Errorf("AI provider unavailable")
 				}
-				return b.AIPlayer.GuessSingleNumber(ctx, job.clues[i], job.words, job.intercept, job.history, result[:i])
+				return b.AIPlayer.GuessSingleNumber(ctx, job.clues, i, job.words, job.intercept, job.history, result[:i])
 			}, fallback, func(state string, completed int, notice string) {
 				b.aiGuessStatus(job, state, i+1, completed, notice)
 				if state == "thinking" || state == "retrying" {
@@ -344,7 +344,7 @@ func (b *Bridge) aiSuggest(parent context.Context, job aiGuessJob) {
 					return
 				}
 				requestCtx, stop := context.WithTimeout(ctx, b.Timing.Request)
-				n, err = b.AIPlayer.GuessSingleNumber(requestCtx, job.clues[i], job.words, job.intercept, job.history, result[:i])
+				n, err = b.AIPlayer.GuessSingleNumber(requestCtx, job.clues, i, job.words, job.intercept, job.history, result[:i])
 				if err == nil {
 					err = requestCtx.Err()
 				}

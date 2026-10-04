@@ -77,19 +77,22 @@ func awaitProgress(t *testing.T, b *Bridge, viewer string, ready func(map[string
 
 // Later digits depend on this worker's first answer, so shared result buffers
 // or shared model histories would produce either repeated or illegal answers.
+// The provider reads what the worker was told: the guess prompt pairs every
+// clue already answered with the digit guessed for it ("第 N 条已猜编号 d").
 func nextIndependentDigit(messages []ai.Message) (string, bool) {
 	content := messages[len(messages)-1].Content
-	const marker = "你本轮已经猜测的编号："
-	_, tail, hasPrevious := strings.Cut(content, marker)
-	if !hasPrevious {
-		return "", false
-	}
-	previous, _, _ := strings.Cut(tail, "。")
 	used := map[int]bool{}
 	last := 0
-	for _, part := range strings.Split(previous, ", ") {
-		last, _ = strconv.Atoi(part)
-		used[last] = true
+	found := false
+	for _, line := range strings.Split(content, "\n") {
+		if _, tail, ok := strings.Cut(line, "已猜编号 "); ok {
+			found = true
+			last, _ = strconv.Atoi(strings.TrimSpace(tail))
+			used[last] = true
+		}
+	}
+	if !found {
+		return "", false
 	}
 	for n := last%4 + 1; ; n = n%4 + 1 {
 		if !used[n] {
