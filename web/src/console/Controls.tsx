@@ -1,7 +1,7 @@
 import { useRef, type PointerEvent, type RefObject } from 'react';
 import { instrumentSteps, type LocalState } from './model';
 import { intercomPositions } from './voice';
-import { controlShortcut, shortcutLabel } from './shortcuts';
+import { controlShortcut } from './shortcuts';
 import type { Target } from './paint';
 import type { useDiskPull } from './useDiskPull';
 import { handleSurfaces, handlePull, handleCommit, type HandleSide } from './view';
@@ -89,7 +89,6 @@ interface Props {
     nodes: RefObject<Map<string, HTMLElement>>;
     diskPull: ReturnType<typeof useDiskPull>;
     grip: ReturnType<typeof useHandleGrip>;
-    onHint: (id: string) => void;
     onFocus: (target: Target) => void;
     onBlur: (target: Target) => void;
     onAct: (id: string) => void;
@@ -102,7 +101,7 @@ interface Props {
  * its part by the engine. Focus, screen readers and input methods take the browser's
  * own path.
  */
-export default function Controls({ targets, local: u, failed, visible, t, nodes, diskPull, grip, onHint, onFocus, onBlur, onAct, onChange, onKnob }: Props) {
+export default function Controls({ targets, local: u, failed, visible, t, nodes, diskPull, grip, onFocus, onBlur, onAct, onChange, onKnob }: Props) {
     const tuningDrag = useRef<{ x: number; y: number; moved: boolean } | null>(null);
     const suppressTuningClick = useRef(false);
     const pullDrag = useRef<{ y: number; moved: boolean } | null>(null);
@@ -128,21 +127,15 @@ export default function Controls({ targets, local: u, failed, visible, t, nodes,
             'aria-checked': target.id === 'power-toggle' ? u.powerOn : target.id === 'receiver-sweep' ? u.instrumentDemo : target.id === 'sound-toggle' ? u.soundOn : target.id === 'music-toggle' ? u.musicOn : undefined,
             disabled: target.disabled,
             style: failed ? { visibility: 'visible' as const } : undefined,
-            title: [target.label, shortcutLabel(target.id)].filter(Boolean).join(' · '),
             'aria-expanded': target.id === 'archive-toggle' ? u.archiveOpen : target.id === 'battery-toggle' ? u.batteryOpen : undefined,
             'aria-haspopup': target.id === 'archive-toggle' ? 'dialog' as const : undefined,
             'aria-pressed': target.id === 'disk-toggle' ? u.diskOut : target.id === 'manual' ? u.manual : target.id === 'about' ? u.about :
                 target.id === 'voice-talk' ? u.intercom.open : undefined,
-            onMouseEnter: () => onHint(target.id),
-            onMouseLeave: () => onHint(''),
             onFocus: () => onFocus(target),
             onBlur: () => onBlur(target),
         };
         if (target.href) return <a key={key} {...common} href={target.href} target="_blank" rel="noopener noreferrer">{target.label}</a>;
-        if (target.id === 'disk-toggle') return <button key={key} {...common} {...diskPull} className="station-disk-grip" data-phase={u.keyDisk.phase}>
-            {/* Keyed by message: a new instruction plays its short reveal again. */}
-            {!target.disabled && <span key={u.keyDisk.phase === 'removed' ? 'insert' : 'pull'} className="disk-grip-hint" aria-hidden="true">{t(u.keyDisk.phase === 'removed' ? '点击插回' : '按住软盘向外拖')}</span>}
-        </button>;
+        if (target.id === 'disk-toggle') return <button key={key} {...common} {...diskPull} className="station-disk-grip" data-phase={u.keyDisk.phase}>{target.label}</button>;
         if (target.id in handleSurfaces) return <button key={key} {...common} className="station-handle"
             onClick={e => { if (target.id.includes('Rear') || e.detail === 0 || failed) onAct(target.id); }}
             onPointerDown={e => grip.onPointerDown(e, target.id)}

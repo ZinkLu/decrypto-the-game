@@ -9,7 +9,7 @@ import { consoleHardware, hardwareMessage, hardwareRecovery, terminalView, draft
 import { paint, paintClock, knobLabel, guidePages } from './paint';
 import { qualityProfiles, settleQuality, readQuality, saveQuality, readAutoQuality, saveAutoQuality } from './quality';
 import { reachable } from './actions';
-import { isEditingTarget, isNativeKeyTarget, shortcutAction, shortcutLabel } from './shortcuts';
+import { isEditingTarget, isNativeKeyTarget, shortcutAction } from './shortcuts';
 import ArchiveSheet from './ArchiveSheet';
 import Controls, { isKnob, useHandleGrip } from './Controls';
 import MobileConsole from './MobileConsole';
@@ -17,6 +17,10 @@ import EncryptorIntro from './EncryptorIntro';
 import GuideContent from './GuideContent';
 import Settings, { qualityHint, qualityLabels } from './Settings';
 import Transcript from './Transcript';
+import VoiceBar from './VoiceBar';
+import StationToast from './StationToast';
+import OperationTour from './OperationTour';
+import './station-notices.css';
 import { InstrumentBench, RosterBench, ScoreBench, WordBench, benchAmplitude, benchState, useBench } from './Workbench';
 import { guidePageFor } from './guide';
 import { useConsoleAudio, useDiskFont, useGuideArt, useKeyDisk, useReducedMotion } from './hooks';
@@ -58,6 +62,7 @@ export default function Console() {
     musicPreferencesRef.current = musicPreferences;
     const level = quality === 'auto' ? autoLevel : quality;
     const stage = useRef<HTMLDivElement>(null);
+    const notices = useRef<HTMLDivElement>(null);
     const engine = useRef<ConsoleEngine | null>(null);
     const previousSoundState = useRef(s);
     const controls = useRef(new Map<string, HTMLElement>());
@@ -83,7 +88,8 @@ export default function Console() {
     const progressTrail = useRef<number | undefined>(undefined);
     const handleFocusPending = useRef<string | null>(null);
     const archiveFocusPending = useRef(false);
-    const [hint, setHint] = useState('');
+    const [notice, setNotice] = useState('');
+    const [tourReplay, setTourReplay] = useState(0);
     const [announcement, setAnnouncement] = useState('');
     const announcedScore = useRef(s.scoreChange?.id);
     const viewKey = draftIdentity(s);
@@ -124,7 +130,6 @@ export default function Console() {
         }
         engine.current?.turnTo(back, side);
         patch({ backView: back, batteryOpen: false, focus: '' });
-        setHint('');
         setAnnouncement(back ? t('已翻到检修面。可分别控制音乐和音效，或检修电池与灯光。对局继续进行。') : t('已回到操作面，所有输入仍然保留'));
         playSound('handle');
     }
@@ -134,6 +139,7 @@ export default function Console() {
         setQuality(choice);
         saveQuality(choice);
         setAnnouncement(t('画质：{0}', [t(qualityLabels[choice])]));
+        setNotice(qualityHint(choice, level, t));
     }
     function adjustInstrument(control: 'amplitude' | 'rate', steps: number) {
         const local = current.current.u;
@@ -183,12 +189,14 @@ export default function Console() {
             const node = controls.current.get(target.surface + ':' + target.id);
             if (grip.held() === target.id) continue;
             const bounds = e.bounds(target);
+            // Keep page notices above ACTION as the machine scales with the viewport.
+            if (target.id === 'transmit' && bounds && notices.current && stage.current) {
+                const bottom = Math.max(18, innerHeight - stage.current.getBoundingClientRect().top - bounds.top + 16);
+                notices.current.style.setProperty('--notice-bottom', `${bottom}px`);
+            }
             if (node && !failure) node.style.visibility = bounds ? 'visible' : 'hidden';
             if (node && bounds) {
                 Object.assign(node.style, { left: bounds.left + 'px', top: bounds.top + 'px', width: bounds.width + 'px', height: bounds.height + 'px' });
-                // The drag hint hangs below the drive; flip it above when the
-                // stage has no room below (the inspection view frames it low).
-                if (target.id === 'disk-toggle') node.dataset.hint = bounds.top + bounds.height + 40 > (stage.current?.clientHeight ?? Infinity) ? 'above' : 'below';
                 if (target.kind === 'input' && target.input) {
                     // Keep logical CRT typography and scale the entire native editor,
                     // including its padding, selection, IME text and caret together.
@@ -372,6 +380,7 @@ export default function Console() {
         pending.current = false;
         patch({ submitted: false });
         setAnnouncement(localizeError(u.locale, s.error));
+        setNotice(localizeError(u.locale, s.error));
         if (consoleHardware(current.current.u, current.current.s).online) playSound('error', false);
     } }, [s.error]);
     useEffect(() => { pending.current = false; }, [s.teamA, s.teamB, s.roomCode]);
@@ -489,7 +498,6 @@ export default function Console() {
             audio.current?.silence();
             playSound(after.powered ? 'power-on' : 'power-off');
         } else playSound('latch');
-        setHint('');
         setAnnouncement(message ? `${message} · ${translate(next.locale, hardwareMessage(next, current.current.s))}` :
             translate(next.locale, hardwareMessage(next, current.current.s)));
     }
@@ -623,8 +631,7 @@ export default function Console() {
             return;
         }
         if (id === 'archive-toggle') {
-            setHint('');
-            if (local.archiveOpen) return;
+                if (local.archiveOpen) return;
             patch({ archiveOpen: true });
             setAnnouncement(t("正在拉出纸带并展开密报记录"));
             if (failure || !engine.current || portable()) {
@@ -641,8 +648,7 @@ export default function Console() {
             if (out) playSound('key');
             else void audio.current?.unlock();
             patch({ keyDisk: disk, diskOut: out });
-            setHint('');
-            return;
+                return;
         }
         if (id.startsWith('scope-')) {
             adjustKnob(id.replace('-prev', '').replace('scope-prev', 'scope-tune'), id.endsWith('-prev') || id === 'scope-prev' ? -1 : 1, true);
@@ -658,7 +664,8 @@ export default function Console() {
             if (state.roomCode) playSound('key');
             engine.current?.pulse('copy-code');
             if (state.roomCode)
-                navigator.clipboard.writeText(state.roomCode).then(() => patch({ note: "频道编号已复制。" })).catch(() => patch({ note: t("频道编号：{0}", [state.roomCode]) }));
+                navigator.clipboard?.writeText(state.roomCode).then(() => setNotice(t('频道编号已复制。'))).catch(() => setNotice(t('频道编号：{0}', [state.roomCode])));
+            if (state.roomCode && !navigator.clipboard) setNotice(t('频道编号：{0}', [state.roomCode]));
             return;
         }
         if (id.startsWith('slot-')) {
@@ -768,7 +775,11 @@ export default function Console() {
         data-detail={(instrumentPreview ? bench.instrumentCloseup ? 'meter' : null : wordBench ? wordCloseup ? 'words' : null : detail) || undefined}>
     <Settings t={t} inspection={inspection} failed={!!failure} inert={archiveBlocking} quality={quality} level={level} theme={u.theme} locale={u.locale}
         soundOn={u.soundOn} music={musicPreferences} musicStatus={musicStatus} powered={hardware.powered}
-        onQuality={chooseQuality} onHint={setHint} onAct={act} onLocale={locale => patch({ locale })}
+        onQuality={chooseQuality} onTour={() => {
+            if (u.backView) turnConsole(false);
+            patch({ manual: false, about: false });
+            setTourReplay(value => value + 1);
+        }} onAct={act} onLocale={locale => patch({ locale })}
         onTheme={(theme, label) => { patch({ theme }); setAnnouncement(t('主题已切换为{0}', [t(label)])); }}
         onVolume={volume => changeMusic({ volume })} onRetryMusic={refreshMusic}/>
     <h1 className="sr-only">{t("Encrypto · 密报终端")}</h1>
@@ -781,21 +792,22 @@ export default function Console() {
         {failure && <div className="station-error" role="alert">{t(failure)}<button onClick={() => location.reload()}>{t("重新载入")}</button></div>}
         <div className="sr-only">{(u.manual || u.about) && <GuideContent locale={u.locale} about={u.about} transcript/>}</div>
         <Controls targets={content.targets} local={u} failed={!!failure} visible={loaded || !!failure} t={t} nodes={controls} diskPull={diskPull} grip={grip}
-            onHint={setHint} onAct={act} onChange={(target, value) => change(target, value)} onKnob={adjustKnob}
-            onFocus={target => { setHint(target.id); patch({ focus: target.id }); if (target.id.startsWith('clue-'))
+            onAct={act} onChange={(target, value) => change(target, value)} onKnob={adjustKnob}
+            onFocus={target => { patch({ focus: target.id }); if (target.id.startsWith('clue-'))
                 progress(u.clues, u.guess, Number(target.id.slice(5)), true); }}
-            onBlur={target => { setHint(''); if (current.current.u.focus === target.id)
+            onBlur={target => { if (current.current.u.focus === target.id)
                 patch({ focus: '' }); }}/>
         <Transcript state={displayState} local={u} hardware={hardware} status={content.status} diskReadable={diskReadable} failed={!!failure} t={t}/>
       </div>
     </div>
     {loaded && !failure && <div className="station-workbench" inert={archiveBlocking}>
-      {!scoreBench && !hint && <span className="station-orbit-hint">{t(inspection ? '拖动机身旋转 · 滚轮缩放 · 拖动把手翻面' : u.backView ? '点击把手连接处，回到正面' : '向内拖动把手，即可翻面')}</span>}
+      {inspection && !scoreBench && <span className="station-orbit-hint">{t(inspection ? '拖动机身旋转 · 滚轮缩放 · 拖动把手翻面' : u.backView ? '点击把手连接处，回到正面' : '向内拖动把手，即可翻面')}</span>}
       {inspection && <button className="station-reset-view" onClick={() => engine.current?.resetInspection()}>{t('重置视角')}</button>}
       {scoreBench && !u.backView && <ScoreBench bench={bench} powered={hardware.powered} t={t}/>}
       {preview === 'roster-motion' && !u.backView && <RosterBench bench={bench} t={t}/>}
     </div>}
-    {(u.backView || !hardware.online || staleDraft) && <aside className="station-hardware-status" aria-label={t('终端状态')}>
+    <div className="station-notices" ref={notices} hidden={archiveBlocking} inert={archiveBlocking}>
+    {(u.backView || !hardware.online || staleDraft) && <aside className="station-notice station-hardware-status" aria-label={t('终端状态')}>
       <p role="status">{t(statusMessage)}</p>
       <p className="hardware-match">{u.backView && !statusMessage.includes(supplyLabel) && <>{t(supplyLabel)} · </>}{s.phase === 'home' ? t('尚未接入频道') : s.phase === 'room' ? t('队伍准备中') :
           s.phase === 'game_over' ? t('行动结束') : statusMessage.includes('对局仍在进行') ? t('当前第 {0} 回合', [s.round]) : t('第 {0} 回合 · 对局仍在进行', [s.round])}</p>
@@ -803,12 +815,16 @@ export default function Console() {
       {u.backView && hardware.powered && !hardware.aux && hardwareRecovery(u) && <p>{t('AUX 已断开 · SIGNAL 无外部输入')}</p>}
       {staleDraft && <details><summary>{t('旧草稿 · 第 {0} 回合', [staleDraft.round])}</summary><p>{staleDraft.text}</p><small>{t('仅供查看，不会自动提交')}</small></details>}
     </aside>}
+    <VoiceBar t={t}/>
+    {notice && <StationToast message={notice} t={t} onClose={() => setNotice('')}/>}
+    {!keepsMachine && <OperationTour home={s.phase === 'home'} words={!!s.myWords.length} compactWords={!roleState(displayState, u).encrypt} voice={deck.available}
+        enabled={(loaded || !!failure) && hardware.online && !u.backView && !archiveBlocking && !u.manual && !u.about && !notice && u.keyDisk.phase !== 'announcing'}
+        autoStart={!preview || new URLSearchParams(location.search).has('tour')} persist={!preview} replay={tourReplay} t={t}/>}
+    </div>
     {instrumentPreview && loaded && !failure && <InstrumentBench bench={bench} local={u} powered={hardware.powered} inert={archiveBlocking} t={t}
-        onPatch={patch} announce={setAnnouncement} onHint={setHint} onInspect={closeup => engine.current?.inspectInstrument(closeup)}/>}
+        onPatch={patch} announce={setAnnouncement} onHint={id => { if (id) setNotice(content.targets.find(target => target.id === id)?.label || ''); }} onInspect={closeup => engine.current?.inspectInstrument(closeup)}/>}
     {wordBench && loaded && !failure && <WordBench bench={bench} local={u} powered={hardware.powered} inert={archiveBlocking} t={t}
         onPatch={patch} announce={setAnnouncement}/>}
-    {hint && !u.archiveOpen && <div className="station-hint" aria-hidden="true">{hint.startsWith('quality:')
-        ? qualityHint(hint.slice(8) as QualityChoice, level, t) : [content.targets.find(target => target.id === hint)?.label, shortcutLabel(hint)].filter(Boolean).join(' · ')}</div>}
     <p className="mobile-hint">{t("横向滑动查看终端 · 下拉纸带查看密报记录")}</p>
     <ArchiveSheet key={`${s.roomCode || 'offline'}:${s.myPlayerID}:${s.myTeam}:${!!preview}`} open={archiveVisible && hardware.powered} locale={u.locale} state={displayState} onClose={closeArchive} onClosed={restoreArchiveFocus} onVisibilityChange={setArchiveShown}/>
     <div className="sr-only" role="status" aria-live="polite">{announcement}</div>

@@ -193,17 +193,17 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
     return <section className="mobile-console" data-acting={acting || undefined} aria-label={t('便携通信终端')} inert={inert}>
         <header>{battery}{!beat && <p className="mobile-brand">ENCRYPTO <span>FIELD TERMINAL / 01</span></p>}
             <div className="mobile-title"><h2 style={signal.actingTeam ? { color: teamPalette(signal.actingTeam, s.myTeam, u.theme).ink } : undefined}>{title}</h2>{s.deadline > 0 && <span className="mobile-clock" data-urgent={!!warning || undefined} data-idle={!acting || undefined}>{u.seconds}s</span>}</div>
-            <p className="mobile-channel">{s.roomCode ? `CH ${s.roomCode}` : t('双队通信  /  4–8 人')} · {s.recovering ? t('正在恢复原座位…') : s.connected ? t('已连接') : t('连接中')}
+            <p className="mobile-channel" data-onboarding="room">{s.roomCode ? `CH ${s.roomCode}` : t('双队通信  /  4–8 人')} · {s.recovering ? t('正在恢复原座位…') : s.connected ? t('已连接') : t('连接中')}
                 {s.myTeam && ` · ${t('{0} 队', [s.myTeam])}`}</p>
         </header>
         {home && <>
             <div className="mobile-tabs"><button aria-pressed={u.mode === 'create'} onClick={() => onAct('mode-create')}>{t('建立频道')}</button><button aria-pressed={u.mode === 'join'} onClick={() => onAct('mode-join')}>{t('加入频道')}</button></div>
-            <label>{t('代号')}<input data-console-input autoComplete="nickname" value={u.name} maxLength={20} onChange={e => onChange('name', e.target.value)}/></label>
+            <label>{t('代号')}<input data-onboarding="enter" data-console-input autoComplete="nickname" value={u.name} maxLength={20} onChange={e => onChange('name', e.target.value)}/></label>
             {u.mode === 'join' && <label>{t('四位频道编号')}<input data-console-input inputMode="numeric" autoComplete="off" value={u.code} maxLength={4} placeholder="1234" onChange={e => onChange('code', e.target.value)}/></label>}
             <p>{t('每队至少两人，可以由 AI 补位。')}</p>
         </>}
         {lobby && <>
-            <button onClick={() => onAct('copy-code')}>{t('复制频道编号')}</button>
+            <div className="mobile-tabs"><button onClick={() => onAct('copy-code')}>{t('复制频道编号')}</button><button data-mobile-archive aria-keyshortcuts="H" onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button></div>
             <p>{t('每队至少两人，可以由 AI 补位。')}</p>
             {(['A', 'B'] as const).map(team => {
                 const players = team === 'A' ? s.teamA : s.teamB;

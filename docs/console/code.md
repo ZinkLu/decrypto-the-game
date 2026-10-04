@@ -61,6 +61,7 @@ web/
 | `NotebookWriting.tsx` | 记录板上的手写便条：放置、拖动、随纸张缩放 |
 | `EncryptorIntro.tsx` | 密钥软盘发放时的加密者播报，桌面端落在软盘槽上，窄屏回到自己的驱动器 |
 | `ShortcutHelp.tsx` | 页面导航里的快捷键说明面板（`?` 打开），由 `Settings.tsx` 挂出 |
+| `OperationTour.tsx` | 首次操作提示：按当前可用功能逐步说明入房、房间号、历史、密词与语音，高亮对应控件；可以跳过或从页面导航重看 |
 | `GuideContent.tsx` | 玩法说明和原版桌游介绍的 DOM 版本，供窄屏和读屏软件使用 |
 | `hooks.ts` | 从 `Console.tsx` 分出来的几组 effect：扬声器和音乐的生命周期、软盘状态机的定时器、减弱动效、字体和插图的载入 |
 | `useDiskPull.ts` | 拖拽软盘的指针手势，桌面和窄屏共用 |
@@ -84,6 +85,7 @@ web/
 | `partialFrame.ts` | 氛围帧画整帧还是局部帧的判定，以及动态区域矩形的外扩、裁剪与合并。见[画质与性能](quality.md) |
 | `mechanics.ts` | 纸带和软盘的尺寸、时长和姿态函数 |
 | `shortcuts.ts` | 键盘意图的识别：哪些按键在什么焦点下算机器操作，哪些留给浏览器和输入法 |
+| `onboarding.ts` | 操作提示的步骤、桌面与窄屏说明、目标选择器，以及已看步骤和跳过偏好的浏览器存储 |
 | `scoreFeedback.ts` | 计分事件的判定（`scoreTone`）和背景脉冲的时序（`ScorePulse`），供引擎与主屏共用 |
 | `notebook-writing.ts` | 手写便条的落点、拖动和越界收回的几何规则 |
 | `notebook-ink.ts` | 手写笔迹的采样：合并浏览器的事件、保留短尾和点 |
@@ -385,6 +387,7 @@ cd web && pnpm test
 | `voice.test.mjs` | 分组讨论的规则、声音送到哪个频道、全桌和加密者何时静音、对讲控件的挡位和两种语言的说明 |
 | `voice-keyboard.test.mjs` | 反引号和 V 的快捷键在焦点或状态变化后安全地切换频道、松开按住的麦克风 |
 | `shortcuts.test.mjs` | 键盘意图的识别：数字键、Enter、输入法合成、浏览器组合键不成为机器操作、提示与无障碍属性一致 |
+| `onboarding.test.mjs` | 操作提示只包含当前可用的对局功能；已看步骤和跳过偏好的存储、损坏数据与浏览器存储不可用时的降级 |
 | `teammate-choices.test.mjs` | 队友同时猜测时各自的部分选择和 AI 建议，按行动、队伍、回合和稳定 ID 归属 |
 | `result-flow.test.mjs` | 一个回合的结果对两队各意味着什么，回执的文案和两种语言的覆盖 |
 | `score-feedback.test.mjs` | 计分脉冲只对新事件触发，队伍的视角，断电、减弱动效和脱机时安静地消费事件 |

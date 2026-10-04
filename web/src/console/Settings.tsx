@@ -2,14 +2,14 @@ import type { Locale } from './i18n';
 import { themeChoices, type ThemeId } from './model';
 import type { MusicPreferences, MusicStatus } from './music';
 import { qualityChoices, qualityProfiles, describeQuality, type QualityChoice, type QualityLevel } from './quality';
-import VoiceBar, { VoiceSettings } from './VoiceBar';
+import { VoiceSettings } from './VoiceBar';
 import ShortcutHelp from './ShortcutHelp';
 
 export const qualityLabels: Record<QualityChoice, string> = { auto: '自动', high: '高', medium: '中', low: '低' };
 
 type Translate = (message: string, values?: unknown[]) => string;
 
-/** What a quality choice switches, for its tooltip and the hint under the machine. */
+/** What a quality choice switches, for the notice shown when it is selected. */
 export function qualityHint(choice: QualityChoice, level: QualityLevel, t: Translate) {
     return choice === 'auto'
         ? `${t('按本机实测的单帧耗时选择档位；再次点击重新检测')} · ${t('当前')} ${t(qualityLabels[level])}`
@@ -31,7 +31,7 @@ interface Props {
     musicStatus: MusicStatus;
     powered: boolean;
     onQuality: (choice: QualityChoice) => void;
-    onHint: (hint: string) => void;
+    onTour: () => void;
     onTheme: (theme: ThemeId, label: string) => void;
     onLocale: (locale: Locale) => void;
     onAct: (id: string) => void;
@@ -41,20 +41,19 @@ interface Props {
 
 /** Settings of this visit, beside the machine: they are the page's, not modelled hardware. */
 export default function Settings({ t, inspection, failed, inert, quality, level, theme, locale, soundOn, music, musicStatus, powered,
-    onQuality, onHint, onTheme, onLocale, onAct, onVolume, onRetryMusic }: Props) {
+    onQuality, onTour, onTheme, onLocale, onAct, onVolume, onRetryMusic }: Props) {
     return <div className="station-settings" inert={inert}>
       <nav className="station-navigation" aria-label={t('页面导航')}>
         <a href="/" aria-current={!inspection ? 'page' : undefined}>{t('游戏')}</a>
         <a href="/preview" aria-current={inspection ? 'page' : undefined}>Preview</a>
         <ShortcutHelp t={t}/>
+        {!inspection && <button type="button" className="station-tour-replay" data-tour-replay onClick={onTour}>{t('操作提示')}</button>}
       </nav>
-      <VoiceBar t={t}/>
       <details name="station-panel" id="station-preferences" className="station-preferences"><summary>{t('设置')}</summary><div className="station-preferences-panel">
       {!failed && <div className="station-quality" role="group" aria-label={t("画质")}>
         <span aria-hidden="true">{t("画质")}</span>
-        {qualityChoices.map(choice => <button key={choice} aria-pressed={quality === choice} title={qualityHint(choice, level, t)}
-            onClick={() => onQuality(choice)} onMouseEnter={() => onHint('quality:' + choice)} onMouseLeave={() => onHint('')}
-            onFocus={() => onHint('quality:' + choice)} onBlur={() => onHint('')}>
+        {qualityChoices.map(choice => <button key={choice} aria-pressed={quality === choice}
+            onClick={() => onQuality(choice)}>
           {t(qualityLabels[choice])}{choice === 'auto' && quality === 'auto' && <small>{t(qualityLabels[level])}</small>}
         </button>)}
       </div>}

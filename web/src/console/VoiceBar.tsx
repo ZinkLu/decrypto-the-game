@@ -1,56 +1,81 @@
+import { useEffect, useRef, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { currentView, hold, setMic, setMode, setVolume, toggleVoiceChannel, startVoice, stopVoice, useVoice } from '../services/voice';
-import { apart, voiceStatus } from './voice';
+import { apart, speakingTo, voiceStatus } from './voice';
+import StationToast, { type Translate } from './StationToast';
 
-type Translate = (message: string, values?: unknown[]) => string;
+type VoiceNotice = { id: number; message: string; listenOnly: string };
 
 /** Whether this room has voice: the server offers it and the page is seated. */
 function useAvailable() {
     return useGameStore(s => !!s.voice && !!s.roomCode);
 }
 
-/** The voice of the room, beside the settings: like them, the page's, not modelled hardware. */
+/** Compact room voice controls and its transient notices, in the page's notice rail. */
 export default function VoiceBar({ t }: { t: Translate }) {
     const available = useAvailable();
     const players = useGameStore(s => s.players);
     const me = useGameStore(s => s.myPlayerID);
-    // The line under the controls follows the game.
+    // Channel labels follow the game; voice activity does not generate notices.
     useGameStore(s => s.phase);
     useGameStore(s => s.myRole);
     useGameStore(s => s.encryptorID);
     useGameStore(s => s.teamA);
     useGameStore(s => s.teamB);
     const v = useVoice();
-    if (!available) return null;
-    if (v.status === 'off')
-        return <div className="station-voice"><button type="button" onClick={() => void startVoice()}>{t('加入语音')}</button></div>;
     const view = currentView();
     const split = apart(view);
     const line = v.status === 'starting' ? '正在接通语音…' : v.status === 'reconnecting' ? '语音中断，正在重连…' :
         !v.machine ? '终端脱机，对讲暂停' : voiceStatus(view, v.whisper);
+    const [toast, setToast] = useState<VoiceNotice | null>(null);
+    const serial = useRef(0);
+    const previous = useRef({ available: false, status: 'off', line: '', notice: '', listenOnly: '' });
+    useEffect(() => {
+        const before = previous.current;
+        previous.current = { available, status: v.status, line, notice: v.notice, listenOnly: v.listenOnly };
+        if (!available) { setToast(null); return; }
+        const newNotice = v.notice !== before.notice && !!v.notice;
+        if (v.status === 'off') {
+            if (v.notice && (newNotice || !before.available || before.status !== 'off'))
+                setToast({ id: ++serial.current, message: v.notice, listenOnly: v.listenOnly });
+            else if (before.status !== 'off') setToast(null);
+            return;
+        }
+        if (!before.available || v.status !== before.status || line !== before.line || v.listenOnly !== before.listenOnly || newNotice)
+            setToast({ id: ++serial.current, message: newNotice ? v.notice : line, listenOnly: v.listenOnly });
+    }, [available, v.status, line, v.notice, v.listenOnly]);
+    if (!available) return null;
+    const route = speakingTo(view, v.whisper);
+    const label = v.status !== 'on' || !v.machine ? line : route === 'table' ? '全桌通话' : route === 'team' ? '本队' : '静音';
     const names = new Map(players.map(p => [p.id, p.nickname]));
     const talking = v.speaking.includes(me) || undefined;
     const end = () => hold(false);
-    return <div className="station-voice" role="group" aria-label={t('语音')} data-apart={split || undefined}>
+    return <>
+      {toast && <StationToast key={toast.id} message={`${t(toast.message)}${toast.listenOnly ? ` · ${t(toast.listenOnly)}` : ''}`}
+          t={t} onClose={() => setToast(null)} />}
+      {v.status === 'off'
+        ? <div className="station-voice"><button type="button" onClick={() => void startVoice()}>{t('加入语音')}</button></div>
+        : <div className="station-voice" role="group" aria-label={t('语音')} data-apart={split || undefined}>
+      <span className="station-voice-status">{t(label)}{v.listenOnly && ` · ${t('仅收听')}`}</span>
+      <div className="station-voice-actions">
       {v.mode === 'toggle'
         ? <button type="button" role="switch" aria-checked={v.micOn && !v.listenOnly} disabled={!!v.listenOnly} data-talking={talking}
-            title={t('快捷键 ` 开关麦克风')} onClick={() => setMic(!v.micOn)}>{t(v.micOn ? '开麦' : '闭麦')}</button>
-        : <button type="button" aria-pressed={v.holding} disabled={!!v.listenOnly} data-talking={talking} title={t('按住 ` 说话')}
+            aria-label={`${t(v.micOn && !v.listenOnly ? '开麦' : '闭麦')} · ${t('快捷键 ` 开关麦克风')}`} aria-keyshortcuts="`" onClick={() => setMic(!v.micOn)}>{t(v.micOn && !v.listenOnly ? '开麦' : '闭麦')}</button>
+        : <button type="button" aria-pressed={v.holding} disabled={!!v.listenOnly} data-talking={talking} aria-label={`${t('按住说话')} · ${t('按住 ` 说话')}`} aria-keyshortcuts="`"
             onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); hold(true); }}
             onPointerUp={end} onPointerCancel={end} onLostPointerCapture={end}
             onKeyDown={event => { if ((event.key === ' ' || event.key === 'Enter') && !event.ctrlKey && !event.metaKey && !event.altKey &&
                 !event.repeat && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) { event.preventDefault(); hold(true); } }}
             onKeyUp={event => { if (event.key === ' ' || event.key === 'Enter') end(); }}>{t('按住说话')}</button>}
       <button type="button" role="switch" aria-checked={v.whisper && !split && !!view.team} disabled={split || !view.team || !v.machine || !!v.listenOnly || v.status !== 'on'}
-          aria-keyshortcuts="V" title={`${t('切换全桌／队内语音')} · V`} onClick={() => toggleVoiceChannel()}>{t('悄悄话')}</button>
-      <span className="station-voice-status" role="status">
-        {t(v.notice || line)}{v.listenOnly && ` · ${t(v.listenOnly)}`}
-      </span>
+          aria-keyshortcuts="V" aria-label={`${t('悄悄话')} · ${t('切换全桌／队内语音')}`} onClick={() => toggleVoiceChannel()}>{t('悄悄话')}</button>
+      <button type="button" className="station-voice-leave" onClick={stopVoice}>{t('退出语音')}</button>
+      </div>
       {v.heard.length > 0 && <ul className="station-voice-people" aria-label={t('通话中')}>
         {v.heard.map(id => <li key={id} data-speaking={v.speaking.includes(id) || undefined}>{names.get(id) ?? '?'}</li>)}
       </ul>}
-      <button type="button" onClick={stopVoice}>{t('退出语音')}</button>
-    </div>;
+      </div>}
+    </>;
 }
 
 /** How this page talks, among the settings. */

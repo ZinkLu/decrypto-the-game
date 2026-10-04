@@ -47,13 +47,6 @@ button,input { font: inherit; }
 .station-controls [data-control="disk-toggle"] { touch-action: none; cursor: grab; user-select: none; }
 .station-controls [data-control="disk-toggle"][data-pulling] { cursor: grabbing; }
 .station-controls .station-disk-grip { opacity: 1; overflow: visible; }
-/* The drag hint teaches once, then steps aside so it never sits on the chassis
-   edge; hovering or focusing the disk brings it back. */
-.disk-grip-hint { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); padding: 5px 9px; border: 1px solid #a69c8780; border-radius: 3px; background: #eee6d5ed; color: #625a4a; font-size: 11px; line-height: 1.3; letter-spacing: .04em; pointer-events: none; box-shadow: 0 2px 5px #32281812; white-space: nowrap; opacity: 0; animation: disk-hint-once 5.5s ease-out .6s both; transition: opacity .18s; }
-@keyframes disk-hint-once { 0% { opacity: 0; } 8% { opacity: 1; } 80% { opacity: 1; } 100% { opacity: 0; } }
-.station-disk-grip[data-hint="above"] .disk-grip-hint { top: auto; bottom: calc(100% + 6px); }
-.station-disk-grip:hover .disk-grip-hint, .station-disk-grip:focus-visible .disk-grip-hint { animation: none; opacity: 1; }
-.station-disk-grip[data-pulling] .disk-grip-hint { animation: none; opacity: 0; }
 .station-workbench { position: fixed; z-index: 2; right: 20px; bottom: 12px; left: 20px; display: flex; align-items: end; justify-content: flex-end; gap: 20px; pointer-events: none; }
 .station-orbit-hint { position: absolute; left: 50%; bottom: 2px; transform: translateX(-50%); padding: 7px 11px; border: 1px solid #9a927f99; border-radius: 2px; background: #eee8dbd9; color: #5e584d; box-shadow: 0 2px 8px #2e281f18; font-size: 10px; letter-spacing: .08em; white-space: nowrap; }
 .station[data-detail] .station-orbit-hint { display: none; }
@@ -71,30 +64,18 @@ button,input { font: inherit; }
 .station-roster-preview button:focus-visible { outline: 2px solid #a65232; outline-offset: 2px; }
 .station-score-preview { order: -1; box-shadow: 0 2px 12px #28332918; }
 .station-score-preview button { min-height: 36px; font-variant-numeric: tabular-nums; }
-/* Terminal status sits in the quiet band above the machine, between the page
-   navigation and Settings, instead of over the chassis corner. */
-.station-hardware-status { position: fixed; z-index: 4; top: 12px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 2px 14px; width: max-content; max-width: min(680px, calc(100vw - 400px)); padding: 6px 14px; background: #eee8dbf5; color: #3b372f; border-left: 2px solid #8a7f6a; font-size: 12.5px; line-height: 1.5; overflow-wrap: anywhere; box-shadow: 0 2px 8px #2e281f14; }
+/* Hardware recovery stays with the other page notices. */
+.station-notices .station-hardware-status { display: grid; gap: 8px; }
 .station-hardware-status p { margin: 0; }
-.station-hardware-status .hardware-match, .station-hardware-status small { color: #6a6457; font-size: 12px; }
-.station-hardware-status button { padding: 4px 12px; background: #3b372f; color: #f4edda; border: 1px solid #3b372f; border-radius: 2px; font: inherit; cursor: pointer; }
-.station-hardware-status details { flex-basis: 100%; }
-.station-hardware-status :focus-visible { outline: 3px solid #a1442f; outline-offset: 3px; }
-.station-hardware-status details { margin-top: 4px; }
+.station-hardware-status .hardware-match, .station-hardware-status small { color: #625b4d; font-size: 12px; }
+.station-hardware-status button { justify-self: start; min-height: 36px; padding: 6px 12px; background: #3b372f; color: #f4edda; border: 0; border-radius: 4px; font: inherit; cursor: pointer; }
 .station-hardware-status summary { cursor: pointer; }
 .station-hardware-status details p { max-height: 8em; overflow: auto; white-space: pre-wrap; }
-.station-fallback .station-hardware-status { position: relative; margin: 12px 20px; left: auto; top: auto; bottom: auto; transform: none; display: block; width: auto; max-width: min(410px, calc(100vw - 40px)); }
-.station-fallback .station-hardware-status button { margin-top: 8px; }
-@media (max-width: 850px) {
-  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-hardware-status { position: relative; left: auto; top: auto; bottom: auto; transform: none; display: block; width: auto; max-width: 520px; margin: 12px 20px 24px; }
-  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-hardware-status button { margin-top: 8px; }
-  .station-hardware-status button, .station-hardware-status summary { min-height: 44px; }
-}
 @media (max-width: 600px) {
   .station-workbench { right: 10px; left: 10px; bottom: 10px; gap: 8px; }
   .station-orbit-hint { display: none; }
   .station[data-view="preview"] .station-orbit-hint { display: block; bottom: 48px; max-width: calc(100vw - 32px); white-space: normal; width: max-content; text-align: center; }
 }
-.station-hint { position: fixed; z-index: 3; bottom: 16px; left: 50%; transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 9px 16px; background: #2f2b26; color: #f0e4c9; font-size: 12px; letter-spacing: .04em; pointer-events: none; box-shadow: 0 3px 12px #1c181320; }
 
 /* A review bench below the machine, keeping every study in the same light. */
 .station[data-instruments] { --instrument-bench-height: 112px; }
@@ -102,7 +83,6 @@ button,input { font: inherit; }
 .station[data-instruments] .station-viewport { height: calc(100svh - var(--instrument-bench-height)); min-height: 0; min-width: 0; }
 .station[data-instruments] .station-workbench,
 .station[data-instruments] .mobile-hint { display: none; }
-.station[data-instruments] .station-hint { bottom: calc(var(--instrument-bench-height) + 10px); }
 .instrument-comparison { position: fixed; z-index: 3; inset: auto 0 0; height: var(--instrument-bench-height); padding: 15px 24px; border-top: 1px solid #b4b2a0; background: #eee8db; color: #344139; }
 .instrument-comparison-row { display: flex; align-items: center; gap: 14px; }
 .instrument-comparison-title { font-size: 12px; letter-spacing: .14em; margin-right: 8px; white-space: nowrap; }
@@ -271,7 +251,7 @@ button,input { font: inherit; }
 }
 
 /* Language and graphics quality belong to the session UI, outside the fixed legends. */
-.station-settings { position: absolute; top: 12px; right: 22px; left: 22px; z-index: 6; display: flex; align-items: center; justify-content: space-between; gap: 10px; pointer-events: none; }
+.station-settings { position: absolute; top: 12px; right: 22px; left: 22px; z-index: 9; display: flex; align-items: center; justify-content: space-between; gap: 10px; pointer-events: none; }
 .station-settings > * { pointer-events: auto; }
 .station-navigation { display: flex; align-items: center; gap: 22px; }
 .station-navigation a { display: inline-flex; align-items: center; min-height: 36px; color: #656859; text-decoration: none; font-size: 12px; }
@@ -305,7 +285,7 @@ button,input { font: inherit; }
 .station-settings button[aria-pressed="true"], .station-settings button[role="switch"][aria-checked="true"] { color: #eee5cf; background: #394c48; }
 .station-settings button:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
 .station-settings .station-music-row { padding: 5px 0; }
-/* The room's voice sits between the navigation and the settings. */
+/* Shared voice controls; the notice rail positions them beside the machine. */
 .station-voice { display: flex; align-items: center; gap: 2px; min-width: 0; padding: 3px; border: 1px solid #afa994; border-radius: 4px; background: #e5decb; color: #59604f; font-size: 12px; }
 .station-voice-status { min-width: 0; padding: 0 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .station-voice[data-apart] .station-voice-status { color: #903c2e; }
@@ -318,11 +298,13 @@ button,input { font: inherit; }
 .station-voice-modes { display: flex; gap: 2px; padding: 3px; border: 1px solid #afa994; border-radius: 4px; background: #e5decb; }
 @media (max-width: 850px) { .station-voice-people { display: none; } }
 @media (max-width: 600px) {
-  /* On a phone the voice takes a row of its own, so its status stays readable. */
-  .station-settings { flex-wrap: wrap; row-gap: 6px; }
-  .station-voice { order: 3; flex: 1 0 100%; }
+  .station-settings { left: 14px; right: 14px; flex-wrap: nowrap; gap: 8px; }
+  .station-settings .station-navigation { gap: 8px; }
+  .station-settings .station-navigation a, .station-settings .station-navigation button,
+  .station-settings .station-shortcuts { font-size: 11px; }
+  .station-settings .station-preferences summary { padding-left: 0; }
+
   .station-voice-status { flex: 1; }
-  .station:has(.station-voice) .mobile-console { padding-top: 118px; }
 }
 @media (prefers-reduced-motion: reduce) { .station-voice-people li::before { transition: none; } }
 .mobile-audio { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 16px 24px; }
@@ -404,7 +386,6 @@ button,input { font: inherit; }
 @media (max-width: 850px) {
   .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-viewport,
   .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-workbench,
-  .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .station-hint,
   .station[data-view="game"]:not([data-instruments]):not([data-detail]) .station-quality,
   .station > .mobile-hint { display: none; }
   .station[data-view="game"]:not([data-instruments]):not([data-detail]) > .mobile-console { display: block; }
@@ -525,4 +506,8 @@ button,input { font: inherit; }
 @media (max-width: 850px) {
   .archive-notes { padding: 10px 20px 4px; }
   .archive-note ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 360px) {
+  .station-settings .station-shortcuts > summary kbd { display: none; }
 }

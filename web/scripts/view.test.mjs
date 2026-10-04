@@ -33,15 +33,30 @@ test('both inward handle gestures turn the machine; taps and outward pulls do no
     }
 });
 
-test('head-on framing fits the chassis across aspect ratios', () => {
-    for (const [width, height] of [[865, 863], [1440, 900], [1920, 1080], [1200, 500], [2560, 1080]]) {
+test('head-on framing keeps the power switch, feet and handles within the viewport', () => {
+    // Extreme points from the exported model, including their depth. Project
+    // through the same 28-degree lens so this checks the visible result rather
+    // than repeating the fitting formula.
+    const landmarks = [[5.831, 5.915, -.85], [7.075, -5.595, -.83], [0, -5.37, .355], [-8.76, 0, .73], [8.76, 0, .73]];
+    for (const [width, height] of [[865, 863], [1440, 900], [1920, 1080], [1200, 500], [2560, 1080], [900, 400]]) {
         const frame = gameFraming(width, height);
-        const top = Math.min(66, height * .14), bottom = Math.min(44, height * .06);
-        assert.ok(frame.height >= 10.65 * height / (height - top - bottom));
-        assert.ok(frame.height * width / height >= 18.3 * width / (width - 32) - 1e-10);
-        assert.ok(Number.isFinite(frame.centerY));
+        const distance = frame.height / (2 * Math.tan(14 * Math.PI / 180));
+        for (const [x, y, z] of landmarks) {
+            const scale = distance / (distance + 1.25 - z);
+            const screenX = width / 2 + x * scale * height / frame.height;
+            const screenY = height / 2 - (y - frame.centerY) * scale * height / frame.height;
+            assert.ok(screenX >= 16 && screenX <= width - 16, `hardware clears side edges at ${width} × ${height}`);
+            assert.ok(screenY >= Math.min(42, height * .09) && screenY <= height - 16,
+                `hardware clears navigation and bottom edge at ${width} × ${height}`);
+        }
     }
     assert.ok(Number.isFinite(gameFraming(0, 0).height), 'hidden mobile stage never makes an invalid camera');
+    assert.ok(Number.isFinite(gameFraming(0, 0).centerY));
+});
+
+test('landscape framing uses the space released by the footer hints', () => {
+    assert.ok(gameFraming(1920, 1080).height < 11.4, 'desktop machine uses the available height');
+    assert.ok(gameFraming(1200, 500).height < 12.2, 'short windows retain a large working surface');
 });
 
 test('wheel zoom supports pixel, line and page deltas and has physical limits', () => {
