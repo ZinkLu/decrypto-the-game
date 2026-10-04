@@ -20,6 +20,7 @@ import Transcript from './Transcript';
 import VoiceBar from './VoiceBar';
 import StationToast from './StationToast';
 import OperationTour from './OperationTour';
+import { tourAction } from './onboarding';
 import './station-notices.css';
 import { InstrumentBench, RosterBench, ScoreBench, WordBench, benchAmplitude, benchState, useBench } from './Workbench';
 import { guidePageFor } from './guide';
@@ -182,11 +183,12 @@ export default function Console() {
     }
     function tourRegion(id: string) {
         const surfaces = id === 'room' ? ['channel', 'channelCopy'] : id === 'voice' ? ['intercomSelector', 'intercomTalk'] :
+            id === 'keypad' ? ['key0', 'key1', 'key2', 'key3', 'key4'] : id.startsWith('action-') ? ['transmitControl', 'transmitLabel'] :
             id === 'words' ? ['word0', 'word1', 'word2', 'word3'] : id === 'enter' ? ['screen'] : ['paper'];
         const offset = stage.current?.getBoundingClientRect();
         if (!offset || !engine.current || failure) {
-            const step = id === 'room' ? 'copy-code' : id === 'history' ? 'archive-toggle' : id === 'words' ? 'words' : id === 'voice' ? 'voice-line' : 'name';
-            return Array.from(controls.current.values()).filter(node => node.dataset.control === step).map(node => node.getBoundingClientRect());
+            const step = id === 'room' ? 'copy-code' : id === 'history' ? 'archive-toggle' : id === 'words' ? 'words' : id === 'voice' ? 'voice-line' : id.startsWith('action-') ? 'transmit' : 'name';
+            return Array.from(controls.current.values()).filter(node => id === 'keypad' ? node.dataset.control?.startsWith('key-') : node.dataset.control === step).map(node => node.getBoundingClientRect());
         }
         return surfaces.flatMap(surface => {
             const frame = current.current.content.frames[surface];
@@ -206,7 +208,7 @@ export default function Console() {
             const bounds = e.bounds(target);
             // Keep page notices above ACTION as the machine scales with the viewport.
             if (target.id === 'transmit' && bounds && notices.current && stage.current) {
-                const bottom = Math.max(18, innerHeight - stage.current.getBoundingClientRect().top - bounds.top + 16);
+                const bottom = Math.max(18, innerHeight - stage.current.getBoundingClientRect().top - bounds.top + 32);
                 notices.current.style.setProperty('--notice-bottom', `${bottom}px`);
             }
             if (node && !failure) node.style.visibility = bounds ? 'visible' : 'hidden';
@@ -833,6 +835,7 @@ export default function Console() {
     <VoiceBar t={t}/>
     {notice && <StationToast message={notice} t={t} onClose={() => setNotice('')}/>}
     {!keepsMachine && <OperationTour home={s.phase === 'home'} words={!!s.myWords.length} compactWords={!roleState(displayState, u).encrypt} voice={deck.available}
+        action={tourAction(displayState, u)} briefing={!!u.brief && !failure}
         enabled={(loaded || !!failure) && hardware.online && !u.backView && !archiveBlocking && !u.manual && !u.about && !notice && u.keyDisk.phase !== 'announcing'}
         autoStart={!preview || new URLSearchParams(location.search).has('tour')} persist={!preview} replay={tourReplay} measureRegion={tourRegion} t={t}/>}
     </div>

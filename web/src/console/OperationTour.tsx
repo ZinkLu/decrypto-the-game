@@ -4,11 +4,11 @@ import TourSpotlight from './TourSpotlight';
 import type { SpotlightRect } from './spotlight';
 import './operation-tour.css';
 
-type Props = TourContext & { enabled: boolean; autoStart: boolean; persist: boolean; replay: number; compactWords: boolean;
+type Props = TourContext & { enabled: boolean; autoStart: boolean; persist: boolean; replay: number; compactWords: boolean; briefing: boolean;
     measureRegion: (step: string) => SpotlightRect[];
     t: (message: string, values?: unknown[]) => string };
 
-export default function OperationTour({ home, words, voice, enabled, autoStart, persist, replay, compactWords, measureRegion, t }: Props) {
+export default function OperationTour({ home, words, voice, action, briefing, enabled, autoStart, persist, replay, compactWords, measureRegion, t }: Props) {
     const [progress, setProgress] = useState(() => persist ? readTourProgress() : { seen: [], dismissed: false });
     const [steps, setSteps] = useState<TourStep[]>([]);
     const [index, setIndex] = useState(0);
@@ -17,7 +17,8 @@ export default function OperationTour({ home, words, voice, enabled, autoStart, 
     const replayed = useRef(replay);
     const focusReplay = useRef(false);
     const previousHome = useRef(home);
-    const available = useMemo(() => tourSteps({ home, words: words && (!compact || compactWords), voice }), [home, words, voice, compact, compactWords]);
+    const available = useMemo(() => tourSteps({ home, words: words && (!compact || compactWords), voice,
+        action: briefing && !compact ? undefined : action }), [home, words, voice, action, briefing, compact, compactWords]);
     const step = steps[index];
     const card = useRef<HTMLElement>(null);
     const nextButton = useRef<HTMLButtonElement>(null);
