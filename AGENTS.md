@@ -42,7 +42,7 @@ Go paths below are relative to `server/`.
 - **`internal/server/`** — Message dispatcher (routes WebSocket messages to room/game handlers); stores rooms as they change and restores them at startup
 - **`internal/store/`** — What the server needs from storage: the `Rooms` interface and its data types (room and game states, who opened and entered each room). No implementation, no dependencies
 - **`internal/store/sqlite/`** — The SQLite implementation of `store.Rooms` (pure Go driver, builds with `CGO_ENABLED=0`)
-- **`internal/ai/`** — AI players (LLM Provider abstraction + Claude/OpenAI implementations)
+- **`internal/ai/`** — AI players (LLM Provider abstraction + Claude/OpenAI implementations); `internal/ai/prompts` holds every prompt as one markdown file per action, embedded with `//go:embed`, so prompts are edited as files rather than Go strings
 - **`internal/voice/`** — What the server needs from a voice service: `voice.Service`, which carries each player's table and team channels to the players a `voice.Plan` allows. No implementation, no dependencies
 - **`internal/voice/cloudflare/`** — The Cloudflare Realtime SFU implementation; on when `CLOUDFLARE_REALTIME_APP_ID` and `CLOUDFLARE_REALTIME_APP_SECRET` are set
 - **`web/src/console/`** — The Console: the whole interface. React holds state and accessibility (`Console.tsx`, with `Controls.tsx`, `Settings.tsx`, `Transcript.tsx`), Three.js draws the machine (`engine.ts` owns the renderer and the frame loop; every moving assembly is a module in `parts/`), 2D canvases painted by `paint()` (`paint.ts`, `paintScreen.ts`, `paintFaces.ts`) become its screens and print, and transparent DOM controls are projected over the 3D parts

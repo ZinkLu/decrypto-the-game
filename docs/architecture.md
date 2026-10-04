@@ -26,6 +26,7 @@ internal/
   store               存储接口 Rooms 及其数据类型，没有实现也没有依赖
     sqlite            Rooms 的 SQLite 实现
   ai                  AI 玩家与 LLMProvider 接口
+    prompts           提示词：一个动作一个 markdown 文件，随程序打包
     providers         Claude 与 OpenAI 兼容接口的实现
   voice               语音服务接口 Service 及其类型，没有实现也没有依赖
     cloudflare        Service 的 Cloudflare Realtime SFU 实现
@@ -35,7 +36,9 @@ internal/
 
 ```
 cmd/server ──► server ──► game ──► core ──► core/word_providers
-                 │          ├────► ai ◄──── ai/providers
+                 │          ├────► ai ──► ai/prompts
+                 │          │        ▲
+                 │          ├────► ai/providers
                  │          ├────► room
                  │          └────► ws
                  ├──► room
@@ -240,6 +243,19 @@ type LLMProvider interface {
 
 `AIPlayer` 在它之上提供两个动作：`GenerateSingleClue`（为一个关键词给一条线索）与 `GuessSingleNumber`（为一条线索猜一个编号）。模型输出会被校验：线索不能为空或超过 80 个字符，数字必须在 1–4 之间且不与本回合已猜的重复。不合格按失败处理，进入上面的重试与备用流程。
 
+### 提示词（`internal/ai/prompts`）
+
+每次请求要问模型什么，都放在 `internal/ai/prompts` 下的 markdown 文件里，一个动作一个文件，由 `//go:embed *.md` 打进二进制——改提示词只改文件，不用重读磁盘，服务器也不必多带一份数据。
+
+| 文件 | 用途 | 可用数据 |
+| --- | --- | --- |
+| `system.md` | 每次请求的开场，只有规则，没有数据 | 无 |
+| `clue.md` | 加密者为一个密码给一条线索 | 四个密语词、密码编号、对应的密语词、本轮已给的线索、公开记录 |
+| `guess_intercept.md` | 拦截者猜一条线索的编号 | 线索、本轮已猜的编号、公开记录 |
+| `guess_decrypt.md` | 解密者猜一条线索的编号 | 线索、四个密语词、本轮已猜的编号、公开记录 |
+
+文件是 `text/template`，按字段取值（`{{.Clue}}`、`{{.Digit}}`），另有两个函数：`list` 把密语词排成玩家习惯的「1: 长城」逐行编号，`join` 用分隔符连列表（`{{.Previous | join ", "}}`）。本轮已给线索、已猜编号这些条件段落写成 `{{if .Previous}}`，没有内容时整段不出现。写成没人赋值的字段会在渲染时报错，填空的占位符因此发不出去。拦截者的模板不列出密语词，那是它唯一能泄露对手密词的地方。
+
 对局创建时，若名单里有 AI，按以下顺序选择提供方：
 
 | 条件 | 提供方 | 相关环境变量 |
@@ -315,5 +331,6 @@ DECRYPTO_WORDS_PATH="$PWD/words.txt" go test ./...
 | `internal/server` | 大厅与对局经历重启、座位与房间的保留期限、读不出的状态不阻止启动、存储不可用时游戏照常 |
 | `internal/store/sqlite` | 重新打开后房间仍在、关闭的房间释放房间码并保留记录、不可用的路径被拒绝 |
 | `internal/ai`、`internal/ai/providers` | 拒绝空线索与无效猜测；请求参数、未完成的回答与请求时限 |
+| `internal/ai/prompts` | 每条提示词都能渲染、没有漏填的占位符；条件段落只在有内容时出现；拦截者的提示词不含密语词 |
 
 `internal/game` 与 `internal/server` 的测试使用缩短的 `Timings`，走的是真实的截止时间。
