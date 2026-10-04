@@ -14,8 +14,10 @@ import (
 )
 
 // llmTimeout bounds one request for four words. It is long enough for a
-// reasoning model, short enough that a game is never held up by one.
-const llmTimeout = 20 * time.Second
+// reasoning model to think and write, short enough that a game is never held
+// up by one; a model that sends nothing at all is given up on sooner by the
+// provider's own idle timeout.
+const llmTimeout = 40 * time.Second
 
 // handSize is how many words a team is dealt.
 const handSize = 4

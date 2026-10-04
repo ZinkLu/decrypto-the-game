@@ -14,11 +14,13 @@ import (
 
 // Timings are assigned before Start. Tests can exercise real deadlines without waiting minutes.
 // Grace keeps accepting a submission sent just before the deadline while it crosses the network;
-// players are always shown the deadline itself.
+// players are always shown the deadline itself. Request bounds one model call in total; it sits
+// just under the AI action budget. A model that sends nothing is given up on far sooner by the
+// provider's own idle timeout, and one that keeps streaming is left alone until it answers.
 type Timings struct{ Encrypt, Guess, AI, Request, BetweenRounds, Grace time.Duration }
 
 var DefaultTimings = Timings{Encrypt: 90 * time.Second, Guess: 60 * time.Second, AI: 120 * time.Second,
-	Request: 30 * time.Second, BetweenRounds: 8 * time.Second, Grace: 1500 * time.Millisecond}
+	Request: 110 * time.Second, BetweenRounds: 8 * time.Second, Grace: 1500 * time.Millisecond}
 
 // action is one team's task in the current phase: the clues while encrypting;
 // the decoding and, from round 3, the interception while guessing. Each has its

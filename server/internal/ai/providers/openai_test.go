@@ -53,6 +53,100 @@ func TestTransportHonorsDeadline(t *testing.T) {
 	}
 }
 
+func sseResponse(t *testing.T, events ...string) *http.Response {
+	t.Helper()
+	header := make(http.Header)
+	header.Set("Content-Type", "text/event-stream")
+	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(strings.Join(events, "\n") + "\n")), Header: header}
+}
+
+func TestStreamAssemblesTheAnswer(t *testing.T) {
+	p := NewOpenAIProvider("test-only", "http://model.invalid/v1", "test")
+	var sent map[string]any
+	p.Client = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+		body, _ := io.ReadAll(r.Body)
+		if err := json.Unmarshal(body, &sent); err != nil {
+			t.Fatal(err)
+		}
+		return sseResponse(t,
+			": keep-alive",
+			`data: {"choices":[{"delta":{"role":"assistant","reasoning_content":"the clue fits "}}]}`,
+			`data: {"choices":[{"delta":{"reasoning_content":"word three"}}]}`,
+			``,
+			`data: {"choices":[{"delta":{"content":"3"}}]}`,
+			`data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":7,"completion_tokens":3}}`,
+			`data: [DONE]`,
+		), nil
+	})}
+	answer, err := p.Complete(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer != "3" {
+		t.Fatalf("answer=%q", answer)
+	}
+	if sent["stream"] != true || sent["stream_options"] == nil {
+		t.Fatalf("request is not streaming: %v", sent)
+	}
+}
+
+func TestStreamRefusesBadAnswers(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		events []string
+	}{
+		{"cut off by max_tokens", []string{`data: {"choices":[{"delta":{"content":"3"},"finish_reason":"length"}]}`, `data: [DONE]`}},
+		{"reasoning only", []string{`data: {"choices":[{"delta":{"reasoning_content":"thinking"},"finish_reason":"stop"}]}`, `data: [DONE]`}},
+		{"truncated stream", []string{`data: {"choices":[{"delta":{"content":"3"}}]}`}},
+		{"error mid-stream", []string{`data: {"error":{"message":"overloaded"}}`}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := NewOpenAIProvider("k", "http://model.invalid/v1", "test")
+			p.Client = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+				return sseResponse(t, tc.events...), nil
+			})}
+			if answer, err := p.Complete(context.Background(), nil); err == nil {
+				t.Fatalf("accepted %q", answer)
+			}
+		})
+	}
+}
+
+// silentReader sends nothing until the request is given up on.
+type silentReader struct{ ctx context.Context }
+
+func (s silentReader) Read([]byte) (int, error) { <-s.ctx.Done(); return 0, s.ctx.Err() }
+
+func TestStreamGivesUpOnASilentModel(t *testing.T) {
+	p := NewOpenAIProvider("k", "http://model.invalid/v1", "test")
+	p.IdleTimeout = 20 * time.Millisecond
+	p.Client = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+		header := make(http.Header)
+		header.Set("Content-Type", "text/event-stream")
+		first := strings.NewReader(`data: {"choices":[{"delta":{"content":"3"}}]}` + "\n")
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(io.MultiReader(first, silentReader{r.Context()})), Header: header}, nil
+	})}
+	start := time.Now()
+	_, err := p.Complete(context.Background(), nil)
+	if err == nil || !strings.Contains(err.Error(), "no data") {
+		t.Fatalf("stall error missing: %v", err)
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatal("idle timeout did not bound the stream")
+	}
+}
+
+func TestIdleTimeoutIsConfigurable(t *testing.T) {
+	t.Setenv("OPENAI_IDLE_TIMEOUT", "")
+	if got := NewOpenAIProvider("k", "", "").IdleTimeout; got != defaultIdleTimeout {
+		t.Fatalf("default IdleTimeout=%s", got)
+	}
+	t.Setenv("OPENAI_IDLE_TIMEOUT", "5")
+	if got := NewOpenAIProvider("k", "", "").IdleTimeout; got != 5*time.Second {
+		t.Fatalf("IdleTimeout=%s", got)
+	}
+}
+
 func TestReasoningSettingsReachTheRequest(t *testing.T) {
 	t.Setenv("OPENAI_REASONING_EFFORT", "low")
 	t.Setenv("OPENAI_MAX_TOKENS", "1024")

@@ -68,15 +68,17 @@ export ANTHROPIC_API_KEY=sk-ant-...
 | `OPENAI_MAX_TOKENS` | `2048` | 单次回答（含思考）的上限 |
 | `OPENAI_REASONING_EFFORT` | 无 | 推理模型的思考强度：`low`、`medium`、`high` |
 | `OPENAI_EXTRA_BODY` | 无 | 并入每次请求的 JSON 对象，例如 `{"chat_template_kwargs":{"enable_thinking":false}}` |
+| `OPENAI_IDLE_TIMEOUT` | `35` | 模型连续多少秒没发来任何数据（响应头或下一个 token）就放弃本次请求 |
 | `ANTHROPIC_BASE_URL` | Anthropic 官方地址 | 替换 Claude 的完整请求地址 |
+| `ANTHROPIC_IDLE_TIMEOUT` | `35` | Claude 连续多少秒没发来任何数据（响应头或下一个 token）就放弃本次请求 |
 | `DECRYPTO_AI_DEBUG` | 无 | 设为 `1` 时，服务端日志打印模型每次的思考过程（`reasoning_content` 或 `reasoning`，Claude 为 thinking）和原始回答，以 `[AI-DEBUG]` 开头。`0`、`false` 或不设置为关闭 |
 | `DECRYPTO_AI_ATTEMPTS` | `2` | AI 每给出一步回答（一条线索或一个数字）最多请求模型几次，含首次。小于 1 或不是数字时按默认值 |
 
-AI 的每一次请求限时 30 秒。推理模型想得太久会超时，可以用 `OPENAI_REASONING_EFFORT` 和 `OPENAI_MAX_TOKENS` 缩短。模型用完 `DECRYPTO_AI_ATTEMPTS` 次都没有给出可用的回答时，AI 交出备用答案（线索为「线索暂缺」），对局继续。接口不稳定时可以调大该值，但要留意整步的作答时间没有变长——超时的部分由每一步自己的 30 秒和整段的作答时间共同限制。
+AI 的回答按流式请求，服务端把 token 逐个拼接起来：模型只要还在发数据，请求就不会因为生成得慢而被掐断；连续 `OPENAI_IDLE_TIMEOUT`（Claude 为 `ANTHROPIC_IDLE_TIMEOUT`）秒没发来任何数据才算本次尝试失败。单次请求的总时长另有一个上限（`game.DefaultTimings.Request`，默认 110 秒），整段 AI 作答行为限时 120 秒。想缩短推理模型的思考，可以用 `OPENAI_REASONING_EFFORT` 和 `OPENAI_MAX_TOKENS`。模型用完 `DECRYPTO_AI_ATTEMPTS` 次都没有给出可用的回答时，AI 交出备用答案（线索为「线索暂缺」），对局继续；接口不稳定时可以调大该值，但要留意整段作答时间没有变长。
 
 没有设置任何密钥时，AI 席位仍然可以添加，每一步都直接使用备用答案。这适合调试，不适合真的玩。
 
-同一个模型也可以用来发密语词：`DECRYPTO_WORDS_PROVIDER=llm` 时，每支队伍的四个词由它现写（一次请求限时 20 秒），答不上来、超时或写的不是四个互不相同的中英双语词时，这手牌改由内置词库发。开局的点击会等这一次请求完成。
+同一个模型也可以用来发密语词：`DECRYPTO_WORDS_PROVIDER=llm` 时，每支队伍的四个词由它现写（一次请求限时 40 秒），答不上来、超时或写的不是四个互不相同的中英双语词时，这手牌改由内置词库发。开局的点击会等这一次请求完成。
 
 ## 语音
 

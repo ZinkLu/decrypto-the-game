@@ -136,7 +136,7 @@ socket 一侧从不读取 `core` 的状态。`Bridge` 为每位玩家维护一�
 | `Encrypt` | 90 秒 | 真人加密 |
 | `Guess` | 60 秒 | 真人拦截或解码，两队各自计时 |
 | `AI` | 120 秒 | 由 AI 完成的整项行动 |
-| `Request` | 30 秒 | AI 的单次模型请求 |
+| `Request` | 110 秒 | AI 的单次模型请求的总时长上限 |
 | `BetweenRounds` | 8 秒 | 回合结束到下一回合开始 |
 | `Grace` | 1.5 秒 | 截止后仍接受在途提交的宽限 |
 
@@ -266,11 +266,11 @@ type LLMProvider interface {
 
 | 条件 | 提供方 | 相关环境变量 |
 | --- | --- | --- |
-| 设置了 `OPENAI_API_KEY` | OpenAI 兼容接口（`/chat/completions`） | `OPENAI_BASE_URL`（默认 `https://api.openai.com/v1`）、`OPENAI_MODEL`（默认 `gpt-4o`）、`OPENAI_MAX_TOKENS`（默认 2048）、`OPENAI_REASONING_EFFORT`、`OPENAI_EXTRA_BODY`（并入每次请求的 JSON 对象） |
-| 否则设置了 `ANTHROPIC_API_KEY` | Claude（Messages API） | `ANTHROPIC_BASE_URL`（替换完整的请求地址） |
+| 设置了 `OPENAI_API_KEY` | OpenAI 兼容接口（`/chat/completions`） | `OPENAI_BASE_URL`（默认 `https://api.openai.com/v1`）、`OPENAI_MODEL`（默认 `gpt-4o`）、`OPENAI_MAX_TOKENS`（默认 2048）、`OPENAI_REASONING_EFFORT`、`OPENAI_EXTRA_BODY`（并入每次请求的 JSON 对象）、`OPENAI_IDLE_TIMEOUT`（默认 35 秒） |
+| 否则设置了 `ANTHROPIC_API_KEY` | Claude（Messages API） | `ANTHROPIC_BASE_URL`（替换完整的请求地址）、`ANTHROPIC_IDLE_TIMEOUT`（默认 35 秒） |
 | 都没有 | 无 | AI 玩家每一步都直接使用备用答案，密语词由内置词库发 |
 
-两个 Key 都设置时使用 OpenAI 兼容接口。OpenAI 兼容接口返回空内容或 `finish_reason` 为 `length` 时视为失败。
+两个 Key 都设置时使用 OpenAI 兼容接口。两种接口都按流式请求（`stream: true`，OpenAI 兼容接口另附 `stream_options.include_usage`），服务端把 token 逐个拼成回答，思考内容（OpenAI 兼容接口的 `reasoning_content` 或 `reasoning`，Claude 的 thinking 块）同样拼接后供调试日志使用：模型只要还在发数据，请求就不会因为生成得慢而被掐断；连续 `OPENAI_IDLE_TIMEOUT` / `ANTHROPIC_IDLE_TIMEOUT`（默认均为 35 秒）没有收到任何数据才算本次尝试失败，单次请求的总时长另受 `Request` 时限限制。忽略 `stream` 参数、按普通 JSON 应答的服务端也能被读取。流在结束标记（OpenAI 兼容接口的 `[DONE]` 或 `finish_reason`，Claude 的 `message_stop` 或 `stop_reason`）之前中断时视为失败；回答为空、或被 token 上限截断（`finish_reason` 为 `length`、`stop_reason` 为 `max_tokens`）时同样视为失败。
 
 AI 每给出一步回答（一条线索或一个数字）都向模型请求一次，失败或超时再来一次，共 `DECRYPTO_AI_ATTEMPTS` 次（默认 2）。重试期间页面上的该步显示为「重试中」，用完仍失败则交出备用答案（线索为「线索暂缺」，猜测取一个尚未用过的合法编号），并向所有人提示。两次尝试各受单次请求时限限制，整段 AI 作答另受该阶段自己的时限限制，超时后不再重试。
 

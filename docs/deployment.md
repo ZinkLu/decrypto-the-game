@@ -24,7 +24,7 @@ curl -fsS http://127.0.0.1:8080/healthz
 OPENAI_API_KEY=your-key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=your-model
-# 可按模型能力设置 OPENAI_REASONING_EFFORT、OPENAI_MAX_TOKENS、OPENAI_EXTRA_BODY
+# 可按模型能力设置 OPENAI_REASONING_EFFORT、OPENAI_MAX_TOKENS、OPENAI_EXTRA_BODY、OPENAI_IDLE_TIMEOUT
 ```
 
 也可以使用 `ANTHROPIC_API_KEY`；全部变量见[构建与运行](getting-started.md#ai-队员)。未设置 Key 时，AI 席位只会给出备用答案；如要在公开试玩中展示 AI，请用部署环境的模型完成一次真实对局。
