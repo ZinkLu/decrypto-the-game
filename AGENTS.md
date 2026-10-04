@@ -77,7 +77,7 @@ RegisterEncryptHandler(func(ctx context.Context, r *Round, t *Team, p *Player, t
 
 - `docs/gameplay.md`, `docs/getting-started.md`, `docs/deployment.md`
 - `docs/architecture.md`, `docs/protocol.md`
-- `docs/console/` — design overview, code organisation, displays, mechanics, rear linkage, audio, themes, quality, preview URLs
+- `docs/console/` — design overview, code organisation, displays, mechanics, rear linkage, audio, themes, quality, preview URLs, tutorial illustrations
 - `assets/console/README.md`, `assets/audio/README.md` — how the model and the audio are made
 
 When behaviour changes, update the document that describes it.

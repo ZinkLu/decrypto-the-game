@@ -24,7 +24,7 @@ web/
   src/
     main.tsx              挂载 React
     App.tsx               懒加载 Console，加载期间显示启动画面
-    index.css             全部样式
+    index.css             全局样式；console/ 的组件另有自己的 CSS，随组件一起列出
     console/              这台机器（见下表）
       parts/              引擎的部件，每个会动的组件一个模块
     store/gameStore.ts    对局状态与发往服务器的动作（Zustand）
@@ -56,11 +56,18 @@ web/
 | `ArchiveSheet.tsx` | 纸带拉出后的阅读器（`<dialog>`）：并列放置记录板与逐回合打印的纸条，处理打开和收起 |
 | `FieldNotebook.tsx` | 按词号归纳双方公开线索的记录板；翻页、密词推测、文字和手写笔迹，编辑内容保存在页面内存中 |
 | `ArchiveViews.tsx` | 「记录板」「纸条」显示切换，至少保留一件可见，并驱动居中与淡入淡出 |
+| `archive-view-motion.ts` | 上面这个切换的过渡动画（FLIP），尊重减弱动效偏好 |
+| `NotebookTools.tsx` | 记录板的工具条：拿起／放回铅笔和橡皮、撤销 |
+| `NotebookWriting.tsx` | 记录板上的手写便条：放置、拖动、随纸张缩放 |
+| `EncryptorIntro.tsx` | 密钥软盘发放时的加密者播报，桌面端落在软盘槽上，窄屏回到自己的驱动器 |
+| `ShortcutHelp.tsx` | 页面导航里的快捷键说明面板（`?` 打开），由 `Settings.tsx` 挂出 |
 | `GuideContent.tsx` | 玩法说明和原版桌游介绍的 DOM 版本，供窄屏和读屏软件使用 |
 | `hooks.ts` | 从 `Console.tsx` 分出来的几组 effect：扬声器和音乐的生命周期、软盘状态机的定时器、减弱动效、字体和插图的载入 |
 | `useDiskPull.ts` | 拖拽软盘的指针手势，桌面和窄屏共用 |
 | `options.ts` | 地址栏对这次访问的要求：路由、预览夹具和各个开发参数；`portable()` 判断是否窄屏 |
 | `Workbench.tsx` | 开发试装台：翻旗、名牌、仪表、词窗的试装界面和它们改动过的夹具状态。生产构建里到不了 |
+
+这些组件各有一份自己的 CSS（`notebook.css`、`page-turn.css`、`shortcuts.css` 等），由组件自行引入；`index.css` 只放全局样式。
 
 ### 状态与规则
 
@@ -76,6 +83,10 @@ web/
 | `quality.ts` | 画质档位、每档的开关、自动档的降档规则、闲置时的帧率。见[画质与性能](quality.md) |
 | `partialFrame.ts` | 氛围帧画整帧还是局部帧的判定，以及动态区域矩形的外扩、裁剪与合并。见[画质与性能](quality.md) |
 | `mechanics.ts` | 纸带和软盘的尺寸、时长和姿态函数 |
+| `shortcuts.ts` | 键盘意图的识别：哪些按键在什么焦点下算机器操作，哪些留给浏览器和输入法 |
+| `scoreFeedback.ts` | 计分事件的判定（`scoreTone`）和背景脉冲的时序（`ScorePulse`），供引擎与主屏共用 |
+| `notebook-writing.ts` | 手写便条的落点、拖动和越界收回的几何规则 |
+| `notebook-ink.ts` | 手写笔迹的采样：合并浏览器的事件、保留短尾和点 |
 | `notebook.ts` | 玩家笔记的存储键和解析。目前只有测试引用，界面没有使用 |
 
 ### 绘制
@@ -111,6 +122,7 @@ web/
 | `rosterMotion.ts` | 名牌和队牌的插入、抽出时序 |
 | `scoreFlagMotion.ts` | 计分翻牌的释放、翻转和回弹 |
 | `tearing.ts` | 纸带的送纸、撕纸物理模拟和补纸（`ReceiptTransport`、`TornSheet`） |
+| `page-turn.ts` | 记录板翻页的纸页弹簧和弯曲（`stepNotebookHinge`、`notebookPaperBend`），以及把它们接到 DOM 上的 `attachNotebookTurn` |
 
 ### 声音
 
@@ -367,6 +379,16 @@ cd web && pnpm test
 | `roster-motion.test.mjs` | 名牌的插入、替换和抽出 |
 | `score-flags.test.mjs` | 计分翻牌的翻转、断电保持，导出模型的翻牌零件 |
 | `notebook.test.mjs` | 笔记解析；纸带的送纸、撕纸和补纸；导出模型里的纸带、背面、名牌和辉光管结构 |
+| `page-turn.test.mjs` | 记录板翻页的落定、纸页不拉伸、反转时保留动量、与帧率无关 |
+| `notebook-ink.test.mjs` | 手写笔迹的采样：短笔画、合并事件的快笔、撤销的分界 |
+| `notebook-writing.test.mjs` | 便条始终留在纸面上：落点、拖动、文字变长和纸张缩放 |
+| `voice.test.mjs` | 分组讨论的规则、声音送到哪个频道、全桌和加密者何时静音、对讲控件的挡位和两种语言的说明 |
+| `voice-keyboard.test.mjs` | 反引号和 V 的快捷键在焦点或状态变化后安全地切换频道、松开按住的麦克风 |
+| `shortcuts.test.mjs` | 键盘意图的识别：数字键、Enter、输入法合成、浏览器组合键不成为机器操作、提示与无障碍属性一致 |
+| `teammate-choices.test.mjs` | 队友同时猜测时各自的部分选择和 AI 建议，按行动、队伍、回合和稳定 ID 归属 |
+| `result-flow.test.mjs` | 一个回合的结果对两队各意味着什么，回执的文案和两种语言的覆盖 |
+| `score-feedback.test.mjs` | 计分脉冲只对新事件触发，队伍的视角，断电、减弱动效和脱机时安静地消费事件 |
+| `partial-frame.test.mjs` | 氛围帧的判定，动态区域矩形的外扩、裁剪与合并 |
 | `sound.test.mjs` | 音效的解锁、静音、节流和页面隐藏 |
 | `music.test.mjs` | 音乐的场景切换、结局、淡入淡出和偏好 |
 
