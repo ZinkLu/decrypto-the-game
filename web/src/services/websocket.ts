@@ -1,4 +1,4 @@
-type MessageHandler = (type: string, data: unknown) => void;
+type MessageHandler = (type: string, data: unknown, serverTime?: number) => void;
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
@@ -6,6 +6,7 @@ export class WebSocketService {
   private handler: MessageHandler;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
+  private intentionalDisconnect = false;
 
   constructor(url: string, handler: MessageHandler) {
     this.url = url;
@@ -13,28 +14,42 @@ export class WebSocketService {
   }
 
   connect() {
-    this.ws = new WebSocket(this.url);
+    this.intentionalDisconnect = false;
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) return;
+    const socket = new WebSocket(this.url);
+    this.ws = socket;
 
-    this.ws.onopen = () => {
+    socket.onopen = () => {
+      if (this.ws !== socket) return;
       this.reconnectDelay = 1000;
-      this.handler('_connected', {});
+      this.handler("_connected", {});
     };
 
-    this.ws.onclose = () => {
-      this.handler('_disconnected', {});
-      this.scheduleReconnect();
+    socket.onclose = () => {
+      if (this.ws !== socket) return;
+      this.ws = null;
+      if (!this.intentionalDisconnect) this.handler("_disconnected", {});
+      // Only auto-reconnect if the close was NOT intentional
+      if (!this.intentionalDisconnect) {
+        this.scheduleReconnect();
+      }
     };
 
-    this.ws.onerror = () => {
-      this.ws?.close();
+    socket.onerror = () => {
+      socket.close();
     };
 
-    this.ws.onmessage = (event: MessageEvent) => {
+    socket.onmessage = (event: MessageEvent) => {
+      if (this.ws !== socket) return;
       try {
-        const msg = JSON.parse(event.data as string) as { type: string; data: unknown };
-        this.handler(msg.type, msg.data);
+        const msg = JSON.parse(event.data as string) as {
+          type: string;
+          data: unknown;
+          server_time?: number;
+        };
+        this.handler(msg.type, msg.data, msg.server_time);
       } catch (e) {
-        console.error('Failed to parse WebSocket message:', e);
+        console.error("Failed to parse WebSocket message:", e);
       }
     };
   }
@@ -48,6 +63,7 @@ export class WebSocketService {
   }
 
   disconnect() {
+    this.intentionalDisconnect = true;
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -57,7 +73,9 @@ export class WebSocketService {
   }
 
   private scheduleReconnect() {
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, 10000);
       this.connect();
     }, this.reconnectDelay);

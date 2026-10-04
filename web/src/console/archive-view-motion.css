@@ -1,0 +1,5 @@
+/* A fading paper can retain its old position while the surviving paper centers.
+   The editable nodes stay mounted; view motion never owns their CSS transform. */
+.archive-study .archive-paper-track { position: relative; }
+.archive-study[data-open="true"][data-view-interacted="true"] .field-notebook,
+.archive-study[data-open="true"][data-view-interacted="true"] .archive-sheet { animation-name: none; }

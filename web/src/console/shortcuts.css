@@ -1,0 +1,30 @@
+.station-shortcuts { color: #59604f; font-size: 12px; }
+.station-shortcuts > summary { display: flex; align-items: center; gap: 7px; min-height: 36px; cursor: pointer; list-style: none; }
+.station-shortcuts > summary::-webkit-details-marker { display: none; }
+.station-shortcuts > summary:focus-visible { outline: 2px solid #903c2e; outline-offset: 3px; }
+.station-shortcuts[open] > summary { color: #283e35; }
+.station-shortcuts kbd { display: inline-block; min-width: 20px; padding: 1px 5px; border: 1px solid #aca58f; border-bottom-width: 2px; border-radius: 3px; background: #f0eadb; color: #3d463a; font-family: inherit; font-size: 11px; font-weight: 500; line-height: 1.5; text-align: center; white-space: nowrap; }
+.station-shortcuts-panel { position: absolute; top: 44px; left: 0; z-index: 1; width: 440px; max-width: calc(100vw - 44px); max-height: calc(100dvh - 76px); padding: 12px 18px 16px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid #afa994; background: #e5decb; color: #394537; }
+.station-shortcuts-panel header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 8px; }
+.station-shortcuts-panel h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.station-shortcuts-panel header button { margin-right: -8px; font-size: 12px; font-weight: 400; }
+.station-shortcuts-panel section + section { margin-top: 12px; }
+.station-shortcuts-panel h3 { margin: 0 0 4px; padding-top: 10px; border-top: 1px solid #bcb5a0; color: #666b5a; font-size: 11px; font-weight: 500; }
+.station-shortcuts-panel dl { margin: 0; }
+.station-shortcut-row { display: grid; grid-template-columns: 145px minmax(0, 1fr); align-items: start; gap: 12px; padding: 5px 0; line-height: 1.6; }
+.station-shortcut-row dt { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding-top: 1px; }
+.station-shortcut-row dd { margin: 0; overflow-wrap: anywhere; }
+.station-shortcut-row small { display: block; margin-top: 2px; color: #626853; font-size: 11px; line-height: 1.6; }
+.station-shortcuts-note { margin: 14px 0 0; padding-top: 10px; border-top: 1px solid #bcb5a0; color: #626853; font-size: 11px; line-height: 1.7; }
+@media (max-width: 600px) {
+  .station-navigation { gap: 16px; }
+  .station-shortcuts > summary { min-height: 44px; }
+  .station-shortcuts-panel header button { min-height: 44px; }
+  .station-shortcuts-panel { padding-inline: 14px; }
+  .station-shortcut-row { grid-template-columns: 125px minmax(0, 1fr); gap: 10px; }
+}
+@media (max-width: 380px) {
+  .station-navigation { gap: 12px; }
+  .station-shortcuts-panel { padding-inline: 12px; }
+  .station-shortcut-row { grid-template-columns: minmax(0, 1fr); gap: 3px; padding-block: 7px; }
+}

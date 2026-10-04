@@ -1,0 +1,15 @@
+.git
+.env
+.env.*
+.DS_Store
+bin/
+server/server
+server/data/
+data/
+assets/
+docs/
+web/node_modules/
+web/dist/
+web/.vite/
+*.blend
+*.blend1

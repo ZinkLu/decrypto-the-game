@@ -1,0 +1,138 @@
+# 构建与运行
+
+仓库里有三个各自独立的部分：`server/` 是 Go 服务端，`web/` 是页面（Vite 项目），`assets/` 是模型与声音的源文件。根目录只放文档、`Makefile` 和 `Dockerfile`。构建好的页面由 Go 程序一并提供，所以运行时只有一个进程、一个端口。
+
+## 需要什么
+
+| 工具 | 版本 |
+| --- | --- |
+| Go | 1.25 或更新 |
+| Node.js | 20.19 以上，或 22.12 以上 |
+| pnpm | 前端唯一使用的包管理器 |
+| make | 根目录的构建入口 |
+
+## 构建并运行
+
+在仓库根目录：
+
+```bash
+make run
+```
+
+它依次构建页面（输出到 `web/dist`）和服务端（输出到 `bin/server`），然后在根目录运行服务端。也可以分开做：`make build-web`、`make build-server`。
+
+打开 <http://localhost:8080>。
+
+服务端从**工作目录**读取下面这些，所以要在仓库根目录运行它：
+
+| 路径 | 内容 |
+| --- | --- |
+| `web/dist/` | 构建好的页面 |
+| `data/decrypto.db` | 房间与对局，首次运行时创建 |
+
+密语词不在这张表里：词库已经编译进二进制，除了可执行文件什么都不需要。想换一份自己的词库，用 `DECRYPTO_WORDS_PATH` 指向它，每行一个词，写作 `词[word]`，至少四个；想每一局都由模型现写四个词，用 `DECRYPTO_WORDS_PROVIDER=llm`。
+
+仓库地址、Go 模块路径（`github.com/ZinkLu/decrypto-the-game/server`）、数据库文件名和浏览器存储的键名沿用历史名称 `decrypto`；对外的名字是 Encrypto。
+
+## 环境变量
+
+| 变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `PORT` | `8080` | 监听端口 |
+| `DECRYPTO_DB_PATH` | `data/decrypto.db` | 数据库文件。打不开时服务拒绝启动 |
+| `DECRYPTO_WORDS_PROVIDER` | `local` | 每支队伍四个密语词的来源：`local` 用内置词库，`llm` 让模型现写。写成别的名字服务拒绝启动 |
+| `DECRYPTO_WORDS_PATH` | 无 | 自己的词库文件，覆盖内置词库 |
+| `DECRYPTO_WEB_DIR` | `web/dist` | 构建好的页面所在目录 |
+| `DECRYPTO_ALLOWED_ORIGINS` | 无 | 额外允许的页面来源，逗号分隔。只在反向代理改写了 `Host` 时需要，见[部署](deployment.md) |
+
+## AI 队员
+
+AI 队员由语言模型驱动。服务端从环境变量读取密钥，两种接口任选其一：
+
+```bash
+# OpenAI 兼容接口：OpenAI、DeepSeek、Ollama 等
+export OPENAI_API_KEY=sk-...
+export OPENAI_BASE_URL=https://api.openai.com/v1   # 可选
+export OPENAI_MODEL=gpt-4o                          # 可选
+
+# 或者 Claude
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+两个密钥都设置时使用 OpenAI 兼容接口。
+
+| 变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | 接口地址 |
+| `OPENAI_MODEL` | `gpt-4o` | 模型 |
+| `OPENAI_MAX_TOKENS` | `2048` | 单次回答（含思考）的上限 |
+| `OPENAI_REASONING_EFFORT` | 无 | 推理模型的思考强度：`low`、`medium`、`high` |
+| `OPENAI_EXTRA_BODY` | 无 | 并入每次请求的 JSON 对象，例如 `{"chat_template_kwargs":{"enable_thinking":false}}` |
+| `OPENAI_IDLE_TIMEOUT` | `35` | 模型连续多少秒没发来任何数据（响应头或下一个 token）就放弃本次请求 |
+| `ANTHROPIC_BASE_URL` | Anthropic 官方地址 | 替换 Claude 的完整请求地址 |
+| `ANTHROPIC_IDLE_TIMEOUT` | `35` | Claude 连续多少秒没发来任何数据（响应头或下一个 token）就放弃本次请求 |
+| `DECRYPTO_AI_DEBUG` | 无 | 设为 `1` 时，服务端日志打印模型每次的思考过程（`reasoning_content` 或 `reasoning`，Claude 为 thinking）和原始回答，以 `[AI-DEBUG]` 开头。`0`、`false` 或不设置为关闭 |
+| `DECRYPTO_AI_ATTEMPTS` | `2` | AI 每给出一步回答（一条线索或一个数字）最多请求模型几次，含首次。小于 1 或不是数字时按默认值 |
+
+AI 的回答按流式请求，服务端把 token 逐个拼接起来：模型只要还在发数据，请求就不会因为生成得慢而被掐断；连续 `OPENAI_IDLE_TIMEOUT`（Claude 为 `ANTHROPIC_IDLE_TIMEOUT`）秒没发来任何数据才算本次尝试失败。单次请求的总时长另有一个上限（`game.DefaultTimings.Request`，默认 110 秒），整段 AI 作答行为限时 120 秒。想缩短推理模型的思考，可以用 `OPENAI_REASONING_EFFORT` 和 `OPENAI_MAX_TOKENS`。模型用完 `DECRYPTO_AI_ATTEMPTS` 次都没有给出可用的回答时，AI 交出备用答案（线索为「线索暂缺」），对局继续；接口不稳定时可以调大该值，但要留意整段作答时间没有变长。
+
+没有设置任何密钥时，AI 席位仍然可以添加，每一步都直接使用备用答案。这适合调试，不适合真的玩。
+
+同一个模型也可以用来发密语词：`DECRYPTO_WORDS_PROVIDER=llm` 时，每支队伍的四个词由它现写（一次请求限时 40 秒），答不上来、超时或写的不是四个互不相同的中英双语词时，这手牌改由内置词库发。开局的点击会等这一次请求完成。
+
+## 语音
+
+房间里的语音经过 [Cloudflare Realtime](https://developers.cloudflare.com/realtime/) 的 SFU 传递，服务端只转发信令。在 Cloudflare 控制台的 Realtime 里新建一个 SFU 应用，把它的 App ID 和 App Secret 交给服务端：
+
+```bash
+export CLOUDFLARE_REALTIME_APP_ID=...
+export CLOUDFLARE_REALTIME_APP_SECRET=...
+# 可选：TURN，帮助防火墙后面的玩家连上
+export CLOUDFLARE_TURN_KEY_ID=...
+export CLOUDFLARE_TURN_KEY_TOKEN=...
+```
+
+| 变量 | 作用 |
+| --- | --- |
+| `CLOUDFLARE_REALTIME_APP_ID`、`CLOUDFLARE_REALTIME_APP_SECRET` | 两个都设置时开启语音；否则页面上没有语音控件 |
+| `CLOUDFLARE_TURN_KEY_ID`、`CLOUDFLARE_TURN_KEY_TOKEN` | 两个都设置时，页面加入语音时拿到 24 小时有效的 TURN 凭据；否则只用 STUN |
+
+浏览器只在 HTTPS 页面或 `localhost` 上允许使用麦克风。用局域网地址打开开发服务器时，只能收听。
+
+想换成别的语音服务，见[后端架构](architecture.md#换一个服务)。
+
+## 开发
+
+两个终端：
+
+```bash
+make run                 # 后端，8080
+make dev-web             # 页面，3000，带热更新
+```
+
+开发服务器把 `/ws` 转发给 8080，打开 <http://localhost:3000> 即可联机调试。
+
+只改界面时不需要后端。开发服务器上可以用 URL 参数直接打开任意对局状态和局部特写，例如 <http://localhost:3000/?preview=intercept>，完整列表见[开发预览](console/preview.md)。
+
+## 测试
+
+```bash
+make test          # 两边都测；页面还会做类型检查和构建
+make test-server   # 只测后端
+make test-web      # 只测页面
+```
+
+不经过 make 时，后端测试在 `server/` 里运行，词库在二进制里，不需要额外准备：
+
+```bash
+cd server && go test ./...
+```
+
+页面的测试在 Node 里运行，不需要浏览器。各测试文件覆盖什么见[代码组织](console/code.md#测试)和[后端架构](architecture.md#测试)。
+
+## 接下来读什么
+
+- 想了解后端怎么组织：[后端架构](architecture.md)、[WebSocket 协议](protocol.md)
+- 想改界面：[Console 设计总览](console/README.md)、[代码组织](console/code.md)
+- 想改模型或声音：[建模流水线](../assets/console/README.md)、[音频制作](../assets/audio/README.md)
+- 想放到服务器上：[部署](deployment.md)

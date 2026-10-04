@@ -1,0 +1,478 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { moduleUrl } from './load.mjs';
+const modelUrl = await moduleUrl('model');
+const { initialLocal, previewState, keyDiskIdentity, scopeTimebase, scopeRatio, stepInstrumentValue, receiverSignal, word } = await import(modelUrl);
+const { messages, translate, readLocale, saveLocale } = await import(await moduleUrl('i18n'));
+const { paint } = await import(await moduleUrl('paint'));
+globalThis.document = { createElement: () => {
+  const ink = [], draws = [];
+  const canvas = { ink, draws, getContext: () => context };
+  const context = new Proxy({ canvas, fillText: (value, x, y) => { ink.push(value); draws.push({ value, x, y, color: context.fillStyle, size: parseFloat(context.font.match(/([\d.]+)px/)[1]) }); },
+    fillRect: (x, y, w, h) => { if (canvas.background === undefined && x === 0 && y === 0 && w === canvas.width && h === canvas.height) canvas.background = context.fillStyle; },
+    measureText: value => ({ width: [...value].reduce((sum, ch) => sum + (/[^\u0000-\u00ff]/.test(ch) ? 1 : .52), 0) * parseFloat(context.font.match(/([\d.]+)px/)?.[1] || '20') }),
+    createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }),
+  }, { get: (target, key) => key in target ? target[key] : () => {} });
+  return canvas;
+} };
+const ink = content => Object.values(content.frames).flatMap(f => f.canvas.ink);
+const phases = ['home', 'room-empty', 'room-partial', 'encrypting', 'waiting', 'intercept', 'decrypt', 'round_result', 'game_over', 'late-game'];
+function fixture(phase) {
+  const s = previewState({}, phase);
+  for (const player of s.players) player.nickname = `Operator ${player.id}`;
+  s.encryptor = 'Operator 0'; s.clues = ['Harbor', 'Time', 'Snow'];
+  s.myWords = ['灯塔[lighthouse]', '海岸[coast]', '玫瑰[rose]', '候鸟[migratory bird]'];
+  s.history = s.history.map(row => ({ ...row, clues: ['Harbor', 'Time', 'Snow'] }));
+  return s;
+}
+test('both locales cover every public game phase, roster, manual and printed display', () => {
+  for (const phase of phases) for (const extra of [{}, { manual: true }, { about: true }, { submitted: true }]) {
+    const s = fixture(phase), zh = paint(s, { ...initialLocal, ...extra }), en = paint(s, { ...initialLocal, ...extra, locale: 'en' });
+    assert.ok(ink(zh).some(value => /[\u3400-\u9fff]/.test(value)), `${phase}: Chinese is rendered`);
+    assert.deepEqual([...ink(en), ...en.targets.map(t => t.label)].filter(value => /[\u3400-\u9fff]/.test(value)), [], `${phase}: no untranslated UI`);
+    assert.deepEqual(en.scoreFlags, zh.scoreFlags); assert.deepEqual(en.seats, zh.seats); assert.equal(en.ready, zh.ready);
+  }
+});
+test('language switching preserves user text and fixed legends while localizing active displays', () => {
+  const s = fixture('encrypting'); s.teamA[0].nickname = '手册';
+  const u = { ...initialLocal, clues: ['等待线索…', 'Harbor', '玫瑰'], name: 'Agent' };
+  const zh = paint(s, u), en = paint(s, { ...u, locale: 'en' });
+  assert.ok(en.frames.rosterA0.canvas.ink.includes('手册'));
+  assert.ok(en.frames.screen.canvas.ink.includes('等待线索…'));
+  // Both scripts now use measured glyph coverage on the fine LED grid.
+  assert.ok(en.frames.word0.canvas.ink.includes('lighthouse'));
+  assert.ok(zh.frames.word0.canvas.ink.includes('灯塔'));
+  assert.ok(paint(s, { ...u, locale: 'en', wordDisplay: 'crt' }).frames.word0.canvas.ink.includes('lighthouse'));
+  for (const phase of phases) {
+    const output = paint(fixture(phase), { ...u, locale: 'en', powerOn: phase !== 'home' });
+    assert.deepEqual(output.frames.transmitLabel.canvas.ink, en.frames.transmitLabel.canvas.ink);
+    assert.deepEqual(output.frames.footer.canvas.ink, en.frames.footer.canvas.ink);
+  }
+  assert.ok(zh.frames.phase.canvas.ink.includes('加密'));
+  assert.ok(en.frames.phase.canvas.ink.includes('ENCODE'));
+  assert.ok(en.frames.footer.canvas.ink.includes('NETWORK'));
+  assert.ok(en.frames.transmitLabel.canvas.ink.includes('ACTION'));
+  assert.equal(word('未翻译'), '未翻译'); assert.equal(word('未翻译', 'en'), '未翻译');
+});
+test('translation parameters preserve braces and placeholders in player text', () => {
+  assert.equal(translate('en', '加密者 {0}', ['{1}']), 'Encryptor {1}');
+  for (const [zh, en] of Object.entries(messages)) {
+    const fields = value => [...value.matchAll(/\{\d+\}/g)].map(m => m[0]).sort();
+    assert.deepEqual(fields(zh), fields(en), zh);
+  }
+});
+test('language preferences survive reloads and blocked local storage', () => {
+  let saved; globalThis.localStorage = { getItem: () => saved, setItem: (_, value) => { saved = value; } };
+  saveLocale('en'); assert.equal(readLocale(), 'en'); saveLocale('zh'); assert.equal(readLocale(), 'zh');
+  globalThis.localStorage = { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } };
+  assert.doesNotThrow(() => saveLocale('en')); assert.ok(['zh', 'en'].includes(readLocale()));
+});
+test('analog controls retain fractional changes, physical end stops and finite signal values', () => {
+  for (let value = 0; value < 1; value += .001) {
+    assert.ok(scopeTimebase(value + .001) < scopeTimebase(value));
+    assert.ok(scopeRatio(value + .001) > scopeRatio(value));
+    assert.ok(Number.isFinite(receiverSignal(value * 40, value * 4)));
+  }
+  assert.equal(scopeTimebase(-1), scopeTimebase(0)); assert.equal(scopeTimebase(2), scopeTimebase(1));
+  assert.equal(stepInstrumentValue('signal', 'amplitude', 14, .123), 14.123);
+  assert.equal(stepInstrumentValue('signal', 'rate', 3.999, .123), 4);
+});
+
+test('real preview fixtures print the selected language on the receipt', () => {
+  for (const phase of phases) {
+    const s = previewState({}, phase, 'en');
+    const en = paint(s, { ...initialLocal, locale: 'en' });
+    assert.deepEqual(en.frames.paper.canvas.ink.filter(value => /[\u3400-\u9fff]/.test(value)), [], `${phase}: English paper`);
+    const zh = paint(previewState({}, phase, 'zh'), initialLocal);
+    assert.deepEqual(en.frames.score.canvas.ink, zh.frames.score.canvas.ink, 'scoreboard legends are fixed English');
+  }
+  const s = previewState({}, 'encrypting', 'en');
+  s.history[0].clues = ['自定义中文线索', 'second', 'third'];
+  assert.ok(paint(s, { ...initialLocal, locale: 'en' }).frames.paper.canvas.ink.some(value => value.includes('自定义中文线索')), 'actual player clues are not rewritten');
+});
+test('fine LED windows fit one-to-five-character words consistently and retain overflow in a strip', () => {
+  const s = previewState({}, 'encrypting');
+  const zh = paint(s, initialLocal), en = paint(s, { ...initialLocal, locale: 'en' });
+  assert.equal(zh.frames.word1.canvas.draws.find(draw => draw.value === '海岸').size, 20);
+  assert.equal(en.frames.word1.canvas.draws.find(draw => draw.value === 'coast').size, 20);
+  assert.deepEqual([zh.frames.word1.canvas.width, zh.frames.word1.canvas.height], [120, 70]);
+  assert.equal(en.frames.word3.canvas.width, 120);
+  s.myWords = ['莎士比亚[shakespeare]', '海岸[coast]', '玫瑰[rose]', '亚特兰蒂斯[atlantis]'];
+  assert.equal(paint(s, { ...initialLocal, locale: 'en' }).frames.word0.canvas.width, 120);
+  assert.equal(paint(s, initialLocal).frames.word3.canvas.draws.find(draw => draw.value === '亚特兰蒂斯').size, 20);
+  s.myWords[0] = 'supercalifragilisticexpialidocious';
+  const long = paint(s, initialLocal).frames.word0;
+  assert.ok(long.canvas.width > 120);
+  assert.ok(long.canvas.ink.includes(s.myWords[0]));
+  assert.deepEqual(zh.targets.find(target => target.surface === 'word1'), { ...zh.targets.find(target => target.surface === 'word1'), x: 0, y: 0, w: 120, h: 70 });
+});
+
+test('LED privacy travels with the frame while two die colours stay independent of player side', async () => {
+  const { themeChoices } = await import(modelUrl);
+  const s = previewState({}, 'encrypting');
+  for (const theme of themeChoices) for (const myTeam of ['A', 'B']) {
+    const out = paint({ ...s, myTeam }, { ...initialLocal, theme: theme.id });
+    assert.equal(out.wordInks.word, theme.led.word);
+    assert.equal(out.wordInks.legend, theme.led.legend);
+    assert.notEqual(out.wordInks.legend, theme.opponent.light);
+    assert.equal(out.wordInks.warning, theme.led.legend);
+    assert.equal(new Set(Object.values(out.wordInks)).size, 2, 'offline warnings reuse an existing die');
+    assert.equal(out.frames.word0.canvas.background, '#000', 'LEDs never receive the CRT background');
+    const hidden = paint({ ...s, myTeam }, { ...initialLocal, theme: theme.id, hiddenWords: true });
+    assert.notEqual(hidden.wordPrivacyKey, out.wordPrivacyKey);
+    assert.ok(!hidden.frames.word0.canvas.ink.includes('灯塔'));
+    assert.ok(hidden.frames.word0.canvas.ink.includes('已遮住'));
+    const otherTeam = paint({ ...s, myTeam: myTeam === 'A' ? 'B' : 'A' }, { ...initialLocal, theme: theme.id });
+    assert.notEqual(otherTeam.wordPrivacyKey, out.wordPrivacyKey);
+    assert.deepEqual(otherTeam.wordInks, out.wordInks, 'changing teams keeps the same device colours');
+  }
+});
+test('the earlier tube windows share one type scale, with full long phrases on two lines', () => {
+  const s = previewState({}, 'encrypting');
+  const zh = paint(s, { ...initialLocal, wordDisplay: 'crt' }), en = paint(s, { ...initialLocal, wordDisplay: 'crt', locale: 'en' });
+  const sizeOf = (frame, value) => frame.canvas.draws.find(draw => draw.value === value)?.size;
+  assert.equal(sizeOf(zh.frames.word1, '海岸'), 60);
+  assert.equal(sizeOf(en.frames.word1, 'coast'), 60);
+  assert.equal(sizeOf(zh.frames.word2, '玫瑰'), sizeOf(en.frames.word2, 'rose'));
+  assert.ok(sizeOf(en.frames.word3, 'migratory') >= 44);
+  assert.ok(sizeOf(en.frames.word3, 'bird') >= 44);
+  assert.ok(!en.frames.word3.canvas.ink.some(value => value.includes('…')));
+});
+
+
+test('only the native editor owns focused input text, including long multilingual clues', () => {
+  const s = fixture('encrypting');
+  const clue = '很长的线索 mixed English 0123456789';
+  const u = { ...initialLocal, clues: [clue, 'Second clue', 'Third clue'] };
+  const idle = paint(s, u), editing = paint(s, { ...u, focus: 'clue-0' });
+  assert.ok(idle.frames.screen.canvas.ink.includes(clue));
+  assert.ok(!editing.frames.screen.canvas.ink.includes(clue));
+  assert.ok(editing.frames.screen.canvas.ink.includes('Second clue'));
+  assert.equal(editing.targets.find(t => t.id === 'clue-0').value, clue);
+  assert.ok(paint({ ...s, connected: false }, { ...u, focus: 'clue-0' }).frames.screen.canvas.ink.includes(clue));
+  const home = fixture('home');
+  assert.ok(!paint(home, { ...initialLocal, name: 'Agent name', focus: 'name' }).frames.screen.canvas.ink.includes('Agent name'));
+  assert.ok(paint(home, { ...initialLocal, name: 'Agent name' }).frames.screen.canvas.ink.includes('Agent name'));
+});
+
+
+test('private code targets never reach the display until read, or after eject and seat changes', () => {
+  const s = fixture('encrypting');
+  const id = keyDiskIdentity(s);
+  for (const phase of ['absent', 'queued', 'arriving', 'inserting', 'reading', 'ejecting', 'ejected', 'removed', 'returning', 'pulling', 'settling']) {
+    for (const locale of ['zh', 'en']) {
+      const content = paint(s, { ...initialLocal, locale, keyDisk: { id, phase, startedAt: 0 } });
+      const screen = content.frames.screen.canvas.ink;
+      for (const digit of s.secretDigits) {
+        assert.ok(!screen.includes(String(digit)), `${phase}: private digit is not painted`);
+        assert.ok(!screen.includes(word(s.myWords[digit - 1], locale)), `${phase}: private target is not painted`);
+      }
+      if (locale === 'en') assert.deepEqual(ink(content).filter(value => /[\u3400-\u9fff]/.test(value)), []);
+    }
+  }
+  const local = { ...initialLocal, keyDisk: { id, phase: 'ready', startedAt: 0 } };
+  assert.ok(paint(s, local).frames.screen.canvas.ink.includes('玫瑰'));
+  assert.ok(!paint({ ...s, round: s.round + 1 }, local).frames.screen.canvas.ink.includes('玫瑰'));
+  assert.ok(!paint({ ...s, myRole: 'teammate' }, local).frames.screen.canvas.ink.includes('玫瑰'));
+  const ejected = paint(s, { ...local, keyDisk: { ...local.keyDisk, phase: 'ejected' }, diskOut: true, clues: ['保留草稿', '', ''] });
+  assert.ok(ejected.frames.screen.canvas.ink.includes('保留草稿'));
+  assert.ok(!ejected.frames.screen.canvas.ink.includes('玫瑰'));
+  assert.notEqual(ejected.screenPrivacyKey, paint(s, local).screenPrivacyKey, 'CRT outgoing image is revoked');
+});
+
+test('only the current encryptor authorizes a disk model and its physical controls', () => {
+  const s = fixture('encrypting'), id = keyDiskIdentity(s);
+  const local = { ...initialLocal, keyDisk: { id, phase: 'ready', startedAt: 0 } };
+  const owned = paint(s, local);
+  assert.equal(owned.keyDiskId, id);
+  assert.ok(owned.targets.some(target => target.id === 'disk-toggle' && !target.disabled));
+  assert.ok(owned.targets.some(target => target.id === 'disk-eject' && !target.disabled));
+  for (const myRole of ['teammate', 'opponent', 'observer', '']) {
+    for (const phase of ['encrypting', 'intercept', 'decrypt']) {
+      // Simulate the first render after a role change, before local cleanup:
+      // both the previous disk and private digits may still exist in memory.
+      const revoked = paint({ ...s, myRole, phase }, local);
+      assert.equal(revoked.keyDiskId, '', `${phase}/${myRole}: no model authorization`);
+      assert.ok(!revoked.targets.some(target => ['disk-toggle', 'disk-eject'].includes(target.id)), `${phase}/${myRole}: no phantom control`);
+    }
+  }
+  for (const phase of ['home', 'room', 'round_result', 'game_over']) {
+    assert.equal(paint({ ...s, phase }, local).keyDiskId, '', `${phase}: old disk is revoked`);
+  }
+  const nextRound = paint({ ...s, round: s.round + 1 }, local);
+  assert.notEqual(nextRound.keyDiskId, id, 'the previous round cannot keep its disk model');
+  assert.ok(nextRound.targets.filter(target => ['disk-toggle', 'disk-eject'].includes(target.id)).every(target => target.disabled));
+});
+
+
+test('CRT palettes reach word textures and white enamel uses dark lettering on either player side', async () => {
+  const { themeChoices, teamPalette, wordDisplayOptions } = await import(modelUrl);
+  for (const option of wordDisplayOptions) {
+    assert.ok(!/[\u3400-\u9fff]/.test(translate('en', option.label)));
+    assert.ok(!/[\u3400-\u9fff]/.test(translate('en', option.description)));
+  }
+  for (const theme of themeChoices) for (const myTeam of ['A', 'B']) {
+    assert.ok(!/[\u3400-\u9fff]/.test(translate('en', theme.label)));
+    const s = { ...previewState({}, 'encrypting'), myTeam };
+    const out = paint(s, { ...initialLocal, theme: theme.id, wordDisplay: 'crt' });
+    assert.equal(out.frames.word0.canvas.background, theme.crt.background);
+    assert.equal(out.frames.word0.canvas.draws.find(d => d.value === '灯塔').color, theme.crt.light);
+    assert.deepEqual(out.wordTube, theme.crt);
+    for (const team of ['A', 'B']) {
+      const palette = teamPalette(team, myTeam, theme.id);
+      assert.equal(out.teamPlates[team], palette.plate);
+      assert.ok(out.frames['roster' + team].canvas.draws.every(d => d.color === palette.onPlate));
+    }
+  }
+});
+
+test('guide and original-game pages suspend submission without changing the draft', () => {
+  const s = fixture('encrypting');
+  const u = { ...initialLocal, clues: ['Garden', 'Sailing', 'Feather'] };
+  assert.equal(paint(s, u).ready, true);
+  for (const page of ['manual', 'about']) {
+    const output = paint(s, { ...u, [page]: true });
+    assert.equal(output.ready, false);
+    assert.ok(output.targets.find(t => t.id === 'transmit').disabled);
+    assert.ok(!output.targets.some(t => t.kind === 'input'));
+    assert.ok(output.targets.find(t => t.id === 'screen-close'));
+    assert.deepEqual(u.clues, ['Garden', 'Sailing', 'Feather']);
+  }
+  assert.equal(paint(s, u).ready, true);
+});
+
+test('original-game links are native external links and the physical badge opens that page', () => {
+  const s = fixture('home');
+  const normal = paint(s, initialLocal);
+  assert.equal(normal.targets.find(t => t.surface === 'badge').id, 'about');
+  const output = paint(s, { ...initialLocal, about: true });
+  assert.deepEqual(output.targets.filter(t => t.href).map(t => t.href), [
+    'https://www.scorpionmasque.com/en/decrypto',
+    'https://boardgamegeek.com/boardgame/225694/decrypto',
+    'https://shop.scorpionmasque.com/products/decrypto',
+  ]);
+});
+
+test('no screen, label or translation names the original game or its publisher', () => {
+  const named = /decrypto|谍报风云|截码战|scorpion\s*masqu/i;
+  assert.deepEqual(Object.entries(messages).flat().filter(value => named.test(value)), []);
+  for (const phase of phases) for (const extra of [{}, { manual: true }, { about: true }]) for (const locale of ['zh', 'en']) {
+    const output = paint(fixture(phase), { ...initialLocal, ...extra, locale });
+    assert.deepEqual([...ink(output), ...output.targets.map(t => t.label)].filter(value => named.test(value)), [], `${phase} in ${locale}`);
+  }
+});
+
+test('results reveal only the current public history code, never private encryptor state', () => {
+  const s = fixture('round_result');
+  s.secretDigits = [4, 3, 2];
+  s.history = [{ round: s.round - 1, team: 'A', clues: ['Past'], secret: [2, 4, 3] }];
+  assert.ok(!paint(s, initialLocal).frames.screen.canvas.ink.includes('密码'));
+  s.history.push({ round: s.round, team: 'A', clues: ['One', 'Two', 'Three'], secret: [3, 1, 4] });
+  const output = paint(s, initialLocal).frames.screen.canvas.ink;
+  assert.ok(output.includes('密码'));
+  assert.deepEqual(output.filter(text => /^[1-4]$/.test(text)), ['3', '1', '4']);
+});
+
+test('illustrated guide turns through four pages and keeps every worked example', () => {
+  for (const theme of ['classic', 'radio', 'amber', 'violet']) {
+    const pages = [0, 1, 2, 3].map(guidePage => paint(fixture('home'), { ...initialLocal, theme, manual: true, guidePage }));
+    const text = pages.flatMap(output => output.frames.screen.canvas.ink);
+    for (const label of ['加密者抽到的密码', '公开线索 · 只说词，不说编号', '前几轮的线索与答案',
+      '微光 · 沙滩 · 花束', '港口 · 潮汐 · 迁徙', '刺 · 光束 · 远行', '1·2·3', '1·2·4', '3·1·4']) assert.ok(text.includes(label), `${theme}: ${label}`);
+    assert.ok(!text.includes('仅加密者可见'), 'the redundant private-code block is removed');
+    assert.ok(pages[3].targets.some(t => t.href?.includes('boardgamegeek.com')), 'the last page links to the original game');
+    pages.forEach((output, page) => {
+      // One dot per page: the lit one is where you are, the others turn straight to theirs.
+      const dots = output.targets.filter(t => t.id.startsWith('guide-page-'));
+      assert.deepEqual(dots.map(t => !!t.disabled), [0, 1, 2, 3].map(i => i === page));
+      assert.equal(!!output.targets.find(t => t.id === 'guide-prev'), page > 0);
+      assert.ok(output.targets.find(t => t.id === (page < 3 ? 'guide-next' : 'guide-done')));
+      assert.ok(output.frames.screen.canvas.ink.some(value => value.includes(`${page + 1} / 4`)), `page ${page + 1} names its place`);
+      assert.deepEqual(output.targets.filter(t => t.id.startsWith('key-')).map(t => !t.disabled), [true, true, true, true, page > 0], 'the keypad turns pages');
+    });
+    const first = pages[0].frames.screen.canvas.ink, last = pages[3].frames.screen.canvas.ink;
+    assert.ok(!first.includes('3·1·4 ✓') && last.includes('3·1·4 ✓'), 'each page carries its own step');
+  }
+});
+
+test('the opening briefing hands over to the working page and later beats keep the glass free', async () => {
+  const { briefingKey } = await import(modelUrl);
+  const s = previewState({}, 'encrypting');
+  const brief = briefingKey(s);
+  const briefed = paint(s, { ...initialLocal, brief }), working = paint(s, initialLocal);
+  assert.ok(!briefed.targets.some(t => t.kind === 'input'), 'no clue can be typed under the briefing');
+  assert.equal(briefed.targets.find(t => t.surface === 'screen').id, 'brief-skip', 'the whole glass skips ahead');
+  assert.ok(briefed.targets.find(t => t.id === 'manual'), 'the guide key stays reachable');
+  assert.equal(briefed.screenSignal, brief);
+  assert.equal(working.screenSignal, '');
+  assert.notEqual(briefed.screenPage, working.screenPage, 'the working page is written out anew');
+  assert.ok(working.targets.some(t => t.id === 'clue-0' && t.kind === 'input'));
+  assert.ok(paint({ ...s, phase: 'intercept' }, { ...initialLocal, brief }).targets.every(t => t.id !== 'brief-skip'), 'a stale briefing never covers another beat');
+  const ink = briefed.frames.screen.canvas.ink;
+  for (const text of ['加密', '拦截', '解码', '进行中', '稍后', 'B 队']) assert.ok(ink.includes(text), text);
+  assert.ok(ink.some(value => value.startsWith('你来加密')), 'the encryptor learns their task');
+  assert.deepEqual(briefed.screenBlink.map(cell => cell.kind), ['cursor'], 'the station in progress blinks');
+  const early = paint({ ...previewState({}, 'decrypt'), round: 2 }, { ...initialLocal, brief: briefingKey({ ...s, round: 2, phase: 'decrypt' }) });
+  assert.ok(!early.targets.some(target => target.id === 'brief-skip'), 'decoding has no blocking briefing');
+  assert.ok(early.targets.some(target => target.id === 'slot-0'), 'the decoder can choose a digit immediately');
+});
+
+test('watching screens blink the slot being worked on and keep the round in the header', () => {
+  const s = previewState({}, 'waiting');
+  const out = paint(s, initialLocal), ink = out.frames.screen.canvas.ink;
+  assert.ok(ink.includes('正在写这一条…'));
+  assert.equal(ink.filter(value => value === '已写好').length, 2);
+  assert.ok(ink.some(value => value.includes('A 队发报')) && ink.some(value => value.includes('加密者 Alice')), 'the header names the round');
+  assert.deepEqual(out.screenBlink.map(cell => cell.kind).sort(), ['cursor', 'live']);
+  const cursor = out.screenBlink.find(cell => cell.kind === 'cursor');
+  assert.ok(cursor.y > 239 + 2 * 92 - 30 && cursor.y < 239 + 2 * 92 + 60, 'the third line blinks');
+  const quiet = paint({ ...s, playerProgress: {} }, initialLocal);
+  assert.deepEqual(quiet.screenBlink.map(cell => cell.kind), ['live'], 'before any progress only the link lamp breathes');
+  assert.ok(quiet.frames.screen.canvas.ink.some(value => value.startsWith('链路已接通')));
+  assert.deepEqual(paint(s, { ...initialLocal, unpluggedCables: 1 }).screenBlink, [], 'nothing blinks offline');
+  const guessing = paint(previewState({}, 'decrypt'), initialLocal);
+  assert.deepEqual(guessing.screenBlink.map(cell => cell.kind), ['cursor'], 'the keypad cursor marks the empty slot');
+  // While both teams guess, the encryptor follows both columns at once.
+  const watching = paint(previewState({}, 'watch-guess'), initialLocal);
+  const both = watching.frames.screen.canvas.ink;
+  assert.ok(both.includes('B 队拦截') && both.includes('A 队解码'), 'a column for each team');
+  assert.equal(both.filter(value => value === '推敲中').length, 2, 'each team blinks the slot it works on');
+  assert.ok(both.includes('2') && both.includes('1') && both.includes('3'), 'the encryptor sees both teams pick');
+  assert.deepEqual(watching.screenBlink.map(cell => cell.kind).sort(), ['cursor', 'cursor', 'live']);
+  // A team that has answered sees the other team work, never its picks.
+  const sent = paint(previewState({}, 'decrypt-sent'), initialLocal).frames.screen.canvas.ink;
+  assert.ok(sent.includes('已提交') && sent.some(value => value.includes('等 B 队拦截后揭晓')), 'the answer waits for the other team');
+  assert.ok(sent.some(value => value.includes('John · 已选 2 / 3')), 'the other team is still working');
+});
+
+test('the last intercept or decode digit updates without moving its selected slot', () => {
+  for (const phase of ['intercept', 'decrypt']) for (const locale of ['zh', 'en']) {
+    const s = fixture(phase);
+    for (const digit of [0, 1, 4, 0]) {
+      const out = paint(s, { ...initialLocal, locale, guess: [2, 3, digit], slot: 2 });
+      const label = `${phase}/${locale}: third digit ${digit || 'empty'}`;
+      const digits = out.frames.screen.canvas.draws.filter(draw => draw.x === 875 && [266, 358, 450].includes(draw.y));
+      assert.deepEqual(digits.map(draw => draw.value), ['2', '3', digit ? String(digit) : '—'], label);
+      assert.equal(out.ready, digit !== 0, `${label}: ACTION readiness follows the visible code`);
+      assert.deepEqual(out.screenBlink.filter(cell => cell.kind === 'cursor'), digit ? [] : [
+        { x: 866, y: 426, w: 52, h: 48, kind: 'cursor' },
+      ], `${label}: only an empty selected slot blinks`);
+    }
+  }
+});
+
+test('results show both answers beside the revealed code', () => {
+  const s = fixture('round_result');
+  s.history = [...s.history, { round: s.round, team: 'A', clues: ['One', 'Two', 'Three'], secret: [3, 1, 4], intercept: [2, 1, 4], decrypt: [3, 1, 4] }];
+  for (const locale of ['zh', 'en']) {
+    const { draws } = paint(s, { ...initialLocal, locale }).frames.screen.canvas;
+    assert.ok(draws.some(d => d.value === '2 ✗' && d.x === 635 && d.y === 266));
+    assert.ok(draws.some(d => d.value === '3 ✓' && d.x === 750 && d.y === 266));
+    assert.ok(draws.some(d => d.value === '3' && d.x === 875 && d.y === 266));
+    assert.deepEqual(draws.filter(d => ['One', 'Two', 'Three'].includes(d.value)).map(d => d.y), [266, 358, 450]);
+  }
+});
+
+test('public clues keep their positions through editing, sending, watching and the receipt', () => {
+  const s = fixture('intercept');
+  const variants = [
+    paint(s, initialLocal),
+    paint(s, { ...initialLocal, submitted: true }),
+    paint({ ...s, submitted: true }, initialLocal),
+    paint({ ...s, myRole: 'teammate' }, initialLocal),
+    paint({ ...s, phase: 'round_result', roundResult: { intercept_success: true }, history: [] }, initialLocal),
+  ];
+  for (const output of variants) {
+    assert.deepEqual(output.frames.screen.canvas.draws.filter(d => s.clues.includes(d.value)).map(d => [d.value, d.y]), [['Harbor', 266], ['Time', 358], ['Snow', 450]]);
+  }
+  assert.ok(variants[1].frames.screen.canvas.ink.includes('正在发送…'));
+  assert.ok(variants[2].frames.screen.canvas.ink.includes('已提交'));
+  assert.ok(!variants[4].frames.screen.canvas.ink.includes('密码'), 'a successful interception still keeps the answer private');
+});
+
+test('long clues wrap at readable sizes and expand above the rows without covering the number slot', async () => {
+  const { textLines } = await import(await moduleUrl('paintKit'));
+  const value = '线'.repeat(79) + '尾';
+  const s = fixture('intercept'); s.clues[0] = value;
+  const normal = paint(s, initialLocal), expanded = paint(s, { ...initialLocal, readingClue: 0 });
+  const target = normal.targets.find(t => t.id === 'read-clue-0');
+  assert.ok(target && target.x + target.w < 875);
+  assert.ok(normal.frames.screen.canvas.ink.includes('展开'));
+  assert.ok(expanded.frames.screen.canvas.ink.includes('收起'));
+  assert.ok(paint(s, { ...initialLocal, focus: 'read-clue-0' }).frames.screen.canvas.ink.includes('展开'), 'focusing the reading button does not open or close the clue');
+  assert.ok(paint(s, { ...initialLocal, readingClue: 0, focus: 'slot-1' }).frames.screen.canvas.ink.includes('收起'), 'keyboard focus may move while the full clue stays open');
+  const fullText = expanded.frames.screen.canvas.draws.filter(d => d.y > 138 && d.y < 218).map(d => d.value).join('');
+  assert.equal(fullText, value);
+  assert.ok(normal.frames.screen.canvas.draws.filter(d => d.value.includes('线') && d.y > 230).every(d => d.size >= 22));
+  const context = normal.frames.screen.canvas.getContext();
+  const latin = textLines(context, 'An extraordinarily long unbroken_identifier_that_still_needs_to_wrap', 250, 32, 22, 2);
+  assert.equal(latin.size, 22);
+  assert.ok(latin.truncated && latin.lines[1].endsWith('…'));
+  assert.ok(latin.lines.every(line => context.measureText(line).width <= 250));
+  const read = textLines(context, value, 890, 25, 22, 3);
+  assert.equal(read.lines.join(''), value);
+  assert.equal(read.truncated, false);
+});
+
+test('briefings, watching screens and every guide page are fully localized', async () => {
+  const { briefingKey } = await import(modelUrl);
+  for (const name of ['encrypting', 'waiting', 'listening', 'intercept', 'watch-intercept', 'decrypt', 'watch-decrypt', 'late-game']) {
+    const s = previewState({}, name, 'en');
+    for (const extra of [{}, { brief: briefingKey(s) }]) {
+      const en = paint(s, { ...initialLocal, ...extra, locale: 'en' });
+      assert.deepEqual([...en.frames.screen.canvas.ink, ...en.targets.map(t => t.label)].filter(value => /[\u3400-\u9fff]/.test(value)), [], `${name}${extra.brief ? ' briefing' : ''}`);
+    }
+  }
+  for (let guidePage = 0; guidePage < 4; guidePage++) {
+    const en = paint(fixture('home'), { ...initialLocal, manual: true, guidePage, locale: 'en' });
+    assert.deepEqual([...en.frames.screen.canvas.ink, ...en.targets.map(t => t.label)].filter(value => /[\u3400-\u9fff]/.test(value)), [], `guide page ${guidePage + 1}`);
+  }
+});
+
+
+test('teammate hints retain per-person digits beside each clue without filling the local answer', () => {
+  for (const name of ['decrypt-peers', 'intercept-peers']) for (const locale of ['zh', 'en']) {
+    const s = previewState({}, name, locale);
+    const out = paint(s, { ...initialLocal, locale });
+    const rows = out.frames.screen.canvas.draws.filter(d => [294, 386, 478].includes(d.y));
+    assert.deepEqual(rows.filter(d => d.value.startsWith(' · ')).map(d => d.value), name === 'intercept-peers' ?
+      [' · —', ' · 3', ' · 3', ' · —', ' · —', ' · 1', ' · —', ' · 4', ' · 4'] :
+      [' · 3', ' · 3', ' · —', ' · 1', ' · 4', ' · 4']);
+    assert.equal(out.ready, false, 'AI advice never makes an empty local draft ready');
+    assert.ok(out.screenBlink.some(cell => cell.y === 378 && cell.h === 16), 'the peer cursor follows the second clue');
+    assert.ok(!out.frames.screen.canvas.ink.includes('John'), 'opponent names and choices stay out of the acting screen');
+    if (locale === 'en') assert.deepEqual(out.frames.screen.canvas.ink.filter(value => /[\u3400-\u9fff]/.test(value)), []);
+    const sent = paint(s, { ...initialLocal, locale, submitted: true, guess: [2, 3, 4] });
+    assert.ok(!sent.frames.screen.canvas.draws.some(d => [294, 386, 478].includes(d.y)), 'sending replaces advice with the submitted answer');
+  }
+});
+
+test('long clues can still be expanded when teammate annotations occupy their second line', () => {
+  const s = previewState({}, 'decrypt-peers');
+  s.clues[0] = '线'.repeat(79) + '尾';
+  const out = paint(s, initialLocal);
+  assert.ok(out.targets.some(target => target.id === 'read-clue-0'));
+  const expanded = paint(s, { ...initialLocal, readingClue: 0 });
+  assert.equal(expanded.frames.screen.canvas.draws.filter(d => d.y > 138 && d.y < 218).map(d => d.value).join(''), s.clues[0]);
+});
+
+
+test('selected AI advice shows its status without changing human submission readiness', () => {
+  for (const locale of ['zh', 'en']) {
+    for (const state of ['retrying', 'ready', 'unavailable']) {
+    const s = previewState({}, 'intercept-ai-peers', locale);
+    const selected = s.teammateProgress['1'];
+    Object.assign(selected, { state, step: state === 'ready' ? 3 : 1,
+      focus: state === 'retrying' ? 2 : 0, guesses: state === 'ready' ? [1, 3, 4] : [3, 0, 0] });
+    const output = paint(s, { ...initialLocal, locale });
+    const ink = output.frames.screen.canvas.ink;
+    if (state === 'retrying') assert.ok(ink.some(value => value.includes(locale === 'zh' ? '重试' : 'Retrying')));
+    else assert.ok(ink.includes(translate(locale, state === 'ready' ? '建议已就绪' : '建议暂不可用')));
+    assert.ok(ink.includes(s.teamA[1].nickname));
+    for (const peer of s.teamA.slice(2)) assert.ok(!ink.includes(peer.nickname), 'unselected AI has no advice row');
+    assert.equal(output.ready, false, 'AI advice does not fill the local draft');
+    assert.equal(paint(s, { ...initialLocal, locale, guess: [3, 1, 4] }).ready, true, 'a failed or retrying AI cannot block a human answer');
+    if (locale === 'en') assert.deepEqual(ink.filter(value => /[\u3400-\u9fff]/.test(value)), []);
+    }
+  }
+});

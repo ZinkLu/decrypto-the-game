@@ -1,59 +1,62 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
-# Binaries for programs and plugins
+# Go build output
+/bin/
+/server/server
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test binary, built with `go test -c`
 *.test
-
-# Output of the go coverage tool, specifically when used with LiteIDE
 *.out
-
-# Dependency directories (remove the comment below to include it)
-# vendor/
-
-# Go workspace file
 go.work
+go.work.sum
 
-.vscode/
-# Dependencies
+# Frontend dependencies and build output
 node_modules/
-
-# Build outputs
 dist/
 build/
-/server
+.vite/
+.pnpm-store/
+.cache/
+.parcel-cache/
+.eslintcache
+*.tsbuildinfo
+
+# Rooms kept by the server
+/data/
+/server/data/
+*.db
+*.db-shm
+*.db-wal
 
 # Environment files
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
+# Made by the asset scripts, not shipped
+*.blend1
+__pycache__/
+*.pyc
+/assets/audio/crt-audition.wav
 
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+# The end-to-end records keep theirs
+!/docs/e2e/**/*.log
 
-# Cache
-.cache/
-.parcel-cache/
-.eslintcache
+# Editors and the system
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Agent tools
 .agent/
 .agents/
 .claude/
