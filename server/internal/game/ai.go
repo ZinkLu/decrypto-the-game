@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"os"
 	"strconv"
 	"strings"
@@ -61,8 +62,8 @@ func (b *Bridge) aiStatusLocked(action, player, state string, step, completed in
 	b.Hub.BroadcastToRoom(b.Room.Code, ws.ServerMessage{Type: typ, Data: d})
 }
 
-// One retry per step by default, bounded both by request and whole-action
-// deadlines; DECRYPTO_AI_ATTEMPTS says how many tries a step gets.
+// One retry per action by default, bounded both by request and whole-action
+// deadlines; DECRYPTO_AI_ATTEMPTS says how many tries an action gets.
 func aiStep[T any](ctx context.Context, b *Bridge, action, player string, step int, call func(context.Context) (T, error), fallback T) T {
 	return aiStepWithStatus(ctx, b, action, step, call, fallback, func(state string, completed int, notice string) {
 		b.aiStatus(action, player, state, step, completed, notice)
@@ -95,6 +96,8 @@ func aiStepWithStatus[T any](ctx context.Context, b *Bridge, action string, step
 	return fallback
 }
 
+// handleAIEncrypt writes this round's three clues in one model request, then
+// reads them out one at a time, at the pace a player would give them.
 func handleAIEncrypt(parent context.Context, b *Bridge, r *core.Round) [3]string {
 	ctx, cancel := context.WithDeadline(parent, b.actionDeadline("encrypt"))
 	defer cancel()
@@ -104,22 +107,27 @@ func handleAIEncrypt(parent context.Context, b *Bridge, r *core.Round) [3]string
 	digits := r.GetSecretDigits()
 	words := r.GetCurrentTeam().GetWords()
 	history := formatHistoryForAI(b, r, b.teamLabel(r.GetCurrentTeam()))
-	var result [3]string
-	for i := range result {
+	round := int(r.GetNumberOfRounds())
+	playerID, player := r.EncryptPlayer().UID, r.EncryptPlayer().NickName
+	report := func(state string, completed int, notice string) {
+		if parent.Err() == nil {
+			b.aiEncryptStatus(round, playerID, player, actionState, state, completed+1, completed, notice)
+		}
+	}
+	result := aiStepWithStatus(ctx, b, "encrypt", 1, func(ctx context.Context) ([3]string, error) {
+		if b.AIPlayer == nil {
+			return [3]string{}, fmt.Errorf("AI provider unavailable")
+		}
+		return b.AIPlayer.GenerateClues(ctx, digits, words, history)
+	}, [3]string{"线索暂缺", "线索暂缺", "线索暂缺"}, report)
+	log.Printf("[AI-ENCRYPT] Round %d → %q", round, result)
+	for completed := 2; completed <= 3; completed++ {
 		if parent.Err() != nil {
 			break
 		}
-		result[i] = aiStepWithStatus(ctx, b, "encrypt", i+1, func(ctx context.Context) (string, error) {
-			if b.AIPlayer == nil {
-				return "", fmt.Errorf("AI provider unavailable")
-			}
-			return b.AIPlayer.GenerateSingleClue(ctx, digits, i, words, history, result[:i])
-		}, "线索暂缺", func(state string, completed int, notice string) {
-			if parent.Err() == nil {
-				b.aiEncryptStatus(int(r.GetNumberOfRounds()), r.EncryptPlayer().UID, r.EncryptPlayer().NickName, actionState, state, i+1, completed, notice)
-			}
-		})
-		log.Printf("[AI-ENCRYPT] Round %d step %d/3 → %q", r.GetNumberOfRounds(), i+1, result[i])
+		b.aiEncryptStatus(round, playerID, player, actionState, "thinking", completed, completed-1, "")
+		b.aiPace(ctx)
+		b.aiEncryptStatus(round, playerID, player, actionState, "completed", completed, completed, "")
 	}
 	return result
 }
@@ -264,8 +272,9 @@ func (b *Bridge) aiGuessStatus(job aiGuessJob, state string, step, completed int
 	}
 }
 
-// aiGuess answers for an AI team, one digit at a time, and always answers: a
-// step the model cannot settle in time takes a legal fallback.
+// aiGuess answers for an AI team with one model request, and always answers:
+// a request the model cannot settle in time takes a legal fallback. The
+// answer is then read out one digit at a time, at a human pace.
 func (b *Bridge) aiGuess(parent context.Context, job aiGuessJob, answers chan<- aiAnswer) {
 	if job.suggestion {
 		b.aiSuggest(parent, job)
@@ -273,55 +282,80 @@ func (b *Bridge) aiGuess(parent context.Context, job aiGuessJob, answers chan<- 
 	}
 	ctx, cancel := context.WithDeadline(parent, job.deadline)
 	defer cancel()
-	var result [3]int
+	result := aiStepWithStatus(ctx, b, job.action, 1, func(ctx context.Context) ([3]int, error) {
+		if b.AIPlayer == nil {
+			return [3]int{}, fmt.Errorf("AI provider unavailable")
+		}
+		return b.AIPlayer.GuessCode(ctx, job.clues, job.words, job.intercept, job.history)
+	}, [3]int{1, 2, 3}, func(state string, completed int, notice string) {
+		b.aiGuessStatus(job, state, 1, completed, notice)
+		if state == "thinking" || state == "retrying" {
+			b.broadcastAIProgress(job, state, 0, 1, nil)
+		}
+	})
+	result = fillPlaceholders(result, job.clues)
+	log.Printf("[AI-%s] Round %d → %v", job.action, job.round, result)
 	for i := range result {
 		if parent.Err() != nil {
 			return
 		}
-		fallback := 1
-		for {
-			used := false
-			for _, n := range result[:i] {
-				if n == fallback {
-					used = true
-				}
+		if i > 0 {
+			if !b.broadcastAIProgress(job, "thinking", i, i+1, result[:i]) {
+				return
 			}
-			if !used {
-				break
-			}
-			fallback++
-		}
-		if !b.broadcastAIProgress(job, "thinking", i, i+1, result[:i]) {
-			return
-		}
-		if placeholderClue(job.clues[i]) {
-			// A line left empty by a timeout carries nothing to reason about.
-			result[i] = fallback
-		} else {
-			result[i] = aiStepWithStatus(ctx, b, job.action, i+1, func(ctx context.Context) (int, error) {
-				if b.AIPlayer == nil {
-					return 0, fmt.Errorf("AI provider unavailable")
-				}
-				return b.AIPlayer.GuessSingleNumber(ctx, job.clues, i, job.words, job.intercept, job.history, result[:i])
-			}, fallback, func(state string, completed int, notice string) {
-				b.aiGuessStatus(job, state, i+1, completed, notice)
-				if state == "thinking" || state == "retrying" {
-					b.broadcastAIProgress(job, state, i, i+1, result[:i])
-				}
-			})
+			b.aiPace(ctx)
+			b.aiGuessStatus(job, "completed", i+1, i+1, "")
 		}
 		state := "thinking"
 		if i == len(result)-1 {
 			state = "ready"
 		}
-		if parent.Err() != nil || !b.broadcastAIProgress(job, state, i+1, 0, result[:i+1]) {
+		if !b.broadcastAIProgress(job, state, i+1, 0, result[:i+1]) {
 			return
 		}
-		log.Printf("[AI-%s] Round %d step %d/3 → %d", job.action, job.round, i+1, result[i])
 	}
 	select {
 	case answers <- aiAnswer{job: job, guess: result}:
 	case <-parent.Done():
+	}
+}
+
+// A clue line a timeout left blank carries nothing to reason about; its digit
+// is filled with the first digit the rest of the answer leaves free, keeping
+// the guess legal whatever the model made of the blank.
+func fillPlaceholders(result [3]int, clues [3]string) [3]int {
+	used := map[int]bool{}
+	for i, clue := range clues {
+		if !placeholderClue(clue) {
+			used[result[i]] = true
+		}
+	}
+	for i, clue := range clues {
+		if !placeholderClue(clue) {
+			continue
+		}
+		for n := 1; n <= 4; n++ {
+			if !used[n] {
+				result[i], used[n] = n, true
+				break
+			}
+		}
+	}
+	return result
+}
+
+// aiPace holds the next answer back for a random beat, as a player thinking
+// aloud between two answers would. A game that moves on cuts the wait short;
+// the answer itself is never held back.
+func (b *Bridge) aiPace(ctx context.Context) {
+	beat := b.Timing.AIPace
+	if beat <= 0 {
+		return
+	}
+	d := beat/2 + time.Duration(rand.Int64N(int64(beat)))
+	select {
+	case <-time.After(d):
+	case <-ctx.Done():
 	}
 }
 
@@ -331,42 +365,47 @@ func (b *Bridge) aiSuggest(parent context.Context, job aiGuessJob) {
 	ctx, cancel := context.WithDeadline(parent, job.deadline)
 	defer cancel()
 	var result [3]int
-	for i := range result {
-		if ctx.Err() != nil || !b.broadcastAIProgress(job, "thinking", i, i+1, result[:i]) {
-			return
-		}
-		var n int
-		err := fmt.Errorf("AI suggestion unavailable")
-		if b.AIPlayer != nil && !placeholderClue(job.clues[i]) {
-			attempts := aiAttempts()
-			for attempt := 0; attempt < attempts && ctx.Err() == nil; attempt++ {
-				if attempt > 0 && !b.broadcastAIProgress(job, "retrying", i, i+1, result[:i]) {
-					return
-				}
-				requestCtx, stop := context.WithTimeout(ctx, b.Timing.Request)
-				n, err = b.AIPlayer.GuessSingleNumber(requestCtx, job.clues, i, job.words, job.intercept, job.history, result[:i])
-				if err == nil {
-					err = requestCtx.Err()
-				}
-				stop()
-				if err == nil {
-					break
-				}
+	err := fmt.Errorf("AI suggestion unavailable")
+	if b.AIPlayer != nil {
+		attempts := aiAttempts()
+		for attempt := 0; attempt < attempts && ctx.Err() == nil; attempt++ {
+			state := "thinking"
+			if attempt > 0 {
+				state = "retrying"
+			}
+			if !b.broadcastAIProgress(job, state, 0, 1, nil) {
+				return
+			}
+			requestCtx, stop := context.WithTimeout(ctx, b.Timing.Request)
+			result, err = b.AIPlayer.GuessCode(requestCtx, job.clues, job.words, job.intercept, job.history)
+			if err == nil {
+				err = requestCtx.Err()
+			}
+			stop()
+			if err == nil {
+				break
 			}
 		}
-		if parent.Err() != nil {
-			return
+	}
+	if parent.Err() != nil {
+		return
+	}
+	if err != nil || ctx.Err() != nil {
+		b.broadcastAIProgress(job, "unavailable", 0, 0, nil)
+		return
+	}
+	for i := range result {
+		if i > 0 {
+			if !b.broadcastAIProgress(job, "thinking", i, i+1, result[:i]) {
+				return
+			}
+			b.aiPace(ctx)
 		}
-		if err != nil || ctx.Err() != nil {
-			b.broadcastAIProgress(job, "unavailable", i, 0, result[:i])
-			return
-		}
-		result[i] = n
 		state := "thinking"
 		if i == len(result)-1 {
 			state = "ready"
 		}
-		if !b.broadcastAIProgress(job, state, i+1, 0, result[:i+1]) {
+		if parent.Err() != nil || !b.broadcastAIProgress(job, state, i+1, 0, result[:i+1]) {
 			return
 		}
 	}

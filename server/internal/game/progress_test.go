@@ -181,13 +181,13 @@ func TestAISuggestionDoesNotSubmitOrOverwriteHumanDraft(t *testing.T) {
 	calls := 0
 	b.AIPlayer = ai.NewAIPlayer(progressProvider(func(context.Context, []ai.Message) (string, error) {
 		calls++
-		return strconv.Itoa(calls), nil
+		return "答案：1\n答案：2\n答案：3", nil
 	}))
 	human := [3]int{4, 3, 2}
 	b.RelayProgress(ids[2], "human", ws.ProgressData{Round: 3, Action: "intercept", State: "editing", Guesses: human[:]})
 	answers := make(chan aiAnswer, 1)
 	b.aiGuess(context.Background(), job, answers)
-	if calls != 3 || len(answers) != 0 || b.Sync(ids[2]).Submitted {
+	if calls != 1 || len(answers) != 0 || b.Sync(ids[2]).Submitted {
 		t.Fatalf("advisory AI submitted: calls=%d, answers=%d, view=%+v", calls, len(answers), b.Sync(ids[2]))
 	}
 	if draft, outcome := b.draftGuessOnTimeout("intercept"); draft != human || outcome != "guess" {
@@ -303,7 +303,7 @@ func TestMixedTeamStartsAVisibleSuggestionAndStillWaitsForHuman(t *testing.T) {
 		mu.Lock()
 		defer mu.Unlock()
 		calls++
-		return strconv.Itoa(calls), nil
+		return "答案：1\n答案：2\n答案：3", nil
 	}))
 	b.Start()
 	if err := b.SubmitClues("encryptor", ws.SubmitCluesData{Round: 1, Clues: [3]string{"harbor", "snow", "flight"}}); err != nil {

@@ -286,7 +286,7 @@
 
 猜测的 `guesses` 只发给猜测的一队和本回合的加密者。发给其他人的同一条消息不带 `guesses`，改带 `filled`：每一格是否已经选了数字。
 
-每队按座次选择第一位合资格 AI 开始猜测，仅该 AI 发送猜码进度，其余 AI 不初始化或发送该行动的进度。两队的 AI 独立并发执行，每位 AI 内部按三条线索依次推理。`player` 与 `player_id` 对应选中的实际 AI 席位，`guesses` 是它选定的数字，收件范围相同。处理时 `state` 为 `thinking` 或 `retrying`，`focus` 指向当前格；完成时为 `ready`、`step: 3`、`focus: 0`；建议失败时为 `unavailable`，保留此前完成的格，不编造备用建议。
+每队按座次选择第一位合资格 AI 开始猜测，仅该 AI 发送猜码进度，其余 AI 不初始化或发送该行动的进度。两队的 AI 独立并发执行；每位 AI 用一次请求猜出全部三个数字，再以随机的停顿逐格揭晓。`player` 与 `player_id` 对应选中的实际 AI 席位，`guesses` 是它选定的数字，收件范围相同。处理时 `state` 为 `thinking` 或 `retrying`，`focus` 指向当前格；完成时为 `ready`、`step: 3`、`focus: 0`；建议失败时为 `unavailable`，不编造备用建议。
 
 有真人能猜测时，选中的 AI 为 `suggestion: true`、`can_submit: false`。全部猜测者为 AI 时，它为 `suggestion: false`、`can_submit: true`；真人担任加密者、其余队友全是 AI 时也允许它自动解码。可提交者完成后，服务端再次核对选中席位、权限、行动实例、回合和阶段，接受后才广播该玩家的 `submitted`。建议永远不会覆盖真人输入、本队超时草稿或通过消息伪造提交权限；本队提交、超时或阶段结束时，取消这一行动下未完成的 AI 请求，并拒绝迟到结果。
 
@@ -299,8 +299,8 @@ AI 加密者也使用同一份逐玩家状态，携带自己的 ID、回合、�
 | `action` | `"encrypt"`、`"intercept"` 或 `"decrypt"` |
 | `player` | AI 席位的代号 |
 | `state` | `ai_thinking`：`"thinking"`、`"retrying"`；`ai_acted`：`"completed"`、`"fallback"` |
-| `step` | 正在作答的第几步，1–3 |
-| `completed` | 已完成的步数 |
+| `step` | 正在揭晓的第几格，1–3 |
+| `completed` | 已揭晓的格数 |
 | `total` | 固定为 3 |
 | `notice` | 重试或使用备用答案时的说明 |
 
@@ -369,7 +369,7 @@ select_team / leave_team / add_ai / remove_ai  →  room_state（房间）
 
 加密            phase_change(encrypting)        加密者收到密码，其余人 waiting
                 player_progress …               真人加密者每行是否有字
-                ai_thinking / ai_acted …        AI 加密者逐条作答
+                ai_thinking / ai_acted …        AI 加密者逐格揭晓线索
                 [真人] clues_submitted
 
 猜测            phase_change(guess)             所有人收到线索；加密者的队友解码，

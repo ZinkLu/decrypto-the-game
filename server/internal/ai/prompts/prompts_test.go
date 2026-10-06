@@ -18,9 +18,9 @@ func renderAll(t *testing.T) map[string]string {
 	t.Helper()
 	rendered := map[string]string{"system": System()}
 	for name, in := range map[string]any{
-		"clue":            ClueInput{Words: words, Digits: digits, Index: 1, Digit: digits[1], Word: words[digits[1]-1], History: history},
-		"guess_intercept": GuessInput{Clues: clues, Index: 1, Clue: clues[1], Intercept: true, History: history},
-		"guess_decrypt":   GuessInput{Clues: clues, Index: 1, Clue: clues[1], Words: words, History: history},
+		"clue":            ClueInput{Words: words, Digits: digits, History: history},
+		"guess_intercept": GuessInput{Clues: clues, Intercept: true, History: history},
+		"guess_decrypt":   GuessInput{Clues: clues, Words: words, History: history},
 		"words":           WordInput{Theme: WordThemes()[0]},
 	} {
 		out, err := render(name+".md", in)
@@ -56,14 +56,16 @@ func TestSystemIsShared(t *testing.T) {
 	}
 }
 
-func TestClueCarriesTheWordAndTheDigit(t *testing.T) {
-	out, err := Clue(ClueInput{Words: words, Digits: digits, Index: 2, Digit: 4, Word: words[3], Previous: []string{"长城"}, History: history})
+func TestClueCarriesTheWordsAndTheCode(t *testing.T) {
+	out, err := Clue(ClueInput{Words: words, Digits: digits, History: history})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
 		"1: 长城", "2: 风筝", "3: 火锅", "4: 玻璃",
-		"现在为第 3 位（编号 4，对应密语词「玻璃」）",
+		"第 1 位：编号 3 → 密语词「火锅」",
+		"第 2 位：编号 1 → 密语词「长城」",
+		"第 3 位：编号 4 → 密语词「玻璃」",
 		history,
 	} {
 		if !strings.Contains(out, want) {
@@ -72,40 +74,30 @@ func TestClueCarriesTheWordAndTheDigit(t *testing.T) {
 	}
 }
 
-// The encryptor writes one clue of three, but chooses it against the whole
-// code: every digit with its word has to be on the page, and exactly one of
-// them has to be marked as the one being answered.
-func TestClueShowsTheWholeCode(t *testing.T) {
-	out, err := Clue(ClueInput{Words: words, Digits: digits, Index: 1, Digit: digits[1], Word: words[digits[1]-1], History: history})
+// One request writes all three clues, so the prompt asks for three answer
+// lines and never marks a single position.
+func TestClueAsksForAllThreeAtOnce(t *testing.T) {
+	out, err := Clue(ClueInput{Words: words, Digits: digits, History: history})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{
-		"第 1 位：编号 3 → 密语词「火锅」",
-		"第 2 位：编号 1 → 密语词「长城」",
-		"第 3 位：编号 4 → 密语词「玻璃」",
-	} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("clue prompt is missing %q:\n%s", want, out)
-		}
+	if strings.Contains(out, "←") {
+		t.Fatalf("clue prompt marks a single position:\n%s", out)
 	}
-	if n := strings.Count(out, "← 现在为这一位给线索"); n != 1 {
-		t.Fatalf("clue prompt marks %d code lines as the current one:\n%s", n, out)
-	}
-	if !strings.Contains(out, "第 2 位：编号 1 → 密语词「长城」    ← 现在为这一位给线索") {
-		t.Fatalf("clue prompt marks the wrong code line:\n%s", out)
+	if !strings.Contains(out, "只输出三行") || !strings.Contains(out, "「线索：X」") {
+		t.Fatalf("clue prompt does not ask for three answer lines:\n%s", out)
 	}
 }
 
-// The strategy section belongs to a drawn strategy alone, but the rules that
-// keep clues out of the other team's mapping table are always on: they are the
-// point of the whole prompt.
+// The strategy section belongs to the drawn strategies alone, but the rules
+// that keep clues out of the other team's mapping table are always on: they
+// are the point of the whole prompt.
 func TestClueStrategyIsInjected(t *testing.T) {
-	plain, err := Clue(ClueInput{Words: words, Digits: digits, Index: 0, Digit: digits[0], Word: words[digits[0]-1], History: history})
+	plain, err := Clue(ClueInput{Words: words, Digits: digits, History: history})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(plain, "本次优先采用的策略") {
+	if strings.Contains(plain, "本次为三位各优先采用的策略") {
 		t.Fatalf("clue prompt invents a strategy section:\n%s", plain)
 	}
 	for _, want := range []string{"不断变长的对应表", "换一个新的联想角度", "不要给同义词", "查不到相似的旧线索",
@@ -115,12 +107,12 @@ func TestClueStrategyIsInjected(t *testing.T) {
 		}
 	}
 	for _, strategy := range ClueStrategies() {
-		out, err := Clue(ClueInput{Words: words, Digits: digits, Index: 0, Digit: digits[0], Word: words[digits[0]-1], Strategy: strategy, History: history})
+		out, err := Clue(ClueInput{Words: words, Digits: digits, Strategies: []string{strategy, strategy, strategy}, History: history})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out, "本次优先采用的策略——"+strategy) {
-			t.Fatalf("clue prompt does not carry the drawn strategy %q:\n%s", strategy, out)
+		if n := strings.Count(out, strategy); n != 3 {
+			t.Fatalf("clue prompt carries the drawn strategy %q %d times, not once per position:\n%s", strategy, n, out)
 		}
 	}
 	if len(ClueStrategies()) < 2 {
@@ -128,30 +120,12 @@ func TestClueStrategyIsInjected(t *testing.T) {
 	}
 }
 
-// The earlier clues are only worth telling the model about once there are any.
-// An empty list must leave the sentence out, not print it with nothing after it.
-func TestEarlierCluesOnlyWhenThereAreAny(t *testing.T) {
-	first, err := Clue(ClueInput{Words: words, Digits: digits, Index: 0, Digit: digits[0], Word: words[digits[0]-1]})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(first, "你本轮已经给出的线索") {
-		t.Fatalf("clue prompt mentions earlier clues in the first step:\n%s", first)
-	}
-	later, err := Clue(ClueInput{Words: words, Digits: digits, Index: 2, Digit: digits[2], Word: words[digits[2]-1], Previous: []string{"烽火", "炊烟"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(later, "你本轮已经给出的线索：烽火, 炊烟") {
-		t.Fatalf("clue prompt does not list the earlier clues:\n%s", later)
-	}
-}
-
-// A guesser sees all three clues at once, as the table does; the prompt has to
-// carry the whole triple and mark the one being answered.
-func TestGuessShowsAllCluesAndMarksOne(t *testing.T) {
+// A guesser sees all three clues at once, as the table does, and answers all
+// three in one reply: the prompt has to carry the whole triple and ask for
+// three answer lines, without marking a single clue.
+func TestGuessShowsAllCluesAndAsksForThreeAnswers(t *testing.T) {
 	for _, intercept := range []bool{true, false} {
-		out, err := Guess(GuessInput{Clues: clues, Index: 1, Clue: clues[1], Words: words, Intercept: intercept, History: history})
+		out, err := Guess(GuessInput{Clues: clues, Words: words, Intercept: intercept, History: history})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,35 +135,11 @@ func TestGuessShowsAllCluesAndMarksOne(t *testing.T) {
 				t.Fatalf("guess prompt (intercept=%v) is missing %q:\n%s", intercept, want, out)
 			}
 		}
-		if n := strings.Count(out, "← 现在猜这一条"); n != 1 {
-			t.Fatalf("guess prompt (intercept=%v) marks %d clues as the current one:\n%s", intercept, n, out)
+		if strings.Contains(out, "←") {
+			t.Fatalf("guess prompt (intercept=%v) marks a single clue:\n%s", intercept, out)
 		}
-		if !strings.Contains(out, "「炊烟」    ← 现在猜这一条") {
-			t.Fatalf("guess prompt (intercept=%v) marks the wrong clue:\n%s", intercept, out)
-		}
-		if !strings.Contains(out, "第 2 条线索「炊烟」") {
-			t.Fatalf("guess prompt (intercept=%v) does not name the clue to answer:\n%s", intercept, out)
-		}
-	}
-}
-
-func TestEarlierDigitsAreNotRepeated(t *testing.T) {
-	for _, intercept := range []bool{true, false} {
-		first, err := Guess(GuessInput{Clues: clues, Index: 0, Clue: clues[0], Words: words, Intercept: intercept})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(first, "你本轮已经猜过") {
-			t.Fatalf("guess prompt (intercept=%v) mentions earlier digits in the first step:\n%s", intercept, first)
-		}
-		later, err := Guess(GuessInput{Clues: clues, Index: 2, Clue: clues[2], Words: words, Intercept: intercept, Previous: []int{2, 4}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, want := range []string{"第 1 条已猜编号 2", "第 2 条已猜编号 4", "只能从剩下的编号里选：1, 3"} {
-			if !strings.Contains(later, want) {
-				t.Fatalf("guess prompt (intercept=%v) does not pair earlier clues with their digits (%q):\n%s", intercept, want, later)
-			}
+		if !strings.Contains(out, "只输出三行") || !strings.Contains(out, "三个数字互不相同") {
+			t.Fatalf("guess prompt (intercept=%v) does not ask for three distinct answers:\n%s", intercept, out)
 		}
 	}
 }
@@ -204,11 +154,11 @@ func TestInterceptorNeverSeesWords(t *testing.T) {
 		lines[i] = strconv.Itoa(i+1) + ": " + word
 	}
 
-	intercept, err := Guess(GuessInput{Clues: clues, Index: 0, Clue: clues[0], Words: words, Intercept: true, Previous: []int{1}, History: history})
+	intercept, err := Guess(GuessInput{Clues: clues, Words: words, Intercept: true, History: history})
 	if err != nil {
 		t.Fatal(err)
 	}
-	decrypt, err := Guess(GuessInput{Clues: clues, Index: 0, Clue: clues[0], Words: words, History: history})
+	decrypt, err := Guess(GuessInput{Clues: clues, Words: words, History: history})
 	if err != nil {
 		t.Fatal(err)
 	}

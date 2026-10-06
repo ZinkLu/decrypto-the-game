@@ -5,98 +5,88 @@ import (
 	"testing"
 )
 
-func TestParseGuess(t *testing.T) {
+func TestParseGuessTriple(t *testing.T) {
 	for _, tc := range []struct {
 		reply string
-		want  int
+		want  [3]int
 	}{
-		// the contract: one marked line
-		{"答案：3", 3},
-		{"答案:2", 2},
-		{"答案 4", 4},
-		{"答案是 1", 1},
-		{"最终答案：3", 3},
-		{"**答案：4**", 4},
-		{"ANSWER: 2", 2},
-		{"answer is 3", 3},
-		{"答案：3。", 3},
-		{"３", 3}, // full-width digit, bare
-		// the bare digit, however wrapped
-		{"3", 3},
-		{" 3 ", 3},
-		{"**3**", 3},
-		{"「3」", 3},
-		{"3。", 3},
-		// reasoning around the answer
-		{"历史里「灯塔」对应 1，但这条更像 2。\n答案：2", 2},
-		{"我想明白了，答案是 3。", 3},
-		{"推理很多……\n4", 4},
-		{"2\n因为 1 已经被猜过。", 2},
-		// the last marked line wins
-		{"答案：2\n不对，再想想。\n答案：4", 4},
+		// the contract: three marked lines
+		{"答案：1\n答案：2\n答案：3", [3]int{1, 2, 3}},
+		{"答案:2\n答案：4\n答案: 1", [3]int{2, 4, 1}},
+		{"答案 4\n答案 1\n答案 2", [3]int{4, 1, 2}},
+		{"最终答案：3\n我的答案：1\n答案：2", [3]int{3, 1, 2}},
+		{"**答案：4**\n**答案：2**\n**答案：1**", [3]int{4, 2, 1}},
+		{"ANSWER: 2\nanswer is 3\nAnswer: 1", [3]int{2, 3, 1}},
+		{"答案：３\n答案：１\n答案：４", [3]int{3, 1, 4}}, // full-width digits
+		// reasoning around the answer lines
+		{"历史里「灯塔」对应 1，但这条更像 2。\n答案：2\n答案：3\n答案：1", [3]int{2, 3, 1}},
+		{"答案：1\n答案：2\n答案：4\n希望是对的。", [3]int{1, 2, 4}},
+		// a corrected first attempt: the last three marked lines win
+		{"答案：1\n答案：2\n答案：3\n不对，再想想。\n答案：4\n答案：2\n答案：1", [3]int{4, 2, 1}},
+		// bare digit lines
+		{"3\n1\n4", [3]int{3, 1, 4}},
+		{"**3**\n「1」\n4。", [3]int{3, 1, 4}},
 	} {
-		got, err := parseGuess(tc.reply)
+		got, err := parseGuessTriple(tc.reply)
 		if err != nil || got != tc.want {
-			t.Errorf("parseGuess(%q) = %d, %v; want %d", tc.reply, got, err, tc.want)
+			t.Errorf("parseGuessTriple(%q) = %v, %v; want %v", tc.reply, got, err, tc.want)
 		}
 	}
 }
 
-func TestParseGuessRejects(t *testing.T) {
+func TestParseGuessTripleRejects(t *testing.T) {
 	for _, reply := range []string{
-		"", "   ", "0", "5", "one", "1 or 2", "1、2、3",
-		"答案：5", "答案：0", "我觉得都行", "这条线索很难判断",
+		"", "   ", "one\ntwo\nthree", "我觉得都行",
+		// fewer than three answers
+		"答案：1\n答案：2", "3\n1",
+		// digits out of range
+		"答案：0\n答案：2\n答案：3", "答案：5\n答案：2\n答案：3",
+		// the code never repeats a digit
+		"答案：1\n答案：1\n答案：2", "3\n3\n1",
 	} {
-		if n, err := parseGuess(reply); err == nil {
-			t.Errorf("parseGuess(%q) accepted %d", reply, n)
+		if n, err := parseGuessTriple(reply); err == nil {
+			t.Errorf("parseGuessTriple(%q) accepted %v", reply, n)
 		}
 	}
 }
 
-func TestParseClue(t *testing.T) {
+func TestParseClues(t *testing.T) {
 	for _, tc := range []struct {
-		reply, want string
+		reply string
+		want  [3]string
 	}{
-		// the contract: one marked line
-		{"线索：灯塔", "灯塔"},
-		{"线索: 灯塔", "灯塔"},
-		{"线索：New York", "New York"},
-		{"我的线索是：炊烟", "炊烟"},
-		{"**线索：灯塔**", "灯塔"},
-		{"线索：灯塔（夜晚的光）", "灯塔"},
-		{"线索：灯塔。队友能想到光。", "灯塔"},
-		// a bare word, however wrapped
-		{"灯塔", "灯塔"},
-		{" 灯塔 ", "灯塔"},
-		{"「灯塔」", "灯塔"},
-		{"\"灯塔\"", "灯塔"},
-		{"灯塔。", "灯塔"},
-		// reasoning around the answer
-		{"想了一下，换这个角度。\n线索：病人", "病人"},
-		{"线索：炊烟\n希望队友能想到家。", "炊烟"},
-		// a long reply still yields the marked line
-		{"我考虑了对方的对应表，「玻璃」这个角度已经用过，换一个新的联想。\n线索：窗户", "窗户"},
+		// the contract: three marked lines
+		{"线索：灯塔\n线索：炊烟\n线索：病人", [3]string{"灯塔", "炊烟", "病人"}},
+		{"线索: 灯塔\n线索:New York\n线索：病人", [3]string{"灯塔", "New York", "病人"}},
+		{"我的线索是：炊烟\n**线索：灯塔**\n线索：风筝", [3]string{"炊烟", "灯塔", "风筝"}},
+		{"线索：灯塔（夜晚的光）\n线索：炊烟。\n线索：病人", [3]string{"灯塔", "炊烟", "病人"}},
+		// reasoning around the answer lines
+		{"想了一下，换这个角度。\n线索：病人\n线索：炊烟\n线索：灯塔", [3]string{"病人", "炊烟", "灯塔"}},
+		{"线索：病人\n线索：炊烟\n线索：灯塔\n希望队友能想到家。", [3]string{"病人", "炊烟", "灯塔"}},
+		// a corrected first attempt: the last three marked lines win
+		{"线索：甲\n线索：乙\n线索：丙\n不对。\n线索：灯塔\n线索：炊烟\n线索：病人", [3]string{"灯塔", "炊烟", "病人"}},
+		// bare lines
+		{"灯塔\n炊烟\n病人", [3]string{"灯塔", "炊烟", "病人"}},
+		{"「灯塔」\n\"炊烟\"\n病人。", [3]string{"灯塔", "炊烟", "病人"}},
 	} {
-		got, err := parseClue(tc.reply)
+		got, err := parseClues(tc.reply)
 		if err != nil || got != tc.want {
-			t.Errorf("parseClue(%q) = %q, %v; want %q", tc.reply, got, err, tc.want)
+			t.Errorf("parseClues(%q) = %q, %v; want %q", tc.reply, got, err, tc.want)
 		}
 	}
 }
 
-func TestParseClueRejects(t *testing.T) {
+func TestParseCluesRejects(t *testing.T) {
 	for _, reply := range []string{
-		"", "   ", `""`, "\"   \"", "线索：", "\n\n",
-		strings.Repeat("长", maxClueRunes+1),
+		"", "   ", "\n\n",
+		// fewer than three answers
+		"线索：灯塔", "线索：灯塔\n线索：炊烟", "灯塔\n炊烟",
+		"线索：\n线索：炊烟\n线索：病人",
+		// an over-long line is not a clue word
+		"线索：" + strings.Repeat("长", maxClueRunes+1) + "\n线索：炊烟\n线索：病人",
 	} {
-		if clue, err := parseClue(reply); err == nil {
-			t.Errorf("parseClue(%q) accepted %q", reply, clue)
+		if clues, err := parseClues(reply); err == nil {
+			t.Errorf("parseClues(%q) accepted %q", reply, clues)
 		}
-	}
-	// A prose line under the length bound is still read as a last-resort
-	// clue; only when every line is over-long is there nothing to accept.
-	long := strings.Repeat("这句话太长了不可能是线索词", 10)
-	if clue, err := parseClue(long + "\n" + long); err == nil {
-		t.Errorf("parseClue accepted over-long prose %q", clue)
 	}
 }

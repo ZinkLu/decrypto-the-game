@@ -111,7 +111,7 @@ func newBridge(r *room.Room, hub *ws.Hub, session *core.Session, roster room.Sna
 		// The one model the whole server talks to; the hands may come from it too.
 		if provider, ok := providers.FromEnv(); ok {
 			b.AIPlayer = ai.NewAIPlayer(provider)
-			log.Printf("bridge: AI players get %d tries per step", aiAttempts())
+			log.Printf("bridge: AI players get %d tries per action", aiAttempts())
 		} else {
 			log.Printf("bridge: no LLM API key set (OPENAI_API_KEY or ANTHROPIC_API_KEY); AI players will use fallback stubs")
 		}

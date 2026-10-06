@@ -6,23 +6,23 @@
 // Each file is a text/template named after the file:
 //
 //	system.md          the opening instructions, no data
-//	clue.md            one clue word for one secret digit
-//	guess_intercept.md one digit for a clue of the other team
-//	guess_decrypt.md   one digit for a clue of your own team
+//	clue.md            the three clue words for this round's code
+//	guess_intercept.md the three digits for the other team's clues
+//	guess_decrypt.md   the three digits for your own team's clues
 //	words.md           the four secret words of one team
 //
 // themes.md is not a prompt but a list: one field per line, which the word
 // provider rotates through so two teams in one game are not handed the same
 // words. strategies.md is the encryptor's playbook, parsed by section:
 // 核心原则 and 红线 render into every clue request, 绿色策略 and 黄色策略 are
-// the pool DrawStrategy rotates through, and 人类专用 lists what a single
-// clue request cannot carry out.
+// the pool DrawStrategy rotates through, and 人类专用 lists what a model
+// cannot carry out.
 //
 // Besides the fields of the input structs below, the templates may call
 // `list`, which numbers a list of words, `join`, which joins a list with a
 // separator, and `principles` and `redlines`, which return the standing rules
 // from strategies.md. The inputs also carry methods that lay out whole lines —
-// this round's code, this round's clues, the digits already guessed — so a
+// this round's code, this round's clues, the per-position strategies — so a
 // template never counts positions by itself. A prompt file that names a field
 // nobody sets fails to render, so a placeholder can never be shipped by
 // accident.
@@ -183,25 +183,18 @@ func mustList(name string) []string {
 	return out
 }
 
-// ClueInput is what the encryptor needs to answer for one of its digits. The
-// whole code goes along, not only the digit being answered: the three clues
-// are published together and must not be confusable with each other.
+// ClueInput is what the encryptor needs to answer for the whole code at once:
+// the three clues are published together and must not be confusable with each
+// other, so one request writes all three.
 type ClueInput struct {
-	Words    []string // the team's four secret words
-	Digits   []int    // this round's whole code, three distinct digits in order
-	Index    int      // which of the three clues to write, from 0
-	Digit    int      // the secret digit, 1-4, this clue has to point at
-	Word     string   // the secret word that digit points at
-	Previous []string // clues already given this round
-	Strategy string   // the drawn way of thinking; empty leaves the section out
-	History  string   // the rounds already public
+	Words      []string // the team's four secret words
+	Digits     []int    // this round's whole code, three distinct digits in order
+	Strategies []string // one drawn way of thinking per position; empty leaves the section out
+	History    string   // the rounds already public
 }
 
-// Pos is the position of the clue being written, counted from 1.
-func (in ClueInput) Pos() int { return in.Index + 1 }
-
 // CodeLines lays out this round's code one digit per line, each with the word
-// it points at, marking the line the clue is being written for.
+// it points at.
 func (in ClueInput) CodeLines() []string {
 	lines := make([]string, len(in.Digits))
 	for i, d := range in.Digits {
@@ -209,72 +202,38 @@ func (in ClueInput) CodeLines() []string {
 		if d >= 1 && d <= len(in.Words) {
 			word = " → 密语词「" + in.Words[d-1] + "」"
 		}
-		mark := ""
-		if i == in.Index {
-			mark = "    ← 现在为这一位给线索"
-		}
-		lines[i] = fmt.Sprintf("第 %d 位：编号 %d%s%s", i+1, d, word, mark)
+		lines[i] = fmt.Sprintf("第 %d 位：编号 %d%s", i+1, d, word)
 	}
 	return lines
 }
 
-// Clue asks the encryptor for one clue word.
+// StrategyLines pairs each position with the strategy drawn for it.
+func (in ClueInput) StrategyLines() []string {
+	lines := make([]string, len(in.Strategies))
+	for i, s := range in.Strategies {
+		lines[i] = fmt.Sprintf("第 %d 位：%s", i+1, s)
+	}
+	return lines
+}
+
+// Clue asks the encryptor for this round's three clue words.
 func Clue(in ClueInput) (string, error) { return render("clue.md", in) }
 
-// GuessInput is what a team needs to answer for one of the three clues. The
-// whole triple goes along: every guesser sees all three clues at once, and
-// the other two are worth reasoning with.
+// GuessInput is what a team needs to answer all three clues at once.
 type GuessInput struct {
 	Clues     []string // this round's three clues, public to both teams
-	Index     int      // which clue to answer, from 0
-	Clue      string   // the clue being answered
 	Words     []string // the team's own words; the interceptor does not have them
-	Intercept bool     // the clue comes from the other team
-	Previous  []int    // digits already guessed this round, one per clue answered
+	Intercept bool     // the clues come from the other team
 	History   string
 }
 
-// Pos is the position of the clue being answered, counted from 1.
-func (in GuessInput) Pos() int { return in.Index + 1 }
-
-// ClueLines lists this round's clues one per line, marking the one being
-// answered.
+// ClueLines lists this round's clues one per line.
 func (in GuessInput) ClueLines() []string {
 	lines := make([]string, len(in.Clues))
 	for i, c := range in.Clues {
-		mark := ""
-		if i == in.Index {
-			mark = "    ← 现在猜这一条"
-		}
-		lines[i] = fmt.Sprintf("第 %d 条：「%s」%s", i+1, c, mark)
+		lines[i] = fmt.Sprintf("第 %d 条：「%s」", i+1, c)
 	}
 	return lines
-}
-
-// PreviousLines pairs each clue already answered with the digit guessed for
-// it, so the model can cross-check positions rather than a bare digit pool.
-func (in GuessInput) PreviousLines() []string {
-	lines := make([]string, len(in.Previous))
-	for i, n := range in.Previous {
-		lines[i] = fmt.Sprintf("第 %d 条已猜编号 %d", i+1, n)
-	}
-	return lines
-}
-
-// Remaining are the digits still available for this clue: the code never
-// repeats a digit, and the earlier clues have used theirs up.
-func (in GuessInput) Remaining() []int {
-	used := make(map[int]bool, len(in.Previous))
-	for _, n := range in.Previous {
-		used[n] = true
-	}
-	var rest []int
-	for n := 1; n <= 4; n++ {
-		if !used[n] {
-			rest = append(rest, n)
-		}
-	}
-	return rest
 }
 
 // Guess asks for the digit a clue points at. The interceptor gets a prompt

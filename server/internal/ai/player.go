@@ -2,7 +2,6 @@ package ai
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"sync/atomic"
 
@@ -13,8 +12,8 @@ import (
 // in the prompts package, one file per action.
 type AIPlayer struct {
 	Provider LLMProvider
-	// strategy counts the clue requests, one drawn strategy each, so a run of
-	// clues rotates through the whole list instead of settling into one trick.
+	// strategy counts the drawn strategies, so a run of clue requests rotates
+	// through the whole list instead of settling into one trick.
 	strategy atomic.Uint64
 }
 
@@ -23,23 +22,23 @@ func NewAIPlayer(provider LLMProvider) *AIPlayer {
 	return &AIPlayer{Provider: provider}
 }
 
-// GenerateSingleClue asks the AI to produce the clue at position index of
-// this round's code. digits is the whole code, so the clue can be chosen
-// against the other two; alreadyGenerated contains the clues produced so far.
-func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digits [3]int, index int, words [4]string, history string, alreadyGenerated []string) (string, error) {
-	digit := digits[index]
+// GenerateClues asks the AI for this round's three clue words in one request:
+// the three clues are published together and must be chosen against each
+// other anyway, and one slow request per word would not fit the action's
+// deadline. Each position draws its own strategy from the rotation.
+func (a *AIPlayer) GenerateClues(ctx context.Context, digits [3]int, words [4]string, history string) ([3]string, error) {
+	strategies := make([]string, len(digits))
+	for i := range strategies {
+		strategies[i] = prompts.DrawStrategy(a.strategy.Add(1))
+	}
 	prompt, err := prompts.Clue(prompts.ClueInput{
-		Words:    words[:],
-		Digits:   digits[:],
-		Index:    index,
-		Digit:    digit,
-		Word:     words[digit-1],
-		Previous: alreadyGenerated,
-		Strategy: prompts.DrawStrategy(a.strategy.Add(1)),
-		History:  history,
+		Words:      words[:],
+		Digits:     digits[:],
+		Strategies: strategies,
+		History:    history,
 	})
 	if err != nil {
-		return "", err
+		return [3]string{}, err
 	}
 
 	messages := []Message{
@@ -49,34 +48,30 @@ func (a *AIPlayer) GenerateSingleClue(ctx context.Context, digits [3]int, index 
 
 	resp, err := a.Provider.Complete(ctx, messages)
 	if err != nil {
-		log.Printf("[AI] GenerateSingleClue error: %v", err)
-		return "", err
+		log.Printf("[AI] GenerateClues error: %v", err)
+		return [3]string{}, err
 	}
 
-	clue, err := parseClue(resp)
+	clues, err := parseClues(resp)
 	if err != nil {
-		return "", err
+		return [3]string{}, err
 	}
-	log.Printf("[AI] GenerateSingleClue digit=%d word=%s → %q", digit, words[digit-1], clue)
-	return clue, nil
+	log.Printf("[AI] GenerateClues digits=%v → %q", digits, clues)
+	return clues, nil
 }
 
-// GuessSingleNumber asks the AI for the digit at position index of this
-// round's clues. The whole triple goes along, as every guesser sees all three
-// clues at once and reasons with the other two. alreadyGuessed contains the
-// digits guessed for the earlier clues of this round.
-func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clues [3]string, index int, words [4]string, isIntercept bool, history string, alreadyGuessed []int) (int, error) {
+// GuessCode asks the AI for the digits this round's three clues point at, in
+// one request: every guesser sees all three clues at once and answers them
+// against each other.
+func (a *AIPlayer) GuessCode(ctx context.Context, clues [3]string, words [4]string, isIntercept bool, history string) ([3]int, error) {
 	prompt, err := prompts.Guess(prompts.GuessInput{
 		Clues:     clues[:],
-		Index:     index,
-		Clue:      clues[index],
 		Words:     words[:],
 		Intercept: isIntercept,
-		Previous:  alreadyGuessed,
 		History:   history,
 	})
 	if err != nil {
-		return 0, err
+		return [3]int{}, err
 	}
 
 	messages := []Message{
@@ -86,19 +81,14 @@ func (a *AIPlayer) GuessSingleNumber(ctx context.Context, clues [3]string, index
 
 	resp, err := a.Provider.Complete(ctx, messages)
 	if err != nil {
-		log.Printf("[AI] GuessSingleNumber error: %v", err)
-		return 0, err
+		log.Printf("[AI] GuessCode error: %v", err)
+		return [3]int{}, err
 	}
 
-	n, err := parseGuess(resp)
+	guess, err := parseGuessTriple(resp)
 	if err != nil {
-		return 0, err
+		return [3]int{}, err
 	}
-	for _, previous := range alreadyGuessed {
-		if n == previous {
-			return 0, fmt.Errorf("duplicate guess output: %d", n)
-		}
-	}
-	log.Printf("[AI] GuessSingleNumber clue=%q → %d", clues[index], n)
-	return n, nil
+	log.Printf("[AI] GuessCode clues=%q → %v", clues, guess)
+	return guess, nil
 }

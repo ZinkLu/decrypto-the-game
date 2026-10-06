@@ -75,39 +75,13 @@ func awaitProgress(t *testing.T, b *Bridge, viewer string, ready func(map[string
 	return nil
 }
 
-// Later digits depend on this worker's first answer, so shared result buffers
-// or shared model histories would produce either repeated or illegal answers.
-// The provider reads what the worker was told: the guess prompt pairs every
-// clue already answered with the digit guessed for it ("第 N 条已猜编号 d").
-func nextIndependentDigit(messages []ai.Message) (string, bool) {
-	content := messages[len(messages)-1].Content
-	used := map[int]bool{}
-	last := 0
-	found := false
-	for _, line := range strings.Split(content, "\n") {
-		if _, tail, ok := strings.Cut(line, "已猜编号 "); ok {
-			found = true
-			last, _ = strconv.Atoi(strings.TrimSpace(tail))
-			used[last] = true
-		}
-	}
-	if !found {
-		return "", false
-	}
-	for n := last%4 + 1; ; n = n%4 + 1 {
-		if !used[n] {
-			return strconv.Itoa(n), true
-		}
-	}
-}
-
+// barrierAI answers each request with a valid triple once the barrier
+// releases; the ordinal of the call picks the triple, so two teams never
+// share one.
 func barrierAI(started chan<- int, release <-chan struct{}) *ai.AIPlayer {
 	var mu sync.Mutex
 	calls := 0
 	return ai.NewAIPlayer(progressProvider(func(ctx context.Context, messages []ai.Message) (string, error) {
-		if next, ok := nextIndependentDigit(messages); ok {
-			return next, nil
-		}
 		mu.Lock()
 		calls++
 		ordinal := calls
@@ -115,7 +89,7 @@ func barrierAI(started chan<- int, release <-chan struct{}) *ai.AIPlayer {
 		started <- ordinal
 		select {
 		case <-release:
-			return strconv.Itoa((ordinal-1)%4 + 1), nil
+			return fmt.Sprintf("答案：%d\n答案：%d\n答案：%d", ordinal%4+1, (ordinal+1)%4+1, (ordinal+2)%4+1), nil
 		case <-ctx.Done():
 			return "", ctx.Err()
 		}
@@ -436,21 +410,21 @@ func TestAIEncryptorSynchronizesIdentityAndFilledSlotsWithoutClueText(t *testing
 	t.Cleanup(func() { b.Stop(); RemoveBridge(b.Session.SessionID()) })
 	b.Timing = patientTimings
 	b.Timing.Request = time.Minute
+	// The answers are written in one request and read out one at a time; a
+	// long pace holds the reveal after the first slot, so the mid-encryption
+	// state can be inspected deterministically.
+	b.Timing.AIPace = time.Hour
 	started, releaseFirst := make(chan int, 2), make(chan struct{})
 	calls := 0
 	b.AIPlayer = ai.NewAIPlayer(progressProvider(func(ctx context.Context, _ []ai.Message) (string, error) {
 		calls++
 		started <- calls
-		if calls == 1 {
-			select {
-			case <-releaseFirst:
-				return "unpublished-private-clue", nil
-			case <-ctx.Done():
-				return "", ctx.Err()
-			}
+		select {
+		case <-releaseFirst:
+			return "线索：unpublished-private-clue\n线索：b\n线索：c", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
 		}
-		<-ctx.Done()
-		return "", ctx.Err()
 	}))
 	b.Start()
 	awaitSignals(t, started, 1)
@@ -458,7 +432,9 @@ func TestAIEncryptorSynchronizesIdentityAndFilledSlotsWithoutClueText(t *testing
 		t.Fatalf("AI encryptor identity or state missing: %+v", p)
 	}
 	close(releaseFirst)
-	awaitSignals(t, started, 1)
+	awaitProgress(t, b, "observer", func(p map[string]*ws.PlayerProgressData) bool {
+		return p[aiID] != nil && p[aiID].Step == 1 && p[aiID].Focus == 2
+	})
 	for _, viewer := range []string{"observer", "decoder", "b1"} {
 		v := b.Sync(viewer)
 		p := v.TeammateProgress[aiID]
@@ -469,5 +445,8 @@ func TestAIEncryptorSynchronizesIdentityAndFilledSlotsWithoutClueText(t *testing
 		if err != nil || strings.Contains(string(serialized), "unpublished-private-clue") {
 			t.Fatalf("unpublished clue leaked in %s's sync: %s (%v)", viewer, serialized, err)
 		}
+	}
+	if len(started) != 0 {
+		t.Fatal("the three clues took more than one request")
 	}
 }

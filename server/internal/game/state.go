@@ -17,10 +17,12 @@ import (
 // players are always shown the deadline itself. Request bounds one model call in total; it sits
 // just under the AI action budget. A model that sends nothing is given up on far sooner by the
 // provider's own idle timeout, and one that keeps streaming is left alone until it answers.
-type Timings struct{ Encrypt, Guess, AI, Request, BetweenRounds, Grace time.Duration }
+// AIPace is the mean beat between two answers an AI reveals: it thinks in one
+// request and reads the answers out at a human pace. Zero reveals at once.
+type Timings struct{ Encrypt, Guess, AI, Request, BetweenRounds, Grace, AIPace time.Duration }
 
 var DefaultTimings = Timings{Encrypt: 90 * time.Second, Guess: 60 * time.Second, AI: 120 * time.Second,
-	Request: 110 * time.Second, BetweenRounds: 8 * time.Second, Grace: 1500 * time.Millisecond}
+	Request: 110 * time.Second, BetweenRounds: 8 * time.Second, Grace: 1500 * time.Millisecond, AIPace: 2500 * time.Millisecond}
 
 // action is one team's task in the current phase: the clues while encrypting;
 // the decoding and, from round 3, the interception while guessing. Each has its

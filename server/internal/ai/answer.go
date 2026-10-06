@@ -1,13 +1,12 @@
 package ai
 
-// A text reply is not a stable protocol: a model asked for "3" also answers
-// "答案：3", "**3**", a full sentence, or three lines of reasoning with the
-// digit on the last one. So every prompt ends with a fixed answer line —
-// 答案：<编号> for a guess, 线索：<词> for a clue — and the parsers here read
-// that line. A reply that broke the contract is still worth an answer: the
-// bare reply, its last line and its first line each get a turn, and a marker
-// anywhere in a line is a last resort. Only a reply that carries no answer at
-// all fails.
+// A text reply is not a stable protocol: a model asked for "答案：3" also
+// answers "**答案：3**", a full-width ３, or three lines of reasoning with the
+// answers at the end. So every prompt ends with fixed answer lines — three
+// times 答案：<编号> for a guess, three times 线索：<词> for the clues — and
+// the parsers here read those lines. A reply that broke the contract is still
+// worth an answer: its bare lines each get a turn. Only a reply that carries
+// fewer than three answers fails.
 
 import (
 	"fmt"
@@ -20,80 +19,74 @@ import (
 // maxClueRunes bounds a clue: a word or a very short phrase, never a sentence.
 const maxClueRunes = 80
 
-// The answer line the prompts ask for, anchored to the start of a line so an
-// example a model echoes from the prompt cannot pass for an answer, and taken
-// from the end so reasoning that mentions the format cannot pass for one
-// either. Markdown, a quote and the hedges 最终/我的 in front of the marker
-// are models dressing the line up; the colon may be missing.
+// The answer lines the prompts ask for, anchored to the start of a line so an
+// example a model echoes from the prompt cannot pass for an answer. Markdown,
+// a quote and the hedges 最终/我的 in front of the marker are models dressing
+// the line up; the guess's colon may be missing.
 var (
 	guessLine = regexp.MustCompile(`(?im)^[*_>#\s"']*(?:最终|我的)?\s*(?:答案|answer)\s*(?:是|is)?\s*[：:]?\s*([0-9]+)`)
 	clueLine  = regexp.MustCompile(`(?im)^[*_>#\s"']*(?:最终|我的)?\s*(?:线索|clue)\s*(?:是)?\s*[：:]\s*(.+?)\s*$`)
-	// The same markers anywhere in a line, for an answer buried in a
-	// sentence; only the last occurrence counts.
-	guessInline = regexp.MustCompile(`(?i)(?:答案|answer)\s*(?:是|is)?\s*[：:]?\s*([0-9]+)`)
-	clueInline  = regexp.MustCompile(`(?i)(?:线索|clue)\s*(?:是)?\s*[：:]\s*([^。\n]+)`)
-	// The marker a reply may still wear when the whole reply is read as the
-	// clue itself. The colon is required: a clue may legitimately be the word
+	// The marker a bare line may still wear when it is read as the clue
+	// itself. The colon is required: a clue may legitimately be the word
 	// "clue".
 	cluePrefix = regexp.MustCompile(`(?i)^(?:最终|我的)?\s*(?:线索|clue)\s*(?:是)?\s*[：:]\s*`)
 )
 
-// parseGuess reads the digit 1-4 out of a reply: the marked answer line
-// first, then the shapes a bare answer arrives in, then a marker buried in a
-// sentence.
-func parseGuess(reply string) (int, error) {
+// parseGuessTriple reads the three digits 1-4 out of a one-shot reply: the
+// marked answer lines first — the last three, so a corrected first attempt
+// does not pass for the answer — then the bare digit lines of a reply that
+// skipped the markers. The code never repeats a digit, so three equal digits
+// are no answer.
+func parseGuessTriple(reply string) ([3]int, error) {
 	text := normalizeDigits(reply)
-	if matches := guessLine.FindAllStringSubmatch(text, -1); len(matches) > 0 {
-		if n, ok := parseDigit(matches[len(matches)-1][1]); ok {
-			return n, nil
+	var digits []int
+	if matches := guessLine.FindAllStringSubmatch(text, -1); len(matches) >= 3 {
+		for _, m := range matches[len(matches)-3:] {
+			if n, ok := parseDigit(m[1]); ok {
+				digits = append(digits, n)
+			}
+		}
+	} else {
+		for _, line := range nonEmptyLines(text) {
+			if n, ok := parseDigit(line); ok {
+				digits = append(digits, n)
+			}
 		}
 	}
-	for _, candidate := range replyCandidates(text) {
-		if n, ok := parseDigit(candidate); ok {
-			return n, nil
+	var out [3]int
+	if len(digits) >= 3 {
+		copy(out[:], digits[:3])
+		if out[0] != out[1] && out[1] != out[2] && out[0] != out[2] {
+			return out, nil
 		}
 	}
-	if matches := guessInline.FindAllStringSubmatch(text, -1); len(matches) > 0 {
-		if n, ok := parseDigit(matches[len(matches)-1][1]); ok {
-			return n, nil
-		}
-	}
-	return 0, fmt.Errorf("invalid guess output: %q", strings.TrimSpace(reply))
+	return [3]int{}, fmt.Errorf("invalid guess output: %q", strings.TrimSpace(reply))
 }
 
-// parseClue reads the clue word out of a reply.
-func parseClue(reply string) (string, error) {
+// parseClues reads the three clue words out of a one-shot reply: the marked
+// answer lines first, then the bare lines of a reply that skipped the markers.
+func parseClues(reply string) ([3]string, error) {
 	text := strings.TrimSpace(reply)
 	var candidates []string
-	if matches := clueLine.FindAllStringSubmatch(text, -1); len(matches) > 0 {
-		candidates = append(candidates, matches[len(matches)-1][1])
+	if matches := clueLine.FindAllStringSubmatch(text, -1); len(matches) >= 3 {
+		for _, m := range matches[len(matches)-3:] {
+			candidates = append(candidates, m[1])
+		}
+	} else {
+		candidates = nonEmptyLines(text)
 	}
-	candidates = append(candidates, replyCandidates(text)...)
-	if matches := clueInline.FindAllStringSubmatch(text, -1); len(matches) > 0 {
-		candidates = append(candidates, matches[len(matches)-1][1])
-	}
+	var clues []string
 	for _, candidate := range candidates {
 		if clue := cleanClue(candidate); clue != "" && utf8.RuneCountInString(clue) <= maxClueRunes {
-			return clue, nil
+			clues = append(clues, clue)
 		}
 	}
-	return "", fmt.Errorf("invalid clue output: %q", text)
-}
-
-// replyCandidates are the shapes a bare answer arrives in: the whole reply,
-// then its last line, then its first — a model that added a sentence put the
-// answer before or after it.
-func replyCandidates(text string) []string {
-	text = strings.TrimSpace(text)
-	lines := nonEmptyLines(text)
-	if len(lines) == 0 {
-		return nil
+	var out [3]string
+	if len(clues) < 3 {
+		return out, fmt.Errorf("invalid clues output: %q", text)
 	}
-	candidates := []string{text, lines[len(lines)-1]}
-	if len(lines) > 1 {
-		candidates = append(candidates, lines[0])
-	}
-	return candidates
+	copy(out[:], clues[:3])
+	return out, nil
 }
 
 func nonEmptyLines(text string) []string {
