@@ -34,7 +34,11 @@ type OpenAIProvider struct {
 	APIKey  string
 	Model   string
 	BaseURL string // e.g. "https://api.openai.com/v1" or "http://localhost:11434/v1"
-	// MaxTokens bounds each answer, reasoning included (OPENAI_MAX_TOKENS, default 2048).
+	// MaxTokens bounds each answer, reasoning included (OPENAI_MAX_TOKENS).
+	// Zero or negative omits max_tokens from the request entirely, so the
+	// server applies its own default — a thinking model's default budget is
+	// far larger than any cap we would pick, and a cap that is too small only
+	// truncates the answer (finish_reason=length) without shortening thought.
 	MaxTokens int
 	// ReasoningEffort ("low", "medium", "high") shortens a reasoning model's
 	// thinking where the server supports it (OPENAI_REASONING_EFFORT).
@@ -68,10 +72,11 @@ func NewOpenAIProvider(apiKey, baseURL, model string) *OpenAIProvider {
 		Client:          &http.Client{},
 		Model:           model,
 		BaseURL:         baseURL,
-		MaxTokens:       2048,
 		ReasoningEffort: strings.TrimSpace(os.Getenv("OPENAI_REASONING_EFFORT")),
 		IdleTimeout:     defaultIdleTimeout,
 	}
+	// Only a positive value takes; unset, zero or negative leaves MaxTokens at
+	// zero, and Complete then omits max_tokens from the request.
 	if n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("OPENAI_MAX_TOKENS"))); err == nil && n > 0 {
 		p.MaxTokens = n
 	}
@@ -150,17 +155,17 @@ func (p *OpenAIProvider) Complete(ctx context.Context, messages []ai.Message) (s
 		})
 	}
 
-	maxTokens := p.MaxTokens
-	if maxTokens <= 0 {
-		maxTokens = 2048
-	}
 	body := map[string]any{}
 	for k, v := range p.Extra {
 		body[k] = v
 	}
 	body["model"] = p.Model
 	body["messages"] = chatMessages
-	body["max_tokens"] = maxTokens
+	// Omit max_tokens unless a positive cap was configured, so the server
+	// applies its own default rather than a cap that only truncates answers.
+	if p.MaxTokens > 0 {
+		body["max_tokens"] = p.MaxTokens
+	}
 	body["stream"] = true
 	body["stream_options"] = map[string]any{"include_usage": true}
 	if p.ReasoningEffort != "" {

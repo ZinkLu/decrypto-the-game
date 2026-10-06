@@ -168,6 +168,42 @@ func TestReasoningSettingsReachTheRequest(t *testing.T) {
 	}
 }
 
+func TestMaxTokensOmittedUnlessPositive(t *testing.T) {
+	for _, tc := range []struct {
+		env     string
+		present bool
+		value   float64
+	}{
+		{"", false, 0},
+		{"0", false, 0},
+		{"-5", false, 0},
+		{"1024", true, 1024},
+	} {
+		t.Run("OPENAI_MAX_TOKENS="+tc.env, func(t *testing.T) {
+			t.Setenv("OPENAI_MAX_TOKENS", tc.env)
+			p := NewOpenAIProvider("k", "http://model.invalid/v1", "test")
+			var sent map[string]any
+			p.Client = &http.Client{Transport: transport(func(r *http.Request) (*http.Response, error) {
+				body, _ := io.ReadAll(r.Body)
+				if err := json.Unmarshal(body, &sent); err != nil {
+					t.Fatal(err)
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"choices":[{"finish_reason":"stop","message":{"content":"3"}}]}`)), Header: make(http.Header)}, nil
+			})}
+			if _, err := p.Complete(context.Background(), nil); err != nil {
+				t.Fatal(err)
+			}
+			got, present := sent["max_tokens"]
+			if present != tc.present {
+				t.Fatalf("max_tokens present=%v, want %v (body=%v)", present, tc.present, sent)
+			}
+			if present && got != tc.value {
+				t.Fatalf("max_tokens=%v, want %v", got, tc.value)
+			}
+		})
+	}
+}
+
 func TestDebugLogsReasoningAndAnswer(t *testing.T) {
 	for _, tc := range []struct {
 		debug, body string
