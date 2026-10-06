@@ -325,6 +325,51 @@ func TestActionCompletionCancelsSelectedAIWorker(t *testing.T) {
 	}
 }
 
+// An AI action is settled like a human one: no answer by the deadline plus
+// grace, and the sweep closes it without an answer and cancels the worker, so
+// a worker that died without answering cannot stall the phase.
+func TestAIActionPastDeadlineIsForceSettled(t *testing.T) {
+	b, round := aiGuessBridge(t, []bool{false, false}, []bool{true, true, true}, 3)
+	job, ok := b.newAIGuess(round, true)
+	if !ok {
+		t.Fatal("missing selected AI")
+	}
+	started, canceled := make(chan int, 1), make(chan int, 1)
+	b.Timing.Request = time.Minute
+	b.AIPlayer = ai.NewAIPlayer(progressProvider(func(ctx context.Context, _ []ai.Message) (string, error) {
+		started <- 1
+		<-ctx.Done()
+		canceled <- 1
+		return "", ctx.Err()
+	}))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b.runAIGuess(ctx, job, make(chan aiAnswer, 1))
+	awaitSignals(t, started, 1)
+	if _, ok := b.nextExpiry(); !ok {
+		t.Fatal("an open AI action has no expiry")
+	}
+	// A deadline still ahead leaves the action open.
+	if names := b.expired(); len(names) != 0 {
+		t.Fatalf("AI action settled before its deadline: %v", names)
+	}
+	// Past the deadline the sweep settles it and cancels the worker.
+	b.mu.Lock()
+	b.actions["intercept"].deadline = time.Now().Add(-time.Second)
+	b.mu.Unlock()
+	if names := b.expired(); len(names) != 1 || names[0] != "intercept" {
+		t.Fatalf("AI action not force-settled: %v", names)
+	}
+	awaitSignals(t, canceled, 1)
+	if b.broadcastAIProgress(job, "ready", 3, 0, []int{1, 2, 3}) ||
+		b.acceptAIGuess(aiAnswer{job: job, guess: [3]int{1, 2, 3}}) {
+		t.Fatal("force-settled action allowed a late AI answer")
+	}
+	if guess, outcome := b.draftGuessOnTimeout("intercept"); guess != [3]int{} || outcome != "none" {
+		t.Fatalf("force-settled AI action settled as %v (%s)", guess, outcome)
+	}
+}
+
 func TestMixedTeamStartsOnlySelectedAIAndWaitsForHuman(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")

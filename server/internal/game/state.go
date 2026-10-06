@@ -511,14 +511,15 @@ func (b *Bridge) remaining(name string) time.Duration {
 	return time.Until(b.actionDeadline(name)) + b.Timing.Grace
 }
 
-// nextExpiry is how long until the first open action of people runs out,
-// grace included. An AI action settles itself by its deadline.
+// nextExpiry is how long until the first open action runs out, grace included.
+// AI actions follow the same rule as human ones: no answer by the deadline
+// plus grace, and the sweep settles the action without one.
 func (b *Bridge) nextExpiry() (time.Duration, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var first time.Time
 	for _, a := range b.actions {
-		if a.accepted || a.ai {
+		if a.accepted {
 			continue
 		}
 		if end := a.deadline.Add(b.Timing.Grace); first.IsZero() || end.Before(first) {
@@ -528,13 +529,13 @@ func (b *Bridge) nextExpiry() (time.Duration, bool) {
 	return time.Until(first), !first.IsZero()
 }
 
-// expired closes the open actions of people whose time ran out, and names them.
+// expired closes the open actions whose time ran out, and names them.
 func (b *Bridge) expired() []string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	var names []string
 	for name, a := range b.actions {
-		if !a.accepted && !a.ai && !time.Now().Before(a.deadline.Add(b.Timing.Grace)) {
+		if !a.accepted && !time.Now().Before(a.deadline.Add(b.Timing.Grace)) {
 			a.accepted = true
 			if a.cancel != nil {
 				a.cancel()
