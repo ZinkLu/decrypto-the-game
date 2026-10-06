@@ -197,7 +197,7 @@ export function paintRoster(p: Painter) {
     const copy = frame('channelCopy', 240, 160);
     copy.textAlign = 'center';
     text(copy, 'COPY', 120, 80, 62, INK, 600);
-    target('channelCopy', 'copy-code', t("复制房间码"), 0, 0, 240, 160, { disabled: !h.online || !s.roomCode });
+    target('channelCopy', 'copy-code', t("复制邀请链接"), 0, 0, 240, 160, { disabled: !h.online || !s.roomCode });
 }
 
 /** The score register. Returns which of its flags show. */

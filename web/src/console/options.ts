@@ -1,9 +1,10 @@
 import { initialLocal, instrumentOptions, wordDisplayOptions } from './model';
 import { qualityChoices } from './quality';
 import { consoleRoute } from './view';
+import { invitedRoom } from './invitation';
 
-// What the address asks of this visit. Only the route counts in production;
-// everything else selects a fixture or a bench on the development server.
+// The route and invitation work in production; the other options select a
+// fixture or a bench on the development server.
 const params = new URLSearchParams(location.search);
 const dev = import.meta.env.DEV;
 
@@ -11,6 +12,8 @@ export const route = consoleRoute(location.pathname, location.search, dev);
 export const inspection = route.view === 'preview';
 /** The fixture shown instead of a live game, if any. */
 export const preview = route.scenario;
+/** A room invitation applies only to a live game. */
+export const roomInvite = preview ? '' : invitedRoom(location.search);
 /** Hold the encryptor's introductory close-up for visual review. Development fixtures only. */
 export const diskIntroPreview = dev && !!preview && params.get('disk-intro') === 'hold';
 /** Automatically open the split archive in a development fixture. Live games use the same archive. */

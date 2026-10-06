@@ -203,7 +203,7 @@ export default function MobileConsole({ state: s, local: u, ready, status, onAct
             <p>{t('每队至少两人，可以由 AI 补位。')}</p>
         </>}
         {lobby && <>
-            <div className="mobile-tabs"><button onClick={() => onAct('copy-code')}>{t('复制频道编号')}</button><button data-mobile-archive aria-keyshortcuts="H" onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button></div>
+            <div className="mobile-tabs"><button onClick={() => onAct('copy-code')}>{t('复制邀请链接')}</button><button data-mobile-archive aria-keyshortcuts="H" onClick={() => onAct('archive-toggle')}>{t('密报记录')}</button></div>
             <p>{t('每队至少两人，可以由 AI 补位。')}</p>
             {(['A', 'B'] as const).map(team => {
                 const players = team === 'A' ? s.teamA : s.teamB;

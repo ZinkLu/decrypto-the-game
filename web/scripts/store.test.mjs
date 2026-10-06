@@ -288,6 +288,38 @@ test('multiplayer protocol state survives incremental messages and disconnects c
     resumedScore.receive('full_sync', finalSnapshot);
     assert.equal(store.getState().scoreChange, null, 'reconnecting to an ending restores scores without a pulse');
 
+    // A shared invitation selects a room without accidentally resuming another
+    // room's seat. A matching invitation and an ordinary reload retain it.
+    store.getState().disconnect(); store.getState().connect('1357');
+    const invited = sockets.at(-1); invited.onopen();
+    assert.deepEqual(invited.sent, [], 'an invitation to another room sends no resume request');
+    assert.equal(store.getState().phase, 'home');
+    assert.equal(store.getState().roomCode, null);
+    assert.equal(store.getState().resumeToken, '');
+    assert.equal(saved.size, 0, 'the previous room credential is cleared before joining the invitation');
+    store.getState().joinRoom('1357', 'Ann');
+    assert.equal(invited.sent.at(-1).type, 'join_room');
+    assert.equal(invited.sent.at(-1).data.room_code, '1357');
+    invited.receive('room_created', { room_code: '1357', my_player_id: 'invited-me', resume_token: 'invite-token' });
+    const invitationSession = saved.get('decrypto-session-v1');
+    const socketCount = sockets.length;
+    store.getState().connect('9999');
+    assert.equal(sockets.length, socketCount, 'connecting again cannot replace an active connection');
+    assert.equal(store.getState().roomCode, '1357', 'an idempotent connect keeps the active room');
+    assert.equal(saved.get('decrypto-session-v1'), invitationSession, 'an idempotent connect cannot clear the active credential');
+
+    store.getState().disconnect(); store.getState().connect('1357');
+    const matchingInvite = sockets.at(-1); matchingInvite.onopen();
+    assert.deepEqual(matchingInvite.sent, [{ type: 'resume_room', data: { room_code: '1357', resume_token: 'invite-token' } }],
+      'an invitation to the saved room restores the original seat');
+    assert.equal(store.getState().recovering, true);
+    assert.equal(saved.get('decrypto-session-v1'), invitationSession);
+
+    store.getState().disconnect(); store.getState().connect();
+    const normalVisit = sockets.at(-1); normalVisit.onopen();
+    assert.deepEqual(normalVisit.sent, [{ type: 'resume_room', data: { room_code: '1357', resume_token: 'invite-token' } }],
+      'a visit without an invitation continues to restore the saved seat');
+
   } finally {
     store?.getState().disconnect();
     globalThis.window = previousWindow;

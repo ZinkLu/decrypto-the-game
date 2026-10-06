@@ -30,12 +30,12 @@ function actionStep(action: TourAction): TourStep {
 /** Only the controls a player can use in the current room belong in the tour. */
 export function tourSteps(context: TourContext): TourStep[] {
     if (context.home) return [{ id: 'enter', title: '建立或加入房间',
-        body: '填写代号，按 ACTION 建立房间。已有房间号时，先切换到加入频道。',
-        mobile: '填写代号后建立房间；已有房间号时，切换到加入频道。',
+        body: '填写代号，按 ACTION 建立或加入房间；邀请链接会自动填好房间号。',
+        mobile: '填写代号后建立或加入房间；邀请链接会自动填好房间号。',
         target: '[data-control="name"]', compactTarget: '[data-onboarding="enter"]' }, actionStep('enter')];
     return [
-        { id: 'room', title: '房间号', body: '右上角显示四位房间号。点击旁边的 COPY 键复制，发给朋友加入。',
-            mobile: '上方显示四位房间号，可在房间中复制给朋友加入。',
+        { id: 'room', title: '房间号', body: '右上角显示四位房间号。点击旁边的 COPY 键复制邀请链接，发给朋友加入。',
+            mobile: '上方显示四位房间号，可在房间中复制邀请链接给朋友加入。',
             target: '[data-control="copy-code"]', compactTarget: '[data-onboarding="room"]' },
         { id: 'history', title: '查看历史', body: '点击或下拉右侧纸带，查看历轮线索与结果，并在记录板上做笔记。也可以按 H 打开。',
             mobile: '点击「密报记录」，查看历轮线索与结果，并在记录板上做笔记。',

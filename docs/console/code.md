@@ -65,7 +65,7 @@ web/
 | `GuideContent.tsx` | 玩法说明和原版桌游介绍的 DOM 版本，供窄屏和读屏软件使用 |
 | `hooks.ts` | 从 `Console.tsx` 分出来的几组 effect：扬声器和音乐的生命周期、软盘状态机的定时器、减弱动效、字体和插图的载入 |
 | `useDiskPull.ts` | 拖拽软盘的指针手势，桌面和窄屏共用 |
-| `options.ts` | 地址栏对这次访问的要求：路由、预览夹具和各个开发参数；`portable()` 判断是否窄屏 |
+| `options.ts` | 地址栏对这次访问的要求：路由、邀请目标、预览夹具和各个开发参数；`portable()` 判断是否窄屏 |
 | `Workbench.tsx` | 开发试装台：翻旗、名牌、仪表、词窗的试装界面和它们改动过的夹具状态。生产构建里到不了 |
 
 这些组件各有一份自己的 CSS（`notebook.css`、`page-turn.css`、`shortcuts.css` 等），由组件自行引入；`index.css` 只放全局样式。
@@ -77,6 +77,7 @@ web/
 | 文件 | 职责 |
 | --- | --- |
 | `actions.ts` | `reachable()`：一个控件在机器当前状态下是否起作用（有没有电、哪一面朝前、连没连上、有没有请求在途） |
+| `invitation.ts` | `invitedRoom()` 读取有效的四位数字邀请目标；`roomInviteURL()` 生成网站根路径下的完整邀请链接 |
 | `model.ts` | `LocalState` 及其初始值；硬件状态推导（`consoleHardware`、`terminalView`）；行动资格（`seatAction`、`roleState`）；软盘状态机；回合角色（`roundCast`，以及按行动取进度的 `transmission`）；名册、纸带记录、主题色；浏览器存储的读写；预览夹具 `previewState` |
 | `view.ts` | 路由（`consoleRoute`）、正面取景（`gameFraming`）、把手拖拽与滚轮缩放的换算、把手的投影表面 |
 | `i18n.ts` | 中英文对照表、`translate`、语言偏好、服务器错误文案的本地化 |
@@ -244,13 +245,16 @@ web/
 3. 背面的电池仓、电池、插头和灯光自检：电池要先打开仓盖，插头要从背面拔，自检要有电
 4. 机器背对时，正面的控件都不起作用
 5. 本机的屏幕操作不需要网络：跳过简报、翻页、遮词、纸带、软盘、旋钮、数字键、对讲；简报期间的 ACTION 也算。松开按住的 TALK 键任何时候都有效
-6. 离开频道和复制房间码需要网络，但不等在途的请求
+6. 离开频道和复制房间邀请链接需要网络，但不等在途的请求
 7. 其余都是发往服务器的操作，需要网络，并且一次只发一个请求
 
 通过之后，`act()` 才执行这个控件的动作，其中还有座位自己的规则（比如只有当前行动的人能选号）：
 
 - `transmit`（红色 ACTION 键）：按当前阶段调用 `createRoom` / `joinRoom` / `startGame` / `submitClues` / `submitIntercept` / `submitDecrypt` / `returnToRoom`
 - 选队、加减 AI
+- `copy-code`：桌面 COPY 键与手机复制按钮共用，复制网站根路径下的完整邀请链接（如 `https://host/?room=1234`），不携带预览或调试参数；剪贴板不可用时显示完整链接
+
+`invitation.ts` 的 `invitedRoom()` 读取 URL 中的 `room` 参数，只接受四位数字；`options.ts` 仅在正式游戏页面将它作为 `roomInvite` 导出。`Console.tsx` 据此将本机首页切到加入模式并填入房间码；已保存代号时，在 WebSocket 连接就绪后自动发起加入，未保存代号时等待用户输入并按 ACTION。用户修改代号、房间码或切换到建立模式后，自动加入取消。成功进入房间后，地址栏移除邀请参数，刷新继续恢复当前座位。`gameStore.ts` 恢复会话时也核对邀请目标：同一房间沿用恢复令牌回原座位，另一房间的已保存会话不覆盖邀请。
 
 键盘意图由 `shortcuts.ts` 统一识别（数字键 1–4、Backspace、Enter、Ctrl/Cmd+Enter、H、G、?、Esc、方向键），`Console.tsx` 的全局 `keydown` 监听再按面板、供电和朝向决定是否交给同样的 `act()` 调用。`ShortcutHelp.tsx` 在页面导航提供常驻说明；`Controls.tsx` 复用快捷键标记生成无障碍属性和悬停提示。语音服务独立处理反引号的按下与松开，以及 V 切换全桌／队内；快捷键和网页的「悄悄话」按钮共用 `toggleVoiceChannel()`，只在语音接通、有队伍且未分组讨论时切换。语音复用相同的文字编辑检测，记录面板也能通话。
 
@@ -360,7 +364,8 @@ cd web && pnpm test
 | --- | --- |
 | `console.test.mjs` | 行动资格、纸带记录的可见范围、名册状态、阶段灯、主题色及其对比度、对局音效的选择 |
 | `transmission.test.mjs` | 回合角色、简报、旁观席看到的进度（两队各自的数字给谁看）、各席位在猜测阶段的提示、倒计时警告与超时说明 |
-| `store.test.mjs` | store 对协议消息的处理（包括两队同时猜时一队先交）、设备令牌、断线与恢复 |
+| `store.test.mjs` | store 对协议消息的处理（包括两队同时猜时一队先交）、设备令牌、断线与恢复，以及邀请目标与已保存座位的优先级 |
+| `invitation.test.mjs` | 四位房间码（含前导零）的邀请链接、无效与重复参数、分享时去除预览与座位凭据 |
 | `hardware.test.mjs` | 正反面目标互不重叠、断电和拔网线后哪些控件还在、接收机信号、背面的声音开关 |
 | `actions.test.mjs` | 哪些控件不需要电、哪些不需要网络、背对时哪些够不着；所有控件在所有机器状态下的穷举 |
 | `parts.test.mjs` | 引擎按名字取用的零件都在导出的模型里；会动的组件互不嵌套 |

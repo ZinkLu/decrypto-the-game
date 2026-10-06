@@ -162,7 +162,7 @@ interface GameStore {
   teammateProgress: Record<string, PlayerProgress>;
 
   // Actions
-  connect: () => void;
+  connect: (invitedRoom?: string) => void;
   disconnect: () => void;
   createRoom: (nickname: string) => void;
   joinRoom: (code: string, nickname: string) => void;
@@ -703,14 +703,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ error: null });
   },
 
-  connect() {
+  connect(invitedRoom) {
     if (get().wsService) return;
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const url = import.meta.env?.VITE_WS_URL || `${protocol}://${window.location.host}/ws`;
     const ws = new WebSocketService(url, (type: string, data: unknown, serverTime?: number) => {
       handleServerMessage(set, get, type, data, serverTime);
     });
-    const previous = get().resumeToken ? null : savedSession();
+    let previous = get().resumeToken ? null : savedSession();
+    // An invitation to another room replaces this tab's old destination. An
+    // invitation to the same room still restores the original seat.
+    if (invitedRoom && previous && previous.roomCode !== invitedRoom) {
+      saveSession(null);
+      previous = null;
+    }
     set({ wsService: ws, ...(previous ? { ...previous, recovering: true } : {}) });
     ws.connect();
   },

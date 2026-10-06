@@ -26,7 +26,8 @@ import { InstrumentBench, RosterBench, ScoreBench, WordBench, benchAmplitude, be
 import { guidePageFor } from './guide';
 import { useConsoleAudio, useDiskFont, useGuideArt, useKeyDisk, useReducedMotion } from './hooks';
 import { useDiskPull } from './useDiskPull';
-import { briefMode, detail, intercomPreview, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, notebookPreview, partialMode, pinnedQuality, portable, preview, route, scoreBench, wordBench } from './options';
+import { briefMode, detail, intercomPreview, initialInstrument, initialWordDisplay, inspection, instrumentPreview, keepsMachine, notebookPreview, partialMode, pinnedQuality, portable, preview, remember, roomInvite, route, scoreBench, wordBench } from './options';
+import { roomInviteURL } from './invitation';
 import type { LocalState, KeyDiskState } from './model';
 import type { Content, Target } from './paint';
 import type { QualityChoice, QualityLevel } from './quality';
@@ -34,7 +35,7 @@ import { handleSurfaces, type HandleSide } from './view';
 import { previewIntercom, turnSelector, type IntercomPosition } from './voice';
 export default function Console() {
     const live = useGameStore();
-    const [u, setU] = useState<LocalState>(() => { const music = readMusicPreferences(); return { ...initialLocal, name: readName(), musicOn: music.enabled, musicVolume: music.volume, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal', wordDisplay: initialWordDisplay,
+    const [u, setU] = useState<LocalState>(() => { const music = readMusicPreferences(); return { ...initialLocal, mode: roomInvite ? 'join' : initialLocal.mode, code: roomInvite, name: readName(), musicOn: music.enabled, musicVolume: music.volume, locale: readLocale(), theme: readTheme(), seconds: 90, instrumentVariant: initialInstrument, instrumentDemo: initialInstrument === 'signal', wordDisplay: initialWordDisplay,
         meterAmplitude: benchAmplitude(initialInstrument) }; });
     const bench = useBench();
     const s = useMemo(() => benchState(live, u.locale, bench), [live, bench.people, u.locale, bench.wordSet, bench.scores, bench.scoreChange]);
@@ -85,6 +86,8 @@ export default function Console() {
     const current = useRef({ s, u, content, level });
     current.current = { s, u, content, level };
     const pending = useRef(false);
+    // Only a name remembered before this visit can auto-join. New names need ACTION.
+    const invitation = useRef({ code: roomInvite, name: u.name.trim(), pending: !!roomInvite && !!u.name.trim() });
     const progressLast = useRef(0);
     const progressTrail = useRef<number | undefined>(undefined);
     const handleFocusPending = useRef<string | null>(null);
@@ -232,10 +235,32 @@ export default function Console() {
     }
     useEffect(() => {
         if (!preview)
-            live.connect();
+            live.connect(roomInvite || undefined);
         return () => { if (!preview)
             useGameStore.getState().disconnect(); };
     }, []);
+    useEffect(() => {
+        const invite = invitation.current;
+        if (preview || !invite.pending) return;
+        // Choosing another mode, code or name cancels the automatic request.
+        if (u.mode !== 'join' || u.code !== invite.code || u.name.trim() !== invite.name || live.phase !== 'home') {
+            invite.pending = false;
+            return;
+        }
+        if (!hardware.online || live.roomCode) return;
+        // Finish handling an expired resume before starting the fallback join.
+        if (live.error) { live.clearError(); return; }
+        invite.pending = false;
+        pending.current = true;
+        setNotice('');
+        patch({ note: '正在接入频道…' });
+        live.joinRoom(invite.code, invite.name);
+    }, [live.connected, live.recovering, live.phase, live.roomCode, live.error, hardware.online, u.mode, u.code, u.name]);
+    useEffect(() => {
+        // Once accepted, refresh uses the saved seat; leaving stays on the home page.
+        if (roomInvite && live.roomCode && live.phase !== 'home' && !live.recovering)
+            remember(params => params.delete('room'));
+    }, [live.roomCode, live.phase, live.recovering]);
     const { audio, music, musicStatus, play: playSound, refreshMusic } = useConsoleAudio(current, musicPreferencesRef);
     useEffect(() => {
         let cancelled = false;
@@ -681,9 +706,13 @@ export default function Console() {
         if (id === 'copy-code') {
             if (state.roomCode) playSound('key');
             engine.current?.pulse('copy-code');
-            if (state.roomCode)
-                navigator.clipboard?.writeText(state.roomCode).then(() => setNotice(t('频道编号已复制。'))).catch(() => setNotice(t('频道编号：{0}', [state.roomCode])));
-            if (state.roomCode && !navigator.clipboard) setNotice(t('频道编号：{0}', [state.roomCode]));
+            if (state.roomCode) {
+                const url = roomInviteURL(state.roomCode, location.href);
+                const fallback = () => setNotice(t('邀请链接：{0}', [url]));
+                if (navigator.clipboard) {
+                    void navigator.clipboard.writeText(url).then(() => setNotice(t('邀请链接已复制。'))).catch(fallback);
+                } else fallback();
+            }
             return;
         }
         if (id.startsWith('slot-')) {
@@ -736,6 +765,7 @@ export default function Console() {
             state.clearError();
             pending.current = true;
             if (state.phase === 'home') {
+                invitation.current.pending = false;
                 patch({ note: "正在接入频道…" });
                 local.mode === 'create' ? state.createRoom(local.name.trim()) : state.joinRoom(local.code, local.name.trim());
             }
